@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>Choclift Updates</title>
+    <description>Choclift 自动更新源</description>
+    <language>zh</language>
+    <item>
+      <title>1.0.0</title>
+      <pubDate>Thu, 12 Nov 2026 07:27:05 +0000</pubDate>
+      <sparkle:version>2</sparkle:version>
+      <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/uhyrdtrdtfg-creator/choclift/releases/tag/v1.0.0</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/uhyrdtrdtfg-creator/choclift/releases/download/v1.0.0/Choclift.zip" length="2458545" type="application/octet-stream" sparkle:edSignature="AqVNHn2nB7YnrdeaR3iTi1WYnaCP2GzHIhRdkwVyELaGEH/tGHlB8JV3jq665AtQ6dwh+4yfyNLIJoxUl9wTAQ==" sparkle:os="macos" />
+    </item>
+  </channel>
+</rss>
