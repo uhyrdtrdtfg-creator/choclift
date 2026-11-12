@@ -20,10 +20,10 @@ public enum WatchSurfaceMode: Int, CaseIterable, Identifiable {
 
     public func shortLabel(in lang: AppLanguage) -> String {
         switch self {
-        case .chocolateBar: return L10n.tr("巧栏", "Bar", language: lang)
-        case .quickActions: return L10n.tr("快捷", "Actions", language: lang)
-        case .timeTravel: return L10n.tr("最近", "Recents", language: lang)
-        case .emojiBar: return L10n.tr("表情", "Emoji", language: lang)
+        case .chocolateBar: return L10n.tr("巧克力栏", "Chocolate Bar", language: lang)
+        case .quickActions: return L10n.tr("快捷遥控", "Quick Actions", language: lang)
+        case .timeTravel: return L10n.tr("最近应用", "Recent Apps", language: lang)
+        case .emojiBar: return L10n.tr("表情直输", "Emoji Bar", language: lang)
         }
     }
 }
@@ -42,6 +42,7 @@ public struct WatchRootView: View {
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+    private var visualState: ChocConnectionVisualState { ChocConnectionVisualState.resolve(from: client) }
 
     public init(client: CompanionClientEngine) {
         self.client = client
@@ -88,14 +89,14 @@ public struct WatchRootView: View {
 
                 if let hud = hudMessage {
                     Text(hud)
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(.black.opacity(0.84), in: Capsule())
-                        .overlay(Capsule().strokeBorder(palette.accentGold.opacity(0.65), lineWidth: 1))
-                        .padding(.bottom, 2)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .background(palette.barSurface.opacity(0.95), in: Capsule())
+                        .overlay(Capsule().strokeBorder(palette.accentGold.opacity(0.7), lineWidth: 1))
+                        .padding(.bottom, 3)
                         .allowsHitTesting(false)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -161,31 +162,44 @@ public struct WatchRootView: View {
         }
     }
 
-    // MARK: - Toolbar Controls
+    // MARK: - Readable, Tap-Friendly Toolbar Controls
 
     private var connectionToolbarButton: some View {
-        Button {
+        let tint = visualState.tintColor(in: palette)
+
+        return Button {
             CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
             showPairingSheet = true
         } label: {
             HStack(spacing: 4) {
-                if client.connectionState.isConnected, let link = client.activeLink {
-                    Image(systemName: link.sfSymbol)
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(Color.green)
+                if visualState.showsProgressSpinner {
+                    ProgressView()
+                        .scaleEffect(0.62)
+                        .frame(width: 12, height: 12)
+                        .tint(tint)
                 } else {
-                    Circle()
-                        .fill(statusIndicatorColor)
-                        .frame(width: 7, height: 7)
+                    Image(systemName: visualState.sfSymbol)
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundStyle(tint)
                 }
-                Text(statusShortText)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+
+                Text(visualState.watchToolbarLabel(in: lang))
+                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(palette.tileFillTop.opacity(0.9), in: Capsule())
+            .padding(.horizontal, 9)
+            .frame(minHeight: 34)
+            .background(palette.tileFillTop.opacity(0.92), in: Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        visualState.isFailure ? palette.accentRuby.opacity(0.75) : tint.opacity(0.35),
+                        lineWidth: 1
+                    )
+            )
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -196,10 +210,12 @@ public struct WatchRootView: View {
             showModePickerSheet = true
         } label: {
             Image(systemName: activeMode.sfSymbol)
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: 13.5, weight: .bold))
                 .foregroundStyle(palette.accentGold)
-                .frame(width: 26, height: 26)
-                .background(palette.tileFillBottom.opacity(0.9), in: Circle())
+                .frame(width: 34, height: 34)
+                .background(palette.tileFillBottom.opacity(0.95), in: Circle())
+                .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
     }
@@ -207,6 +223,7 @@ public struct WatchRootView: View {
     private var modePickerSheet: some View {
         List {
             ForEach(WatchSurfaceMode.allCases) { mode in
+                let isSelected = (activeMode == mode)
                 Button {
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
                     modeBeforeAutoEmoji = nil
@@ -215,53 +232,26 @@ public struct WatchRootView: View {
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: mode.sfSymbol)
-                            .foregroundStyle(activeMode == mode ? palette.accentGold : palette.secondaryText)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(isSelected ? .black : palette.accentGold)
+                            .frame(width: 28, height: 28)
+                            .background(isSelected ? palette.accentGold : palette.tileFillTop, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
                         Text(mode.shortLabel(in: lang))
-                            .font(.system(.body, design: .rounded, weight: activeMode == mode ? .bold : .medium))
+                            .font(.system(size: 14, weight: isSelected ? .bold : .medium, design: .rounded))
+                            .lineLimit(1)
+
                         Spacer()
-                        if activeMode == mode {
+
+                        if isSelected {
                             Image(systemName: "checkmark")
                                 .font(.caption.bold())
                                 .foregroundStyle(palette.accentGold)
                         }
                     }
+                    .frame(minHeight: 38)
                 }
             }
-        }
-    }
-
-    private var statusIndicatorColor: Color {
-        switch client.connectionState {
-        case .connected:
-            return .green
-        case .connecting:
-            return palette.accentGold
-        case .awaitingPIN:
-            return .orange
-        case .disconnected:
-            if client.bluetoothAvailability.isProblemState || client.lastConnectionIssue != nil {
-                return .orange
-            }
-            return palette.accentRuby
-        }
-    }
-
-    private var statusShortText: String {
-        switch client.connectionState {
-        case .connected(_, let macName):
-            let link = (client.activeLink ?? .wifi).shortLabel(in: lang)
-            return "\(macName) · \(link)"
-        case .connecting:
-            return L10n.tr("连接中…", "Linking…", language: lang)
-        case .awaitingPIN:
-            return L10n.tr("输配对码", "Enter PIN", language: lang)
-        case .disconnected:
-            if client.bluetoothAvailability.isProblemState {
-                return client.bluetoothAvailability.shortStatus(in: lang)
-            } else if client.lastConnectionIssue != nil {
-                return L10n.tr("已断开", "Offline", language: lang)
-            }
-            return L10n.tr("配对 Mac", "Pair Mac", language: lang)
         }
     }
 

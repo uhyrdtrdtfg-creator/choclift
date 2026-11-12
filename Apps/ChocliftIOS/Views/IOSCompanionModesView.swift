@@ -52,9 +52,9 @@ public struct IOSChocolateBarSurfaceView: View {
         let rowCount = isLandscape ? 2 : 4
 
         return GeometryReader { geo in
-            let spacing: CGFloat = isLandscape ? 12 : 14
-            let horizontalPad: CGFloat = isLandscape ? 14 : 18
-            let verticalPad: CGFloat = isLandscape ? 12 : 16
+            let spacing: CGFloat = isLandscape ? 12 : 12
+            let horizontalPad: CGFloat = isLandscape ? 14 : 16
+            let verticalPad: CGFloat = isLandscape ? 12 : 10
             let availW = max(80, geo.size.width - horizontalPad * 2 - spacing * CGFloat(colCount - 1))
             let availH = max(80, geo.size.height - verticalPad * 2 - spacing * CGFloat(rowCount - 1))
             let tileW = availW / CGFloat(colCount)
@@ -126,14 +126,19 @@ public struct IOSChocolateBarSurfaceView: View {
                 language: lang,
                 compact: true
             )
-            .scaleEffect(isPressed ? 0.93 : 1.0)
+            .scaleEffect(isPressed ? 0.94 : 1.0)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("ios-slot-\(pageIndex)-\(slotIndex)")
+        .accessibilityLabel(
+            item?.displayTitle(in: lang)
+                ?? L10n.tr("空槽位 \(slotIndex + 1)", "Empty Slot \(slotIndex + 1)", language: lang)
+        )
         .contextMenu {
             Button {
                 onEditSlot(IOSEditSlotSelection(pageIndex: pageIndex, slotIndex: slotIndex))
             } label: {
-                Label(L10n.tr("编辑此巧克力槽…", "Configure Slot…", language: lang), systemImage: "pencil")
+                Label(L10n.tr("配置此巧克力槽…", "Configure Slot…", language: lang), systemImage: "pencil")
             }
 
             if let item {
@@ -161,48 +166,83 @@ public struct IOSTimeTravelSurfaceView: View {
     @ObservedObject var client: CompanionClientEngine
     let isLandscape: Bool
     let currentBarPageIndex: Int
+    var onRequestPairing: (() -> Void)?
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
-    public init(client: CompanionClientEngine, isLandscape: Bool, currentBarPageIndex: Int) {
+    public init(
+        client: CompanionClientEngine,
+        isLandscape: Bool,
+        currentBarPageIndex: Int,
+        onRequestPairing: (() -> Void)? = nil
+    ) {
         self.client = client
         self.isLandscape = isLandscape
         self.currentBarPageIndex = currentBarPageIndex
+        self.onRequestPairing = onRequestPairing
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Label(L10n.tr("应用时间旅行", "App Time Travel", language: lang), systemImage: "clock.arrow.circlepath")
-                    .font(.subheadline.bold())
+                    .font(.system(.subheadline, design: .rounded, weight: .bold))
                     .foregroundStyle(palette.primaryText)
 
                 Spacer()
 
-                Text(L10n.tr("轻点即切 · 长按可固定或退出（支持拖拽文件时切换目标窗口）", "Tap to switch · Long-press to Pin or Quit", language: lang))
+                Text(L10n.tr("点按切换 · 长按固定或退出", "Tap to switch · Hold to Pin or Quit", language: lang))
                     .font(.caption2)
                     .foregroundStyle(palette.secondaryText)
                     .lineLimit(1)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 10)
+            .padding(.top, 8)
 
             if client.recentApps.isEmpty {
                 Spacer()
-                VStack(spacing: 8) {
-                    Image(systemName: "clock.badge.questionmark")
-                        .font(.largeTitle)
-                        .foregroundStyle(palette.secondaryText)
+                VStack(spacing: 10) {
+                    Image(systemName: client.connectionState.isConnected ? "clock" : "laptopcomputer.slash")
+                        .font(.system(size: 30))
+                        .foregroundStyle(palette.accentGold)
+
                     Text(
                         client.connectionState.isConnected
-                            ? L10n.tr("等待同步 Mac 最近打开的应用…", "Syncing recent Mac apps…", language: lang)
-                            : L10n.tr("连接 Mac 后即可实时查看和穿梭最近打开的应用", "Connect to your Mac to jump through recently opened apps", language: lang)
+                            ? L10n.tr("暂无最近切换的 Mac 应用", "No Recent Mac Apps Yet", language: lang)
+                            : L10n.tr("连接 Mac 后开启时间旅行", "Connect Your Mac for Time Travel", language: lang)
+                    )
+                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+
+                    Text(
+                        client.connectionState.isConnected
+                            ? L10n.tr("在 Mac 上任意切换窗口后，最近使用的应用会立即出现在这里。", "Switch windows on your Mac and recent apps will appear here automatically.", language: lang)
+                            : L10n.tr("配对并连接 Mac 后，无需按 ⌘Tab 即可在此一键穿梭最近打开的窗口。", "Pair your Mac to jump across recently active windows with a single tap.", language: lang)
                     )
                     .font(.caption)
                     .foregroundStyle(palette.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 320)
+
+                    if !client.connectionState.isConnected, let onRequestPairing {
+                        Button {
+                            onRequestPairing()
+                        } label: {
+                            Text(L10n.tr("连接 Mac", "Connect to Mac", language: lang))
+                                .font(.system(.caption, design: .rounded, weight: .bold))
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 16)
+                                .frame(height: 38)
+                                .background(palette.accentGold, in: Capsule())
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 2)
+                    }
                 }
                 .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
                 Spacer()
             } else {
                 let cols = Array(repeating: GridItem(.flexible(), spacing: 12), count: isLandscape ? 4 : 2)
@@ -236,7 +276,7 @@ public struct IOSTimeTravelSurfaceView: View {
                             .font(.system(size: 10, weight: .bold))
                             .foregroundStyle(palette.accentGold)
                             .padding(4)
-                            .background(.black.opacity(0.65), in: Circle())
+                            .background(.black.opacity(0.68), in: Circle())
                             .offset(x: 6, y: -4)
                     }
                 }
@@ -248,13 +288,15 @@ public struct IOSTimeTravelSurfaceView: View {
 
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(entry.isFrontmost ? palette.accentGold : (entry.isRunning ? .green.opacity(0.75) : .gray))
-                        .frame(width: 5, height: 5)
-                    Text(entry.isFrontmost
-                         ? L10n.tr("当前窗口", "Active", language: lang)
-                         : (entry.isRunning ? L10n.tr("运行中", "Running", language: lang) : L10n.tr("已固定", "Pinned", language: lang)))
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(palette.secondaryText)
+                        .fill(entry.isFrontmost ? palette.accentGold : (entry.isRunning ? palette.statusConnected : .gray))
+                        .frame(width: 5.5, height: 5.5)
+                    Text(
+                        entry.isFrontmost
+                            ? L10n.tr("当前窗口", "Active", language: lang)
+                            : (entry.isRunning ? L10n.tr("运行中", "Running", language: lang) : L10n.tr("已固定", "Pinned", language: lang))
+                    )
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(palette.secondaryText)
                 }
             }
             .padding(.vertical, 12)
@@ -268,6 +310,7 @@ public struct IOSTimeTravelSurfaceView: View {
                             .strokeBorder(entry.isFrontmost ? palette.accentGold : palette.tileBorderHighlight.opacity(0.45), lineWidth: entry.isFrontmost ? 2 : 1)
                     )
             )
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -275,7 +318,7 @@ public struct IOSTimeTravelSurfaceView: View {
                 client.togglePinRecentApp(entry)
             } label: {
                 Label(
-                    entry.isPinned ? L10n.tr("取消固定", "Unpin", language: lang) : L10n.tr("固定到时间旅行最前", "Pin Favorite", language: lang),
+                    entry.isPinned ? L10n.tr("取消固定", "Unpin", language: lang) : L10n.tr("固定到最前", "Pin Favorite", language: lang),
                     systemImage: entry.isPinned ? "pin.slash" : "pin.fill"
                 )
             }
@@ -348,15 +391,20 @@ public struct IOSEmojiBarSurfaceView: View {
                             .font(.caption2.bold())
                         Text(L10n.tr("正在 \(client.focusedMacAppName ?? "Mac") 输入", "Typing in \(client.focusedMacAppName ?? "Mac")", language: lang))
                             .font(.caption2.bold())
+                            .lineLimit(1)
                     }
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color.green.opacity(0.22), in: Capsule())
-                    .foregroundStyle(.green)
-                } else {
-                    Text(client.profile.emojiSlides[min(max(0, currentSlideIndex), client.profile.emojiSlides.count - 1)].title)
-                        .font(.caption.bold())
-                        .foregroundStyle(palette.secondaryText)
+                    .padding(.vertical, 5)
+                    .background(palette.statusConnected.opacity(0.20), in: Capsule())
+                    .foregroundStyle(palette.statusConnected)
+                } else if !client.profile.emojiSlides.isEmpty {
+                    let safeIdx = min(max(0, currentSlideIndex), client.profile.emojiSlides.count - 1)
+                    HStack(spacing: 5) {
+                        Text(client.profile.emojiSlides[safeIdx].iconEmoji)
+                        Text(client.profile.emojiSlides[safeIdx].title)
+                            .font(.system(.caption, design: .rounded, weight: .bold))
+                            .foregroundStyle(palette.secondaryText)
+                    }
                 }
 
                 Spacer()
@@ -366,11 +414,13 @@ public struct IOSEmojiBarSurfaceView: View {
                     showAllCatalogSheet = true
                 } label: {
                     Label(L10n.tr("全部分类", "All Emojis", language: lang), systemImage: "magnifyingglass")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
+                        .font(.caption.bold())
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 34)
                         .background(palette.tileFillTop, in: Capsule())
                         .foregroundStyle(palette.primaryText)
+                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
             }
@@ -424,6 +474,7 @@ public struct IOSEmojiBarSurfaceView: View {
                                         .font(.system(size: min(tileW, tileH) * 0.48))
                                 }
                                 .frame(width: tileW, height: tileH)
+                                .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                             }
                             .buttonStyle(.plain)
                             .contextMenu {
@@ -446,38 +497,50 @@ public struct IOSEmojiBarSurfaceView: View {
 
     private var emojiBrowserSheet: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    ForEach(EmojiCatalog.categories) { cat in
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("\(cat.icon) \(cat.title(in: lang))")
-                                .font(.headline)
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
-                                ForEach(cat.emojis, id: \.self) { em in
-                                    Button {
-                                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                                        if let slotIdx = customizingSlotIndex {
-                                            var updated = client.profile
-                                            updated.emojiSlides[currentSlideIndex].emojis[slotIdx] = em
-                                            client.pushUpdatedProfile(updated)
-                                            showAllCatalogSheet = false
-                                        } else {
-                                            client.insertEmoji(em)
+            ZStack {
+                LinearGradient(
+                    colors: [palette.backgroundTop, palette.backgroundBottom],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        ForEach(EmojiCatalog.categories) { cat in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("\(cat.icon) \(cat.title(in: lang))")
+                                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                                    .foregroundStyle(palette.primaryText)
+
+                                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
+                                    ForEach(cat.emojis, id: \.self) { em in
+                                        Button {
+                                            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                            if let slotIdx = customizingSlotIndex {
+                                                var updated = client.profile
+                                                updated.emojiSlides[currentSlideIndex].emojis[slotIdx] = em
+                                                client.pushUpdatedProfile(updated)
+                                                showAllCatalogSheet = false
+                                            } else {
+                                                client.insertEmoji(em)
+                                            }
+                                        } label: {
+                                            Text(em)
+                                                .font(.system(size: 28))
+                                                .frame(height: 44)
+                                                .frame(maxWidth: .infinity)
+                                                .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                         }
-                                    } label: {
-                                        Text(em)
-                                            .font(.system(size: 30))
-                                            .frame(height: 44)
-                                            .frame(maxWidth: .infinity)
-                                            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                                        .buttonStyle(.plain)
                                     }
-                                    .buttonStyle(.plain)
                                 }
                             }
                         }
                     }
+                    .padding(16)
                 }
-                .padding(16)
             }
             .navigationTitle(
                 customizingSlotIndex != nil
@@ -485,11 +548,13 @@ public struct IOSEmojiBarSurfaceView: View {
                     : L10n.tr("点击直接输入到 Mac", "Tap to Type on Mac", language: lang)
             )
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L10n.tr("关闭", "Close", language: lang)) {
                         showAllCatalogSheet = false
                     }
+                    .foregroundStyle(palette.accentGold)
                 }
             }
         }
@@ -522,7 +587,7 @@ public struct IOSGesturePadSurfaceView: View {
         layout {
             // Multi-touch interactive canvas
             ZStack {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(
                         LinearGradient(
                             colors: [palette.tileFillTop.opacity(0.72), palette.backgroundBottom.opacity(0.9)],
@@ -531,20 +596,26 @@ public struct IOSGesturePadSurfaceView: View {
                         )
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .strokeBorder(palette.tileBorderHighlight.opacity(0.6), lineWidth: 1.4)
+                        RoundedRectangle(cornerRadius: 22, style: .continuous)
+                            .strokeBorder(palette.tileBorderHighlight.opacity(0.55), lineWidth: 1.3)
                     )
 
-                VStack(spacing: 8) {
-                    Image(systemName: "hand.draw.fill")
-                        .font(.system(size: 30))
-                        .foregroundStyle(palette.accentGold)
-                    Text(L10n.tr("多指触控手势板", "Multi-Touch Gesture Pad", language: lang))
-                        .font(.system(.headline, design: .rounded, weight: .bold))
-                        .foregroundStyle(palette.primaryText)
-                    VStack(spacing: 3) {
-                        Text(L10n.tr("双指上滑：最大化窗口  ·  双指下滑：最小化窗口", "2-Finger Up: Maximize  ·  2-Finger Down: Minimize", language: lang))
-                        Text(L10n.tr("双指左/右滑：左右半屏  ·  捏合/张开：复制与粘贴", "2-Finger L/R: Snap Half  ·  Pinch In/Out: Copy & Paste", language: lang))
+                VStack(spacing: 7) {
+                    Image(systemName: client.profile.gestureConfig.isGlobalOverlayEnabled ? "hand.draw.fill" : "hand.raised.slash.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(client.profile.gestureConfig.isGlobalOverlayEnabled ? palette.accentGold : palette.secondaryText)
+
+                    Text(
+                        client.profile.gestureConfig.isGlobalOverlayEnabled
+                            ? L10n.tr("多指触控手势板", "Multi-Touch Gesture Pad", language: lang)
+                            : L10n.tr("多指手势已在 Mac 端暂停", "Multi-Touch Paused on Mac", language: lang)
+                    )
+                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+
+                    VStack(spacing: 2) {
+                        Text(L10n.tr("双指上/下滑：最大化与最小化  ·  双指左/右滑：贴靠半屏", "2-Finger Up/Down: Max & Min  ·  2-Finger L/R: Snap Half", language: lang))
+                        Text(L10n.tr("三指捏合/张开：复制与粘贴  ·  单指可直接点按快捷按钮", "Pinch In/Out: Copy & Paste  ·  1-Finger taps quick buttons", language: lang))
                     }
                     .font(.caption2)
                     .foregroundStyle(palette.secondaryText)
@@ -554,7 +625,7 @@ public struct IOSGesturePadSurfaceView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Tactile Quick Trigger Grid (also great for one-handed or Simulator tapping!)
+            // Tactile Quick Trigger Grid (>= 46pt height for crisp 1-finger taps)
             let quickGestures: [TouchGestureType] = [
                 .twoFingerSwipeUp, .twoFingerSwipeDown,
                 .twoFingerSwipeLeft, .twoFingerSwipeRight,
@@ -568,24 +639,32 @@ public struct IOSGesturePadSurfaceView: View {
                     Button {
                         onTriggerGesture(gesture)
                     } label: {
-                        VStack(spacing: 3) {
+                        HStack(spacing: 6) {
                             Image(systemName: mapped?.sfSymbol ?? gesture.sfSymbol)
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.system(size: 14, weight: .bold))
                                 .foregroundStyle(palette.accentGold)
-                            Text(mapped?.title(in: lang) ?? gesture.title(in: lang))
-                                .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                .frame(width: 18)
+                            Text(mapped?.compactTitle(in: lang) ?? gesture.title(in: lang))
+                                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                            Spacer(minLength: 0)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .padding(.horizontal, 6)
-                        .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 14))
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 46)
+                        .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("ios-quick-gesture-\(gesture.rawValue)")
                 }
             }
-            .frame(maxWidth: isLandscape ? 250 : .infinity)
+            .frame(maxWidth: isLandscape ? 268 : .infinity)
         }
         .padding(14)
     }

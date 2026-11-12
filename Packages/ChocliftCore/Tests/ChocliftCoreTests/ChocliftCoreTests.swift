@@ -447,6 +447,42 @@ final class ChocliftCoreTests: XCTestCase {
         )
     }
 
+    func testConnectionVisualStateSeparatesEmptyConnectingFailedAndPairedStates() {
+        let unpaired = ChocConnectionVisualState.unpaired
+        let connectingWiFi = ChocConnectionVisualState.connecting(targetName: "Studio Mac", link: .wifi)
+        let awaitingPIN = ChocConnectionVisualState.awaitingPIN(macName: "Studio Mac", link: .bluetooth, errorMessage: nil)
+        let invalidPIN = ChocConnectionVisualState.awaitingPIN(macName: "Studio Mac", link: .bluetooth, errorMessage: "Wrong PIN")
+        let failed = ChocConnectionVisualState.failed(reason: "Connection timed out", savedMacName: "Studio Mac")
+        let standby = ChocConnectionVisualState.pairedStandby(macName: "Studio Mac", isPausedForLaunch: false)
+        let connectedWiFi = ChocConnectionVisualState.connected(macName: "Studio Mac", link: .wifi)
+        let connectedBLE = ChocConnectionVisualState.connected(macName: "Studio Mac", link: .bluetooth)
+
+        // Only active handshake shows a spinner; failures, PIN errors, standby, and empty never hide behind spinners
+        XCTAssertTrue(connectingWiFi.showsProgressSpinner)
+        XCTAssertFalse(unpaired.showsProgressSpinner)
+        XCTAssertFalse(awaitingPIN.showsProgressSpinner)
+        XCTAssertFalse(invalidPIN.showsProgressSpinner)
+        XCTAssertFalse(failed.showsProgressSpinner)
+        XCTAssertFalse(standby.showsProgressSpinner)
+        XCTAssertFalse(connectedWiFi.showsProgressSpinner)
+        XCTAssertFalse(connectedBLE.showsProgressSpinner)
+
+        XCTAssertTrue(failed.isFailure)
+        XCTAssertTrue(invalidPIN.isFailure)
+        XCTAssertFalse(connectingWiFi.isFailure)
+        XCTAssertFalse(connectedWiFi.isFailure)
+
+        // Active link distinction (Wi-Fi vs BLE) and bilingual localization
+        for lang in [AppLanguage.english, AppLanguage.chinese] {
+            XCTAssertNotEqual(connectedWiFi.railShortBadge(in: lang), connectedBLE.railShortBadge(in: lang))
+            XCTAssertNotEqual(connectedWiFi.watchToolbarLabel(in: lang), connectedBLE.watchToolbarLabel(in: lang))
+            XCTAssertTrue(connectedWiFi.watchToolbarLabel(in: lang).contains("Wi-Fi"))
+            XCTAssertTrue(connectedBLE.watchToolbarLabel(in: lang).contains(CompanionLinkKind.bluetooth.shortLabel(in: lang)))
+            XCTAssertNotEqual(unpaired.watchToolbarLabel(in: lang), failed.watchToolbarLabel(in: lang))
+            XCTAssertNotEqual(standby.watchToolbarLabel(in: lang), connectingWiFi.watchToolbarLabel(in: lang))
+        }
+    }
+
     #if os(iOS)
     @MainActor
     func testPassThroughMultiTouchViewLetsSingleFingerHitsReachUnderlyingControlsAndSwiftUIZStack() {

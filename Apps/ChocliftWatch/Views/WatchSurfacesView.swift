@@ -7,6 +7,71 @@ public struct WatchSlotCoordinate: Identifiable {
     public var id: String { "\(pageIndex)-\(slotIndex)" }
 }
 
+// MARK: - Shared Watch Non-Connected Status Banner
+
+private struct WatchConnectionStateBanner: View {
+    @ObservedObject var client: CompanionClientEngine
+    let onTap: () -> Void
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+    private var state: ChocConnectionVisualState { ChocConnectionVisualState.resolve(from: client) }
+
+    var body: some View {
+        let tint = state.tintColor(in: palette)
+
+        Button {
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            onTap()
+        } label: {
+            HStack(spacing: 7) {
+                if state.showsProgressSpinner {
+                    ProgressView()
+                        .scaleEffect(0.68)
+                        .frame(width: 15, height: 15)
+                        .tint(tint)
+                } else {
+                    Image(systemName: state.sfSymbol)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(tint)
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(state.bannerTitle(in: lang))
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(1)
+
+                    if state.isFailure, let detail = state.bannerSubtitle(in: lang) {
+                        Text(detail)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(palette.secondaryText)
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: 2)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(palette.secondaryText)
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: 42)
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(
+                        state.isFailure ? palette.accentRuby.opacity(0.75) : tint.opacity(0.45),
+                        lineWidth: 1
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - 1. Watch Chocolate Bar Surface (8 Synced Pages x 8 Slots)
 
 public struct WatchChocolateBarView: View {
@@ -37,17 +102,17 @@ public struct WatchChocolateBarView: View {
         ScrollView {
             VStack(spacing: 8) {
                 if !client.connectionState.isConnected {
-                    watchConnectionBanner
+                    WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
                 }
 
                 pageSwitcherBar
 
                 let columns = [
-                    GridItem(.flexible(), spacing: 7),
-                    GridItem(.flexible(), spacing: 7)
+                    GridItem(.flexible(), spacing: 8),
+                    GridItem(.flexible(), spacing: 8)
                 ]
 
-                LazyVGrid(columns: columns, spacing: 7) {
+                LazyVGrid(columns: columns, spacing: 8) {
                     ForEach(0..<BarPage.slotsPerPage, id: \.self) { slotIdx in
                         let item = activePage.slots[slotIdx]
                         let key = "\(safePageIndex)-\(slotIdx)"
@@ -62,12 +127,12 @@ public struct WatchChocolateBarView: View {
                             iconData: iconData,
                             isFrontmost: isFrontmost
                         )
-                        .frame(height: 56)
+                        .frame(height: 64)
                     }
                 }
             }
             .padding(.horizontal, 6)
-            .padding(.bottom, 10)
+            .padding(.bottom, 12)
         }
         .sheet(isPresented: $showPagePickerSheet) {
             pagePickerSheet
@@ -81,65 +146,18 @@ public struct WatchChocolateBarView: View {
         }
     }
 
-    private var watchConnectionBanner: some View {
-        Button {
-            onRequestPairing()
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: connectionBannerIcon)
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(palette.accentGold)
-                Text(connectionBannerTitle)
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(palette.primaryText)
-                    .lineLimit(1)
-                Spacer(minLength: 2)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(palette.secondaryText)
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(palette.accentGold.opacity(0.45), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var connectionBannerIcon: String {
-        switch client.connectionState {
-        case .awaitingPIN: return "key.fill"
-        case .connecting: return "antenna.radiowaves.left.and.right"
-        case .disconnected, .connected: return "laptopcomputer.and.applewatch"
-        }
-    }
-
-    private var connectionBannerTitle: String {
-        switch client.connectionState {
-        case .awaitingPIN(_, let macName, _):
-            return L10n.tr("输入 \(macName) 配对码", "Enter PIN for \(macName)", language: lang)
-        case .connecting(let targetName):
-            return L10n.tr("正在连接 \(targetName)…", "Connecting \(targetName)…", language: lang)
-        case .disconnected:
-            return L10n.tr("未连接 · 点此配对 Mac", "Offline · Tap to Pair Mac", language: lang)
-        case .connected(_, let macName):
-            return macName
-        }
-    }
-
     private var pageSwitcherBar: some View {
         HStack(spacing: 6) {
             Button {
                 stepPage(by: -1)
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.primaryText)
-                    .frame(width: 26, height: 26)
+                    .frame(width: 36, height: 36)
                     .background(palette.tileFillBottom, in: Circle())
+                    .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
 
@@ -147,21 +165,23 @@ public struct WatchChocolateBarView: View {
                 CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
                 showPagePickerSheet = true
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     Text(activePage.iconEmoji)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                     Text(activePage.title)
-                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                        .font(.system(size: 12.5, weight: .bold, design: .rounded))
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
                     Text("\(safePageIndex + 1)/\(client.profile.pages.count)")
-                        .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                         .foregroundStyle(palette.secondaryText)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
+                .frame(height: 36)
                 .padding(.horizontal, 6)
                 .background(palette.barSurface, in: Capsule())
+                .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                .contentShape(Capsule())
             }
             .buttonStyle(.plain)
 
@@ -169,10 +189,12 @@ public struct WatchChocolateBarView: View {
                 stepPage(by: 1)
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.primaryText)
-                    .frame(width: 26, height: 26)
+                    .frame(width: 36, height: 36)
                     .background(palette.tileFillBottom, in: Circle())
+                    .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
         }
@@ -230,6 +252,7 @@ public struct WatchChocolateBarView: View {
     private var pagePickerSheet: some View {
         List {
             ForEach(client.profile.pages) { page in
+                let isSelected = (page.index == safePageIndex)
                 Button {
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
                     currentPageIndex = page.index
@@ -237,15 +260,18 @@ public struct WatchChocolateBarView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Text(page.iconEmoji)
+                            .font(.system(size: 15))
                         Text(page.title)
-                            .font(.system(.callout, design: .rounded, weight: page.index == safePageIndex ? .bold : .medium))
+                            .font(.system(size: 13.5, weight: isSelected ? .bold : .medium, design: .rounded))
+                            .lineLimit(1)
                         Spacer()
-                        if page.index == safePageIndex {
+                        if isSelected {
                             Image(systemName: "checkmark")
                                 .font(.caption.bold())
                                 .foregroundStyle(palette.accentGold)
                         }
                     }
+                    .frame(minHeight: 38)
                 }
             }
         }
@@ -279,10 +305,12 @@ private struct WatchSlotQuickAssignSheet: View {
                                     pngData: client.appIconsByBundleID[entry.bundleIdentifier],
                                     fallbackSymbol: "app.fill"
                                 )
-                                .frame(width: 20, height: 20)
+                                .frame(width: 22, height: 22)
                                 Text(entry.appName)
+                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
                                     .lineLimit(1)
                             }
+                            .frame(minHeight: 38)
                         }
                     }
                 }
@@ -294,6 +322,8 @@ private struct WatchSlotQuickAssignSheet: View {
                         assign(BarItem(kind: .systemAction(action: action)))
                     } label: {
                         Label(action.compactTitle(in: lang), systemImage: action.sfSymbol)
+                            .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .frame(minHeight: 38)
                     }
                 }
             }
@@ -316,6 +346,8 @@ public struct WatchQuickActionsView: View {
     @ObservedObject var client: CompanionClientEngine
     let onRequestPairing: () -> Void
 
+    @State private var pressedAction: SystemQuickAction?
+
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
@@ -336,121 +368,127 @@ public struct WatchQuickActionsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
                 if !client.connectionState.isConnected {
-                    Button {
-                        onRequestPairing()
-                    } label: {
-                        Label(
-                            L10n.tr("未连接 Mac · 点此配对", "Not Linked · Pair Mac", language: lang),
-                            systemImage: "exclamationmark.circle.fill"
-                        )
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(palette.accentGold)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .buttonStyle(.plain)
+                    WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
                 }
 
-                // Media & Volume Strip
+                // Media & Volume Strip (Clean iconic transport buttons >= 46pt)
                 sectionHeader(L10n.tr("媒体与音量", "Media & Volume", language: lang), symbol: "speaker.wave.2.fill")
 
-                tripleActionStrip([.mediaPrevious, .mediaPlayPause, .mediaNext])
-                tripleActionStrip([.volumeDown, .volumeMute, .volumeUp])
+                tripleMediaStrip([.mediaPrevious, .mediaPlayPause, .mediaNext])
+                tripleMediaStrip([.volumeDown, .volumeMute, .volumeUp])
 
                 // Window Snap & Sizing
-                sectionHeader(L10n.tr("窗口控制", "Window Layout", language: lang), symbol: "macwindow")
+                sectionHeader(L10n.tr("窗口布局", "Window Layout", language: lang), symbol: "macwindow")
 
                 actionTwoColumnGrid(windowActions)
 
                 // Workspace & Clipboard
-                sectionHeader(L10n.tr("工作区与剪贴板", "Workspace & Edit", language: lang), symbol: "sparkles")
+                sectionHeader(L10n.tr("工作区与编辑", "Workspace & Edit", language: lang), symbol: "sparkles")
 
                 actionTwoColumnGrid(workspaceActions)
             }
             .padding(.horizontal, 6)
-            .padding(.bottom, 10)
+            .padding(.bottom, 12)
         }
     }
 
     private func sectionHeader(_ text: String, symbol: String) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             Image(systemName: symbol)
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(palette.accentGold)
             Text(text)
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(palette.secondaryText)
         }
         .padding(.top, 2)
     }
 
-    private func tripleActionStrip(_ actions: [SystemQuickAction]) -> some View {
+    private func tripleMediaStrip(_ actions: [SystemQuickAction]) -> some View {
         HStack(spacing: 6) {
             ForEach(actions) { action in
+                let isPrimary = (action == .mediaPlayPause)
+                let isPressed = (pressedAction == action)
+
                 Button {
                     trigger(action)
                 } label: {
-                    VStack(spacing: 2) {
-                        Image(systemName: action.sfSymbol)
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(.white)
-                        Text(action.compactTitle(in: lang))
-                            .font(.system(size: 9, weight: .semibold, design: .rounded))
-                            .foregroundStyle(palette.primaryText)
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 44)
-                    .background(
-                        LinearGradient(
-                            colors: [palette.tileFillTop, Color(hex: action.accentHex).opacity(0.42)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    )
+                    Image(systemName: action.sfSymbol)
+                        .font(.system(size: isPrimary ? 18 : 16, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 46)
+                        .background(
+                            LinearGradient(
+                                colors: [
+                                    palette.tileFillTop,
+                                    Color(hex: action.accentHex).opacity(isPrimary ? 0.58 : 0.38)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .strokeBorder(
+                                    isPrimary ? palette.accentGold.opacity(0.65) : palette.subtleCardStroke,
+                                    lineWidth: 1
+                                )
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .scaleEffect(isPressed ? 0.94 : 1.0)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(action.compactTitle(in: lang))
             }
         }
     }
 
     private func actionTwoColumnGrid(_ actions: [SystemQuickAction]) -> some View {
         let cols = [
-            GridItem(.flexible(), spacing: 6),
-            GridItem(.flexible(), spacing: 6)
+            GridItem(.flexible(), spacing: 7),
+            GridItem(.flexible(), spacing: 7)
         ]
 
-        return LazyVGrid(columns: cols, spacing: 6) {
+        return LazyVGrid(columns: cols, spacing: 7) {
             ForEach(actions) { action in
                 let accent = Color(hex: action.accentHex)
+                let isPressed = (pressedAction == action)
+
                 Button {
                     trigger(action)
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 6) {
                         Image(systemName: action.sfSymbol)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 13.5, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 18)
+
                         Text(action.compactTitle(in: lang))
-                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.78)
+
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 8)
-                    .frame(height: 40)
+                    .padding(.horizontal, 9)
+                    .frame(height: 48)
                     .background(
                         LinearGradient(
-                            colors: [palette.tileFillTop, accent.opacity(0.38)],
+                            colors: [palette.tileFillTop, accent.opacity(0.42)],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .strokeBorder(accent.opacity(0.55), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .strokeBorder(accent.opacity(0.58), lineWidth: 1)
                     )
+                    .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .scaleEffect(isPressed ? 0.94 : 1.0)
                 }
                 .buttonStyle(.plain)
             }
@@ -459,6 +497,16 @@ public struct WatchQuickActionsView: View {
 
     private func trigger(_ action: SystemQuickAction) {
         CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .rigid)
+        withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
+            pressedAction = action
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+            if pressedAction == action {
+                withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
+                    pressedAction = nil
+                }
+            }
+        }
         client.performQuickAction(action)
     }
 }
@@ -474,34 +522,28 @@ public struct WatchTimeTravelView: View {
 
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack {
-                    Label(L10n.tr("应用时间旅行", "Time Travel", language: lang), systemImage: "clock.arrow.circlepath")
-                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
-                        .foregroundStyle(palette.secondaryText)
-                    Spacer()
+            VStack(alignment: .leading, spacing: 8) {
+                if !client.connectionState.isConnected {
+                    WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
                 }
+
+                Label(L10n.tr("最近应用", "Recent Apps", language: lang), systemImage: "clock.arrow.circlepath")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.secondaryText)
 
                 if client.recentApps.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "clock.badge.questionmark")
                             .font(.title3)
-                            .foregroundStyle(palette.secondaryText)
+                            .foregroundStyle(palette.accentGold)
                         Text(
                             client.connectionState.isConnected
-                                ? L10n.tr("等待同步最近应用…", "Syncing recent Mac apps…", language: lang)
-                                : L10n.tr("配对 Mac 后可一键切换最近打开的应用", "Pair your Mac to switch recent apps from your wrist", language: lang)
+                                ? L10n.tr("在 Mac 上切换窗口后即会同步至此", "Switch windows on your Mac to sync here", language: lang)
+                                : L10n.tr("连接 Mac 后可腕上一键切换窗口", "Connect your Mac to switch windows from your wrist", language: lang)
                         )
-                        .font(.system(size: 11, design: .rounded))
+                        .font(.system(size: 12, design: .rounded))
                         .foregroundStyle(palette.secondaryText)
                         .multilineTextAlignment(.center)
-
-                        if !client.connectionState.isConnected {
-                            Button(L10n.tr("立即配对", "Pair Mac", language: lang)) {
-                                onRequestPairing()
-                            }
-                            .font(.caption.bold())
-                        }
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
@@ -512,7 +554,7 @@ public struct WatchTimeTravelView: View {
                 }
             }
             .padding(.horizontal, 6)
-            .padding(.bottom, 10)
+            .padding(.bottom, 12)
         }
     }
 
@@ -526,11 +568,11 @@ public struct WatchTimeTravelView: View {
             } label: {
                 HStack(spacing: 8) {
                     DataImageView(pngData: icon, fallbackSymbol: "app.fill", tint: palette.primaryText)
-                        .frame(width: 24, height: 24)
+                        .frame(width: 26, height: 26)
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text(entry.appName)
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                         Text(
@@ -538,12 +580,14 @@ public struct WatchTimeTravelView: View {
                                 ? L10n.tr("当前前台", "Active", language: lang)
                                 : (entry.isRunning ? L10n.tr("运行中", "Running", language: lang) : L10n.tr("已固定", "Pinned", language: lang))
                         )
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.system(size: 10.5, weight: .medium))
                         .foregroundStyle(entry.isFrontmost ? palette.accentGold : palette.secondaryText)
                     }
 
                     Spacer(minLength: 0)
                 }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -552,18 +596,21 @@ public struct WatchTimeTravelView: View {
                 client.togglePinRecentApp(entry)
             } label: {
                 Image(systemName: entry.isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(entry.isPinned ? palette.accentGold : palette.secondaryText.opacity(0.7))
-                    .frame(width: 26, height: 26)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(entry.isPinned ? palette.accentGold : palette.secondaryText.opacity(0.75))
+                    .frame(width: 36, height: 36)
+                    .background(palette.tileFillBottom.opacity(0.7), in: Circle())
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.leading, 10)
+        .padding(.trailing, 6)
+        .padding(.vertical, 3)
+        .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(entry.isFrontmost ? palette.accentGold : palette.tileBorderHighlight.opacity(0.35), lineWidth: entry.isFrontmost ? 1.6 : 1)
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(entry.isFrontmost ? palette.accentGold : palette.subtleCardStroke, lineWidth: entry.isFrontmost ? 1.6 : 1)
         )
     }
 }
@@ -574,6 +621,8 @@ public struct WatchEmojiBarView: View {
     @ObservedObject var client: CompanionClientEngine
     @Binding var currentSlideIndex: Int
     let onRequestPairing: () -> Void
+
+    @State private var pressedEmojiIndex: Int?
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -593,18 +642,20 @@ public struct WatchEmojiBarView: View {
     public var body: some View {
         ScrollView {
             VStack(spacing: 8) {
-                if client.isEditingTextOnMac {
+                if !client.connectionState.isConnected {
+                    WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
+                } else if client.isEditingTextOnMac {
                     HStack(spacing: 4) {
                         Image(systemName: "character.cursor.ibeam")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 10.5, weight: .bold))
                         Text(L10n.tr("正在 \(client.focusedMacAppName ?? "Mac") 输入", "Typing in \(client.focusedMacAppName ?? "Mac")", language: lang))
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
                             .lineLimit(1)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.green.opacity(0.22), in: Capsule())
-                    .foregroundStyle(.green)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(palette.statusConnected.opacity(0.22), in: Capsule())
+                    .foregroundStyle(palette.statusConnected)
                 }
 
                 HStack(spacing: 6) {
@@ -612,46 +663,64 @@ public struct WatchEmojiBarView: View {
                         stepSlide(by: -1)
                     } label: {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(palette.primaryText)
-                            .frame(width: 26, height: 26)
+                            .frame(width: 36, height: 36)
                             .background(palette.tileFillBottom, in: Circle())
+                            .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                            .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
 
-                    HStack(spacing: 4) {
+                    HStack(spacing: 5) {
                         Text(activeSlide.iconEmoji)
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                         Text(activeSlide.title)
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 5)
+                    .frame(height: 36)
+                    .padding(.horizontal, 6)
                     .background(palette.barSurface, in: Capsule())
+                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
                     Button {
                         stepSlide(by: 1)
                     } label: {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(palette.primaryText)
-                            .frame(width: 26, height: 26)
+                            .frame(width: 36, height: 36)
                             .background(palette.tileFillBottom, in: Circle())
+                            .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                            .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
                 }
 
                 let cols = [
-                    GridItem(.flexible(), spacing: 6),
-                    GridItem(.flexible(), spacing: 6)
+                    GridItem(.flexible(), spacing: 7),
+                    GridItem(.flexible(), spacing: 7)
                 ]
 
-                LazyVGrid(columns: cols, spacing: 6) {
-                    ForEach(Array(activeSlide.emojis.enumerated()), id: \.offset) { _, emoji in
+                LazyVGrid(columns: cols, spacing: 7) {
+                    ForEach(Array(activeSlide.emojis.enumerated()), id: \.offset) { idx, emoji in
+                        let isPressed = (pressedEmojiIndex == idx)
+
                         Button {
                             CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                            withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
+                                pressedEmojiIndex = idx
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                                if pressedEmojiIndex == idx {
+                                    withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
+                                        pressedEmojiIndex = nil
+                                    }
+                                }
+                            }
                             if client.connectionState.isConnected {
                                 client.insertEmoji(emoji)
                             } else {
@@ -659,28 +728,30 @@ public struct WatchEmojiBarView: View {
                             }
                         } label: {
                             Text(emoji)
-                                .font(.system(size: 24))
+                                .font(.system(size: 26))
                                 .frame(maxWidth: .infinity)
-                                .frame(height: 44)
+                                .frame(height: 50)
                                 .background(
                                     LinearGradient(
                                         colors: [palette.tileFillTop, palette.tileFillBottom],
                                         startPoint: .topLeading,
                                         endPoint: .bottomTrailing
                                     ),
-                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    in: RoundedRectangle(cornerRadius: 13, style: .continuous)
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .strokeBorder(palette.tileBorderHighlight.opacity(0.45), lineWidth: 1)
+                                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                        .strokeBorder(palette.tileBorderHighlight.opacity(0.48), lineWidth: 1)
                                 )
+                                .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                                .scaleEffect(isPressed ? 0.93 : 1.0)
                         }
                         .buttonStyle(.plain)
                     }
                 }
             }
             .padding(.horizontal, 6)
-            .padding(.bottom, 10)
+            .padding(.bottom, 12)
         }
     }
 
