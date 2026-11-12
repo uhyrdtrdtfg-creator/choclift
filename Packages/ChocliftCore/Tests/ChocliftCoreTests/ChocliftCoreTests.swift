@@ -1,5 +1,9 @@
 import XCTest
 @testable import ChocliftCore
+#if os(iOS)
+import SwiftUI
+import UIKit
+#endif
 
 final class ChocliftCoreTests: XCTestCase {
     func testDefaultProfileStructure() {
@@ -337,4 +341,267 @@ final class ChocliftCoreTests: XCTestCase {
             )
         )
     }
+
+    func testMultiTouchOverlayPolicyPassesThroughSingleTouchAndCapturesMultiTouch() {
+        // 0 or 1 finger must never be owned by the full-screen overlay
+        XCTAssertFalse(
+            MultiTouchOverlayPolicy.shouldOwnHit(
+                isUserInteractionEnabled: true,
+                isHidden: false,
+                alpha: 1.0,
+                isPointInside: true,
+                activeTouchCount: 0
+            )
+        )
+        XCTAssertFalse(
+            MultiTouchOverlayPolicy.shouldOwnHit(
+                isUserInteractionEnabled: true,
+                isHidden: false,
+                alpha: 1.0,
+                isPointInside: true,
+                activeTouchCount: 1
+            )
+        )
+
+        // 2+ fingers inside bounds when enabled are captured for multi-touch gestures
+        XCTAssertTrue(
+            MultiTouchOverlayPolicy.shouldOwnHit(
+                isUserInteractionEnabled: true,
+                isHidden: false,
+                alpha: 1.0,
+                isPointInside: true,
+                activeTouchCount: 2
+            )
+        )
+        XCTAssertTrue(
+            MultiTouchOverlayPolicy.shouldOwnHit(
+                isUserInteractionEnabled: true,
+                isHidden: false,
+                alpha: 1.0,
+                isPointInside: true,
+                activeTouchCount: 3
+            )
+        )
+
+        // Disabled, hidden, transparent, or out-of-bounds must never capture
+        XCTAssertFalse(
+            MultiTouchOverlayPolicy.shouldOwnHit(
+                isUserInteractionEnabled: false,
+                isHidden: false,
+                alpha: 1.0,
+                isPointInside: true,
+                activeTouchCount: 2
+            )
+        )
+        XCTAssertFalse(
+            MultiTouchOverlayPolicy.shouldOwnHit(
+                isUserInteractionEnabled: true,
+                isHidden: true,
+                alpha: 1.0,
+                isPointInside: true,
+                activeTouchCount: 2
+            )
+        )
+        XCTAssertFalse(
+            MultiTouchOverlayPolicy.shouldOwnHit(
+                isUserInteractionEnabled: true,
+                isHidden: false,
+                alpha: 0.0,
+                isPointInside: true,
+                activeTouchCount: 2
+            )
+        )
+        XCTAssertFalse(
+            MultiTouchOverlayPolicy.shouldOwnHit(
+                isUserInteractionEnabled: true,
+                isHidden: false,
+                alpha: 1.0,
+                isPointInside: false,
+                activeTouchCount: 2
+            )
+        )
+    }
+
+    #if os(iOS)
+    @MainActor
+    func testPassThroughMultiTouchViewLetsSingleFingerHitsReachUnderlyingControlsAndSwiftUIZStack() {
+        let bounds = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let container = UIView(frame: bounds)
+        let underlyingButton = UIButton(frame: CGRect(x: 24, y: 40, width: 160, height: 56))
+        container.addSubview(underlyingButton)
+
+        let coordinator = CompanionMultiTouchCoordinator { _ in }
+        let overlay = CompanionPassThroughMultiTouchView(frame: bounds)
+        coordinator.overlayView = overlay
+        overlay.installManagedRecognizers(coordinator.makeConfiguredRecognizers())
+        container.addSubview(overlay)
+
+        let tapPoint = CGPoint(x: 80, y: 60)
+        XCTAssertNil(overlay.hitTest(tapPoint, with: nil))
+        XCTAssertFalse(overlay.shouldCaptureHit(at: tapPoint, activeTouchCount: 1, with: nil))
+        XCTAssertTrue(overlay.shouldCaptureHit(at: tapPoint, activeTouchCount: 2, with: nil))
+        XCTAssertTrue(overlay.shouldCaptureHit(at: tapPoint, activeTouchCount: 3, with: nil))
+        XCTAssertTrue(container.hitTest(tapPoint, with: nil) === underlyingButton)
+        XCTAssertTrue(overlay.currentRecognizerHostView === container)
+
+        // Verify inside a real SwiftUI ZStack + UIHostingController + UIWindow (matching IOSRootTouchBarView)
+        final class ProbeRefs {
+            weak var button: UIButton?
+            weak var overlay: CompanionPassThroughMultiTouchView?
+        }
+        let refs = ProbeRefs()
+
+        struct UnderlyingProbeButton: UIViewRepresentable {
+            let refs: ProbeRefs
+            func makeUIView(context: Context) -> UIButton {
+                let button = UIButton(type: .system)
+                refs.button = button
+                return button
+            }
+            func updateUIView(_ uiView: UIButton, context: Context) {}
+        }
+
+        struct OverlayProbe: UIViewRepresentable {
+            let refs: ProbeRefs
+            let coordinator: CompanionMultiTouchCoordinator
+            func makeUIView(context: Context) -> CompanionPassThroughMultiTouchView {
+                let view = CompanionPassThroughMultiTouchView()
+                coordinator.overlayView = view
+                view.installManagedRecognizers(coordinator.makeConfiguredRecognizers())
+                refs.overlay = view
+                return view
+            }
+            func updateUIView(_ uiView: CompanionPassThroughMultiTouchView, context: Context) {}
+        }
+
+        let swiftUICoordinator = CompanionMultiTouchCoordinator { _ in }
+        let rootView = ZStack {
+            UnderlyingProbeButton(refs: refs)
+                .frame(width: 200, height: 80)
+            OverlayProbe(refs: refs, coordinator: swiftUICoordinator)
+                .ignoresSafeArea()
+        }
+
+        let window = UIWindow(frame: bounds)
+        let hostingVC = UIHostingController(rootView: rootView)
+        window.rootViewController = hostingVC
+        window.makeKeyAndVisible()
+        hostingVC.view.frame = bounds
+        hostingVC.view.setNeedsLayout()
+        hostingVC.view.layoutIfNeeded()
+
+        XCTAssertNotNil(refs.button)
+        XCTAssertNotNil(refs.overlay)
+        let centerPoint = CGPoint(x: bounds.midX, y: bounds.midY)
+        let hitView = window.hitTest(centerPoint, with: nil)
+        XCTAssertTrue(hitView === refs.button, "Expected underlying button to win single-touch hitTest, got \(String(describing: hitView))")
+        XCTAssertTrue(refs.overlay?.currentRecognizerHostView === hostingVC.view)
+    }
+
+    @MainActor
+    func testMultiTouchCoordinatorRecognizersConfigurationEnablementAndGestureDispatch() {
+        var triggered: [TouchGestureType] = []
+        let coordinator = CompanionMultiTouchCoordinator { gesture in
+            triggered.append(gesture)
+        }
+
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
+        let overlay = CompanionPassThroughMultiTouchView(frame: host.bounds)
+        coordinator.overlayView = overlay
+        let recognizers = coordinator.makeConfiguredRecognizers()
+        XCTAssertEqual(recognizers.count, 4)
+
+        for recognizer in recognizers {
+            XCTAssertFalse(recognizer.delaysTouchesBegan)
+            XCTAssertFalse(recognizer.delaysTouchesEnded)
+        }
+
+        overlay.installManagedRecognizers(recognizers)
+        host.addSubview(overlay)
+        XCTAssertEqual(host.gestureRecognizers?.count, 4)
+
+        // Disable / re-enable propagates to all recognizers and hit policy
+        overlay.setOverlayEnabled(false)
+        XCTAssertTrue(recognizers.allSatisfy { !$0.isEnabled })
+        XCTAssertFalse(overlay.shouldCaptureHit(at: CGPoint(x: 100, y: 100), activeTouchCount: 2, with: nil))
+
+        overlay.setOverlayEnabled(true)
+        XCTAssertTrue(recognizers.allSatisfy(\.isEnabled))
+        XCTAssertTrue(overlay.shouldCaptureHit(at: CGPoint(x: 100, y: 100), activeTouchCount: 2, with: nil))
+
+        let twoFingerPan = recognizers[0] as! UIPanGestureRecognizer
+        let threeFingerPan = recognizers[1] as! UIPanGestureRecognizer
+        let pinch = recognizers[2] as! UIPinchGestureRecognizer
+        let twoFingerDoubleTap = recognizers[3] as! UITapGestureRecognizer
+
+        XCTAssertEqual(twoFingerPan.minimumNumberOfTouches, 2)
+        XCTAssertEqual(twoFingerPan.maximumNumberOfTouches, 2)
+        XCTAssertEqual(threeFingerPan.minimumNumberOfTouches, 3)
+        XCTAssertEqual(threeFingerPan.maximumNumberOfTouches, 3)
+        XCTAssertTrue(pinch.delegate === coordinator)
+        XCTAssertEqual(twoFingerDoubleTap.numberOfTouchesRequired, 2)
+        XCTAssertEqual(twoFingerDoubleTap.numberOfTapsRequired, 2)
+
+        // 2-finger swipes (up, down, left, right) — including single-fire deduplication within one stroke
+        coordinator.processTwoFingerPan(state: .began, translation: .zero)
+        coordinator.processTwoFingerPan(state: .changed, translation: CGPoint(x: 0, y: -64))
+        coordinator.processTwoFingerPan(state: .changed, translation: CGPoint(x: 0, y: -120))
+        coordinator.processTwoFingerPan(state: .ended, translation: CGPoint(x: 0, y: -120))
+
+        coordinator.processTwoFingerPan(state: .began, translation: .zero)
+        coordinator.processTwoFingerPan(state: .changed, translation: CGPoint(x: 0, y: 64))
+        coordinator.processTwoFingerPan(state: .ended, translation: CGPoint(x: 0, y: 64))
+
+        coordinator.processTwoFingerPan(state: .began, translation: .zero)
+        coordinator.processTwoFingerPan(state: .changed, translation: CGPoint(x: -70, y: 4))
+        coordinator.processTwoFingerPan(state: .ended, translation: CGPoint(x: -70, y: 4))
+
+        coordinator.processTwoFingerPan(state: .began, translation: .zero)
+        coordinator.processTwoFingerPan(state: .changed, translation: CGPoint(x: 70, y: 4))
+        coordinator.processTwoFingerPan(state: .ended, translation: CGPoint(x: 70, y: 4))
+
+        // 3-finger swipes (up, down)
+        coordinator.processThreeFingerPan(state: .began, translation: .zero)
+        coordinator.processThreeFingerPan(state: .changed, translation: CGPoint(x: 0, y: -68))
+        coordinator.processThreeFingerPan(state: .ended, translation: CGPoint(x: 0, y: -68))
+
+        coordinator.processThreeFingerPan(state: .began, translation: .zero)
+        coordinator.processThreeFingerPan(state: .changed, translation: CGPoint(x: 0, y: 68))
+        coordinator.processThreeFingerPan(state: .ended, translation: CGPoint(x: 0, y: 68))
+
+        // Pinch in & out (1-touch ignored; >= 2 touches fires once per stroke)
+        coordinator.processPinch(state: .began, scale: 1.0, touchCount: 1)
+        coordinator.processPinch(state: .changed, scale: 0.55, touchCount: 1)
+        coordinator.processPinch(state: .ended, scale: 0.55, touchCount: 1)
+
+        coordinator.processPinch(state: .began, scale: 1.0, touchCount: 2)
+        coordinator.processPinch(state: .changed, scale: 0.60, touchCount: 2)
+        coordinator.processPinch(state: .changed, scale: 0.45, touchCount: 2)
+        coordinator.processPinch(state: .ended, scale: 0.45, touchCount: 2)
+
+        coordinator.processPinch(state: .began, scale: 1.0, touchCount: 3)
+        coordinator.processPinch(state: .changed, scale: 1.50, touchCount: 3)
+        coordinator.processPinch(state: .ended, scale: 1.50, touchCount: 3)
+
+        // 2-finger double-tap
+        coordinator.processTwoFingerDoubleTap(state: .began)
+        coordinator.processTwoFingerDoubleTap(state: .ended)
+
+        XCTAssertEqual(triggered, [
+            .twoFingerSwipeUp,
+            .twoFingerSwipeDown,
+            .twoFingerSwipeLeft,
+            .twoFingerSwipeRight,
+            .threeFingerSwipeUp,
+            .threeFingerSwipeDown,
+            .threeFingerPinchIn,
+            .threeFingerPinchOut,
+            .twoFingerDoubleTap
+        ])
+
+        // Removing overlay detaches recognizers from host cleanly
+        overlay.removeFromSuperview()
+        XCTAssertEqual(host.gestureRecognizers?.count ?? 0, 0)
+    }
+    #endif
 }
