@@ -78,6 +78,7 @@ targets:
         NSBonjourServices:
           - "_choclift._tcp"
         NSAppleEventsUsageDescription: "choclift 使用自动化脚本在点击网页书签时切换到已打开的浏览器标签页。"
+        SUPublicEDKey: "sW8VDD67w99pj0oQLD8p5nIWgkEzM2FV/sBbmnu5vxw="
     entitlements:
       path: Apps/ChocliftMac/ChocliftMac.entitlements
       properties:

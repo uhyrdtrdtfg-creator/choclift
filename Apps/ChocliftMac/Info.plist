@@ -34,5 +34,7 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>choclift 通过本地局域网连接你的 iPhone、iPad 或 Apple Watch 触控栏。</string>
+	<key>SUPublicEDKey</key>
+	<string>sW8VDD67w99pj0oQLD8p5nIWgkEzM2FV/sBbmnu5vxw=</string>
 </dict>
 </plist>
