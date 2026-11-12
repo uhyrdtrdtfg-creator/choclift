@@ -168,28 +168,64 @@ public final class MacAppAndShortcutCatalogService {
         appPath: String?,
         windowService: MacAccessibilityAndWindowService
     ) async -> (success: Bool, message: String) {
-        let runningMatches = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
-        if let running = runningMatches.first(where: { !$0.isTerminated }) {
+        let outcome = await launchOrActivateAppWithHandle(
+            bundleIdentifier: bundleIdentifier,
+            appPath: appPath,
+            windowService: windowService
+        )
+        return (outcome.success, outcome.message)
+    }
+
+    public func launchOrActivateAppWithHandle(
+        bundleIdentifier: String,
+        appPath: String?,
+        windowService: MacAccessibilityAndWindowService
+    ) async -> (success: Bool, message: String, app: FlowAppHandle?) {
+        let directRunning = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            .filter { !$0.isTerminated }
+        let runningMatches: [NSRunningApplication] = !directRunning.isEmpty
+            ? directRunning
+            : NSWorkspace.shared.runningApplications.filter {
+                !$0.isTerminated &&
+                $0.bundleIdentifier?.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
+            }
+
+        if let running = runningMatches.first {
             running.unhide()
             windowService.unminimizeFirstWindowIfAllMinimized(pid: running.processIdentifier)
             running.activate(options: [.activateAllWindows])
         }
 
+        let canonicalBundleID = runningMatches.first?.bundleIdentifier ?? bundleIdentifier
+
         let resolvedURL: URL? = {
             if let appPath, FileManager.default.fileExists(atPath: appPath) {
                 return URL(fileURLWithPath: appPath)
             }
-            if let cached = appPathByBundleID[bundleIdentifier], FileManager.default.fileExists(atPath: cached) {
+            if let cached = appPathByBundleID[canonicalBundleID] ?? appPathByBundleID[bundleIdentifier],
+               FileManager.default.fileExists(atPath: cached) {
                 return URL(fileURLWithPath: cached)
+            }
+            if let direct = NSWorkspace.shared.urlForApplication(withBundleIdentifier: canonicalBundleID) {
+                return direct
             }
             return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
         }()
 
         guard let appURL = resolvedURL else {
-            if !runningMatches.isEmpty {
-                return (true, L10n.tr("已切换到应用", "Switched to app"))
+            if let running = runningMatches.first {
+                let handle = FlowAppHandle(
+                    bundleIdentifier: running.bundleIdentifier ?? canonicalBundleID,
+                    appName: running.localizedName ?? canonicalBundleID,
+                    processIdentifier: running.processIdentifier
+                )
+                return (true, L10n.tr("已切换到应用", "Switched to app"), handle)
             }
-            return (false, L10n.tr("未在 Mac 上找到该应用 (\(bundleIdentifier))", "App not found on Mac (\(bundleIdentifier))"))
+            return (
+                false,
+                L10n.tr("未在 Mac 上找到该应用 (\(bundleIdentifier))", "App not found on Mac (\(bundleIdentifier))"),
+                nil
+            )
         }
 
         let config = NSWorkspace.OpenConfiguration()
@@ -198,9 +234,19 @@ public final class MacAppAndShortcutCatalogService {
         do {
             let app = try await NSWorkspace.shared.openApplication(at: appURL, configuration: config)
             windowService.unminimizeFirstWindowIfAllMinimized(pid: app.processIdentifier)
-            return (true, L10n.tr("已打开 \(app.localizedName ?? bundleIdentifier)", "Activated \(app.localizedName ?? bundleIdentifier)"))
+            app.activate(options: [.activateAllWindows])
+            let handle = FlowAppHandle(
+                bundleIdentifier: app.bundleIdentifier ?? canonicalBundleID,
+                appName: app.localizedName ?? canonicalBundleID,
+                processIdentifier: app.processIdentifier
+            )
+            return (
+                true,
+                L10n.tr("已打开 \(app.localizedName ?? bundleIdentifier)", "Activated \(app.localizedName ?? bundleIdentifier)"),
+                handle
+            )
         } catch {
-            return (false, error.localizedDescription)
+            return (false, error.localizedDescription, nil)
         }
     }
 

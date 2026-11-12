@@ -44,26 +44,32 @@ public final class MacInputAndMediaService {
 
     // MARK: - System Quick Actions & Gesture Actions
 
-    public func executeSystemAction(_ action: SystemQuickAction, preferredPID: pid_t?) -> (success: Bool, message: String) {
+    public func executeSystemAction(
+        _ action: SystemQuickAction,
+        preferredPID: pid_t?,
+        strictTargetPID: Bool = false
+    ) -> (success: Bool, message: String) {
         switch action {
         case .maximizeWindow:
-            return windowService.performWindowOperation(.maximizeOrRestore, preferredPID: preferredPID)
+            return windowService.performWindowOperation(.maximizeOrRestore, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .minimizeWindow:
-            return windowService.performWindowOperation(.minimize, preferredPID: preferredPID)
+            return windowService.performWindowOperation(.minimize, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .snapWindowLeft:
-            return windowService.performWindowOperation(.snapLeft, preferredPID: preferredPID)
+            return windowService.performWindowOperation(.snapLeft, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .snapWindowRight:
-            return windowService.performWindowOperation(.snapRight, preferredPID: preferredPID)
+            return windowService.performWindowOperation(.snapRight, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .centerWindow:
-            return windowService.performWindowOperation(.center, preferredPID: preferredPID)
+            return windowService.performWindowOperation(.center, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .toggleFullscreen:
-            return windowService.performWindowOperation(.toggleFullscreen, preferredPID: preferredPID)
+            return windowService.performWindowOperation(.toggleFullscreen, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
 
         case .copySelection:
             guard ensureAccessibilityOrPrompt() else {
                 return accessibilityDeniedResult()
             }
-            activatePIDIfNeeded(preferredPID)
+            guard activateTargetForKeystroke(preferredPID, strict: strictTargetPID) else {
+                return missingStrictTargetResult()
+            }
             postKeyStroke(virtualKey: CGKeyCode(kVK_ANSI_C), flags: .maskCommand)
             return (true, L10n.tr("已执行复制 (⌘C)", "Executed Copy (⌘C)"))
 
@@ -71,7 +77,9 @@ public final class MacInputAndMediaService {
             guard ensureAccessibilityOrPrompt() else {
                 return accessibilityDeniedResult()
             }
-            activatePIDIfNeeded(preferredPID)
+            guard activateTargetForKeystroke(preferredPID, strict: strictTargetPID) else {
+                return missingStrictTargetResult()
+            }
             postKeyStroke(virtualKey: CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
             return (true, L10n.tr("已执行粘贴 (⌘V)", "Executed Paste (⌘V)"))
 
@@ -79,7 +87,9 @@ public final class MacInputAndMediaService {
             guard ensureAccessibilityOrPrompt() else {
                 return accessibilityDeniedResult()
             }
-            activatePIDIfNeeded(preferredPID)
+            guard activateTargetForKeystroke(preferredPID, strict: strictTargetPID) else {
+                return missingStrictTargetResult()
+            }
             postKeyStroke(virtualKey: CGKeyCode(kVK_ANSI_X), flags: .maskCommand)
             return (true, L10n.tr("已执行剪切 (⌘X)", "Executed Cut (⌘X)"))
 
@@ -87,7 +97,9 @@ public final class MacInputAndMediaService {
             guard ensureAccessibilityOrPrompt() else {
                 return accessibilityDeniedResult()
             }
-            activatePIDIfNeeded(preferredPID)
+            guard activateTargetForKeystroke(preferredPID, strict: strictTargetPID) else {
+                return missingStrictTargetResult()
+            }
             postKeyStroke(virtualKey: CGKeyCode(kVK_ANSI_Z), flags: .maskCommand)
             return (true, L10n.tr("已执行撤销 (⌘Z)", "Executed Undo (⌘Z)"))
 
@@ -95,7 +107,9 @@ public final class MacInputAndMediaService {
             guard ensureAccessibilityOrPrompt() else {
                 return accessibilityDeniedResult()
             }
-            activatePIDIfNeeded(preferredPID)
+            guard activateTargetForKeystroke(preferredPID, strict: strictTargetPID) else {
+                return missingStrictTargetResult()
+            }
             postKeyStroke(virtualKey: CGKeyCode(kVK_ANSI_Z), flags: [.maskCommand, .maskShift])
             return (true, L10n.tr("已执行重做 (⇧⌘Z)", "Executed Redo (⇧⌘Z)"))
 
@@ -177,6 +191,29 @@ public final class MacInputAndMediaService {
                 "Accessibility permission is required to send shortcuts"
             )
         )
+    }
+
+    private func missingStrictTargetResult() -> (success: Bool, message: String) {
+        (
+            false,
+            L10n.tr("目标应用未运行，已停止发送快捷键", "Target application is not running; aborted shortcut")
+        )
+    }
+
+    private func activateTargetForKeystroke(_ pid: pid_t?, strict: Bool) -> Bool {
+        if strict {
+            guard let pid,
+                  let target = NSRunningApplication(processIdentifier: pid),
+                  !target.isTerminated else {
+                return false
+            }
+            if NSWorkspace.shared.frontmostApplication?.processIdentifier != pid {
+                target.activate(options: [.activateAllWindows])
+            }
+            return true
+        }
+        activatePIDIfNeeded(pid)
+        return true
     }
 
     private func activatePIDIfNeeded(_ pid: pid_t?) {

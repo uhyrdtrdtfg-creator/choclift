@@ -93,14 +93,32 @@ public final class MacAccessibilityAndWindowService {
         case toggleFullscreen
     }
 
+    public func hasAdjustableWindow(forPID pid: pid_t) -> Bool {
+        guard AXIsProcessTrusted() else { return false }
+        let appElement = AXUIElementCreateApplication(pid)
+        return resolveTargetWindow(for: appElement) != nil
+    }
+
     @discardableResult
-    public func performWindowOperation(_ op: WindowOperation, preferredPID: pid_t?) -> (success: Bool, message: String) {
+    public func performWindowOperation(
+        _ op: WindowOperation,
+        preferredPID: pid_t?,
+        strictTargetPID: Bool = false
+    ) -> (success: Bool, message: String) {
         guard AXIsProcessTrusted() else {
             _ = promptForAccessibilityPermission()
             return (false, L10n.tr("请在系统设置 → 辅助功能中授权 Choclift 控制窗口", "Grant Accessibility permission in System Settings to control windows"))
         }
 
         let targetApp: NSRunningApplication? = {
+            if strictTargetPID {
+                guard let preferredPID,
+                      let app = NSRunningApplication(processIdentifier: preferredPID),
+                      !app.isTerminated else {
+                    return nil
+                }
+                return app
+            }
             if let preferredPID,
                let app = NSRunningApplication(processIdentifier: preferredPID),
                !app.isTerminated {
@@ -110,7 +128,14 @@ public final class MacAccessibilityAndWindowService {
         }()
 
         guard let app = targetApp else {
+            if strictTargetPID {
+                return (false, L10n.tr("目标应用未运行，已停止窗口操作", "Target application is not running; aborted window operation"))
+            }
             return (false, L10n.tr("未找到活动窗口", "No active application found"))
+        }
+
+        if strictTargetPID && op != .minimize {
+            unminimizeFirstWindowIfAllMinimized(pid: app.processIdentifier)
         }
 
         let appElement = AXUIElementCreateApplication(app.processIdentifier)

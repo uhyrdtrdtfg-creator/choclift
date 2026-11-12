@@ -126,6 +126,27 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         }
     }
 
+    public var isWindowAction: Bool {
+        switch self {
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen:
+            return true
+        default:
+            return false
+        }
+    }
+
+    public var targetsApplication: Bool {
+        if isWindowAction {
+            return true
+        }
+        switch self {
+        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
+            return true
+        default:
+            return false
+        }
+    }
+
     public func title(in lang: AppLanguage = .system) -> String {
         switch self {
         case .maximizeWindow: return L10n.tr("窗口最大化/还原", "Maximize / Restore Window", language: lang)
@@ -207,6 +228,168 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
         customTitle: String? = nil,
         backgroundHex: String? = nil
     )
+    case flow(
+        flowID: UUID,
+        titleSnapshot: String,
+        emoji: String = "⚡️",
+        backgroundHex: String = "#ECFAFE",
+        stepCountSnapshot: Int = 0
+    )
+
+    private enum CodingKeys: String, CodingKey {
+        case macApp
+        case shortcut
+        case website
+        case systemAction
+        case flow
+    }
+
+    private enum MacAppKeys: String, CodingKey {
+        case bundleIdentifier
+        case appName
+        case appPath
+        case fallbackSymbol
+    }
+
+    private enum ShortcutKeys: String, CodingKey {
+        case shortcutName
+        case emoji
+        case backgroundHex
+    }
+
+    private enum WebsiteKeys: String, CodingKey {
+        case url
+        case title
+        case emoji
+        case backgroundHex
+        case switchExistingTab
+    }
+
+    private enum SystemActionKeys: String, CodingKey {
+        case action
+        case customTitle
+        case backgroundHex
+    }
+
+    private enum FlowKeys: String, CodingKey {
+        case flowID
+        case titleSnapshot
+        case emoji
+        case backgroundHex
+        case stepCountSnapshot
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if container.contains(.macApp) {
+            let nested = try container.nestedContainer(keyedBy: MacAppKeys.self, forKey: .macApp)
+            let bundleIdentifier = try nested.decode(String.self, forKey: .bundleIdentifier)
+            let appName = try nested.decodeIfPresent(String.self, forKey: .appName) ?? bundleIdentifier
+            let appPath = try nested.decodeIfPresent(String.self, forKey: .appPath)
+            let fallbackSymbol = try nested.decodeIfPresent(String.self, forKey: .fallbackSymbol) ?? "app.fill"
+            self = .macApp(
+                bundleIdentifier: bundleIdentifier,
+                appName: appName,
+                appPath: appPath,
+                fallbackSymbol: fallbackSymbol
+            )
+        } else if container.contains(.shortcut) {
+            let nested = try container.nestedContainer(keyedBy: ShortcutKeys.self, forKey: .shortcut)
+            let shortcutName = try nested.decode(String.self, forKey: .shortcutName)
+            let emoji = try nested.decodeIfPresent(String.self, forKey: .emoji) ?? "⚡️"
+            let backgroundHex = try nested.decodeIfPresent(String.self, forKey: .backgroundHex) ?? "#F3EEFF"
+            self = .shortcut(
+                shortcutName: shortcutName,
+                emoji: emoji,
+                backgroundHex: backgroundHex
+            )
+        } else if container.contains(.website) {
+            let nested = try container.nestedContainer(keyedBy: WebsiteKeys.self, forKey: .website)
+            let url = try nested.decode(String.self, forKey: .url)
+            let title = try nested.decodeIfPresent(String.self, forKey: .title) ?? url
+            let emoji = try nested.decodeIfPresent(String.self, forKey: .emoji) ?? "🌐"
+            let backgroundHex = try nested.decodeIfPresent(String.self, forKey: .backgroundHex) ?? "#FFF1EC"
+            let switchExistingTab = try nested.decodeIfPresent(Bool.self, forKey: .switchExistingTab) ?? true
+            self = .website(
+                url: url,
+                title: title,
+                emoji: emoji,
+                backgroundHex: backgroundHex,
+                switchExistingTab: switchExistingTab
+            )
+        } else if container.contains(.systemAction) {
+            let nested = try container.nestedContainer(keyedBy: SystemActionKeys.self, forKey: .systemAction)
+            let action = try nested.decode(SystemQuickAction.self, forKey: .action)
+            let customTitle = try nested.decodeIfPresent(String.self, forKey: .customTitle)
+            let backgroundHex = try nested.decodeIfPresent(String.self, forKey: .backgroundHex)
+            self = .systemAction(
+                action: action,
+                customTitle: customTitle,
+                backgroundHex: backgroundHex
+            )
+        } else if container.contains(.flow) {
+            let nested = try container.nestedContainer(keyedBy: FlowKeys.self, forKey: .flow)
+            let flowID = try nested.decode(UUID.self, forKey: .flowID)
+            let titleSnapshot = try nested.decodeIfPresent(String.self, forKey: .titleSnapshot) ?? ""
+            let emoji = try nested.decodeIfPresent(String.self, forKey: .emoji) ?? "⚡️"
+            let backgroundHex = try nested.decodeIfPresent(String.self, forKey: .backgroundHex) ?? "#ECFAFE"
+            let stepCountSnapshot = try nested.decodeIfPresent(Int.self, forKey: .stepCountSnapshot) ?? 0
+            self = .flow(
+                flowID: flowID,
+                titleSnapshot: titleSnapshot,
+                emoji: emoji,
+                backgroundHex: backgroundHex,
+                stepCountSnapshot: stepCountSnapshot
+            )
+        } else {
+            throw DecodingError.dataCorrupted(
+                DecodingError.Context(
+                    codingPath: container.codingPath,
+                    debugDescription: "Unsupported BarItemKind payload"
+                )
+            )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .macApp(let bundleIdentifier, let appName, let appPath, let fallbackSymbol):
+            var nested = container.nestedContainer(keyedBy: MacAppKeys.self, forKey: .macApp)
+            try nested.encode(bundleIdentifier, forKey: .bundleIdentifier)
+            try nested.encode(appName, forKey: .appName)
+            try nested.encodeIfPresent(appPath, forKey: .appPath)
+            try nested.encode(fallbackSymbol, forKey: .fallbackSymbol)
+
+        case .shortcut(let shortcutName, let emoji, let backgroundHex):
+            var nested = container.nestedContainer(keyedBy: ShortcutKeys.self, forKey: .shortcut)
+            try nested.encode(shortcutName, forKey: .shortcutName)
+            try nested.encode(emoji, forKey: .emoji)
+            try nested.encode(backgroundHex, forKey: .backgroundHex)
+
+        case .website(let url, let title, let emoji, let backgroundHex, let switchExistingTab):
+            var nested = container.nestedContainer(keyedBy: WebsiteKeys.self, forKey: .website)
+            try nested.encode(url, forKey: .url)
+            try nested.encode(title, forKey: .title)
+            try nested.encode(emoji, forKey: .emoji)
+            try nested.encode(backgroundHex, forKey: .backgroundHex)
+            try nested.encode(switchExistingTab, forKey: .switchExistingTab)
+
+        case .systemAction(let action, let customTitle, let backgroundHex):
+            var nested = container.nestedContainer(keyedBy: SystemActionKeys.self, forKey: .systemAction)
+            try nested.encode(action, forKey: .action)
+            try nested.encodeIfPresent(customTitle, forKey: .customTitle)
+            try nested.encodeIfPresent(backgroundHex, forKey: .backgroundHex)
+
+        case .flow(let flowID, let titleSnapshot, let emoji, let backgroundHex, let stepCountSnapshot):
+            var nested = container.nestedContainer(keyedBy: FlowKeys.self, forKey: .flow)
+            try nested.encode(flowID, forKey: .flowID)
+            try nested.encode(titleSnapshot, forKey: .titleSnapshot)
+            try nested.encode(emoji, forKey: .emoji)
+            try nested.encode(backgroundHex, forKey: .backgroundHex)
+            try nested.encode(stepCountSnapshot, forKey: .stepCountSnapshot)
+        }
+    }
 }
 
 public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
@@ -231,6 +414,9 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
                 return customTitle
             }
             return action.title(in: lang)
+        case .flow(_, let titleSnapshot, _, _, _):
+            let trimmed = titleSnapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? L10n.tr("动作流", "Action Flow", language: lang) : trimmed
         }
     }
 
@@ -239,6 +425,26 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
             return bundleID
         }
         return nil
+    }
+
+    public var flowID: UUID? {
+        if case .flow(let id, _, _, _, _) = kind {
+            return id
+        }
+        return nil
+    }
+}
+
+private struct SafeBarSlotWrapper: Decodable {
+    let item: BarItem?
+
+    init(from decoder: Decoder) throws {
+        let single = try decoder.singleValueContainer()
+        if single.decodeNil() {
+            self.item = nil
+            return
+        }
+        self.item = try? BarItem(from: decoder)
     }
 }
 
@@ -253,6 +459,14 @@ public struct BarPage: Codable, Equatable, Hashable, Identifiable, Sendable {
     /// Always normalized to 8 slots (2 rows x 4 columns)
     public var slots: [BarItem?]
 
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case index
+        case title
+        case iconEmoji
+        case slots
+    }
+
     public init(
         id: UUID = UUID(),
         index: Int,
@@ -264,11 +478,34 @@ public struct BarPage: Codable, Equatable, Hashable, Identifiable, Sendable {
         self.index = index
         self.title = title
         self.iconEmoji = iconEmoji
+        self.slots = Self.normalizeSlots(slots)
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        self.index = try container.decodeIfPresent(Int.self, forKey: .index) ?? 0
+        self.title = try container.decodeIfPresent(String.self, forKey: .title) ?? "Page"
+        self.iconEmoji = try container.decodeIfPresent(String.self, forKey: .iconEmoji) ?? "🍫"
+        let wrappedSlots = try container.decodeIfPresent([SafeBarSlotWrapper].self, forKey: .slots) ?? []
+        self.slots = Self.normalizeSlots(wrappedSlots.map(\.item))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(index, forKey: .index)
+        try container.encode(title, forKey: .title)
+        try container.encode(iconEmoji, forKey: .iconEmoji)
+        try container.encode(Self.normalizeSlots(slots), forKey: .slots)
+    }
+
+    private static func normalizeSlots(_ slots: [BarItem?]) -> [BarItem?] {
         var normalized = Array(slots.prefix(Self.slotsPerPage))
         while normalized.count < Self.slotsPerPage {
             normalized.append(nil)
         }
-        self.slots = normalized
+        return normalized
     }
 }
 
@@ -480,6 +717,18 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     public var gestureConfig: GestureConfiguration
     public var settings: CompanionSettings
     public var pinnedTimeTravelBundleIDs: [String]
+    public var flows: [ActionFlow]
+
+    private enum CodingKeys: String, CodingKey {
+        case revision
+        case updatedAt
+        case pages
+        case emojiSlides
+        case gestureConfig
+        case settings
+        case pinnedTimeTravelBundleIDs
+        case flows
+    }
 
     public init(
         revision: Int = 1,
@@ -488,7 +737,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         emojiSlides: [EmojiSlide],
         gestureConfig: GestureConfiguration,
         settings: CompanionSettings = CompanionSettings(),
-        pinnedTimeTravelBundleIDs: [String] = []
+        pinnedTimeTravelBundleIDs: [String] = [],
+        flows: [ActionFlow] = []
     ) {
         self.revision = revision
         self.updatedAt = updatedAt
@@ -497,11 +747,124 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.gestureConfig = gestureConfig
         self.settings = settings
         self.pinnedTimeTravelBundleIDs = pinnedTimeTravelBundleIDs
+        self.flows = flows
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.revision = try container.decodeIfPresent(Int.self, forKey: .revision) ?? 1
+        self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        self.pages = try container.decodeIfPresent([BarPage].self, forKey: .pages) ?? ChocliftDefaults.makeDefaultPages()
+        self.emojiSlides = try container.decodeIfPresent([EmojiSlide].self, forKey: .emojiSlides) ?? ChocliftDefaults.makeDefaultEmojiSlides()
+        self.gestureConfig = try container.decodeIfPresent(GestureConfiguration.self, forKey: .gestureConfig) ?? ChocliftDefaults.makeDefaultGestureConfiguration()
+        self.settings = try container.decodeIfPresent(CompanionSettings.self, forKey: .settings) ?? CompanionSettings()
+        self.pinnedTimeTravelBundleIDs = try container.decodeIfPresent([String].self, forKey: .pinnedTimeTravelBundleIDs) ?? []
+        self.flows = try container.decodeIfPresent([ActionFlow].self, forKey: .flows) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(revision, forKey: .revision)
+        try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encode(pages, forKey: .pages)
+        try container.encode(emojiSlides, forKey: .emojiSlides)
+        try container.encode(gestureConfig, forKey: .gestureConfig)
+        try container.encode(settings, forKey: .settings)
+        try container.encode(pinnedTimeTravelBundleIDs, forKey: .pinnedTimeTravelBundleIDs)
+        try container.encode(flows, forKey: .flows)
     }
 
     public mutating func bumpRevision() {
         revision += 1
         updatedAt = Date()
+    }
+
+    // MARK: - Action Flow Profile Helpers
+
+    public func flow(withID id: UUID) -> ActionFlow? {
+        flows.first(where: { $0.id == id })
+    }
+
+    public func makeBarItem(for flow: ActionFlow, id: UUID = UUID()) -> BarItem {
+        BarItem(
+            id: id,
+            kind: .flow(
+                flowID: flow.id,
+                titleSnapshot: flow.name,
+                emoji: flow.emoji,
+                backgroundHex: flow.backgroundHex,
+                stepCountSnapshot: flow.enabledStepCount
+            )
+        )
+    }
+
+    public mutating func upsertFlow(_ flow: ActionFlow) {
+        if let idx = flows.firstIndex(where: { $0.id == flow.id }) {
+            flows[idx] = flow
+        } else {
+            flows.append(flow)
+        }
+        syncFlowBarItems(for: flow)
+    }
+
+    @discardableResult
+    public mutating func deleteFlow(id: UUID) -> Bool {
+        let beforeCount = flows.count
+        flows.removeAll { $0.id == id }
+        var removedFromSlot = false
+        for pIdx in pages.indices {
+            for sIdx in pages[pIdx].slots.indices {
+                if pages[pIdx].slots[sIdx]?.flowID == id {
+                    pages[pIdx].slots[sIdx] = nil
+                    removedFromSlot = true
+                }
+            }
+        }
+        return flows.count != beforeCount || removedFromSlot
+    }
+
+    public mutating func moveFlow(from sourceIndex: Int, to destinationIndex: Int) {
+        guard flows.indices.contains(sourceIndex) else { return }
+        let item = flows.remove(at: sourceIndex)
+        let boundedDest = min(max(0, destinationIndex), flows.count)
+        flows.insert(item, at: boundedDest)
+    }
+
+    public mutating func moveFlows(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        let validOffsets = offsets.filter { flows.indices.contains($0) }
+        guard !validOffsets.isEmpty else { return }
+        let moving = validOffsets.map { flows[$0] }
+        for idx in validOffsets.sorted(by: >) {
+            flows.remove(at: idx)
+        }
+        let adjustedDestination = destination - validOffsets.filter { $0 < destination }.count
+        let boundedDest = min(max(0, adjustedDestination), flows.count)
+        flows.insert(contentsOf: moving, at: boundedDest)
+    }
+
+    private mutating func syncFlowBarItems(for flow: ActionFlow) {
+        for pIdx in pages.indices {
+            for sIdx in pages[pIdx].slots.indices {
+                guard let existing = pages[pIdx].slots[sIdx],
+                      existing.flowID == flow.id else { continue }
+                pages[pIdx].slots[sIdx] = makeBarItem(for: flow, id: existing.id)
+            }
+        }
+    }
+
+    public var referencedAppBundleIdentifiers: Set<String> {
+        var result = Set<String>()
+        for page in pages {
+            for slot in page.slots.compactMap({ $0 }) {
+                if let bundleID = slot.bundleIdentifier {
+                    result.insert(bundleID)
+                }
+            }
+        }
+        for flow in flows {
+            result.formUnion(flow.referencedBundleIdentifiers)
+        }
+        return result
     }
 }
 

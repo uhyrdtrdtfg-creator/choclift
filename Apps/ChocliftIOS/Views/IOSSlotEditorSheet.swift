@@ -4,6 +4,7 @@ import SwiftUI
 public struct IOSSlotEditorSheet: View {
     public enum EditorTab: String, CaseIterable, Identifiable {
         case apps
+        case flows
         case shortcuts
         case website
         case actions
@@ -43,9 +44,10 @@ public struct IOSSlotEditorSheet: View {
             VStack(spacing: 0) {
                 Picker("", selection: $tab) {
                     Text(L10n.tr("应用", "Apps", language: lang)).tag(EditorTab.apps)
-                    Text(L10n.tr("快捷指令", "Shortcuts", language: lang)).tag(EditorTab.shortcuts)
-                    Text(L10n.tr("网页", "Website", language: lang)).tag(EditorTab.website)
-                    Text(L10n.tr("系统动作", "Actions", language: lang)).tag(EditorTab.actions)
+                    Text(L10n.tr("动作流", "Flows", language: lang)).tag(EditorTab.flows)
+                    Text(L10n.tr("指令", "Shortcuts", language: lang)).tag(EditorTab.shortcuts)
+                    Text(L10n.tr("网页", "Web", language: lang)).tag(EditorTab.website)
+                    Text(L10n.tr("动作", "Actions", language: lang)).tag(EditorTab.actions)
                 }
                 .pickerStyle(.segmented)
                 .padding(12)
@@ -54,6 +56,14 @@ public struct IOSSlotEditorSheet: View {
                     switch tab {
                     case .apps:
                         macAppsList
+                    case .flows:
+                        IOSFlowsSlotTabView(
+                            client: client,
+                            pageIndex: pageIndex,
+                            slotIndex: slotIndex
+                        ) { flow in
+                            assignFlow(flow)
+                        }
                     case .shortcuts:
                         shortcutsForm
                     case .website:
@@ -386,6 +396,19 @@ public struct IOSSlotEditorSheet: View {
         }
     }
 
+    private func assignFlow(_ flow: ActionFlow) {
+        var updated = client.profile
+        guard updated.pages.indices.contains(pageIndex),
+              updated.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
+        var normalized = flow
+        normalized.updatedAt = Date()
+        updated.upsertFlow(normalized)
+        let existingID = updated.pages[pageIndex].slots[slotIndex]?.id ?? UUID()
+        updated.pages[pageIndex].slots[slotIndex] = updated.makeBarItem(for: normalized, id: existingID)
+        client.pushUpdatedProfile(updated)
+        dismiss()
+    }
+
     private func assignItem(_ item: BarItem?) {
         var updated = client.profile
         guard updated.pages.indices.contains(pageIndex),
@@ -415,6 +438,8 @@ public struct IOSSlotEditorSheet: View {
             webSwitchTab = switchTab
         case .systemAction:
             tab = .actions
+        case .flow:
+            tab = .flows
         }
     }
 }

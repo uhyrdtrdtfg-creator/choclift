@@ -10,14 +10,17 @@
 		0F434D4989EDE569D36B3391 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 66E4E8891AFD6F4FABAFF271 /* Assets.xcassets */; };
 		1107BCC3808407CFEBB3335D /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378D57F87F9075FB787AF62B /* WireProtocol.swift */; };
 		11514719064CA3F4324F0633 /* MacSlotItemPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E799103D3FF189D12A92AC14 /* MacSlotItemPickerSheet.swift */; };
+		1AF91D7A950360F2FC55A64E /* ActionFlows.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */; };
 		1DC30F48A2BE707B77945004 /* ChocliftIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F15036CF65DE146CA00BB84 /* ChocliftIOSApp.swift */; };
 		1EAB438701E11328B296FF8B /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
 		219F65F9BDE35A890476E5CD /* libChocliftCoreMac.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 309FB4ADE26AAF40909BC0FB /* libChocliftCoreMac.a */; };
 		2C8E4122BC0C618D66E952D8 /* ChocolateBarStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00E7551CE4795CA307064107 /* ChocolateBarStudioView.swift */; };
+		3398DF62B62B53105D05AD43 /* ActionFlowsStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A0A827A172B80AEAD41CB0 /* ActionFlowsStudioView.swift */; };
 		345F6C0A12D26C40FDB51738 /* IOSRootTouchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C6F35B1BB29CD96ADCDCAA /* IOSRootTouchBarView.swift */; };
 		397EC37A53C4C6D011658F1E /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
 		39B7BF35A2DCA3748B9CCD32 /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
 		3C4C52891835C63359ED3EF3 /* IOSSlotEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 992E3238F727E1244DEB62AA /* IOSSlotEditorSheet.swift */; };
+		3C8A64C1EFB1AB65A7B34C35 /* ActionFlows.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */; };
 		3D297C87D7B93EB26438D46F /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
 		3EFE96C6529C29EEF363A9C4 /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8859A29A043A4B69F607B04C /* EmojiCatalog.swift */; };
 		3FA892A377C6D601010E6F2C /* libChocliftCoreIOS.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AF86327935FFCF951774ACA4 /* libChocliftCoreIOS.a */; };
@@ -29,6 +32,7 @@
 		52082CB82A2482B4051813B6 /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
 		5A969ADA4B9D5D585B04C9AC /* WatchPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55A39DFD6BABFD8EDBD71C3E /* WatchPairingView.swift */; };
 		5FADBB823421CE699E25A31E /* MacAppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C7BD308B52CE99958DDECFA /* MacAppCoordinator.swift */; };
+		636AB976C55CBEBA27B1716A /* ActionFlows.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */; };
 		654CE5DF7566F6783D98BE4A /* IOSPairingAndConnectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD7D98161F2A0939B6B59889 /* IOSPairingAndConnectionSheet.swift */; };
 		6A0D6FD1901DBDDA07EE1644 /* ChocliftWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 986435E767EE4D1C6FA42738 /* ChocliftWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		6C90D70E5CDF89187DB9B236 /* PlatformCompanionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */; };
@@ -58,6 +62,7 @@
 		D7FCC2E5110CA56C5725F6DA /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
 		DAB4CBDFA2B7DA671F50C2C0 /* MacServerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3371CFFF20B9E1134EDB3E8 /* MacServerEngine.swift */; };
 		DF61BE35854C52722D2F20F5 /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
+		DFB1DDE64AE82710C328A49C /* IOSFlowEditorViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */; };
 		E8750C18F4A9A27AA2A9EF3E /* ChocliftMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3DBA1BF1036F57F143E4AAA /* ChocliftMacApp.swift */; };
 		F179169D873243EE590DC3CC /* TimeTravelAndGestureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9A7BFF5A52FBC825E5EC0A6 /* TimeTravelAndGestureViews.swift */; };
 		F9A2071D485ADDE2BBE5E965 /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378D57F87F9075FB787AF62B /* WireProtocol.swift */; };
@@ -127,6 +132,7 @@
 		66E4E8891AFD6F4FABAFF271 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		6FC7D3375FFAED79D1CB7DE7 /* libChocliftCoreWatch.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libChocliftCoreWatch.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothCompanionLink.swift; sourceTree = "<group>"; };
+		75A0A827A172B80AEAD41CB0 /* ActionFlowsStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionFlowsStudioView.swift; sourceTree = "<group>"; };
 		7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionClientEngine.swift; sourceTree = "<group>"; };
 		8003AD2FBC8B7C7AD4459D47 /* MacAccessibilityAndWindowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAccessibilityAndWindowService.swift; sourceTree = "<group>"; };
 		813CADCB2CE124AC898446DE /* MacTimeTravelMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTimeTravelMonitor.swift; sourceTree = "<group>"; };
@@ -145,10 +151,12 @@
 		B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompanionSupport.swift; sourceTree = "<group>"; };
 		B9A7BFF5A52FBC825E5EC0A6 /* TimeTravelAndGestureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeTravelAndGestureViews.swift; sourceTree = "<group>"; };
 		C5756FAFC7277A62567E747E /* ChocliftModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftModels.swift; sourceTree = "<group>"; };
+		D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSFlowEditorViews.swift; sourceTree = "<group>"; };
 		DD7D98161F2A0939B6B59889 /* IOSPairingAndConnectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSPairingAndConnectionSheet.swift; sourceTree = "<group>"; };
 		E799103D3FF189D12A92AC14 /* MacSlotItemPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSlotItemPickerSheet.swift; sourceTree = "<group>"; };
 		E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocDesignSystem.swift; sourceTree = "<group>"; };
 		E9FE4714CD1037D2AFD3E731 /* WatchSurfacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSurfacesView.swift; sourceTree = "<group>"; };
+		EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionFlows.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -262,6 +270,7 @@
 			isa = PBXGroup;
 			children = (
 				65CAA7B788878C4CCF682A40 /* IOSCompanionModesView.swift */,
+				D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */,
 				DD7D98161F2A0939B6B59889 /* IOSPairingAndConnectionSheet.swift */,
 				92C6F35B1BB29CD96ADCDCAA /* IOSRootTouchBarView.swift */,
 				992E3238F727E1244DEB62AA /* IOSSlotEditorSheet.swift */,
@@ -282,6 +291,7 @@
 		65D7538001307E72D79EACBB /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				75A0A827A172B80AEAD41CB0 /* ActionFlowsStudioView.swift */,
 				00E7551CE4795CA307064107 /* ChocolateBarStudioView.swift */,
 				31CBDF43194BCF470C79690B /* DevicesAndMainWindowView.swift */,
 				A7CB5368CF46C2C2213D8656 /* EmojiBarStudioView.swift */,
@@ -386,6 +396,7 @@
 		EF328F02173594A59963393B /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */,
 				C5756FAFC7277A62567E747E /* ChocliftModels.swift */,
 				8859A29A043A4B69F607B04C /* EmojiCatalog.swift */,
 			);
@@ -660,6 +671,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				636AB976C55CBEBA27B1716A /* ActionFlows.swift in Sources */,
 				A30D2564AFDE27554AF84361 /* BluetoothCompanionLink.swift in Sources */,
 				D117BED0C6A4AC940F4AFA5A /* ChocDesignSystem.swift in Sources */,
 				52082CB82A2482B4051813B6 /* ChocliftModels.swift in Sources */,
@@ -676,6 +688,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1AF91D7A950360F2FC55A64E /* ActionFlows.swift in Sources */,
 				4F3B6DEC8AF177C66489A9CF /* BluetoothCompanionLink.swift in Sources */,
 				42E28ECB2B1007C4402E3112 /* ChocDesignSystem.swift in Sources */,
 				39B7BF35A2DCA3748B9CCD32 /* ChocliftModels.swift in Sources */,
@@ -692,6 +705,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3398DF62B62B53105D05AD43 /* ActionFlowsStudioView.swift in Sources */,
 				E8750C18F4A9A27AA2A9EF3E /* ChocliftMacApp.swift in Sources */,
 				2C8E4122BC0C618D66E952D8 /* ChocolateBarStudioView.swift in Sources */,
 				412D3EB8217B5551FA83431F /* DevicesAndMainWindowView.swift in Sources */,
@@ -710,6 +724,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3C8A64C1EFB1AB65A7B34C35 /* ActionFlows.swift in Sources */,
 				43ADD17D4B76EB5F4AD6416C /* BluetoothCompanionLink.swift in Sources */,
 				9B3B62752E758C58AB001C99 /* ChocDesignSystem.swift in Sources */,
 				D7FCC2E5110CA56C5725F6DA /* ChocliftModels.swift in Sources */,
@@ -728,6 +743,7 @@
 			files = (
 				1DC30F48A2BE707B77945004 /* ChocliftIOSApp.swift in Sources */,
 				C294D28D964EFF6643FAC393 /* IOSCompanionModesView.swift in Sources */,
+				DFB1DDE64AE82710C328A49C /* IOSFlowEditorViews.swift in Sources */,
 				654CE5DF7566F6783D98BE4A /* IOSPairingAndConnectionSheet.swift in Sources */,
 				345F6C0A12D26C40FDB51738 /* IOSRootTouchBarView.swift in Sources */,
 				3C4C52891835C63359ED3EF3 /* IOSSlotEditorSheet.swift in Sources */,

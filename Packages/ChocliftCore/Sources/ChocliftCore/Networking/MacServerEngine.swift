@@ -718,8 +718,25 @@ public final class MacServerEngine: ObservableObject {
         do {
             let payloads = try activeSession.accumulator.appendAndExtractPayloads(data)
             for payload in payloads {
-                let clientMsg = try WireFrameCodec.decodePayload(ClientMessage.self, from: payload)
-                handleIncomingMessage(clientMsg, session: activeSession)
+                do {
+                    let clientMsg = try WireFrameCodec.decodePayload(ClientMessage.self, from: payload)
+                    handleIncomingMessage(clientMsg, session: activeSession)
+                } catch {
+                    if activeSession.isAuthenticated {
+                        send(
+                            .actionFeedback(
+                                success: false,
+                                title: L10n.tr("不支持的指令", "Unsupported Command"),
+                                detail: L10n.tr("当前 Mac 端版本无法识别该指令。", "This Mac version does not recognize that command.")
+                            ),
+                            to: activeSession
+                        )
+                    } else {
+                        send(.authFailed(reason: error.localizedDescription), to: activeSession)
+                        cleanupSession(sessionID: sessionID)
+                        return
+                    }
+                }
             }
         } catch {
             send(.authFailed(reason: error.localizedDescription), to: activeSession)
@@ -838,14 +855,7 @@ public final class MacServerEngine: ObservableObject {
         )
 
         // Immediately stream app icons referenced by profile + recentApps
-        var referencedBundles = Set<String>()
-        for page in profile.pages {
-            for slot in page.slots {
-                if let bundleID = slot?.bundleIdentifier {
-                    referencedBundles.insert(bundleID)
-                }
-            }
-        }
+        var referencedBundles = profile.referencedAppBundleIdentifiers
         for recent in recentApps {
             referencedBundles.insert(recent.bundleIdentifier)
         }

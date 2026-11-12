@@ -1650,6 +1650,10 @@ public final class CompanionClientEngine: ObservableObject {
         send(.triggerBarItem(item))
     }
 
+    public func triggerFlow(id: UUID) {
+        send(.triggerFlow(flowID: id))
+    }
+
     public func activateRecentApp(_ entry: RecentAppEntry) {
         send(.activateRecentApp(bundleIdentifier: entry.bundleIdentifier, appPath: entry.appPath))
     }
@@ -1867,12 +1871,8 @@ public final class CompanionClientEngine: ObservableObject {
     private func requestMissingIconsIfNeeded() {
         guard connectionState.isConnected else { return }
         var needed = Set<String>()
-        for page in profile.pages {
-            for slot in page.slots {
-                if let bundleID = slot?.bundleIdentifier, appIconsByBundleID[bundleID] == nil {
-                    needed.insert(bundleID)
-                }
-            }
+        for bundleID in profile.referencedAppBundleIdentifiers where appIconsByBundleID[bundleID] == nil {
+            needed.insert(bundleID)
         }
         for recent in recentApps where appIconsByBundleID[recent.bundleIdentifier] == nil {
             needed.insert(recent.bundleIdentifier)

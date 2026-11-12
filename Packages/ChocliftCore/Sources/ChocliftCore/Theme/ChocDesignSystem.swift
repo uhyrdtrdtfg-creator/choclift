@@ -704,6 +704,52 @@ public struct ChocBarTileCard: View {
                         .padding(.horizontal, isMicro ? 4 : 6)
                 }
             }
+
+        case .flow(_, _, let emoji, let backgroundHex, let stepCountSnapshot):
+            let base = ChocSwatch.resolvedTileColor(hex: backgroundHex, fallbackHex: "#ECFAFE")
+            ZStack {
+                moldedBaseShape(
+                    corner: corner,
+                    top: palette.tileFillTop,
+                    bottom: base,
+                    borderColor: palette.tileBorderHighlight,
+                    borderWidth: 1.15,
+                    shadowColor: palette.primaryText.opacity(0.06)
+                )
+
+                VStack {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 2) {
+                            Image(systemName: "arrow.triangle.branch")
+                                .font(.system(size: max(8, side * 0.085), weight: .bold))
+                            if stepCountSnapshot > 0 && side >= 54 {
+                                Text("\(stepCountSnapshot)")
+                                    .font(.system(size: max(8, side * 0.085), weight: .heavy, design: .rounded))
+                            }
+                        }
+                        .foregroundStyle(palette.accent)
+                        .padding(.horizontal, isMicro ? 4 : 5)
+                        .padding(.vertical, 2)
+                        .background(palette.accent.opacity(0.12), in: Capsule())
+                        .padding(isMicro ? 4 : 6)
+                    }
+                    Spacer()
+                }
+
+                VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
+                    Text(emoji.isEmpty ? "⚡️" : emoji)
+                        .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
+
+                    Text(item.displayTitle(in: language))
+                        .font(.system(size: max(10.5, side * 0.112), weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(isMicro ? 1 : 2)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, isMicro ? 5 : 7)
+                }
+            }
         }
     }
 

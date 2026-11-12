@@ -17,6 +17,7 @@ public enum ClientMessage: Codable, Equatable, Sendable {
         platform: DevicePlatform
     )
     case triggerBarItem(BarItem)
+    case triggerFlow(flowID: UUID)
     case activateRecentApp(bundleIdentifier: String, appPath: String?)
     case setRecentAppPinned(bundleIdentifier: String, isPinned: Bool)
     case quitOrHideApp(bundleIdentifier: String, shouldQuit: Bool)

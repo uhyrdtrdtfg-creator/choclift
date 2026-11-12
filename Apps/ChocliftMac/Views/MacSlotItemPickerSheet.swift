@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 public struct MacSlotItemPickerSheet: View {
     public enum PickerTab: String, CaseIterable, Identifiable {
         case apps
+        case flows
         case shortcuts
         case website
         case actions
@@ -15,6 +16,7 @@ public struct MacSlotItemPickerSheet: View {
         public var sfSymbol: String {
             switch self {
             case .apps: return "app.badge"
+            case .flows: return "arrow.triangle.branch"
             case .shortcuts: return "bolt.fill"
             case .website: return "safari.fill"
             case .actions: return "macwindow.badge.plus"
@@ -24,6 +26,7 @@ public struct MacSlotItemPickerSheet: View {
         public func title(in lang: AppLanguage) -> String {
             switch self {
             case .apps: return L10n.tr("应用", "Apps", language: lang)
+            case .flows: return L10n.tr("动作流", "Flows", language: lang)
             case .shortcuts: return L10n.tr("快捷指令", "Shortcuts", language: lang)
             case .website: return L10n.tr("网页", "Website", language: lang)
             case .actions: return L10n.tr("系统动作", "Actions", language: lang)
@@ -53,6 +56,9 @@ public struct MacSlotItemPickerSheet: View {
     @State private var websiteEmoji: String = "🌐"
     @State private var websiteColorHex: String = "#FFF1EC"
     @State private var websiteSwitchExistingTab: Bool = true
+
+    // Action flow editor sheet
+    @State private var flowEditorSession: SlotFlowEditorSession?
 
     private var lang: AppLanguage { coordinator.lang }
     private var palette: ChocPalette { coordinator.palette }
@@ -111,6 +117,8 @@ public struct MacSlotItemPickerSheet: View {
                 switch activeTab {
                 case .apps:
                     appsPickerBody
+                case .flows:
+                    flowsPickerBody
                 case .shortcuts:
                     shortcutsPickerBody
                 case .website:
@@ -136,6 +144,16 @@ public struct MacSlotItemPickerSheet: View {
         .tint(palette.accent)
         .preferredColorScheme(.light)
         .onAppear(perform: hydrateFromExisting)
+        .sheet(item: $flowEditorSession) { session in
+            MacFlowEditorSheet(
+                coordinator: coordinator,
+                initialFlow: session.flow,
+                isNew: session.isNew
+            ) { saved in
+                coordinator.assignFlowToSlot(saved, pageIndex: pageIndex, slotIndex: slotIndex)
+                dismiss()
+            }
+        }
     }
 
     private var headerBar: some View {
@@ -380,6 +398,181 @@ public struct MacSlotItemPickerSheet: View {
                         return .ignored
                     }
                 }
+            }
+        }
+    }
+
+    // MARK: - Tab 1B: Composable Action Flows
+
+    private var flowsPickerBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Text(L10n.tr("选择已保存的动作流，或新建一个多步动作流放入此槽位", "Pick a saved flow or create a multi-step flow for this slot", language: lang))
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+
+                Spacer()
+
+                Menu {
+                    Button {
+                        let blank = ActionFlow(
+                            name: L10n.tr("新建动作流", "New Flow", language: lang),
+                            emoji: "⚡️",
+                            backgroundHex: "#ECFAFE",
+                            steps: []
+                        )
+                        flowEditorSession = SlotFlowEditorSession(flow: blank, isNew: true)
+                    } label: {
+                        Label(L10n.tr("空白动作流…", "Blank Flow…", language: lang), systemImage: "plus")
+                    }
+
+                    Button {
+                        let app = coordinator.installedApps.first(where: { $0.bundleIdentifier == "com.apple.Safari" })
+                            ?? coordinator.installedApps.first
+                        let tpl = ActionFlow.makeOpenWaitMaximizeTemplate(
+                            bundleIdentifier: app?.bundleIdentifier ?? "com.apple.Safari",
+                            appName: app?.appName ?? "Safari",
+                            appPath: app?.appPath,
+                            language: lang
+                        )
+                        flowEditorSession = SlotFlowEditorSession(flow: tpl, isNew: true)
+                    } label: {
+                        Label(L10n.tr("模板：打开应用 → 等待前置 → 最大化", "Template: Open → Wait → Maximize", language: lang), systemImage: "arrow.up.left.and.arrow.down.right")
+                    }
+
+                    Button {
+                        let left = coordinator.installedApps.first(where: { $0.bundleIdentifier == "com.apple.Safari" })
+                            ?? coordinator.installedApps.first
+                        let right = coordinator.installedApps.first(where: {
+                            $0.bundleIdentifier == "com.apple.Notes" && $0.bundleIdentifier != left?.bundleIdentifier
+                        }) ?? coordinator.installedApps.dropFirst().first
+                        let tpl = ActionFlow.makeSplitScreenTemplate(
+                            leftBundleIdentifier: left?.bundleIdentifier ?? "com.apple.Safari",
+                            leftAppName: left?.appName ?? "Safari",
+                            leftAppPath: left?.appPath,
+                            rightBundleIdentifier: right?.bundleIdentifier ?? "com.apple.Notes",
+                            rightAppName: right?.appName ?? "Notes",
+                            rightAppPath: right?.appPath,
+                            language: lang
+                        )
+                        flowEditorSession = SlotFlowEditorSession(flow: tpl, isNew: true)
+                    } label: {
+                        Label(L10n.tr("模板：双应用左右分屏", "Template: Left & Right Split", language: lang), systemImage: "rectangle.split.2x1")
+                    }
+                } label: {
+                    Label(L10n.tr("新建动作流…", "New Flow…", language: lang), systemImage: "plus")
+                }
+                .menuStyle(.borderedButton)
+                .fixedSize()
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+
+            if coordinator.profile.flows.isEmpty {
+                Spacer()
+                VStack(spacing: 10) {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 32))
+                        .foregroundStyle(palette.secondaryText)
+                    Text(L10n.tr("暂无已保存的动作流", "No Saved Flows Yet", language: lang))
+                        .font(.headline)
+                        .foregroundStyle(palette.primaryText)
+                    Text(L10n.tr("点击右上角「新建动作流…」可创建单应用全屏或双应用分屏等顺序动作流。", "Click \"New Flow…\" above to create sequential multi-step Mac actions.", language: lang))
+                        .font(.caption)
+                        .foregroundStyle(palette.secondaryText)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 36)
+                }
+                .frame(maxWidth: .infinity)
+                Spacer()
+            } else {
+                List(Array(coordinator.profile.flows.enumerated()), id: \.element.id) { idx, flow in
+                    let isCurrent = (existingItem?.flowID == flow.id)
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(ChocSwatch.resolvedTileColor(hex: flow.backgroundHex, fallbackHex: "#ECFAFE"))
+                                .frame(width: 36, height: 36)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                                )
+                            Text(flow.emoji.isEmpty ? "⚡️" : flow.emoji)
+                                .font(.system(size: 18))
+                        }
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(flow.name)
+                                    .font(.system(.body, design: .rounded, weight: .semibold))
+                                    .foregroundStyle(palette.primaryText)
+                                if isCurrent {
+                                    Text(L10n.tr("当前已选", "Current", language: lang))
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(palette.statusConnected)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 1)
+                                        .background(palette.statusConnected.opacity(0.16), in: Capsule())
+                                }
+                            }
+                            Text(
+                                L10n.tr(
+                                    "\(flow.enabledStepCount) 步 · \(flow.steps.map { $0.displayTitle(in: lang) }.joined(separator: " → "))",
+                                    "\(flow.enabledStepCount) steps · \(flow.steps.map { $0.displayTitle(in: lang) }.joined(separator: " → "))",
+                                    language: lang
+                                )
+                            )
+                            .font(.caption2)
+                            .foregroundStyle(palette.secondaryText)
+                            .lineLimit(1)
+                        }
+
+                        Spacer()
+
+                        Button {
+                            coordinator.moveFlow(from: idx, to: idx - 1)
+                        } label: {
+                            Image(systemName: "chevron.up")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(idx == 0)
+
+                        Button {
+                            coordinator.moveFlow(from: idx, to: idx + 1)
+                        } label: {
+                            Image(systemName: "chevron.down")
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(idx + 1 >= coordinator.profile.flows.count)
+
+                        Button {
+                            flowEditorSession = SlotFlowEditorSession(flow: flow, isNew: false)
+                        } label: {
+                            Image(systemName: "pencil")
+                        }
+                        .buttonStyle(.borderless)
+
+                        Button(role: .destructive) {
+                            coordinator.deleteFlow(id: flow.id)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+
+                        Button(L10n.tr("放入槽位", "Assign", language: lang)) {
+                            coordinator.assignFlowToSlot(flow, pageIndex: pageIndex, slotIndex: slotIndex)
+                            dismiss()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(palette.accent)
+                        .foregroundStyle(palette.accentForeground)
+                        .controlSize(.small)
+                    }
+                    .padding(.vertical, 3)
+                    .listRowBackground(palette.barSurface.opacity(0.6))
+                }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
             }
         }
     }
@@ -887,6 +1080,14 @@ public struct MacSlotItemPickerSheet: View {
             websiteSwitchExistingTab = switchTab
         case .systemAction:
             activeTab = .actions
+        case .flow:
+            activeTab = .flows
         }
     }
+}
+
+private struct SlotFlowEditorSession: Identifiable {
+    let id = UUID()
+    let flow: ActionFlow
+    let isNew: Bool
 }
