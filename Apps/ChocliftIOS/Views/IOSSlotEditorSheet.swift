@@ -21,12 +21,12 @@ public struct IOSSlotEditorSheet: View {
 
     @State private var shortcutName: String = ""
     @State private var shortcutEmoji: String = "⚡️"
-    @State private var shortcutHex: String = "#6C3EB8"
+    @State private var shortcutHex: String = "#F3EEFF"
 
     @State private var webURL: String = "https://"
     @State private var webTitle: String = ""
     @State private var webEmoji: String = "🌐"
-    @State private var webHex: String = "#C93B2B"
+    @State private var webHex: String = "#FFF1EC"
     @State private var webSwitchTab: Bool = true
 
     private var lang: AppLanguage { client.profile.settings.language }
@@ -73,10 +73,11 @@ public struct IOSSlotEditorSheet: View {
             )
             .navigationTitle(L10n.tr("编辑槽位 #\(slotIndex + 1)", "Edit Slot #\(slotIndex + 1)", language: lang))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.light, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.tr("取消", "Cancel", language: lang)) { dismiss() }
-                        .foregroundStyle(palette.accentGold)
+                        .foregroundStyle(palette.secondaryText)
                         .accessibilityIdentifier("ios-slot-editor-cancel")
                 }
                 if client.profile.pages.indices.contains(pageIndex),
@@ -85,6 +86,7 @@ public struct IOSSlotEditorSheet: View {
                         Button(L10n.tr("清空", "Clear", language: lang), role: .destructive) {
                             assignItem(nil)
                         }
+                        .foregroundStyle(palette.statusFailure)
                     }
                 }
             }
@@ -98,7 +100,8 @@ public struct IOSSlotEditorSheet: View {
                 }
             }
         }
-        .preferredColorScheme(.dark)
+        .tint(palette.accent)
+        .preferredColorScheme(.light)
     }
 
     private func requestCatalogWithTimeout() {
@@ -136,7 +139,7 @@ public struct IOSSlotEditorSheet: View {
                 VStack(spacing: 10) {
                     Image(systemName: "laptopcomputer.slash")
                         .font(.system(size: 32))
-                        .foregroundStyle(palette.accentGold)
+                        .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang))
                         .font(.headline)
                         .foregroundStyle(palette.primaryText)
@@ -150,7 +153,7 @@ public struct IOSSlotEditorSheet: View {
             } else if client.macCatalogApps.isEmpty && isWaitingForCatalog {
                 Spacer()
                 ProgressView(L10n.tr("正在同步 Mac 应用目录…", "Loading Mac app catalog…", language: lang))
-                    .tint(palette.accentGold)
+                    .tint(palette.accent)
                     .foregroundStyle(palette.secondaryText)
                 Spacer()
             } else if client.macCatalogApps.isEmpty {
@@ -158,7 +161,7 @@ public struct IOSSlotEditorSheet: View {
                 VStack(spacing: 10) {
                     Image(systemName: "app.dashed")
                         .font(.system(size: 32))
-                        .foregroundStyle(palette.accentGold)
+                        .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("暂未收到应用目录", "Catalog Not Loaded Yet", language: lang))
                         .font(.headline)
                         .foregroundStyle(palette.primaryText)
@@ -166,7 +169,8 @@ public struct IOSSlotEditorSheet: View {
                         requestCatalogWithTimeout()
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(palette.accentGold)
+                    .tint(palette.accent)
+                    .foregroundStyle(palette.accentForeground)
                 }
                 Spacer()
             } else if apps.isEmpty {
@@ -182,7 +186,7 @@ public struct IOSSlotEditorSheet: View {
                         searchQuery = ""
                     }
                     .buttonStyle(.bordered)
-                    .tint(palette.accentGold)
+                    .tint(palette.accent)
                 }
                 Spacer()
             } else {
@@ -198,7 +202,7 @@ public struct IOSSlotEditorSheet: View {
                             DataImageView(
                                 pngData: app.iconPNGData ?? client.appIconsByBundleID[app.bundleIdentifier],
                                 fallbackSymbol: "app.fill",
-                                tint: palette.accentGold
+                                tint: palette.secondaryText
                             )
                             .frame(width: 36, height: 36)
 
@@ -238,7 +242,7 @@ public struct IOSSlotEditorSheet: View {
                     )))
                 }
                 .font(.body.weight(.semibold))
-                .foregroundStyle(palette.accentGold)
+                .foregroundStyle(palette.accentEmphasis)
                 .disabled(shortcutName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .listRowBackground(palette.barSurface)
@@ -255,7 +259,7 @@ public struct IOSSlotEditorSheet: View {
                                 Spacer()
                                 if shortcutName == sc.name {
                                     Image(systemName: "checkmark")
-                                        .foregroundStyle(palette.accentGold)
+                                        .foregroundStyle(palette.accent)
                                 }
                             }
                         }
@@ -277,7 +281,7 @@ public struct IOSSlotEditorSheet: View {
                 TextField(L10n.tr("显示标题（可选）", "Display Title (Optional)", language: lang), text: $webTitle)
                 TextField("Emoji", text: $webEmoji)
                 Toggle(L10n.tr("智能切换到已打开标签页", "Switch to Already-Open Browser Tab", language: lang), isOn: $webSwitchTab)
-                    .tint(palette.accentGold)
+                    .tint(palette.accent)
                 colorSwatchSelector(selection: $webHex)
 
                 Button(L10n.tr("保存书签到槽位", "Save Bookmark", language: lang)) {
@@ -297,7 +301,7 @@ public struct IOSSlotEditorSheet: View {
                     )))
                 }
                 .font(.body.weight(.semibold))
-                .foregroundStyle(palette.accentGold)
+                .foregroundStyle(palette.accentEmphasis)
                 .disabled(webURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || webURL == "https://")
             }
             .listRowBackground(palette.barSurface)
@@ -334,9 +338,9 @@ public struct IOSSlotEditorSheet: View {
                         } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: act.sfSymbol)
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(palette.primaryText)
                                     .frame(width: 32, height: 32)
-                                    .background(Color(hex: act.accentHex), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .background(ChocSwatch.resolvedTileColor(hex: act.accentHex), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                                 Text(act.title(in: lang))
                                     .font(.body.weight(.medium))
                                     .foregroundStyle(palette.primaryText)
@@ -355,7 +359,7 @@ public struct IOSSlotEditorSheet: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
                 ForEach(ChocSwatch.tileColors, id: \.self) { hex in
-                    let isSel = (selection.wrappedValue == hex)
+                    let isSel = (selection.wrappedValue.uppercased() == hex.uppercased())
                     Button {
                         selection.wrappedValue = hex
                     } label: {
@@ -363,11 +367,14 @@ public struct IOSSlotEditorSheet: View {
                             Circle()
                                 .fill(Color(hex: hex))
                                 .frame(width: 32, height: 32)
-                                .overlay(Circle().strokeBorder(.white, lineWidth: isSel ? 2.8 : 0.6))
+                                .overlay(
+                                    Circle()
+                                        .strokeBorder(isSel ? palette.accent : palette.subtleCardStroke, lineWidth: isSel ? 2.6 : 1.0)
+                                )
                             if isSel {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 11, weight: .black))
-                                    .foregroundStyle(.white)
+                                    .foregroundStyle(palette.primaryText)
                             }
                         }
                         .contentShape(Circle())

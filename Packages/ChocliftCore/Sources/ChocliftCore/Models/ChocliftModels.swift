@@ -49,11 +49,11 @@ public enum ChocTheme: String, Codable, CaseIterable, Sendable, Identifiable {
 
     public func title(in lang: AppLanguage = .system) -> String {
         switch self {
-        case .darkChocolate: return L10n.tr("黑巧经典", "Dark Chocolate", language: lang)
-        case .milkChocolate: return L10n.tr("丝滑牛奶巧", "Milk Chocolate", language: lang)
-        case .rubyBerry: return L10n.tr("红宝石可可", "Ruby Cocoa", language: lang)
-        case .matchaWhite: return L10n.tr("抹茶生巧", "Matcha Truffle", language: lang)
-        case .midnightObsidian: return L10n.tr("午夜黑曜", "Midnight Cocoa", language: lang)
+        case .darkChocolate: return L10n.tr("亮彩紫罗兰", "Bright Violet", language: lang)
+        case .milkChocolate: return L10n.tr("晴日珊瑚", "Sunny Coral", language: lang)
+        case .rubyBerry: return L10n.tr("晴空蔚蓝", "Clear Sky", language: lang)
+        case .matchaWhite: return L10n.tr("鲜柠青绿", "Fresh Lime", language: lang)
+        case .midnightObsidian: return L10n.tr("晨光琥珀", "Warm Amber", language: lang)
         }
     }
 }
@@ -116,13 +116,13 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     public var accentHex: String {
         switch self {
         case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen:
-            return "#2E7D9B"
+            return "#EDF6FF"
         case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
-            return "#8E44AD"
+            return "#F3EEFF"
         case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .openEmojiPicker:
-            return "#D35400"
+            return "#FFF1EC"
         case .mediaPlayPause, .mediaNext, .mediaPrevious, .volumeUp, .volumeDown, .volumeMute:
-            return "#C0392B"
+            return "#ECFAEE"
         }
     }
 
@@ -634,8 +634,8 @@ public enum ChocliftDefaults {
                 BarItem(kind: .macApp(bundleIdentifier: "com.apple.iCal", appName: "Calendar", fallbackSymbol: "calendar")),
                 BarItem(kind: .macApp(bundleIdentifier: "com.apple.Music", appName: "Music", fallbackSymbol: "music.note")),
                 BarItem(kind: .macApp(bundleIdentifier: "com.apple.MobileSMS", appName: "Messages", fallbackSymbol: "message.fill")),
-                BarItem(kind: .website(url: "https://www.youtube.com", title: "YouTube", emoji: "▶️", backgroundHex: "#C93B2B", switchExistingTab: true)),
-                BarItem(kind: .shortcut(shortcutName: "Morning Workflow", emoji: "⚡️", backgroundHex: "#6C3EB8"))
+                BarItem(kind: .website(url: "https://www.youtube.com", title: "YouTube", emoji: "▶️", backgroundHex: "#FFF1EC", switchExistingTab: true)),
+                BarItem(kind: .shortcut(shortcutName: "Morning Workflow", emoji: "⚡️", backgroundHex: "#F3EEFF"))
             ]
         )
 
@@ -648,8 +648,8 @@ public enum ChocliftDefaults {
                 BarItem(kind: .macApp(bundleIdentifier: "com.apple.dt.Xcode", appName: "Xcode", fallbackSymbol: "hammer.fill")),
                 BarItem(kind: .macApp(bundleIdentifier: "com.apple.mail", appName: "Mail", fallbackSymbol: "envelope.fill")),
                 BarItem(kind: .macApp(bundleIdentifier: "com.apple.reminders", appName: "Reminders", fallbackSymbol: "checklist")),
-                BarItem(kind: .website(url: "https://github.com", title: "GitHub", emoji: "🐙", backgroundHex: "#24292F", switchExistingTab: true)),
-                BarItem(kind: .website(url: "https://www.figma.com", title: "Figma", emoji: "🎨", backgroundHex: "#A259FF", switchExistingTab: true)),
+                BarItem(kind: .website(url: "https://github.com", title: "GitHub", emoji: "🐙", backgroundHex: "#EDF6FF", switchExistingTab: true)),
+                BarItem(kind: .website(url: "https://www.figma.com", title: "Figma", emoji: "🎨", backgroundHex: "#FFF6E3", switchExistingTab: true)),
                 BarItem(kind: .systemAction(action: .snapWindowLeft)),
                 BarItem(kind: .systemAction(action: .snapWindowRight))
             ]

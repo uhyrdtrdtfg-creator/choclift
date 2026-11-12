@@ -21,9 +21,10 @@ public struct TimeTravelStudioView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L10n.tr("应用时间旅行", "App Time Travel", language: lang))
                         .font(.system(.title3, design: .rounded, weight: .bold))
+                        .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("动态记录最近激活的 Mac 应用，固定高频窗口，一键直达而无需循环按 ⌘Tab。", "Tracks recently active Mac apps with favorites pinning for one-tap window switching.", language: lang))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                 }
                 Spacer()
             }
@@ -33,12 +34,13 @@ public struct TimeTravelStudioView: View {
                 VStack(spacing: 10) {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.system(size: 36))
-                        .foregroundStyle(palette.accentGold)
+                        .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("尚未捕获最近切换的应用", "No Recent Apps Yet", language: lang))
                         .font(.headline)
+                        .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("在任意 Mac 应用之间切换一次，应用时间旅行列表即会实时出现并同步到伴侣设备。", "Switch between any Mac apps to populate the live Time Travel strip across your companions.", language: lang))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 420)
                 }
@@ -49,7 +51,7 @@ public struct TimeTravelStudioView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(L10n.tr("伴侣端实时时间旅行预览（前 8 项）", "Companion Time Travel Strip Preview (Top 8)", language: lang))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
 
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 8), spacing: 10) {
                         ForEach(Array(monitor.timeline.prefix(8))) { entry in
@@ -70,9 +72,9 @@ public struct TimeTravelStudioView: View {
                                         if entry.isPinned {
                                             Image(systemName: "pin.fill")
                                                 .font(.system(size: 8.5, weight: .bold))
-                                                .foregroundStyle(palette.accentGold)
+                                                .foregroundStyle(palette.secondaryText)
                                                 .padding(3)
-                                                .background(.black.opacity(0.65), in: Circle())
+                                                .background(palette.backgroundBottom.opacity(0.85), in: Circle())
                                                 .offset(x: 4, y: -4)
                                         }
                                     }
@@ -89,7 +91,7 @@ public struct TimeTravelStudioView: View {
                                         .fill(LinearGradient(colors: [palette.tileFillTop, palette.tileFillBottom], startPoint: .top, endPoint: .bottom))
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                                .strokeBorder(entry.isFrontmost ? palette.accentGold : palette.subtleCardStroke, lineWidth: entry.isFrontmost ? 2 : 1)
+                                                .strokeBorder(entry.isFrontmost ? palette.accent : palette.subtleCardStroke, lineWidth: entry.isFrontmost ? 2 : 1)
                                         )
                                 )
                                 .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -109,30 +111,31 @@ public struct TimeTravelStudioView: View {
                 List(monitor.timeline) { entry in
                     let icon = coordinator.catalogService.iconData(forBundleID: entry.bundleIdentifier, fallbackPath: entry.appPath)
                     HStack(spacing: 12) {
-                        DataImageView(pngData: icon, fallbackSymbol: "app.fill", tint: .accentColor)
+                        DataImageView(pngData: icon, fallbackSymbol: "app.fill", tint: palette.secondaryText)
                             .frame(width: 30, height: 30)
 
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
                                 Text(entry.appName)
                                     .font(.body.weight(.semibold))
+                                    .foregroundStyle(palette.primaryText)
                                 if entry.isFrontmost {
                                     Text(L10n.tr("当前前台", "Frontmost", language: lang))
                                         .font(.caption2.bold())
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 1)
-                                        .background(Color.green.opacity(0.18), in: Capsule())
-                                        .foregroundStyle(.green)
+                                        .background(palette.statusConnected.opacity(0.18), in: Capsule())
+                                        .foregroundStyle(palette.statusConnected)
                                 }
                                 if !entry.isRunning {
                                     Text(L10n.tr("未运行", "Not Running", language: lang))
                                         .font(.caption2)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(palette.secondaryText)
                                 }
                             }
                             Text(entry.bundleIdentifier)
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(palette.secondaryText)
                         }
 
                         Spacer()
@@ -149,7 +152,7 @@ public struct TimeTravelStudioView: View {
                             .font(.caption)
                         }
                         .buttonStyle(.bordered)
-                        .tint(entry.isPinned ? .orange : nil)
+                        .tint(entry.isPinned ? palette.accent : nil)
 
                         Button {
                             addAppToFirstAvailableSlot(entry)
@@ -172,10 +175,16 @@ public struct TimeTravelStudioView: View {
                                 .font(.caption.bold())
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(palette.accent)
+                        .foregroundStyle(palette.accentForeground)
                     }
                     .padding(.vertical, 3)
+                    .listRowBackground(palette.barSurface)
                 }
-                .listStyle(.inset(alternatesRowBackgrounds: true))
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
@@ -205,6 +214,7 @@ public struct TimeTravelStudioView: View {
 public struct GestureStudioView: View {
     @ObservedObject var coordinator: MacAppCoordinator
     private var lang: AppLanguage { coordinator.lang }
+    private var palette: ChocPalette { coordinator.palette }
 
     public init(coordinator: MacAppCoordinator) {
         self.coordinator = coordinator
@@ -216,9 +226,10 @@ public struct GestureStudioView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L10n.tr("多指触控手势", "Multi-Touch Finger Gestures", language: lang))
                         .font(.system(.title3, design: .rounded, weight: .bold))
+                        .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("在 iPhone / iPad 任意区域执行双指或三指手势控制 Mac 窗口与剪贴板，单指点按仍直达底层按钮。", "Use 2- or 3-finger gestures anywhere on iPhone/iPad while 1-finger taps pass straight through to controls.", language: lang))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                 }
 
                 Spacer()
@@ -233,6 +244,8 @@ public struct GestureStudioView: View {
                     )
                 )
                 .toggleStyle(.switch)
+                .tint(palette.accent)
+                .foregroundStyle(palette.primaryText)
             }
 
             if !coordinator.profile.gestureConfig.isGlobalOverlayEnabled {
@@ -241,10 +254,11 @@ public struct GestureStudioView: View {
                     systemImage: "pause.circle.fill"
                 )
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .foregroundStyle(palette.secondaryText)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
             }
 
             ScrollView {
@@ -253,19 +267,26 @@ public struct GestureStudioView: View {
                         HStack(spacing: 12) {
                             Image(systemName: binding.gesture.sfSymbol)
                                 .font(.title3.weight(.semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(binding.isEnabled ? palette.primaryText : palette.secondaryText.opacity(0.6))
                                 .frame(width: 40, height: 40)
                                 .background(
-                                    binding.isEnabled ? Color(hex: binding.action.accentHex) : Color.gray.opacity(0.4),
+                                    binding.isEnabled
+                                        ? ChocSwatch.resolvedTileColor(hex: binding.action.accentHex)
+                                        : palette.tileFillBottom,
                                     in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
                                 )
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(binding.gesture.title(in: lang))
                                     .font(.subheadline.bold())
+                                    .foregroundStyle(palette.primaryText)
                                 Text(binding.gesture.subtitle(in: lang))
                                     .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(palette.secondaryText)
                                     .lineLimit(1)
 
                                 Picker(
@@ -299,6 +320,7 @@ public struct GestureStudioView: View {
                                 )
                                 .labelsHidden()
                                 .controlSize(.small)
+                                .tint(palette.accent)
 
                                 Button {
                                     _ = coordinator.executeGesture(binding.gesture, triggeredBy: "Mac Gesture Test")
@@ -312,10 +334,10 @@ public struct GestureStudioView: View {
                             }
                         }
                         .padding(12)
-                        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
                         )
                     }
                 }

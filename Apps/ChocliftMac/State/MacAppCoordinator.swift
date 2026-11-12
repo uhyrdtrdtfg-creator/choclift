@@ -269,7 +269,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                     url: url.absoluteString,
                     title: host.capitalized,
                     emoji: "🌐",
-                    backgroundHex: "#2563EB",
+                    backgroundHex: "#FFF1EC",
                     switchExistingTab: true
                 )
             )

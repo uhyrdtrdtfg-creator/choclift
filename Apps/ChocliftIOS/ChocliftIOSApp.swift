@@ -15,7 +15,7 @@ struct ChocliftIOSApp: App {
     var body: some Scene {
         WindowGroup {
             IOSRootTouchBarView(client: client)
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(.light)
         }
     }
 }

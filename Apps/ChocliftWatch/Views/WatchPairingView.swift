@@ -23,34 +23,44 @@ public struct WatchPairingView: View {
 
     public var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 10) {
-                    switch client.connectionState {
-                    case .awaitingPIN(_, let macName, let errorMessage):
-                        watchPINEntryCard(macName: macName, errorMessage: errorMessage)
-                    case .connected(let macID, let macName):
-                        connectedCard(macID: macID, macName: macName)
-                        bluetoothMacsSection
-                        discoveredMacsSection
-                    case .connecting(let targetName):
-                        connectingCard(targetName: targetName)
-                    case .disconnected:
-                        disconnectedStateCard
-                        #if targetEnvironment(simulator)
-                        quickLocalhostButton
-                        #endif
-                        bluetoothMacsSection
-                        discoveredMacsSection
-                        savedMacsSection
-                        manualConnectSection
+            ZStack {
+                LinearGradient(
+                    colors: [palette.backgroundTop, palette.backgroundBottom],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: 10) {
+                        switch client.connectionState {
+                        case .awaitingPIN(_, let macName, let errorMessage):
+                            watchPINEntryCard(macName: macName, errorMessage: errorMessage)
+                        case .connected(let macID, let macName):
+                            connectedCard(macID: macID, macName: macName)
+                            bluetoothMacsSection
+                            discoveredMacsSection
+                        case .connecting(let targetName):
+                            connectingCard(targetName: targetName)
+                        case .disconnected:
+                            disconnectedStateCard
+                            #if targetEnvironment(simulator)
+                            quickLocalhostButton
+                            #endif
+                            bluetoothMacsSection
+                            discoveredMacsSection
+                            savedMacsSection
+                            manualConnectSection
+                        }
                     }
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 12)
                 }
-                .padding(.horizontal, 6)
-                .padding(.bottom, 12)
             }
             .navigationTitle(L10n.tr("连接 Mac", "Link Mac", language: lang))
             .navigationBarTitleDisplayMode(.inline)
         }
+        .tint(palette.accent)
         .onChange(of: client.connectionState) { _, newState in
             if newState.isConnected {
                 CompanionFeedbackHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, kind: .success)
@@ -105,8 +115,8 @@ public struct WatchPairingView: View {
                             RoundedRectangle(cornerRadius: 7, style: .continuous)
                                 .strokeBorder(
                                     errorMessage != nil
-                                        ? palette.accentRuby
-                                        : (isCurrent ? palette.accentGold : palette.subtleCardStroke),
+                                        ? palette.statusFailure
+                                        : (isCurrent ? palette.accent : palette.subtleCardStroke),
                                     lineWidth: (isCurrent || errorMessage != nil) ? 1.5 : 0.8
                                 )
                         )
@@ -117,7 +127,7 @@ public struct WatchPairingView: View {
                 HStack(spacing: 5) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(palette.accentRuby)
+                        .foregroundStyle(palette.statusFailure)
                     Text(errorMessage)
                         .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                         .foregroundStyle(palette.primaryText)
@@ -126,17 +136,17 @@ public struct WatchPairingView: View {
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(palette.accentRuby.opacity(0.20), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(palette.statusFailure.opacity(0.20), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(palette.accentRuby.opacity(0.65), lineWidth: 1)
+                        .strokeBorder(palette.statusFailure.opacity(0.65), lineWidth: 1)
                 )
             } else if isVerifying {
                 HStack(spacing: 6) {
                     ProgressView()
                         .scaleEffect(0.7)
                         .frame(width: 14, height: 14)
-                        .tint(palette.accentGold)
+                        .tint(palette.accent)
                     Text(L10n.tr("正在验证…", "Verifying PIN…", language: lang))
                         .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                         .foregroundStyle(palette.secondaryText)
@@ -239,7 +249,7 @@ public struct WatchPairingView: View {
             if !client.isMacAccessibilityGranted {
                 Text(L10n.tr("请在 Mac 开启辅助功能权限以支持窗口与表情控制。", "Grant Accessibility on Mac for window & emoji actions.", language: lang))
                     .font(.system(size: 11))
-                    .foregroundStyle(palette.accentGold)
+                    .foregroundStyle(palette.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -252,7 +262,7 @@ public struct WatchPairingView: View {
                     .frame(minHeight: 36)
             }
             .buttonStyle(.bordered)
-            .tint(palette.accentRuby)
+            .tint(palette.statusFailure)
         }
         .padding(11)
         .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
@@ -265,7 +275,7 @@ public struct WatchPairingView: View {
     private func connectingCard(targetName: String) -> some View {
         VStack(spacing: 9) {
             ProgressView()
-                .tint(palette.accentGold)
+                .tint(palette.accent)
 
             Text(L10n.tr("正在连接 \(targetName)…", "Connecting \(targetName)…", language: lang))
                 .font(.system(size: 13, weight: .bold, design: .rounded))
@@ -294,7 +304,7 @@ public struct WatchPairingView: View {
         .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .strokeBorder(palette.accentGold.opacity(0.45), lineWidth: 1)
+                .strokeBorder(palette.accent.opacity(0.45), lineWidth: 1)
         )
     }
 
@@ -307,7 +317,7 @@ public struct WatchPairingView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(palette.accentRuby)
+                        .foregroundStyle(palette.statusFailure)
                     Text(L10n.tr("连接未成功", "Connection Failed", language: lang))
                         .font(.system(size: 12.5, weight: .bold, design: .rounded))
                         .foregroundStyle(palette.primaryText)
@@ -325,10 +335,10 @@ public struct WatchPairingView: View {
                     } label: {
                         Label(L10n.tr("重试连接", "Retry", language: lang), systemImage: "arrow.clockwise")
                             .font(.system(size: 12, weight: .bold, design: .rounded))
-                            .foregroundStyle(.black)
+                            .foregroundStyle(palette.accentForeground)
                             .frame(maxWidth: .infinity)
                             .frame(height: 38)
-                            .background(palette.accentGold, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            .background(palette.accent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
                     .buttonStyle(.plain)
@@ -338,7 +348,7 @@ public struct WatchPairingView: View {
             .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(palette.accentRuby.opacity(0.75), lineWidth: 1.2)
+                    .strokeBorder(palette.statusFailure.opacity(0.75), lineWidth: 1.2)
             )
         } else if client.savedMacs.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
@@ -367,15 +377,15 @@ public struct WatchPairingView: View {
             HStack(spacing: 6) {
                 Image(systemName: "bolt.horizontal.circle.fill")
                     .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(palette.accentForeground)
                 Text(L10n.tr("直连本机 127.0.0.1", "Connect 127.0.0.1", language: lang))
                     .font(.system(size: 12.5, weight: .bold, design: .rounded))
-                    .foregroundStyle(.black)
+                    .foregroundStyle(palette.accentForeground)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
             .frame(height: 42)
-            .background(palette.accentGold, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .background(palette.accent, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         }
         .buttonStyle(.plain)
@@ -393,14 +403,14 @@ public struct WatchPairingView: View {
                 if client.bluetoothAvailability.isProblemState {
                     Text(client.bluetoothAvailability.shortStatus(in: lang))
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(palette.statusFailure)
                 }
             }
 
             if let guidance = client.bluetoothAvailability.detailGuidance(in: lang) {
                 Text(guidance)
                     .font(.system(size: 11))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(palette.statusFailure)
             } else if client.discoveredBluetoothMacs.isEmpty {
                 Text(
                     client.isBluetoothPoweredOn
@@ -464,7 +474,7 @@ public struct WatchPairingView: View {
                         HStack(spacing: 7) {
                             Image(systemName: "desktopcomputer")
                                 .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(palette.accentGold)
+                                .foregroundStyle(palette.secondaryText)
                             Text(host.name)
                                 .font(.system(size: 13, weight: .semibold, design: .rounded))
                                 .foregroundStyle(palette.primaryText)
@@ -506,7 +516,7 @@ public struct WatchPairingView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "laptopcomputer")
                                 .font(.caption.bold())
-                                .foregroundStyle(palette.accentGold)
+                                .foregroundStyle(palette.secondaryText)
                             Text(saved.macName)
                                 .font(.system(size: 13, weight: .bold, design: .rounded))
                                 .foregroundStyle(palette.primaryText)
@@ -522,10 +532,10 @@ public struct WatchPairingView: View {
                                 } label: {
                                     Label(L10n.tr("重连", "Reconnect", language: lang), systemImage: "arrow.clockwise")
                                         .font(.system(size: 11.5, weight: .bold, design: .rounded))
-                                        .foregroundStyle(.black)
+                                        .foregroundStyle(palette.emphasisForeground)
                                         .frame(maxWidth: .infinity)
                                         .frame(height: 36)
-                                        .background(palette.accentGold, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                        .background(palette.accentEmphasis, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                                         .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                                 }
                                 .buttonStyle(.plain)
@@ -536,9 +546,9 @@ public struct WatchPairingView: View {
                             } label: {
                                 Image(systemName: "trash")
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundStyle(palette.accentRuby)
+                                    .foregroundStyle(palette.statusFailure)
                                     .frame(width: 38, height: 36)
-                                    .background(palette.accentRuby.opacity(0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                    .background(palette.statusFailure.opacity(0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                                     .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
                             }
                             .buttonStyle(.plain)
@@ -598,7 +608,8 @@ public struct WatchPairingView: View {
                         .frame(minHeight: 38)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(palette.accentGold)
+                .tint(palette.accentEmphasis)
+                .foregroundStyle(palette.emphasisForeground)
                 .disabled(manualHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }

@@ -59,18 +59,20 @@ public struct IOSPairingAndConnectionSheet: View {
             }
             .navigationTitle(L10n.tr("连接你的 Mac", "Connect to Mac", language: lang))
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L10n.tr("完成", "Done", language: lang)) {
                         dismiss()
                     }
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(palette.accentGold)
+                    .foregroundStyle(palette.accent)
                     .accessibilityIdentifier("ios-pairing-done")
                 }
             }
         }
+        .tint(palette.accent)
+        .preferredColorScheme(.light)
         .onChange(of: client.connectionState) { _, newState in
             if newState.isConnected {
                 CompanionHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, type: .success)
@@ -123,8 +125,8 @@ public struct IOSPairingAndConnectionSheet: View {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .strokeBorder(
                                     errorMessage != nil
-                                        ? palette.accentRuby
-                                        : (isActiveSlot ? palette.accentGold : palette.tileBorderHighlight.opacity(0.45)),
+                                        ? palette.statusFailure
+                                        : (isActiveSlot ? palette.accent : palette.tileBorderHighlight.opacity(0.45)),
                                     lineWidth: (isActiveSlot || errorMessage != nil) ? 1.8 : 1
                                 )
                         )
@@ -134,7 +136,7 @@ public struct IOSPairingAndConnectionSheet: View {
             if let errorMessage {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(palette.accentRuby)
+                        .foregroundStyle(palette.statusFailure)
                     Text(errorMessage)
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(palette.primaryText)
@@ -143,15 +145,15 @@ public struct IOSPairingAndConnectionSheet: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(palette.accentRuby.opacity(0.18), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(palette.statusFailure.opacity(0.18), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(palette.accentRuby.opacity(0.65), lineWidth: 1)
+                        .strokeBorder(palette.statusFailure.opacity(0.65), lineWidth: 1)
                 )
             } else if isVerifying {
                 HStack(spacing: 8) {
                     ProgressView()
-                        .tint(palette.accentGold)
+                        .tint(palette.accent)
                         .scaleEffect(0.85)
                     Text(L10n.tr("正在向 Mac 验证配对码…", "Verifying PIN with \(macName)…", language: lang))
                         .font(.caption.weight(.semibold))
@@ -273,14 +275,14 @@ public struct IOSPairingAndConnectionSheet: View {
                     client.disconnect()
                 }
                 .buttonStyle(.bordered)
-                .tint(palette.accentRuby)
+                .tint(palette.statusFailure)
                 .accessibilityIdentifier("ios-disconnect-button")
             }
 
             if !client.isMacAccessibilityGranted {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(palette.accentGold)
+                        .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("请在 Mac 端开启「辅助功能」权限，以启用窗口缩放手势和光标处表情输入。", "Grant Accessibility permission on your Mac to enable window gestures and cursor emoji typing.", language: lang))
                         .font(.caption)
                         .foregroundStyle(palette.secondaryText)
@@ -302,7 +304,7 @@ public struct IOSPairingAndConnectionSheet: View {
         VStack(spacing: 14) {
             ProgressView()
                 .controlSize(.regular)
-                .tint(palette.accentGold)
+                .tint(palette.accent)
 
             VStack(spacing: 4) {
                 Text(L10n.tr("正在连接「\(targetName)」…", "Connecting to \"\(targetName)\"…", language: lang))
@@ -333,7 +335,7 @@ public struct IOSPairingAndConnectionSheet: View {
         .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(palette.accentGold.opacity(0.45), lineWidth: 1)
+                .strokeBorder(palette.accent.opacity(0.45), lineWidth: 1)
         )
     }
 
@@ -346,7 +348,7 @@ public struct IOSPairingAndConnectionSheet: View {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.title3)
-                        .foregroundStyle(palette.accentRuby)
+                        .foregroundStyle(palette.statusFailure)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L10n.tr("未能连接到 Mac", "Connection Failed", language: lang))
@@ -369,10 +371,10 @@ public struct IOSPairingAndConnectionSheet: View {
                             systemImage: "arrow.clockwise"
                         )
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.black)
+                        .foregroundStyle(palette.accentForeground)
                         .padding(.horizontal, 14)
                         .frame(height: 38)
-                        .background(palette.accentGold, in: Capsule())
+                        .background(palette.accent, in: Capsule())
                         .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -382,14 +384,14 @@ public struct IOSPairingAndConnectionSheet: View {
             .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(palette.accentRuby.opacity(0.72), lineWidth: 1.3)
+                    .strokeBorder(palette.statusFailure.opacity(0.72), lineWidth: 1.3)
             )
             .accessibilityIdentifier("ios-connection-failed-card")
         } else if client.isAutoConnectSuppressedForCurrentLaunch {
             HStack(spacing: 10) {
                 Image(systemName: "pause.circle.fill")
                     .font(.title3)
-                    .foregroundStyle(palette.accentGold)
+                    .foregroundStyle(palette.secondaryText)
                 Text(
                     L10n.tr(
                         "本次会话已手动断开；点按下方任意 Mac 可立即重连，下次启动将自动恢复连接。",
@@ -482,7 +484,7 @@ public struct IOSPairingAndConnectionSheet: View {
                         HStack(spacing: 10) {
                             Image(systemName: "desktopcomputer")
                                 .font(.body.weight(.semibold))
-                                .foregroundStyle(palette.accentGold)
+                                .foregroundStyle(palette.secondaryText)
                                 .frame(width: 28)
 
                             VStack(alignment: .leading, spacing: 2) {
@@ -537,10 +539,10 @@ public struct IOSPairingAndConnectionSheet: View {
                 if client.bluetoothAvailability.isProblemState {
                     Label(client.bluetoothAvailability.shortStatus(in: lang), systemImage: "exclamationmark.triangle.fill")
                         .font(.caption2.bold())
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(palette.statusFailure)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
-                        .background(Color.orange.opacity(0.18), in: Capsule())
+                        .background(palette.statusFailure.opacity(0.18), in: Capsule())
                 } else {
                     Text(client.bluetoothAvailability.shortStatus(in: lang))
                         .font(.caption2.weight(.semibold))
@@ -554,14 +556,14 @@ public struct IOSPairingAndConnectionSheet: View {
             if let guidance = client.bluetoothAvailability.detailGuidance(in: lang) {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(palette.statusFailure)
                     Text(guidance)
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(palette.secondaryText)
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(palette.statusFailure.opacity(0.14), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             } else if client.discoveredBluetoothMacs.isEmpty {
                 Text(
                     client.isBluetoothPoweredOn
@@ -630,8 +632,8 @@ public struct IOSPairingAndConnectionSheet: View {
                         .font(.caption.bold())
                         .padding(.horizontal, 12)
                         .frame(height: 36)
-                        .background(palette.accentGold, in: Capsule())
-                        .foregroundStyle(.black)
+                        .background(palette.accentEmphasis, in: Capsule())
+                        .foregroundStyle(palette.emphasisForeground)
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -659,7 +661,8 @@ public struct IOSPairingAndConnectionSheet: View {
                         client.connectToHost(host: manualHost, port: portVal)
                     }
                     .buttonStyle(.borderedProminent)
-                    .tint(palette.accentGold)
+                    .tint(palette.accent)
+                    .foregroundStyle(palette.accentForeground)
                 }
                 .padding(.top, 8)
             }
@@ -685,7 +688,7 @@ public struct IOSPairingAndConnectionSheet: View {
                 ForEach(client.savedMacs) { saved in
                     HStack(spacing: 10) {
                         Image(systemName: "laptopcomputer")
-                            .foregroundStyle(palette.accentGold)
+                            .foregroundStyle(palette.secondaryText)
                             .frame(width: 24)
 
                         VStack(alignment: .leading, spacing: 3) {
@@ -713,7 +716,7 @@ public struct IOSPairingAndConnectionSheet: View {
                                 client.reconnectSavedMac(saved)
                             }
                             .buttonStyle(.bordered)
-                            .tint(palette.accentGold)
+                            .tint(palette.accent)
                         }
 
                         Button(role: .destructive) {
@@ -723,6 +726,7 @@ public struct IOSPairingAndConnectionSheet: View {
                                 .frame(width: 30, height: 30)
                         }
                         .buttonStyle(.bordered)
+                        .tint(palette.statusFailure)
                     }
                     .padding(12)
                     .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 13, style: .continuous))

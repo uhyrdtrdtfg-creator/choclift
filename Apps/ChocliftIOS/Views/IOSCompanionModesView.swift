@@ -205,7 +205,7 @@ public struct IOSTimeTravelSurfaceView: View {
                 VStack(spacing: 10) {
                     Image(systemName: client.connectionState.isConnected ? "clock" : "laptopcomputer.slash")
                         .font(.system(size: 30))
-                        .foregroundStyle(palette.accentGold)
+                        .foregroundStyle(palette.secondaryText)
 
                     Text(
                         client.connectionState.isConnected
@@ -231,10 +231,10 @@ public struct IOSTimeTravelSurfaceView: View {
                         } label: {
                             Text(L10n.tr("连接 Mac", "Connect to Mac", language: lang))
                                 .font(.system(.caption, design: .rounded, weight: .bold))
-                                .foregroundStyle(.black)
+                                .foregroundStyle(palette.accentForeground)
                                 .padding(.horizontal, 16)
                                 .frame(height: 38)
-                                .background(palette.accentGold, in: Capsule())
+                                .background(palette.accent, in: Capsule())
                                 .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
@@ -274,9 +274,9 @@ public struct IOSTimeTravelSurfaceView: View {
                     if entry.isPinned {
                         Image(systemName: "pin.fill")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(palette.accentGold)
+                            .foregroundStyle(palette.secondaryText)
                             .padding(4)
-                            .background(.black.opacity(0.68), in: Circle())
+                            .background(palette.backgroundBottom.opacity(0.85), in: Circle())
                             .offset(x: 6, y: -4)
                     }
                 }
@@ -288,7 +288,7 @@ public struct IOSTimeTravelSurfaceView: View {
 
                 HStack(spacing: 4) {
                     Circle()
-                        .fill(entry.isFrontmost ? palette.accentGold : (entry.isRunning ? palette.statusConnected : .gray))
+                        .fill(entry.isFrontmost ? palette.accent : (entry.isRunning ? palette.statusConnected : palette.secondaryText.opacity(0.5)))
                         .frame(width: 5.5, height: 5.5)
                     Text(
                         entry.isFrontmost
@@ -307,7 +307,7 @@ public struct IOSTimeTravelSurfaceView: View {
                     .fill(LinearGradient(colors: [palette.tileFillTop, palette.tileFillBottom], startPoint: .topLeading, endPoint: .bottomTrailing))
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .strokeBorder(entry.isFrontmost ? palette.accentGold : palette.tileBorderHighlight.opacity(0.45), lineWidth: entry.isFrontmost ? 2 : 1)
+                            .strokeBorder(entry.isFrontmost ? palette.accent : palette.tileBorderHighlight.opacity(0.45), lineWidth: entry.isFrontmost ? 2 : 1)
                     )
             )
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -548,16 +548,17 @@ public struct IOSEmojiBarSurfaceView: View {
                     : L10n.tr("点击直接输入到 Mac", "Tap to Type on Mac", language: lang)
             )
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(.light, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(L10n.tr("关闭", "Close", language: lang)) {
                         showAllCatalogSheet = false
                     }
-                    .foregroundStyle(palette.accentGold)
+                    .foregroundStyle(palette.accent)
                 }
             }
         }
+        .preferredColorScheme(.light)
     }
 }
 
@@ -603,7 +604,7 @@ public struct IOSGesturePadSurfaceView: View {
                 VStack(spacing: 7) {
                     Image(systemName: client.profile.gestureConfig.isGlobalOverlayEnabled ? "hand.draw.fill" : "hand.raised.slash.fill")
                         .font(.system(size: 28))
-                        .foregroundStyle(client.profile.gestureConfig.isGlobalOverlayEnabled ? palette.accentGold : palette.secondaryText)
+                        .foregroundStyle(client.profile.gestureConfig.isGlobalOverlayEnabled ? palette.accent : palette.secondaryText)
 
                     Text(
                         client.profile.gestureConfig.isGlobalOverlayEnabled
@@ -642,7 +643,7 @@ public struct IOSGesturePadSurfaceView: View {
                         HStack(spacing: 6) {
                             Image(systemName: mapped?.sfSymbol ?? gesture.sfSymbol)
                                 .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(palette.accentGold)
+                                .foregroundStyle(palette.secondaryText)
                                 .frame(width: 18)
                             Text(mapped?.compactTitle(in: lang) ?? gesture.title(in: lang))
                                 .font(.system(size: 11.5, weight: .semibold, design: .rounded))

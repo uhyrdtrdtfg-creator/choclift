@@ -95,7 +95,7 @@ public struct WatchRootView: View {
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
                         .background(palette.barSurface.opacity(0.95), in: Capsule())
-                        .overlay(Capsule().strokeBorder(palette.accentGold.opacity(0.7), lineWidth: 1))
+                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
                         .padding(.bottom, 3)
                         .allowsHitTesting(false)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -195,7 +195,7 @@ public struct WatchRootView: View {
             .overlay(
                 Capsule()
                     .strokeBorder(
-                        visualState.isFailure ? palette.accentRuby.opacity(0.75) : tint.opacity(0.35),
+                        visualState.isFailure ? palette.statusFailure.opacity(0.75) : tint.opacity(0.35),
                         lineWidth: 1
                     )
             )
@@ -211,7 +211,7 @@ public struct WatchRootView: View {
         } label: {
             Image(systemName: activeMode.sfSymbol)
                 .font(.system(size: 13.5, weight: .bold))
-                .foregroundStyle(palette.accentGold)
+                .foregroundStyle(palette.accent)
                 .frame(width: 34, height: 34)
                 .background(palette.tileFillBottom.opacity(0.95), in: Circle())
                 .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
@@ -233,12 +233,13 @@ public struct WatchRootView: View {
                     HStack(spacing: 10) {
                         Image(systemName: mode.sfSymbol)
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(isSelected ? .black : palette.accentGold)
+                            .foregroundStyle(isSelected ? palette.accentForeground : palette.secondaryText)
                             .frame(width: 28, height: 28)
-                            .background(isSelected ? palette.accentGold : palette.tileFillTop, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .background(isSelected ? palette.accent : palette.tileFillTop, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                         Text(mode.shortLabel(in: lang))
                             .font(.system(size: 14, weight: isSelected ? .bold : .medium, design: .rounded))
+                            .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
 
                         Spacer()
@@ -246,13 +247,23 @@ public struct WatchRootView: View {
                         if isSelected {
                             Image(systemName: "checkmark")
                                 .font(.caption.bold())
-                                .foregroundStyle(palette.accentGold)
+                                .foregroundStyle(palette.accent)
                         }
                     }
                     .frame(minHeight: 38)
                 }
+                .listRowBackground(palette.barSurface)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
     }
 
     private func flashHUD(_ text: String) {

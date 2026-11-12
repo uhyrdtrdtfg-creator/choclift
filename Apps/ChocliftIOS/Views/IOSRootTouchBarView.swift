@@ -85,7 +85,7 @@ public struct IOSRootTouchBarView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "sparkles")
                                 .font(.caption2.bold())
-                                .foregroundStyle(palette.accentGold)
+                                .foregroundStyle(palette.accent)
                             Text(hud)
                                 .font(.system(.caption, design: .rounded, weight: .bold))
                                 .foregroundStyle(palette.primaryText)
@@ -93,9 +93,9 @@ public struct IOSRootTouchBarView: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(palette.barSurface.opacity(0.95), in: Capsule())
-                        .overlay(Capsule().strokeBorder(palette.accentGold.opacity(0.65), lineWidth: 1))
-                        .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
+                        .background(palette.barSurface.opacity(0.96), in: Capsule())
+                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                        .shadow(color: palette.primaryText.opacity(0.08), radius: 8, x: 0, y: 4)
                         .padding(.top, 10)
                         Spacer()
                     }
@@ -200,10 +200,10 @@ public struct IOSRootTouchBarView: View {
                         } label: {
                             Image(systemName: mode.sfSymbol)
                                 .font(.system(size: 16, weight: .bold))
-                                .foregroundStyle(selected ? .black : palette.secondaryText)
+                                .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
                                 .frame(width: 44, height: 40)
                                 .background(
-                                    selected ? palette.accentGold : palette.tileFillBottom.opacity(0.82),
+                                    selected ? palette.accent : palette.tileFillBottom.opacity(0.88),
                                     in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 )
                                 .overlay(
@@ -278,11 +278,11 @@ public struct IOSRootTouchBarView: View {
                                 .font(.system(size: 10.5, weight: .bold, design: .rounded))
                                 .lineLimit(1)
                         }
-                        .foregroundStyle(selected ? .black : palette.secondaryText)
+                        .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
                         .frame(maxWidth: .infinity)
                         .frame(height: 46)
                         .background(
-                            selected ? palette.accentGold : palette.tileFillBottom.opacity(0.75),
+                            selected ? palette.accent : palette.tileFillBottom.opacity(0.85),
                             in: RoundedRectangle(cornerRadius: 14, style: .continuous)
                         )
                         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -330,8 +330,8 @@ public struct IOSRootTouchBarView: View {
                                 }
                                 .padding(.horizontal, 13)
                                 .frame(height: 38)
-                                .background(isSel ? palette.accentGold : palette.tileFillBottom, in: Capsule())
-                                .foregroundStyle(isSel ? .black : palette.primaryText)
+                                .background(isSel ? palette.accent : palette.tileFillBottom, in: Capsule())
+                                .foregroundStyle(isSel ? palette.accentForeground : palette.primaryText)
                                 .overlay(
                                     Capsule()
                                         .strokeBorder(isSel ? .clear : palette.subtleCardStroke, lineWidth: 1)
@@ -454,7 +454,7 @@ public struct IOSRootTouchBarView: View {
                                     if entry.isPinned {
                                         Image(systemName: "pin.fill")
                                             .font(.system(size: 9))
-                                            .foregroundStyle(palette.accentGold)
+                                            .foregroundStyle(palette.secondaryText)
                                     }
                                 }
                                 .padding(.horizontal, 12)
@@ -462,7 +462,7 @@ public struct IOSRootTouchBarView: View {
                                 .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                        .strokeBorder(entry.isFrontmost ? palette.accentGold : palette.subtleCardStroke, lineWidth: entry.isFrontmost ? 1.8 : 1)
+                                        .strokeBorder(entry.isFrontmost ? palette.accent : palette.subtleCardStroke, lineWidth: entry.isFrontmost ? 1.8 : 1)
                                 )
                                 .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                             }
@@ -552,7 +552,7 @@ public struct IOSRootTouchBarView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(
-                        visualState.isFailure ? palette.accentRuby.opacity(0.7) : tint.opacity(0.35),
+                        visualState.isFailure ? palette.statusFailure.opacity(0.75) : tint.opacity(0.35),
                         lineWidth: 1
                     )
             )
@@ -601,7 +601,7 @@ public struct IOSRootTouchBarView: View {
             .overlay(
                 Capsule()
                     .strokeBorder(
-                        visualState.isFailure ? palette.accentRuby.opacity(0.75) : palette.subtleCardStroke,
+                        visualState.isFailure ? palette.statusFailure.opacity(0.75) : palette.subtleCardStroke,
                         lineWidth: 1
                     )
             )
@@ -661,18 +661,18 @@ public struct IOSRootTouchBarView: View {
                             : L10n.tr("连接", "Pair", language: lang))
                 )
                 .font(.system(size: 11, weight: .bold, design: .rounded))
-                .foregroundStyle(visualState.isFailure ? .white : .black)
+                .foregroundStyle(palette.emphasisForeground)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(visualState.isFailure ? palette.accentRuby : palette.accentGold, in: Capsule())
+                .background(visualState.isFailure ? palette.statusFailure : palette.accentEmphasis, in: Capsule())
             }
             .padding(.horizontal, 12)
             .padding(.vertical, compact ? 7 : 9)
-            .background(palette.barSurface.opacity(0.92), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(palette.barSurface.opacity(0.94), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(
-                        visualState.isFailure ? palette.accentRuby.opacity(0.7) : tint.opacity(0.35),
+                        visualState.isFailure ? palette.statusFailure.opacity(0.7) : palette.subtleCardStroke,
                         lineWidth: 1
                     )
             )
@@ -703,7 +703,7 @@ public struct IOSRootTouchBarView: View {
                 HStack(spacing: 2.5) {
                     ForEach(0..<min(4, safeCount), id: \.self) { dot in
                         Circle()
-                            .fill((activeIdx % 4) == dot ? palette.accentGold : palette.secondaryText.opacity(0.35))
+                            .fill((activeIdx % 4) == dot ? palette.accent : palette.secondaryText.opacity(0.35))
                             .frame(width: 4, height: 4)
                     }
                 }

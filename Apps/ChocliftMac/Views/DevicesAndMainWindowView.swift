@@ -44,9 +44,10 @@ public struct MacPairingPopoverView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.tr("配对伴侣设备", "Pair a Companion Device", language: lang))
                         .font(.system(.headline, design: .rounded, weight: .bold))
+                        .foregroundStyle(palette.primaryText)
                     Text(server.macName)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                         .lineLimit(1)
                 }
 
@@ -58,22 +59,22 @@ public struct MacPairingPopoverView: View {
             if let errorMessage = server.lastErrorMessage, !errorMessage.isEmpty {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
+                        .foregroundStyle(palette.statusFailure)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.tr("本地监听启动失败", "Listener Failed to Start", language: lang))
                             .font(.caption.bold())
-                            .foregroundStyle(.red)
+                            .foregroundStyle(palette.statusFailure)
                         Text(errorMessage)
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(palette.secondaryText)
                     }
                     Spacer(minLength: 0)
                 }
                 .padding(10)
-                .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(palette.statusFailure.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(Color.red.opacity(0.32), lineWidth: 1)
+                        .strokeBorder(palette.statusFailure.opacity(0.45), lineWidth: 1)
                 )
             }
 
@@ -114,7 +115,7 @@ public struct MacPairingPopoverView: View {
                         } label: {
                             Label(L10n.tr("刷新", "New PIN", language: lang), systemImage: "arrow.clockwise")
                                 .font(.caption2.weight(.semibold))
-                                .foregroundStyle(palette.accentGold)
+                                .foregroundStyle(palette.accent)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
                                 .background(palette.tileFillTop, in: Capsule())
@@ -173,7 +174,7 @@ public struct MacPairingPopoverView: View {
                         title: server.isListening
                             ? L10n.tr("Wi-Fi 局域网就绪", "Wi-Fi Ready", language: lang)
                             : L10n.tr("Wi-Fi 未监听", "Wi-Fi Offline", language: lang),
-                        tint: server.isListening ? .green : .orange
+                        tint: server.isListening ? palette.statusConnected : palette.secondaryText
                     )
 
                     transportStatusPill(
@@ -184,8 +185,8 @@ public struct MacPairingPopoverView: View {
                             ? L10n.tr("蓝牙 LE 广播中", "Bluetooth LE Ready", language: lang)
                             : server.bluetoothAvailability.shortStatus(in: lang),
                         tint: server.isBluetoothAdvertising
-                            ? .cyan
-                            : (server.bluetoothAvailability.isProblemState ? .orange : .secondary)
+                            ? palette.statusBluetooth
+                            : (server.bluetoothAvailability.isProblemState ? palette.statusFailure : palette.secondaryText)
                     )
                 }
 
@@ -193,15 +194,15 @@ public struct MacPairingPopoverView: View {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.caption2)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(palette.statusFailure)
                             .padding(.top, 1)
                         Text(btGuidance)
                             .font(.caption2)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(palette.secondaryText)
                     }
                     .padding(9)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .background(palette.statusFailure.opacity(0.14), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
 
                 if let port = server.listeningPort {
@@ -211,10 +212,10 @@ public struct MacPairingPopoverView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "network")
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(palette.secondaryText)
                         Text(ipText)
                             .font(.caption2.monospaced())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(palette.secondaryText)
                             .textSelection(.enabled)
                             .lineLimit(1)
                     }
@@ -231,7 +232,7 @@ public struct MacPairingPopoverView: View {
                         systemImage: "sparkles"
                     )
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(palette.primaryText)
 
                     Text(
                         L10n.tr(
@@ -241,18 +242,19 @@ public struct MacPairingPopoverView: View {
                         )
                     )
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.secondaryText)
                     .lineSpacing(2)
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
             } else {
                 VStack(alignment: .leading, spacing: 7) {
                     HStack {
                         Text(L10n.tr("已配对伴侣 (\(sortedDevices.count))", "Paired Companions (\(sortedDevices.count))", language: lang))
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(palette.secondaryText)
                         Spacer()
                         Button {
                             coordinator.showPairingPopover = false
@@ -260,7 +262,7 @@ public struct MacPairingPopoverView: View {
                         } label: {
                             Text(L10n.tr("管理设备", "Manage", language: lang))
                                 .font(.caption2.weight(.semibold))
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(palette.accent)
                         }
                         .buttonStyle(.plain)
                     }
@@ -269,11 +271,12 @@ public struct MacPairingPopoverView: View {
                         HStack(spacing: 8) {
                             Image(systemName: device.platform.sfSymbol)
                                 .font(.callout)
-                                .foregroundStyle(device.isCurrentlyConnected ? .green : .secondary)
+                                .foregroundStyle(device.isCurrentlyConnected ? palette.statusConnected : palette.secondaryText)
                                 .frame(width: 20)
 
                             Text(device.deviceName)
                                 .font(.callout.weight(.medium))
+                                .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
 
                             Spacer(minLength: 4)
@@ -283,14 +286,14 @@ public struct MacPairingPopoverView: View {
                             } else if device.isCurrentlyConnected {
                                 Text(L10n.tr("在线", "Online", language: lang))
                                     .font(.caption2.bold())
-                                    .foregroundStyle(.green)
+                                    .foregroundStyle(palette.statusConnected)
                             } else {
                                 Text(L10n.tr("待机", "Standby", language: lang))
                                     .font(.caption2.weight(.medium))
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(palette.secondaryText)
                                     .padding(.horizontal, 7)
                                     .padding(.vertical, 2)
-                                    .background(Color.primary.opacity(0.06), in: Capsule())
+                                    .background(palette.barSurface, in: Capsule())
                             }
                         }
                         .padding(.vertical, 3)
@@ -300,6 +303,15 @@ public struct MacPairingPopoverView: View {
         }
         .padding(18)
         .frame(width: 384)
+        .background(
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .tint(palette.accent)
+        .preferredColorScheme(.light)
     }
 
     @ViewBuilder
@@ -307,29 +319,30 @@ public struct MacPairingPopoverView: View {
         if server.lastErrorMessage != nil {
             Label(L10n.tr("异常", "Error", language: lang), systemImage: "exclamationmark.triangle.fill")
                 .font(.caption2.bold())
-                .foregroundStyle(.red)
+                .foregroundStyle(palette.statusFailure)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color.red.opacity(0.12), in: Capsule())
+                .background(palette.statusFailure.opacity(0.16), in: Capsule())
         } else if server.isListening {
             HStack(spacing: 5) {
                 Circle()
-                    .fill(Color.green)
+                    .fill(palette.statusConnected)
                     .frame(width: 7, height: 7)
                 Text(L10n.tr("可被发现", "Discoverable", language: lang))
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(palette.statusConnected)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(Color.green.opacity(0.12), in: Capsule())
+            .background(palette.statusConnected.opacity(0.14), in: Capsule())
         } else {
             HStack(spacing: 5) {
                 ProgressView()
                     .controlSize(.mini)
+                    .tint(palette.accent)
                 Text(L10n.tr("启动中", "Starting", language: lang))
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.secondaryText)
             }
         }
     }
@@ -403,27 +416,31 @@ public struct DevicesAndSettingsView: View {
         HStack(spacing: 14) {
             ZStack {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill((coordinator.isAccessibilityGranted ? Color.green : Color.orange).opacity(0.14))
+                    .fill(coordinator.isAccessibilityGranted ? palette.statusConnected.opacity(0.15) : palette.tileFillBottom)
                     .frame(width: 42, height: 42)
                 Image(systemName: coordinator.isAccessibilityGranted ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
                     .font(.title2)
-                    .foregroundStyle(coordinator.isAccessibilityGranted ? .green : .orange)
+                    .foregroundStyle(coordinator.isAccessibilityGranted ? palette.statusConnected : palette.secondaryText)
             }
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(L10n.tr("辅助功能权限", "Accessibility Permission", language: lang))
                         .font(.headline)
+                        .foregroundStyle(palette.primaryText)
                     Text(
                         coordinator.isAccessibilityGranted
                             ? L10n.tr("已就绪", "Active", language: lang)
                             : L10n.tr("待开启", "Action Needed", language: lang)
                     )
                     .font(.caption2.bold())
-                    .foregroundStyle(coordinator.isAccessibilityGranted ? .green : .orange)
+                    .foregroundStyle(coordinator.isAccessibilityGranted ? palette.statusConnected : palette.secondaryText)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
-                    .background((coordinator.isAccessibilityGranted ? Color.green : Color.orange).opacity(0.14), in: Capsule())
+                    .background(
+                        coordinator.isAccessibilityGranted ? palette.statusConnected.opacity(0.16) : palette.tileFillBottom,
+                        in: Capsule()
+                    )
                 }
                 Text(
                     coordinator.isAccessibilityGranted
@@ -431,7 +448,7 @@ public struct DevicesAndSettingsView: View {
                         : L10n.tr("开启后方可使用远程窗口管理、复制粘贴手势与光标处直接输入表情。", "Grant access in System Settings → Privacy & Security → Accessibility for window & emoji actions.", language: lang)
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.secondaryText)
             }
 
             Spacer(minLength: 8)
@@ -441,17 +458,15 @@ public struct DevicesAndSettingsView: View {
                     coordinator.requestAccessibilityPermission()
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.orange)
+                .tint(palette.accentEmphasis)
+                .foregroundStyle(palette.emphasisForeground)
             }
         }
         .padding(16)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(
-                    coordinator.isAccessibilityGranted ? Color.primary.opacity(0.07) : Color.orange.opacity(0.35),
-                    lineWidth: 1
-                )
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
         )
     }
 
@@ -463,6 +478,7 @@ public struct DevicesAndSettingsView: View {
                     systemImage: "iphone.and.arrow.forward"
                 )
                 .font(.headline)
+                .foregroundStyle(palette.primaryText)
 
                 if !server.pairedDevices.isEmpty {
                     Text(
@@ -473,10 +489,10 @@ public struct DevicesAndSettingsView: View {
                         )
                     )
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.secondaryText)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(Color.primary.opacity(0.06), in: Capsule())
+                    .background(palette.tileFillBottom, in: Capsule())
                 }
 
                 Spacer()
@@ -484,10 +500,10 @@ public struct DevicesAndSettingsView: View {
                 if server.bluetoothAvailability.isProblemState {
                     Label(server.bluetoothAvailability.shortStatus(in: lang), systemImage: "exclamationmark.triangle.fill")
                         .font(.caption2.bold())
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(palette.statusFailure)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.orange.opacity(0.14), in: Capsule())
+                        .background(palette.statusFailure.opacity(0.16), in: Capsule())
                 }
 
                 Button {
@@ -496,14 +512,15 @@ public struct DevicesAndSettingsView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "key.fill")
                             .font(.caption2)
+                            .foregroundStyle(palette.accent)
                         Text("PIN \(formattedSixDigitPIN(server.currentPIN))")
                             .font(.system(.caption, design: .monospaced, weight: .bold))
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(palette.tileFillTop.opacity(0.9), in: Capsule())
+                    .background(palette.tileFillTop.opacity(0.92), in: Capsule())
                     .foregroundStyle(palette.primaryText)
-                    .overlay(Capsule().strokeBorder(palette.accentGold.opacity(0.55), lineWidth: 1))
+                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -515,19 +532,19 @@ public struct DevicesAndSettingsView: View {
                     systemImage: "exclamationmark.octagon.fill"
                 )
                 .font(.caption)
-                .foregroundStyle(.red)
+                .foregroundStyle(palette.statusFailure)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.red.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(palette.statusFailure.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
             if let btGuidance = server.bluetoothAvailability.detailGuidance(in: lang) {
                 Label(btGuidance, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(palette.statusFailure)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(palette.statusFailure.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
             if sortedDevices.isEmpty {
@@ -541,10 +558,10 @@ public struct DevicesAndSettingsView: View {
             }
         }
         .padding(16)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
         )
     }
 
@@ -554,7 +571,7 @@ public struct DevicesAndSettingsView: View {
                 ForEach([DevicePlatform.iPhone, .iPad, .appleWatch], id: \.rawValue) { platform in
                     Image(systemName: platform.sfSymbol)
                         .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(palette.accentGold)
+                        .foregroundStyle(palette.secondaryText)
                         .frame(width: 38, height: 38)
                         .background(palette.tileFillTop.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
@@ -563,6 +580,7 @@ public struct DevicesAndSettingsView: View {
             VStack(spacing: 4) {
                 Text(L10n.tr("尚未配对任何伴侣设备", "No Paired Companions Yet", language: lang))
                     .font(.subheadline.weight(.bold))
+                    .foregroundStyle(palette.primaryText)
                 Text(
                     L10n.tr(
                         "在 iPhone、iPad 或 Apple Watch 上打开 Choclift，选择「\(server.macName)」并输入 6 位配对码 \(formattedSixDigitPIN(server.currentPIN))。配对后支持 Wi-Fi 与蓝牙 LE 自动漫游重连。",
@@ -571,7 +589,7 @@ public struct DevicesAndSettingsView: View {
                     )
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.secondaryText)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 440)
             }
@@ -585,15 +603,17 @@ public struct DevicesAndSettingsView: View {
                 )
                 .font(.caption.weight(.semibold))
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.borderedProminent)
+            .tint(palette.accentEmphasis)
+            .foregroundStyle(palette.emphasisForeground)
         }
         .padding(.vertical, 18)
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity)
-        .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(palette.backgroundBottom.opacity(0.55), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                .strokeBorder(palette.subtleCardStroke, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
         )
     }
 
@@ -602,16 +622,16 @@ public struct DevicesAndSettingsView: View {
         return HStack(spacing: 12) {
             ZStack(alignment: .bottomTrailing) {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isOnline ? Color.green.opacity(0.14) : Color.primary.opacity(0.06))
+                    .fill(isOnline ? palette.statusConnected.opacity(0.15) : palette.tileFillTop)
                     .frame(width: 40, height: 40)
                 Image(systemName: device.platform.sfSymbol)
                     .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(isOnline ? .green : .secondary)
+                    .foregroundStyle(isOnline ? palette.statusConnected : palette.secondaryText)
                     .frame(width: 40, height: 40)
                 Circle()
-                    .fill(isOnline ? Color.green : Color.gray.opacity(0.55))
+                    .fill(isOnline ? palette.statusConnected : palette.secondaryText.opacity(0.55))
                     .frame(width: 9, height: 9)
-                    .overlay(Circle().strokeBorder(Color(nsColor: .windowBackgroundColor), lineWidth: 1.5))
+                    .overlay(Circle().strokeBorder(palette.barSurface, lineWidth: 1.5))
                     .offset(x: 2, y: 2)
             }
 
@@ -619,6 +639,7 @@ public struct DevicesAndSettingsView: View {
                 HStack(spacing: 7) {
                     Text(device.deviceName)
                         .font(.body.weight(.semibold))
+                        .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
 
                     if isOnline, let link = device.activeLink {
@@ -626,14 +647,14 @@ public struct DevicesAndSettingsView: View {
                     } else if isOnline {
                         Text(L10n.tr("在线", "Online", language: lang))
                             .font(.caption2.bold())
-                            .foregroundStyle(.green)
+                            .foregroundStyle(palette.statusConnected)
                     } else {
                         Text(L10n.tr("已保存令牌", "Paired", language: lang))
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(palette.secondaryText)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.primary.opacity(0.06), in: Capsule())
+                            .background(palette.barSurface, in: Capsule())
                     }
                 }
 
@@ -643,7 +664,7 @@ public struct DevicesAndSettingsView: View {
                         : "\(device.platform.rawValue) · \(L10n.tr("最近在线", "Last seen", language: lang)) \(device.lastSeenAt.formatted(.relative(presentation: .named)))"
                 )
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.secondaryText)
                 .lineLimit(1)
             }
 
@@ -656,17 +677,18 @@ public struct DevicesAndSettingsView: View {
                     .font(.caption)
             }
             .buttonStyle(.bordered)
+            .tint(palette.statusFailure)
             .controlSize(.small)
         }
         .padding(11)
         .background(
-            isOnline ? Color.green.opacity(0.05) : Color.primary.opacity(0.035),
+            isOnline ? palette.statusConnected.opacity(0.06) : palette.tileFillBottom,
             in: RoundedRectangle(cornerRadius: 11, style: .continuous)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .strokeBorder(
-                    isOnline ? Color.green.opacity(0.24) : Color.primary.opacity(0.06),
+                    isOnline ? palette.statusConnected.opacity(0.32) : palette.subtleCardStroke,
                     lineWidth: 1
                 )
         )
@@ -676,13 +698,14 @@ public struct DevicesAndSettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Label(L10n.tr("外观主题与伴侣偏好", "Theme & Companion Preferences", language: lang), systemImage: "paintpalette.fill")
                 .font(.headline)
+                .foregroundStyle(palette.primaryText)
 
-            LabeledContent(L10n.tr("巧克力主题", "Chocolate Theme", language: lang)) {
+            LabeledContent(L10n.tr("界面主题", "Palette Theme", language: lang)) {
                 HStack(spacing: 8) {
                     Circle()
                         .fill(palette.tileFillTop)
                         .frame(width: 14, height: 14)
-                        .overlay(Circle().strokeBorder(palette.accentGold, lineWidth: 1.5))
+                        .overlay(Circle().strokeBorder(palette.accent, lineWidth: 1.5))
 
                     Picker(
                         "",
@@ -729,6 +752,7 @@ public struct DevicesAndSettingsView: View {
                     set: { v in coordinator.mutateProfile { $0.settings.hapticFeedbackEnabled = v } }
                 )
             )
+            .tint(palette.accent)
 
             Toggle(
                 L10n.tr("连接时保持 iPhone / iPad 屏幕常亮", "Keep iPhone / iPad Screen Awake While Connected", language: lang),
@@ -737,6 +761,7 @@ public struct DevicesAndSettingsView: View {
                     set: { v in coordinator.mutateProfile { $0.settings.keepCompanionScreenAwake = v } }
                 )
             )
+            .tint(palette.accent)
 
             Toggle(
                 L10n.tr("登录 Mac 时自动启动 Choclift", "Launch Choclift at Login", language: lang),
@@ -745,12 +770,13 @@ public struct DevicesAndSettingsView: View {
                     set: { coordinator.setLaunchAtLogin($0) }
                 )
             )
+            .tint(palette.accent)
         }
         .padding(16)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
         )
     }
 
@@ -758,10 +784,11 @@ public struct DevicesAndSettingsView: View {
         VStack(alignment: .leading, spacing: 11) {
             Label(L10n.tr("配置备份与还原", "Layout Backup & Reset", language: lang), systemImage: "externaldrive.fill.badge.checkmark")
                 .font(.headline)
+                .foregroundStyle(palette.primaryText)
 
             Text(L10n.tr("将全部 8 页巧克力槽位、表情滑页与手势映射导出为 JSON，随时迁移或恢复。", "Export or restore all 8 Chocolate Bar pages, Emoji slides, and gesture bindings as JSON.", language: lang))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.secondaryText)
 
             HStack(spacing: 8) {
                 Button {
@@ -786,13 +813,14 @@ public struct DevicesAndSettingsView: View {
                     Text(L10n.tr("恢复默认", "Reset", language: lang))
                 }
                 .buttonStyle(.bordered)
+                .tint(palette.statusFailure)
             }
         }
         .padding(16)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
         )
     }
 
@@ -801,14 +829,15 @@ public struct DevicesAndSettingsView: View {
             HStack {
                 Label(L10n.tr("实时指令日志", "Live Companion Activity", language: lang), systemImage: "waveform.path.ecg")
                     .font(.headline)
+                    .foregroundStyle(palette.primaryText)
                 Spacer()
                 if !coordinator.activityLog.isEmpty {
                     Text("\(coordinator.activityLog.count)")
                         .font(.caption2.monospacedDigit().bold())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
-                        .background(Color.primary.opacity(0.06), in: Capsule())
+                        .background(palette.tileFillBottom, in: Capsule())
                 }
             }
 
@@ -816,18 +845,19 @@ public struct DevicesAndSettingsView: View {
                 VStack(spacing: 8) {
                     Image(systemName: "hand.tap")
                         .font(.title2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("暂无远程指令记录", "No Activity Yet", language: lang))
                         .font(.caption.weight(.bold))
+                        .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("来自 iPhone、iPad 或 Watch 的点按、手势和表情输入将实时显示在此。", "Taps, gestures, and emoji insertions from iPhone, iPad, and Watch appear here live.", language: lang))
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 22)
                 .padding(.horizontal, 12)
-                .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
@@ -835,12 +865,13 @@ public struct DevicesAndSettingsView: View {
                             HStack(alignment: .top, spacing: 9) {
                                 Image(systemName: ev.isSuccess ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                                     .font(.caption)
-                                    .foregroundStyle(ev.isSuccess ? Color.green : Color.orange)
+                                    .foregroundStyle(ev.isSuccess ? palette.statusConnected : palette.statusFailure)
                                     .padding(.top, 1)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(ev.summary)
                                         .font(.caption.weight(.medium))
+                                        .foregroundStyle(palette.primaryText)
                                         .lineLimit(2)
                                     HStack(spacing: 4) {
                                         Text(ev.deviceName)
@@ -849,12 +880,12 @@ public struct DevicesAndSettingsView: View {
                                         Text(ev.timestamp.formatted(date: .omitted, time: .standard))
                                             .font(.caption2.monospacedDigit())
                                     }
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(palette.secondaryText)
                                 }
                                 Spacer(minLength: 0)
                             }
                             .padding(8)
-                            .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                     }
                 }
@@ -862,10 +893,10 @@ public struct DevicesAndSettingsView: View {
             }
         }
         .padding(16)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
         )
     }
 
@@ -939,7 +970,7 @@ public struct MacMainWindowView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "sparkles")
                             .font(.caption.bold())
-                            .foregroundStyle(palette.accentGold)
+                            .foregroundStyle(palette.secondaryText)
                         Text(banner)
                             .font(.callout.weight(.semibold))
                             .foregroundStyle(palette.primaryText)
@@ -947,8 +978,8 @@ public struct MacMainWindowView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 9)
                     .background(palette.barSurface.opacity(0.96), in: Capsule())
-                    .overlay(Capsule().strokeBorder(palette.accentGold.opacity(0.6), lineWidth: 1))
-                    .shadow(color: .black.opacity(0.28), radius: 10, x: 0, y: 4)
+                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                    .shadow(color: palette.primaryText.opacity(0.08), radius: 10, x: 0, y: 4)
                     .padding(.bottom, 16)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -956,6 +987,15 @@ public struct MacMainWindowView: View {
             .animation(.easeInOut(duration: 0.2), value: coordinator.statusBannerMessage)
         }
         .frame(minWidth: 920, minHeight: 610)
+        .background(
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
+        .tint(palette.accent)
     }
 
     private var topNavigationHeader: some View {
@@ -966,9 +1006,10 @@ public struct MacMainWindowView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("choclift")
                         .font(.system(size: 17, weight: .black, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("iPhone · iPad · Watch 触控栏工作台", "Companion Touch Bar Studio", language: lang))
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                         .lineLimit(1)
                 }
             }
@@ -987,20 +1028,20 @@ public struct MacMainWindowView: View {
                         HStack(spacing: 6) {
                             Image(systemName: sec.sfSymbol)
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(isSel ? palette.accentGold : .secondary)
+                                .foregroundStyle(isSel ? palette.accent : palette.secondaryText)
                             Text(sec.title(in: lang))
                                 .font(.system(size: 12.5, weight: isSel ? .bold : .medium, design: .rounded))
-                                .foregroundStyle(isSel ? palette.primaryText : .primary)
+                                .foregroundStyle(isSel ? palette.primaryText : palette.secondaryText)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
                         .background(
-                            isSel ? palette.tileFillTop : Color.clear,
+                            isSel ? palette.accent.opacity(0.12) : Color.clear,
                             in: RoundedRectangle(cornerRadius: 8, style: .continuous)
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(isSel ? palette.accentGold.opacity(0.65) : .clear, lineWidth: 1)
+                                .strokeBorder(isSel ? palette.accent.opacity(0.65) : .clear, lineWidth: 1)
                         )
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
@@ -1008,7 +1049,8 @@ public struct MacMainWindowView: View {
                 }
             }
             .padding(4)
-            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
             Spacer(minLength: 8)
 
@@ -1018,10 +1060,11 @@ public struct MacMainWindowView: View {
                 } label: {
                     Label(L10n.tr("开启辅助功能", "Accessibility", language: lang), systemImage: "exclamationmark.triangle.fill")
                         .font(.caption.bold())
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(palette.secondaryText)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
-                        .background(Color.orange.opacity(0.14), in: Capsule())
+                        .background(palette.barSurface, in: Capsule())
+                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
                         .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -1032,6 +1075,7 @@ public struct MacMainWindowView: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 11)
+        .background(palette.backgroundBottom.opacity(0.45))
     }
 
     private var headerConnectionButton: some View {
@@ -1045,19 +1089,20 @@ public struct MacMainWindowView: View {
                 if server.lastErrorMessage != nil {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.caption.bold())
-                        .foregroundStyle(.red)
+                        .foregroundStyle(palette.statusFailure)
                     Text(L10n.tr("监听异常", "Listener Issue", language: lang))
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(palette.statusFailure)
                 } else if !server.isListening {
                     ProgressView()
                         .controlSize(.mini)
+                        .tint(palette.accent)
                     Text(L10n.tr("正在启动…", "Starting…", language: lang))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                 } else if server.connectedDeviceCount > 0 {
                     Circle()
-                        .fill(Color.green)
+                        .fill(palette.statusConnected)
                         .frame(width: 7.5, height: 7.5)
                     Text(
                         L10n.tr(
@@ -1067,6 +1112,7 @@ public struct MacMainWindowView: View {
                         )
                     )
                     .font(.caption.weight(.bold))
+                    .foregroundStyle(palette.primaryText)
 
                     ForEach(activeLinks, id: \.rawValue) { link in
                         HStack(spacing: 3) {
@@ -1075,14 +1121,14 @@ public struct MacMainWindowView: View {
                             Text(link.shortLabel(in: lang))
                                 .font(.system(size: 10, weight: .bold, design: .rounded))
                         }
-                        .foregroundStyle(link == .bluetooth ? Color.cyan : Color.green)
+                        .foregroundStyle(link == .bluetooth ? palette.statusBluetooth : palette.statusConnected)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
-                        .background((link == .bluetooth ? Color.cyan : Color.green).opacity(0.14), in: Capsule())
+                        .background((link == .bluetooth ? palette.statusBluetooth : palette.statusConnected).opacity(0.16), in: Capsule())
                     }
                 } else if !server.pairedDevices.isEmpty {
                     Circle()
-                        .fill(Color.orange)
+                        .fill(palette.secondaryText)
                         .frame(width: 7, height: 7)
                     Text(
                         L10n.tr(
@@ -1092,10 +1138,11 @@ public struct MacMainWindowView: View {
                         )
                     )
                     .font(.system(.caption, design: .rounded, weight: .semibold))
+                    .foregroundStyle(palette.primaryText)
                 } else {
                     Image(systemName: "link.badge.plus")
                         .font(.caption.bold())
-                        .foregroundStyle(palette.accentGold)
+                        .foregroundStyle(palette.accentEmphasis)
                     Text(
                         L10n.tr(
                             "配对 · \(formattedSixDigitPIN(server.currentPIN))",
@@ -1104,17 +1151,18 @@ public struct MacMainWindowView: View {
                         )
                     )
                     .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(Color.primary.opacity(0.065), in: Capsule())
+            .background(palette.barSurface, in: Capsule())
             .overlay(
                 Capsule()
                     .strokeBorder(
                         server.lastErrorMessage != nil
-                            ? Color.red.opacity(0.45)
-                            : Color.primary.opacity(0.10),
+                            ? palette.statusFailure.opacity(0.55)
+                            : palette.subtleCardStroke,
                         lineWidth: 1
                     )
             )
@@ -1149,6 +1197,7 @@ public struct MacMenuBarPopoverView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("choclift")
                         .font(.system(.headline, design: .rounded, weight: .black))
+                        .foregroundStyle(palette.primaryText)
                     Text(
                         server.connectedDeviceCount > 0
                             ? L10n.tr("\(server.connectedDeviceCount) 台伴侣在线", "\(server.connectedDeviceCount) Companion(s) Live", language: lang)
@@ -1157,14 +1206,14 @@ public struct MacMenuBarPopoverView: View {
                                 : L10n.tr("等待伴侣连接", "Ready to Pair", language: lang))
                     )
                     .font(.caption2)
-                    .foregroundStyle(server.lastErrorMessage != nil ? .red : .secondary)
+                    .foregroundStyle(server.lastErrorMessage != nil ? palette.statusFailure : palette.secondaryText)
                 }
                 Spacer()
                 Circle()
                     .fill(
                         server.lastErrorMessage != nil
-                            ? Color.red
-                            : (server.connectedDeviceCount > 0 ? Color.green : Color.orange)
+                            ? palette.statusFailure
+                            : (server.connectedDeviceCount > 0 ? palette.statusConnected : palette.secondaryText)
                     )
                     .frame(width: 8, height: 8)
             }
@@ -1175,9 +1224,10 @@ public struct MacMenuBarPopoverView: View {
                         HStack(spacing: 6) {
                             Image(systemName: dev.platform.sfSymbol)
                                 .font(.caption)
-                                .foregroundStyle(.green)
+                                .foregroundStyle(palette.statusConnected)
                             Text(dev.deviceName)
                                 .font(.caption.weight(.medium))
+                                .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
                             Spacer()
                             if let link = dev.activeLink {
@@ -1187,16 +1237,18 @@ public struct MacMenuBarPopoverView: View {
                     }
                 }
                 .padding(8)
-                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
             }
 
             HStack {
                 Text(L10n.tr("配对码 PIN", "Pairing PIN", language: lang))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.secondaryText)
                 Spacer()
                 Text(formattedSixDigitPIN(server.currentPIN))
                     .font(.system(.callout, design: .monospaced, weight: .black))
+                    .foregroundStyle(palette.primaryText)
                 Button {
                     server.regeneratePIN()
                 } label: {
@@ -1204,12 +1256,13 @@ public struct MacMenuBarPopoverView: View {
                         .font(.caption)
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.accent)
                 .help(L10n.tr("刷新配对码", "Refresh PIN", language: lang))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
             Divider()
 
@@ -1221,6 +1274,8 @@ public struct MacMenuBarPopoverView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.borderedProminent)
+            .tint(palette.accent)
+            .foregroundStyle(palette.accentForeground)
 
             if !coordinator.isAccessibilityGranted {
                 Button {
@@ -1243,9 +1298,17 @@ public struct MacMenuBarPopoverView: View {
             }
             .buttonStyle(.plain)
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(palette.secondaryText)
         }
         .padding(14)
         .frame(width: 292)
+        .background(
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .tint(palette.accent)
     }
 }

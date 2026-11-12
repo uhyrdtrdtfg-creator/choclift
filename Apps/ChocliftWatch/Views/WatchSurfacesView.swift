@@ -62,7 +62,7 @@ private struct WatchConnectionStateBanner: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(
-                        state.isFailure ? palette.accentRuby.opacity(0.75) : tint.opacity(0.45),
+                        state.isFailure ? palette.statusFailure.opacity(0.75) : tint.opacity(0.45),
                         lineWidth: 1
                     )
             )
@@ -263,18 +263,29 @@ public struct WatchChocolateBarView: View {
                             .font(.system(size: 15))
                         Text(page.title)
                             .font(.system(size: 13.5, weight: isSelected ? .bold : .medium, design: .rounded))
+                            .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                         Spacer()
                         if isSelected {
                             Image(systemName: "checkmark")
                                 .font(.caption.bold())
-                                .foregroundStyle(palette.accentGold)
+                                .foregroundStyle(palette.accent)
                         }
                     }
                     .frame(minHeight: 38)
                 }
+                .listRowBackground(palette.barSurface)
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
     }
 }
 
@@ -287,6 +298,7 @@ private struct WatchSlotQuickAssignSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
     var body: some View {
         List {
@@ -303,15 +315,18 @@ private struct WatchSlotQuickAssignSheet: View {
                             HStack(spacing: 8) {
                                 DataImageView(
                                     pngData: client.appIconsByBundleID[entry.bundleIdentifier],
-                                    fallbackSymbol: "app.fill"
+                                    fallbackSymbol: "app.fill",
+                                    tint: palette.secondaryText
                                 )
                                 .frame(width: 22, height: 22)
                                 Text(entry.appName)
                                     .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(palette.primaryText)
                                     .lineLimit(1)
                             }
                             .frame(minHeight: 38)
                         }
+                        .listRowBackground(palette.barSurface)
                     }
                 }
             }
@@ -323,11 +338,22 @@ private struct WatchSlotQuickAssignSheet: View {
                     } label: {
                         Label(action.compactTitle(in: lang), systemImage: action.sfSymbol)
                             .font(.system(size: 13, weight: .medium, design: .rounded))
+                            .foregroundStyle(palette.primaryText)
                             .frame(minHeight: 38)
                     }
+                    .listRowBackground(palette.barSurface)
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
     }
 
     private func assign(_ item: BarItem) {
@@ -396,7 +422,7 @@ public struct WatchQuickActionsView: View {
         HStack(spacing: 5) {
             Image(systemName: symbol)
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(palette.accentGold)
+                .foregroundStyle(palette.secondaryText)
             Text(text)
                 .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(palette.secondaryText)
@@ -409,20 +435,21 @@ public struct WatchQuickActionsView: View {
             ForEach(actions) { action in
                 let isPrimary = (action == .mediaPlayPause)
                 let isPressed = (pressedAction == action)
+                let tileTone = ChocSwatch.resolvedTileColor(hex: action.accentHex, fallbackHex: ChocPalette.coreTileBottomHex)
 
                 Button {
                     trigger(action)
                 } label: {
                     Image(systemName: action.sfSymbol)
                         .font(.system(size: isPrimary ? 18 : 16, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(palette.primaryText)
                         .frame(maxWidth: .infinity)
                         .frame(height: 46)
                         .background(
                             LinearGradient(
                                 colors: [
                                     palette.tileFillTop,
-                                    Color(hex: action.accentHex).opacity(isPrimary ? 0.58 : 0.38)
+                                    tileTone
                                 ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
@@ -432,7 +459,7 @@ public struct WatchQuickActionsView: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .strokeBorder(
-                                    isPrimary ? palette.accentGold.opacity(0.65) : palette.subtleCardStroke,
+                                    isPrimary ? palette.accent.opacity(0.65) : palette.subtleCardStroke,
                                     lineWidth: 1
                                 )
                         )
@@ -453,7 +480,7 @@ public struct WatchQuickActionsView: View {
 
         return LazyVGrid(columns: cols, spacing: 7) {
             ForEach(actions) { action in
-                let accent = Color(hex: action.accentHex)
+                let tileTone = ChocSwatch.resolvedTileColor(hex: action.accentHex, fallbackHex: ChocPalette.coreTileBottomHex)
                 let isPressed = (pressedAction == action)
 
                 Button {
@@ -462,7 +489,7 @@ public struct WatchQuickActionsView: View {
                     HStack(spacing: 6) {
                         Image(systemName: action.sfSymbol)
                             .font(.system(size: 13.5, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(palette.primaryText)
                             .frame(width: 18)
 
                         Text(action.compactTitle(in: lang))
@@ -477,7 +504,7 @@ public struct WatchQuickActionsView: View {
                     .frame(height: 48)
                     .background(
                         LinearGradient(
-                            colors: [palette.tileFillTop, accent.opacity(0.42)],
+                            colors: [palette.tileFillTop, tileTone],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -485,7 +512,7 @@ public struct WatchQuickActionsView: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .strokeBorder(accent.opacity(0.58), lineWidth: 1)
+                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
                     )
                     .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                     .scaleEffect(isPressed ? 0.94 : 1.0)
@@ -535,7 +562,7 @@ public struct WatchTimeTravelView: View {
                     VStack(spacing: 8) {
                         Image(systemName: "clock.badge.questionmark")
                             .font(.title3)
-                            .foregroundStyle(palette.accentGold)
+                            .foregroundStyle(palette.secondaryText)
                         Text(
                             client.connectionState.isConnected
                                 ? L10n.tr("在 Mac 上切换窗口后即会同步至此", "Switch windows on your Mac to sync here", language: lang)
@@ -581,7 +608,7 @@ public struct WatchTimeTravelView: View {
                                 : (entry.isRunning ? L10n.tr("运行中", "Running", language: lang) : L10n.tr("已固定", "Pinned", language: lang))
                         )
                         .font(.system(size: 10.5, weight: .medium))
-                        .foregroundStyle(entry.isFrontmost ? palette.accentGold : palette.secondaryText)
+                        .foregroundStyle(entry.isFrontmost ? palette.accent : palette.secondaryText)
                     }
 
                     Spacer(minLength: 0)
@@ -597,7 +624,7 @@ public struct WatchTimeTravelView: View {
             } label: {
                 Image(systemName: entry.isPinned ? "pin.fill" : "pin")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(entry.isPinned ? palette.accentGold : palette.secondaryText.opacity(0.75))
+                    .foregroundStyle(entry.isPinned ? palette.accent : palette.secondaryText.opacity(0.75))
                     .frame(width: 36, height: 36)
                     .background(palette.tileFillBottom.opacity(0.7), in: Circle())
                     .contentShape(Circle())
@@ -610,7 +637,7 @@ public struct WatchTimeTravelView: View {
         .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(entry.isFrontmost ? palette.accentGold : palette.subtleCardStroke, lineWidth: entry.isFrontmost ? 1.6 : 1)
+                .strokeBorder(entry.isFrontmost ? palette.accent : palette.subtleCardStroke, lineWidth: entry.isFrontmost ? 1.6 : 1)
         )
     }
 }

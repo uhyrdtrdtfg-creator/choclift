@@ -45,13 +45,13 @@ public struct MacSlotItemPickerSheet: View {
     @State private var shortcutSearchText: String = ""
     @State private var shortcutName: String = ""
     @State private var shortcutEmoji: String = "⚡️"
-    @State private var shortcutColorHex: String = "#6C3EB8"
+    @State private var shortcutColorHex: String = "#F3EEFF"
 
     // Website draft
     @State private var websiteURL: String = "https://"
     @State private var websiteTitle: String = ""
     @State private var websiteEmoji: String = "🌐"
-    @State private var websiteColorHex: String = "#C93B2B"
+    @State private var websiteColorHex: String = "#FFF1EC"
     @State private var websiteSwitchExistingTab: Bool = true
 
     private var lang: AppLanguage { coordinator.lang }
@@ -126,6 +126,15 @@ public struct MacSlotItemPickerSheet: View {
             footerBar
         }
         .frame(width: 680, height: 560)
+        .background(
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .tint(palette.accent)
+        .preferredColorScheme(.light)
         .onAppear(perform: hydrateFromExisting)
     }
 
@@ -135,9 +144,10 @@ public struct MacSlotItemPickerSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.tr("配置槽位 #\(slotIndex + 1)", "Configure Slot #\(slotIndex + 1)", language: lang))
                         .font(.system(.headline, design: .rounded, weight: .bold))
+                        .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("第 \(pageIndex + 1) 页「\(pageTitle)」", "Page \(pageIndex + 1) · \"\(pageTitle)\"", language: lang))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                 }
 
                 Spacer()
@@ -146,21 +156,24 @@ public struct MacSlotItemPickerSheet: View {
                     HStack(spacing: 6) {
                         Text(L10n.tr("当前：", "Current:", language: lang))
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(palette.secondaryText)
                         Text(existingItem.displayTitle(in: lang))
                             .font(.caption.weight(.semibold))
+                            .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Color.primary.opacity(0.06), in: Capsule())
+                    .background(palette.barSurface, in: Capsule())
+                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
                 } else {
                     Text(L10n.tr("空槽位", "Empty Slot", language: lang))
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4)
-                        .background(Color.primary.opacity(0.05), in: Capsule())
+                        .background(palette.barSurface, in: Capsule())
+                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
                 }
             }
 
@@ -173,10 +186,10 @@ public struct MacSlotItemPickerSheet: View {
                         HStack(spacing: 6) {
                             Image(systemName: tab.sfSymbol)
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(isSel ? palette.accentGold : .secondary)
+                                .foregroundStyle(isSel ? palette.accent : palette.secondaryText)
                             Text(tab.title(in: lang))
                                 .font(.system(size: 12.5, weight: isSel ? .bold : .medium, design: .rounded))
-                                .foregroundStyle(isSel ? palette.primaryText : .primary)
+                                .foregroundStyle(isSel ? palette.primaryText : palette.secondaryText)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 7)
@@ -186,7 +199,7 @@ public struct MacSlotItemPickerSheet: View {
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(isSel ? palette.accentGold.opacity(0.65) : .clear, lineWidth: 1)
+                                .strokeBorder(isSel ? palette.accent.opacity(0.75) : .clear, lineWidth: 1)
                         )
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
@@ -194,7 +207,8 @@ public struct MacSlotItemPickerSheet: View {
                 }
             }
             .padding(4)
-            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
@@ -243,25 +257,29 @@ public struct MacSlotItemPickerSheet: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
-            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
             .padding(.horizontal, 18)
             .padding(.top, 12)
 
             if coordinator.isScanningCatalog && coordinator.installedApps.isEmpty {
                 Spacer()
                 ProgressView(L10n.tr("正在扫描本机已安装应用…", "Scanning installed Mac apps…", language: lang))
+                    .tint(palette.accent)
+                    .foregroundStyle(palette.secondaryText)
                 Spacer()
             } else if filteredApps.isEmpty {
                 Spacer()
                 VStack(spacing: 10) {
                     Image(systemName: "app.dashed")
                         .font(.system(size: 32))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("未找到匹配的应用", "No Matching Apps", language: lang))
                         .font(.headline)
+                        .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("尝试缩短关键词，或从访达中手动选择任意 .app 应用包。", "Try another search term, or pick any .app bundle from Finder.", language: lang))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                     HStack(spacing: 8) {
                         if !appSearchText.isEmpty {
                             Button(L10n.tr("清空搜索词", "Clear Search", language: lang)) {
@@ -273,6 +291,8 @@ public struct MacSlotItemPickerSheet: View {
                             chooseAppViaFinderPanel()
                         }
                         .buttonStyle(.borderedProminent)
+                        .tint(palette.accent)
+                        .foregroundStyle(palette.accentForeground)
                     }
                 }
                 Spacer()
@@ -284,26 +304,26 @@ public struct MacSlotItemPickerSheet: View {
                             selectApp(app)
                         } label: {
                             HStack(spacing: 12) {
-                                DataImageView(pngData: app.iconPNGData, fallbackSymbol: "app.fill", tint: .accentColor)
+                                DataImageView(pngData: app.iconPNGData, fallbackSymbol: "app.fill", tint: palette.secondaryText)
                                     .frame(width: 34, height: 34)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {
                                         Text(app.appName)
                                             .font(.system(.body, design: .rounded, weight: .semibold))
-                                            .foregroundStyle(.primary)
+                                            .foregroundStyle(palette.primaryText)
                                         if isCurrent {
                                             Text(L10n.tr("当前已选", "Current", language: lang))
                                                 .font(.caption2.bold())
-                                                .foregroundStyle(.green)
+                                                .foregroundStyle(palette.statusConnected)
                                                 .padding(.horizontal, 6)
                                                 .padding(.vertical, 1)
-                                                .background(Color.green.opacity(0.14), in: Capsule())
+                                                .background(palette.statusConnected.opacity(0.16), in: Capsule())
                                         }
                                     }
                                     Text(app.bundleIdentifier)
                                         .font(.caption2)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(palette.secondaryText)
                                         .lineLimit(1)
                                 }
 
@@ -312,26 +332,32 @@ public struct MacSlotItemPickerSheet: View {
                                 if idx == highlightedAppIndex {
                                     Text("⏎")
                                         .font(.caption.bold())
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(palette.primaryText)
                                         .padding(.horizontal, 7)
                                         .padding(.vertical, 2)
-                                        .background(Color.primary.opacity(0.08), in: Capsule())
+                                        .background(palette.tileFillTop, in: Capsule())
                                 }
                             }
                             .padding(.vertical, 4)
                             .padding(.horizontal, 8)
                             .background(
                                 idx == highlightedAppIndex
-                                    ? Color.accentColor.opacity(0.15)
+                                    ? palette.accent.opacity(0.18)
                                     : Color.clear,
                                 in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                    .strokeBorder(idx == highlightedAppIndex ? palette.accent.opacity(0.75) : .clear, lineWidth: 1)
                             )
                             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                         .buttonStyle(.plain)
+                        .listRowBackground(palette.barSurface.opacity(0.6))
                         .id(idx)
                     }
                     .listStyle(.inset)
+                    .scrollContentBackground(.hidden)
                     .onKeyPress(.downArrow) {
                         if highlightedAppIndex + 1 < filteredApps.count {
                             highlightedAppIndex += 1
@@ -423,21 +449,26 @@ public struct MacSlotItemPickerSheet: View {
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "bolt.fill")
-                                    .foregroundStyle(.purple)
+                                    .foregroundStyle(palette.secondaryText)
                                 Text(item.name)
+                                    .foregroundStyle(palette.primaryText)
                                     .lineLimit(1)
                                 Spacer()
                                 if shortcutName == item.name {
                                     Image(systemName: "checkmark.circle.fill")
-                                        .foregroundStyle(.green)
+                                        .foregroundStyle(palette.accent)
                                 }
                             }
                             .padding(.vertical, 2)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .listRowBackground(palette.barSurface)
                     }
-                    .listStyle(.bordered(alternatesRowBackgrounds: true))
+                    .listStyle(.inset)
+                    .scrollContentBackground(.hidden)
+                    .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
                 }
             }
             .frame(width: 270)
@@ -447,6 +478,7 @@ public struct MacSlotItemPickerSheet: View {
             VStack(alignment: .leading, spacing: 14) {
                 Text(L10n.tr("快捷指令方块预览", "Shortcut Tile Preview", language: lang))
                     .font(.subheadline.bold())
+                    .foregroundStyle(palette.primaryText)
 
                 HStack {
                     Spacer()
@@ -481,8 +513,12 @@ public struct MacSlotItemPickerSheet: View {
                                 Text(em)
                                     .frame(width: 26, height: 26)
                                     .background(
-                                        shortcutEmoji == em ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05),
+                                        shortcutEmoji == em ? palette.accent.opacity(0.20) : palette.barSurface,
                                         in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                            .strokeBorder(shortcutEmoji == em ? palette.accent : palette.subtleCardStroke, lineWidth: 1)
                                     )
                                     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                             }
@@ -494,7 +530,7 @@ public struct MacSlotItemPickerSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.tr("方块配色", "Tile Color", language: lang))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                     swatchRow(selection: $shortcutColorHex)
                 }
 
@@ -516,6 +552,8 @@ public struct MacSlotItemPickerSheet: View {
                         dismiss()
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(palette.accentEmphasis)
+                    .foregroundStyle(palette.emphasisForeground)
                     .disabled(shortcutName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
@@ -552,10 +590,10 @@ public struct MacSlotItemPickerSheet: View {
                     .padding(.top, 4)
 
                 VStack(spacing: 6) {
-                    presetWebsiteButton(title: "YouTube", url: "https://www.youtube.com", emoji: "▶️", hex: "#C93B2B")
-                    presetWebsiteButton(title: "GitHub", url: "https://github.com", emoji: "🐙", hex: "#24292F")
-                    presetWebsiteButton(title: "Figma", url: "https://www.figma.com", emoji: "🎨", hex: "#9333EA")
-                    presetWebsiteButton(title: "Notion", url: "https://www.notion.so", emoji: "📓", hex: "#5C2D16")
+                    presetWebsiteButton(title: "YouTube", url: "https://www.youtube.com", emoji: "▶️", hex: "#FFF1EC")
+                    presetWebsiteButton(title: "GitHub", url: "https://github.com", emoji: "🐙", hex: "#EDF6FF")
+                    presetWebsiteButton(title: "Figma", url: "https://www.figma.com", emoji: "🎨", hex: "#FFF6E3")
+                    presetWebsiteButton(title: "Notion", url: "https://www.notion.so", emoji: "📓", hex: "#F3EEFF")
                 }
             }
             .frame(width: 180)
@@ -585,8 +623,12 @@ public struct MacSlotItemPickerSheet: View {
                                 Text(em)
                                     .frame(width: 26, height: 26)
                                     .background(
-                                        websiteEmoji == em ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05),
+                                        websiteEmoji == em ? palette.accent.opacity(0.20) : palette.barSurface,
                                         in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                            .strokeBorder(websiteEmoji == em ? palette.accent : palette.subtleCardStroke, lineWidth: 1)
                                     )
                                     .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                             }
@@ -600,11 +642,12 @@ public struct MacSlotItemPickerSheet: View {
                     isOn: $websiteSwitchExistingTab
                 )
                 .font(.callout)
+                .tint(palette.accent)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.tr("方块配色", "Tile Color", language: lang))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                     swatchRow(selection: $websiteColorHex)
                 }
 
@@ -614,7 +657,7 @@ public struct MacSlotItemPickerSheet: View {
                     if !isValidWebsiteDraft && websiteURL != "https://" {
                         Text(L10n.tr("请输入有效的网址域名", "Enter a valid website address", language: lang))
                             .font(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(palette.statusFailure)
                     }
                     Spacer()
                     Button(L10n.tr("保存网页书签到槽位", "Save Website to Slot", language: lang)) {
@@ -638,6 +681,8 @@ public struct MacSlotItemPickerSheet: View {
                         dismiss()
                     }
                     .buttonStyle(.borderedProminent)
+                    .tint(palette.accentEmphasis)
+                    .foregroundStyle(palette.emphasisForeground)
                     .disabled(!isValidWebsiteDraft)
                 }
             }
@@ -692,28 +737,28 @@ public struct MacSlotItemPickerSheet: View {
                                     HStack(spacing: 10) {
                                         Image(systemName: action.sfSymbol)
                                             .font(.system(size: 15, weight: .semibold))
-                                            .foregroundStyle(.white)
+                                            .foregroundStyle(palette.primaryText)
                                             .frame(width: 32, height: 32)
-                                            .background(Color(hex: action.accentHex), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                            .background(ChocSwatch.resolvedTileColor(hex: action.accentHex), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                                         Text(action.title(in: lang))
                                             .font(.callout.weight(.medium))
-                                            .foregroundStyle(.primary)
+                                            .foregroundStyle(palette.primaryText)
                                             .lineLimit(2)
                                             .multilineTextAlignment(.leading)
                                         Spacer(minLength: 0)
                                         if isCurrent {
                                             Image(systemName: "checkmark.circle.fill")
-                                                .foregroundStyle(.green)
+                                                .foregroundStyle(palette.accent)
                                         }
                                     }
                                     .padding(9)
                                     .background(
-                                        isCurrent ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.045),
+                                        isCurrent ? palette.tileFillTop : palette.barSurface,
                                         in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                                     )
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .strokeBorder(isCurrent ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.06), lineWidth: 1)
+                                            .strokeBorder(isCurrent ? palette.accent : palette.subtleCardStroke, lineWidth: isCurrent ? 1.5 : 1)
                                     )
                                     .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 }
@@ -735,6 +780,7 @@ public struct MacSlotItemPickerSheet: View {
                     dismiss()
                 } label: {
                     Label(L10n.tr("清空此槽位", "Clear Slot", language: lang), systemImage: "trash")
+                        .foregroundStyle(palette.statusFailure)
                 }
             }
 
@@ -796,7 +842,7 @@ public struct MacSlotItemPickerSheet: View {
     private func swatchRow(selection: Binding<String>) -> some View {
         LazyVGrid(columns: Array(repeating: GridItem(.fixed(28), spacing: 8), count: 6), alignment: .leading, spacing: 8) {
             ForEach(ChocSwatch.tileColors, id: \.self) { hex in
-                let isSel = (selection.wrappedValue == hex)
+                let isSel = (selection.wrappedValue.uppercased() == hex.uppercased())
                 Button {
                     selection.wrappedValue = hex
                 } label: {
@@ -806,12 +852,12 @@ public struct MacSlotItemPickerSheet: View {
                             .frame(width: 26, height: 26)
                             .overlay(
                                 Circle()
-                                    .strokeBorder(.white, lineWidth: isSel ? 2.5 : 0.6)
+                                    .strokeBorder(isSel ? palette.accent : palette.subtleCardStroke, lineWidth: isSel ? 2.5 : 1.0)
                             )
                         if isSel {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 10, weight: .black))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(palette.primaryText)
                         }
                     }
                     .contentShape(Circle())

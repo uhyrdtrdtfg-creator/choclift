@@ -84,10 +84,10 @@ public struct ChocolateBarStudioView: View {
                         } else {
                             Text("\(page.index + 1)")
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(palette.secondaryText)
                             if count > 0 {
                                 Circle()
-                                    .fill(palette.accentGold.opacity(0.75))
+                                    .fill(palette.secondaryText.opacity(0.65))
                                     .frame(width: 4.5, height: 4.5)
                             }
                         }
@@ -97,14 +97,14 @@ public struct ChocolateBarStudioView: View {
                     .background(
                         isSelected
                             ? palette.tileFillTop.opacity(0.95)
-                            : Color.primary.opacity(0.05),
+                            : palette.barSurface.opacity(0.75),
                         in: Capsule()
                     )
-                    .foregroundStyle(isSelected ? palette.primaryText : .primary)
+                    .foregroundStyle(isSelected ? palette.primaryText : palette.secondaryText)
                     .overlay(
                         Capsule()
                             .strokeBorder(
-                                isSelected ? palette.accentGold.opacity(0.75) : Color.primary.opacity(0.08),
+                                isSelected ? palette.accent.opacity(0.85) : palette.subtleCardStroke,
                                 lineWidth: 1
                             )
                     )
@@ -124,9 +124,11 @@ public struct ChocolateBarStudioView: View {
                     Text(L10n.tr("页面设置", "Page Setup", language: lang))
                         .font(.caption.weight(.semibold))
                 }
+                .foregroundStyle(palette.primaryText)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 7)
-                .background(Color.primary.opacity(0.06), in: Capsule())
+                .background(palette.barSurface, in: Capsule())
+                .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -141,7 +143,7 @@ public struct ChocolateBarStudioView: View {
         HStack(spacing: 10) {
             Image(systemName: "square.grid.2x2")
                 .font(.callout.weight(.bold))
-                .foregroundStyle(palette.accentGold)
+                .foregroundStyle(palette.secondaryText)
             Text(
                 L10n.tr(
                     "「\(currentPage.title)」当前为空页 — 点击下方任意巧克力格添加应用、快捷指令、网页或系统动作，也可直接从访达拖入 .app。",
@@ -150,7 +152,7 @@ public struct ChocolateBarStudioView: View {
                 )
             )
             .font(.caption)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(palette.secondaryText)
             .lineLimit(1)
 
             Spacer(minLength: 8)
@@ -162,18 +164,18 @@ public struct ChocolateBarStudioView: View {
                     .font(.caption.weight(.bold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(palette.tileFillTop, in: Capsule())
-                    .foregroundStyle(palette.primaryText)
+                    .background(palette.accent, in: Capsule())
+                    .foregroundStyle(palette.accentForeground)
                     .contentShape(Capsule())
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(palette.accentGold.opacity(0.28), lineWidth: 1)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
         )
     }
 
@@ -182,6 +184,7 @@ public struct ChocolateBarStudioView: View {
         return VStack(alignment: .leading, spacing: 12) {
             Text(L10n.tr("第 \(idx + 1) 页设置", "Page #\(idx + 1) Settings", language: lang))
                 .font(.headline)
+                .foregroundStyle(palette.primaryText)
 
             LabeledContent(L10n.tr("页面名称", "Title", language: lang)) {
                 TextField(
@@ -196,11 +199,12 @@ public struct ChocolateBarStudioView: View {
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 164)
             }
+            .foregroundStyle(palette.secondaryText)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(L10n.tr("页面图标", "Page Icon", language: lang))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.secondaryText)
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(32), spacing: 6), count: 5), alignment: .leading, spacing: 6) {
                     ForEach(["🍫", "🚀", "⚡️", "🌐", "🔮", "🎨", "🎧", "🌙", "💼", "⭐️"], id: \.self) { em in
                         let isCur = coordinator.profile.pages[idx].iconEmoji == em
@@ -211,12 +215,12 @@ public struct ChocolateBarStudioView: View {
                                 .font(.system(size: 16))
                                 .frame(width: 32, height: 30)
                                 .background(
-                                    isCur ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05),
+                                    isCur ? palette.accent.opacity(0.20) : palette.tileFillBottom,
                                     in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                        .strokeBorder(isCur ? Color.accentColor : .clear, lineWidth: 1.5)
+                                        .strokeBorder(isCur ? palette.accent : palette.subtleCardStroke, lineWidth: isCur ? 1.5 : 1)
                                 )
                                 .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
                         }
@@ -234,11 +238,15 @@ public struct ChocolateBarStudioView: View {
                 showPageRenamePopover = false
             } label: {
                 Label(L10n.tr("清空本页全部 8 个槽位", "Clear All 8 Slots on Page", language: lang), systemImage: "trash")
+                    .foregroundStyle(palette.statusFailure)
             }
             .disabled(filledSlotCount == 0)
         }
         .padding(16)
         .frame(width: 260)
+        .background(palette.barSurface)
+        .tint(palette.accent)
+        .preferredColorScheme(.light)
     }
 
     // MARK: - Realistic 2x4 Chocolate Touch Bar Frame
@@ -282,7 +290,7 @@ public struct ChocolateBarStudioView: View {
                                 .foregroundStyle(activeLink == .bluetooth ? palette.statusBluetooth : palette.statusConnected)
                         } else {
                             Circle()
-                                .fill(coordinator.server.connectedDeviceCount > 0 ? palette.statusConnected : palette.accentGold)
+                                .fill(coordinator.server.connectedDeviceCount > 0 ? palette.statusConnected : palette.secondaryText)
                                 .frame(width: 8, height: 8)
                         }
                     }
@@ -297,7 +305,7 @@ public struct ChocolateBarStudioView: View {
                             coordinator.selectedPageIndex = dotIdx
                         } label: {
                             Circle()
-                                .fill(dotIdx == pageIdx ? palette.accentGold : palette.secondaryText.opacity(0.35))
+                                .fill(dotIdx == pageIdx ? palette.accent : palette.secondaryText.opacity(0.35))
                                 .frame(width: dotIdx == pageIdx ? 6.5 : 4.5, height: dotIdx == pageIdx ? 6.5 : 4.5)
                                 .frame(width: 22, height: 12)
                                 .contentShape(Rectangle())
@@ -351,9 +359,9 @@ public struct ChocolateBarStudioView: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .strokeBorder(palette.tileBorderHighlight.opacity(0.55), lineWidth: 1.8)
+                        .strokeBorder(palette.tileBorderHighlight, lineWidth: 1.8)
                 )
-                .shadow(color: .black.opacity(0.26), radius: 16, x: 0, y: 8)
+                .shadow(color: palette.primaryText.opacity(0.08), radius: 16, x: 0, y: 8)
         )
     }
 
@@ -389,9 +397,9 @@ public struct ChocolateBarStudioView: View {
                     } label: {
                         Image(systemName: "play.fill")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(palette.primaryText)
                             .frame(width: 22, height: 22)
-                            .background(.black.opacity(0.72), in: Circle())
+                            .background(palette.backgroundBottom.opacity(0.86), in: Circle())
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
@@ -402,9 +410,9 @@ public struct ChocolateBarStudioView: View {
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(palette.accentForeground)
                             .frame(width: 22, height: 22)
-                            .background(palette.accentRuby.opacity(0.9), in: Circle())
+                            .background(palette.statusFailure.opacity(0.92), in: Circle())
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
@@ -490,13 +498,13 @@ public struct ChocolateBarStudioView: View {
                 systemImage: "hand.point.up.left.fill"
             )
             Text("·")
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(palette.secondaryText.opacity(0.6))
             Label(
                 L10n.tr("拖入 .app 或网址即可添加，拖动方块可互换位置", "Drop .app bundles or URLs directly, or drag tiles to swap", language: lang),
                 systemImage: "arrow.up.and.down.and.arrow.left.and.right"
             )
         }
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(palette.secondaryText)
     }
 }
