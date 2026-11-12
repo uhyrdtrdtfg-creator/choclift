@@ -434,6 +434,7 @@ public struct DataImageView: View {
     public var body: some View {
         if let pngData, let image = makeSwiftUIImage(from: pngData) {
             image
+                .renderingMode(.original)
                 .resizable()
                 .interpolation(.high)
                 .scaledToFit()
@@ -576,7 +577,7 @@ public struct ChocBarTileCard: View {
                     DataImageView(
                         pngData: iconData,
                         fallbackSymbol: fallbackSymbol,
-                        tint: palette.accent
+                        tint: palette.secondaryText
                     )
                     .frame(width: side * (isMicro ? 0.44 : 0.48), height: side * (isMicro ? 0.44 : 0.48))
 
