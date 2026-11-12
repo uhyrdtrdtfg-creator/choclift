@@ -1,0 +1,446 @@
+# PR 合并自动打版 workflow —— 当 PR 合并进 main 时，自动计算下一个统一补丁版本号，
+# 在合并提交上创建并原子推送 annotated tags `vX.Y.N` 与 `ios-vX.Y.N`，触发 release.yml 与 ios-release.yml，
+# 并使用 GITHUB_TOKEN 确认两条发版 workflow 均已启动。
+#
+# 说明:
+#   - 仅在 pull_request closed 且 merged == true && base.ref == 'main' 时运行；不在普通 push 上触发，防止打 tag 或
+#     更新 appcast.xml 的提交造成递归循环。
+#   - GITHUB_TOKEN（contents:write, actions:read, pull-requests:read）用于读取 PR/远端引用及确认发版工作流启动；
+#     推送 annotated tags 使用仓库已有的 secrets.RELEASE_REPO_PAT（GitHub Actions 会抑制 GITHUB_TOKEN 推送产生的
+#     on: push: tags 事件，无法触发 release.yml / ios-release.yml）。
+#   - 有意跳过发版: 给 PR 打上 `release-skip` label、在 PR 标题/合并提交标题中加入 `[release-skip]`，
+#     或在提交消息末尾附带 Git trailer `Release-Skip: true`。
+name: Release on Merge
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: read
+  pull-requests: read
+
+concurrency:
+  group: release-on-merge-main
+  cancel-in-progress: false
+
+jobs:
+  tag-release:
+    name: Create Mac & iOS Release Tags
+    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main history
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: false
+          persist-credentials: false
+
+      - name: Evaluate PR merge & skip rules
+        id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          git_with_token() {
+            local token="$1"
+            shift
+            if [ -n "$token" ]; then
+              local auth_b64
+              auth_b64="$(printf 'x-access-token:%s' "$token" | base64 | tr -d '\n')"
+              git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_b64}" "$@"
+            else
+              git "$@"
+            fi
+          }
+
+          MERGED="$(jq -r '.pull_request.merged // false' "$GITHUB_EVENT_PATH")"
+          BASE_REF="$(jq -r '.pull_request.base.ref // ""' "$GITHUB_EVENT_PATH")"
+          PR_NUMBER="$(jq -r '.pull_request.number // ""' "$GITHUB_EVENT_PATH")"
+          MERGE_SHA="$(jq -r '.pull_request.merge_commit_sha // ""' "$GITHUB_EVENT_PATH")"
+          HEAD_SHA="$(jq -r '.pull_request.head.sha // ""' "$GITHUB_EVENT_PATH")"
+          PR_TITLE="$(jq -r '.pull_request.title // ""' "$GITHUB_EVENT_PATH")"
+
+          if [ "$MERGED" != "true" ] || [ "$BASE_REF" != "main" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "reason=PR #${PR_NUMBER} was closed without merging into main" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping release: PR #${PR_NUMBER} was not merged into main."
+            exit 0
+          fi
+
+          if [[ ! "$MERGE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Invalid or missing pull_request.merge_commit_sha: '${MERGE_SHA}'"
+            exit 1
+          fi
+
+          git_with_token "${GH_TOKEN:-}" fetch --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+
+          if ! git cat-file -e "${MERGE_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::Merge commit ${MERGE_SHA} does not exist in repository history."
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor "$MERGE_SHA" refs/remotes/origin/main; then
+            echo "::error::Merge commit ${MERGE_SHA} is not an ancestor of origin/main."
+            exit 1
+          fi
+
+          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "merge_sha=${MERGE_SHA}" >> "$GITHUB_OUTPUT"
+
+          HAS_SKIP_LABEL="$(jq -r '
+            [(.pull_request.labels // [])[] | (.name // "" | ascii_downcase)]
+            | index("release-skip") != null
+          ' "$GITHUB_EVENT_PATH")"
+
+          if [ "$HAS_SKIP_LABEL" = "true" ]; then
+            REASON="PR #${PR_NUMBER} has the 'release-skip' label"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping release tag creation: ${REASON}."
+            {
+              echo "### Release Skipped"
+              echo "- **PR**: #${PR_NUMBER}"
+              echo "- **Merge Commit**: \`${MERGE_SHA}\`"
+              echo "- **Reason**: ${REASON}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          MERGE_SUBJECT="$(git log -1 --format=%s "$MERGE_SHA")"
+          if printf '%s\n%s\n' "$PR_TITLE" "$MERGE_SUBJECT" | grep -qiF '[release-skip]'; then
+            REASON="PR #${PR_NUMBER} title or merge commit subject contains [release-skip]"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping release tag creation: ${REASON}."
+            {
+              echo "### Release Skipped"
+              echo "- **PR**: #${PR_NUMBER}"
+              echo "- **Merge Commit**: \`${MERGE_SHA}\`"
+              echo "- **Reason**: ${REASON}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          COMMITS_TO_CHECK="$MERGE_SHA"
+          if git rev-parse --verify --quiet "${MERGE_SHA}^2^{commit}" >/dev/null; then
+            COMMITS_TO_CHECK="$(git rev-list "${MERGE_SHA}^1..${MERGE_SHA}")"
+          elif [ -n "$HEAD_SHA" ] && git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            COMMITS_TO_CHECK="$(printf '%s\n%s\n' "$MERGE_SHA" "$HEAD_SHA" | awk '!seen[$0]++')"
+          fi
+
+          while IFS= read -r COMMIT_SHA; do
+            [ -z "$COMMIT_SHA" ] && continue
+            TRAILER_VAL="$(
+              git log -1 --format=%B "$COMMIT_SHA" \
+                | git interpret-trailers --parse \
+                | awk '{
+                    sep = index($0, ":")
+                    if (sep > 0) {
+                      key = tolower(substr($0, 1, sep - 1))
+                      val = substr($0, sep + 1)
+                      gsub(/^[[:space:]]+|[[:space:]]+$/, "", key)
+                      gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)
+                      lval = tolower(val)
+                      if (key == "release-skip" && lval != "" && lval != "false" && lval != "0" && lval != "no") {
+                        print val
+                        exit 0
+                      }
+                    }
+                  }'
+            )"
+            if [ -n "$TRAILER_VAL" ]; then
+              REASON="Commit ${COMMIT_SHA:0:7} includes trailer 'Release-Skip: ${TRAILER_VAL}'"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
+              echo "::notice::Skipping release tag creation: ${REASON}."
+              {
+                echo "### Release Skipped"
+                echo "- **PR**: #${PR_NUMBER}"
+                echo "- **Merge Commit**: \`${MERGE_SHA}\`"
+                echo "- **Reason**: ${REASON}"
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          done <<< "$COMMITS_TO_CHECK"
+
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Calculate next patch version & push annotated tags
+        id: tag
+        if: steps.check.outputs.skip != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPO_PAT: ${{ secrets.RELEASE_REPO_PAT }}
+          MERGE_SHA: ${{ steps.check.outputs.merge_sha }}
+          PR_NUMBER: ${{ steps.check.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${RELEASE_REPO_PAT:-}" ]; then
+            echo "::error::Missing required secret RELEASE_REPO_PAT (needed so pushed tags trigger release.yml and ios-release.yml)."
+            exit 1
+          fi
+
+          git_with_token() {
+            local token="$1"
+            shift
+            if [ -n "$token" ]; then
+              local auth_b64
+              auth_b64="$(printf 'x-access-token:%s' "$token" | base64 | tr -d '\n')"
+              git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${auth_b64}" "$@"
+            else
+              git "$@"
+            fi
+          }
+
+          REMOTE_TAGS_RAW="$(git_with_token "${GH_TOKEN:-}" ls-remote --tags origin)"
+
+          PLAN_OUTPUT="$(
+            REMOTE_TAGS_RAW="$REMOTE_TAGS_RAW" MERGE_SHA="$MERGE_SHA" python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          raw = os.environ["REMOTE_TAGS_RAW"]
+          merge_sha = os.environ["MERGE_SHA"]
+
+          direct = {}
+          peeled = {}
+
+          for line in raw.splitlines():
+              line = line.strip()
+              if not line:
+                  continue
+              parts = line.split("\t", 1)
+              if len(parts) != 2:
+                  continue
+              sha, ref = parts
+              prefix = "refs/tags/"
+              if not ref.startswith(prefix):
+                  continue
+              name = ref[len(prefix):]
+              if name.endswith("^{}"):
+                  peeled[name[:-3]] = sha
+              else:
+                  direct[name] = sha
+
+          all_tags = set(direct.keys()) | set(peeled.keys())
+          commit_for_tag = {t: peeled.get(t, direct.get(t)) for t in all_tags}
+
+          mac_re = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+          ios_re = re.compile(r"^ios-v(\d+)\.(\d+)\.(\d+)$")
+
+          merge_mac = sorted(t for t in all_tags if mac_re.match(t) and commit_for_tag.get(t) == merge_sha)
+          merge_ios = sorted(t for t in all_tags if ios_re.match(t) and commit_for_tag.get(t) == merge_sha)
+
+          if merge_mac or merge_ios:
+              if len(merge_mac) == 1 and len(merge_ios) == 1 and merge_mac[0][1:] == merge_ios[0][5:]:
+                  ver = merge_mac[0][1:]
+                  print(f"STATUS=already_tagged")
+                  print(f"VERSION={ver}")
+                  print(f"MAC_TAG={merge_mac[0]}")
+                  print(f"IOS_TAG={merge_ios[0]}")
+                  sys.exit(0)
+              print(
+                  f"::error::Tag conflict on merge commit {merge_sha}: partial or mismatched release tags already exist on origin "
+                  f"(mac={merge_mac}, ios={merge_ios}). Stopping without creating another tag.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          mac_versions = []
+          ios_versions = []
+          for t in all_tags:
+              m_mac = mac_re.match(t)
+              if m_mac:
+                  mac_versions.append((int(m_mac.group(1)), int(m_mac.group(2)), int(m_mac.group(3)), t))
+                  continue
+              m_ios = ios_re.match(t)
+              if m_ios:
+                  ios_versions.append((int(m_ios.group(1)), int(m_ios.group(2)), int(m_ios.group(3)), t))
+
+          if not mac_versions:
+              print("::error::No existing vX.Y.Z tag found on origin to determine base version.", file=sys.stderr)
+              sys.exit(1)
+
+          highest = max(mac_versions + ios_versions, key=lambda item: item[:3])
+          next_version = f"{highest[0]}.{highest[1]}.{highest[2] + 1}"
+          mac_tag = f"v{next_version}"
+          ios_tag = f"ios-v{next_version}"
+
+          conflicts = [t for t in (mac_tag, ios_tag) if t in all_tags]
+          if conflicts:
+              print(
+                  f"::error::Tag conflict: {', '.join(conflicts)} already exists on origin. "
+                  "Stopping without creating either tag.",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+
+          print("STATUS=create")
+          print(f"BASE_TAG={highest[3]}")
+          print(f"VERSION={next_version}")
+          print(f"MAC_TAG={mac_tag}")
+          print(f"IOS_TAG={ios_tag}")
+          PY
+          )"
+
+          STATUS=""
+          BASE_TAG=""
+          VERSION=""
+          MAC_TAG=""
+          IOS_TAG=""
+          while IFS='=' read -r KEY VAL; do
+            case "$KEY" in
+              STATUS)   STATUS="$VAL" ;;
+              BASE_TAG) BASE_TAG="$VAL" ;;
+              VERSION)  VERSION="$VAL" ;;
+              MAC_TAG)  MAC_TAG="$VAL" ;;
+              IOS_TAG)  IOS_TAG="$VAL" ;;
+            esac
+          done <<< "$PLAN_OUTPUT"
+
+          if [ "$STATUS" = "already_tagged" ]; then
+            {
+              echo "created=false"
+              echo "version=${VERSION}"
+              echo "mac_tag=${MAC_TAG}"
+              echo "ios_tag=${IOS_TAG}"
+            } >> "$GITHUB_OUTPUT"
+            echo "::notice::Merge commit ${MERGE_SHA} is already tagged with ${MAC_TAG} and ${IOS_TAG}; skipping duplicate tag push."
+            {
+              echo "### Release Tags Already Present (Duplicate Run Guard)"
+              echo "- **PR**: #${PR_NUMBER}"
+              echo "- **Merge Commit**: \`${MERGE_SHA}\`"
+              echo "- **Tags**: \`${MAC_TAG}\`, \`${IOS_TAG}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          EXISTING_REFS="$(git_with_token "${GH_TOKEN:-}" ls-remote --refs origin "refs/tags/${MAC_TAG}" "refs/tags/${IOS_TAG}")"
+          if [ -n "$EXISTING_REFS" ]; then
+            echo "::error::Tag conflict detected on origin right before push (${MAC_TAG} / ${IOS_TAG} already exists). Stopping without creating either tag."
+            printf '%s\n' "$EXISTING_REFS" >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "$MAC_TAG" "$MERGE_SHA" -m "Release ${MAC_TAG} (PR #${PR_NUMBER})"
+          git tag -a "$IOS_TAG" "$MERGE_SHA" -m "iOS Release ${VERSION} (PR #${PR_NUMBER})"
+
+          echo "Pushing annotated tags ${MAC_TAG} and ${IOS_TAG} (next after ${BASE_TAG}) to ${MERGE_SHA}..."
+          if ! git_with_token "$RELEASE_REPO_PAT" push --atomic origin \
+            "refs/tags/${MAC_TAG}:refs/tags/${MAC_TAG}" \
+            "refs/tags/${IOS_TAG}:refs/tags/${IOS_TAG}"; then
+            git tag -d "$MAC_TAG" "$IOS_TAG" >/dev/null 2>&1 || true
+            echo "::error::Atomic push of ${MAC_TAG} and ${IOS_TAG} failed due to a concurrent ref conflict or push error. No existing tags were moved or force-pushed."
+            exit 1
+          fi
+
+          {
+            echo "created=true"
+            echo "version=${VERSION}"
+            echo "mac_tag=${MAC_TAG}"
+            echo "ios_tag=${IOS_TAG}"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::Created and pushed annotated tags ${MAC_TAG} and ${IOS_TAG} on ${MERGE_SHA}."
+
+      - name: Confirm macOS & iOS release workflows start
+        if: steps.check.outputs.skip != 'true' && steps.tag.outputs.created == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE_SHA: ${{ steps.check.outputs.merge_sha }}
+          PR_NUMBER: ${{ steps.check.outputs.pr_number }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          MAC_TAG: ${{ steps.tag.outputs.mac_tag }}
+          IOS_TAG: ${{ steps.tag.outputs.ios_tag }}
+        run: |
+          set -euo pipefail
+
+          MAX_ATTEMPTS="${CONFIRM_MAX_ATTEMPTS:-24}"
+          POLL_SECONDS="${CONFIRM_POLL_SECONDS:-5}"
+
+          MAC_RUN_ID=""
+          MAC_RUN_STATUS=""
+          MAC_RUN_URL=""
+
+          IOS_RUN_ID=""
+          IOS_RUN_STATUS=""
+          IOS_RUN_URL=""
+
+          for ((attempt = 1; attempt <= MAX_ATTEMPTS; attempt++)); do
+            if [ -z "$MAC_RUN_ID" ]; then
+              if MAC_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs?event=push&per_page=20" 2>/dev/null)"; then
+                MAC_MATCH="$(printf '%s' "$MAC_JSON" | jq -c --arg tag "$MAC_TAG" --arg sha "$MERGE_SHA" '
+                  [.workflow_runs[] | select(.head_branch == $tag and .head_sha == $sha)] | first // empty
+                ')"
+                if [ -n "$MAC_MATCH" ]; then
+                  MAC_RUN_ID="$(printf '%s' "$MAC_MATCH" | jq -r '.id')"
+                  MAC_RUN_STATUS="$(printf '%s' "$MAC_MATCH" | jq -r '.status')"
+                  MAC_RUN_URL="$(printf '%s' "$MAC_MATCH" | jq -r '.html_url')"
+                  echo "Detected macOS Release run #${MAC_RUN_ID} (${MAC_RUN_STATUS}): ${MAC_RUN_URL}"
+                fi
+              else
+                echo "::warning::Transient failure querying release.yml runs (attempt ${attempt}/${MAX_ATTEMPTS})."
+              fi
+            fi
+
+            if [ -z "$IOS_RUN_ID" ]; then
+              if IOS_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ios-release.yml/runs?event=push&per_page=20" 2>/dev/null)"; then
+                IOS_MATCH="$(printf '%s' "$IOS_JSON" | jq -c --arg tag "$IOS_TAG" --arg sha "$MERGE_SHA" '
+                  [.workflow_runs[] | select(.head_branch == $tag and .head_sha == $sha)] | first // empty
+                ')"
+                if [ -n "$IOS_MATCH" ]; then
+                  IOS_RUN_ID="$(printf '%s' "$IOS_MATCH" | jq -r '.id')"
+                  IOS_RUN_STATUS="$(printf '%s' "$IOS_MATCH" | jq -r '.status')"
+                  IOS_RUN_URL="$(printf '%s' "$IOS_MATCH" | jq -r '.html_url')"
+                  echo "Detected iOS Release run #${IOS_RUN_ID} (${IOS_RUN_STATUS}): ${IOS_RUN_URL}"
+                fi
+              else
+                echo "::warning::Transient failure querying ios-release.yml runs (attempt ${attempt}/${MAX_ATTEMPTS})."
+              fi
+            fi
+
+            if [ -n "$MAC_RUN_ID" ] && [ -n "$IOS_RUN_ID" ]; then
+              break
+            fi
+
+            if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+              echo "Waiting for release workflows to register (attempt ${attempt}/${MAX_ATTEMPTS})..."
+              sleep "$POLL_SECONDS"
+            fi
+          done
+
+          if [ -z "$MAC_RUN_ID" ] || [ -z "$IOS_RUN_ID" ]; then
+            echo "::error::Timed out confirming both release workflows started for ${MAC_TAG} (run=${MAC_RUN_ID:-none}) and ${IOS_TAG} (run=${IOS_RUN_ID:-none})."
+            {
+              echo "### Release Workflow Confirmation Failed"
+              echo "- **Version**: \`${VERSION}\` (PR #${PR_NUMBER}, commit \`${MERGE_SHA}\`)"
+              echo "- **macOS (\`${MAC_TAG}\` → \`release.yml\`)**: ${MAC_RUN_URL:-NOT STARTED}"
+              echo "- **iOS (\`${IOS_TAG}\` → \`ios-release.yml\`)**: ${IOS_RUN_URL:-NOT STARTED}"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "::notice::Confirmed both release.yml (run ${MAC_RUN_ID}) and ios-release.yml (run ${IOS_RUN_ID}) started."
+          {
+            echo "### Release Tags Created & Workflows Started"
+            echo "- **Version**: \`${VERSION}\` (PR #${PR_NUMBER})"
+            echo "- **Merge Commit**: \`${MERGE_SHA}\`"
+            echo ""
+            echo "| Platform | Tag | Workflow | Run Status | Link |"
+            echo "|---|---|---|---|---|"
+            echo "| macOS | \`${MAC_TAG}\` | \`release.yml\` | \`${MAC_RUN_STATUS}\` | [Run #${MAC_RUN_ID}](${MAC_RUN_URL}) |"
+            echo "| iOS / iPadOS + Watch | \`${IOS_TAG}\` | \`ios-release.yml\` | \`${IOS_RUN_STATUS}\` | [Run #${IOS_RUN_ID}](${IOS_RUN_URL}) |"
+          } >> "$GITHUB_STEP_SUMMARY"

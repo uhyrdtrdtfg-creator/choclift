@@ -53,6 +53,7 @@ Turn your **iPhone**, **iPad**, and **Apple Watch** into tactile, customizable *
 choclift/
 ├── .github/workflows/
 │   ├── tests.yml                       # CI unit + loopback + BLE chunking tests on macOS-15
+│   ├── release-on-merge.yml            # Automatic PR-merge annotated tagger (vX.Y.N + ios-vX.Y.N) & run verifier
 │   ├── release.yml                     # macOS Developer ID + notarization + Sparkle appcast workflow (v*.*.*)
 │   └── ios-release.yml                 # iOS / iPadOS + embedded Apple Watch TestFlight upload workflow (ios-v*)
 ├── ExportOptions.plist                 # macOS Developer ID manual signing export options
@@ -162,7 +163,31 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
 
 Releases follow the manual-signing Kown pattern across two independent tag families, with `MARKETING_VERSION` derived from the git tag (`v1.0.0` or `ios-v1.0.0` → `1.0.0`) and `CURRENT_PROJECT_VERSION` computed monotonically from `git rev-list --count HEAD`:
 
-### 1. Triggering Releases
+### 1. Automatic Merge-to-Release Flow (`release-on-merge.yml`)
+
+Merging a pull request into `main` automatically cuts a coordinated macOS + iOS/iPadOS/Watch patch release:
+
+1. **PR Merge Trigger Only**: `.github/workflows/release-on-merge.yml` listens to `pull_request` (`types: [closed]`, `branches: [main]`) and runs only when `pull_request.merged == true` targeting `main`. Direct pushes to `main` (such as Sparkle `appcast.xml` commits) and tag pushes do not re-trigger it.
+2. **Next Unified Patch Version**: Queries `origin` tags live via `git ls-remote --tags origin`, takes `max(highest vX.Y.Z, highest ios-vX.Y.Z)` numerically, increments the patch number by `1` (`X.Y.N`), and creates **annotated** tags `vX.Y.N` and `ios-vX.Y.N` on `pull_request.merge_commit_sha`.
+3. **Concurrency & Conflict Guards**: Runs in a serialized non-cancelling concurrency group (`release-on-merge-main`), skips duplicate runs if `merge_commit_sha` already carries a matching `vX.Y.Z` + `ios-vX.Y.Z` pair, aborts if either target tag already exists or if partial tags exist on the merge commit, and pushes both annotated tags together via `git push --atomic` without `--force` (never moving existing tags).
+4. **Downstream Release Confirmation**: Pushes the annotated tags using `secrets.RELEASE_REPO_PAT` (since GitHub Actions suppresses `on: push: tags` events from `GITHUB_TOKEN`) and uses `GITHUB_TOKEN` to verify that both `.github/workflows/release.yml` (macOS signing, notarization & Sparkle appcast) and `.github/workflows/ios-release.yml` (iPhone, iPad & embedded Watch TestFlight upload) start on the new tags.
+
+#### Intentionally Skipping a Release (`release-skip`)
+
+To merge a pull request into `main` **without** cutting release tags (e.g., docs, CI tweaks, or chore refactors), use any of the following before merging:
+
+- **PR Label**: Add the **`release-skip`** label to the pull request.
+- **Git Commit Trailer**: Include a `Release-Skip: true` (or `Release-Skip: <reason>`) trailer at the end of a commit / squash-merge / merge-commit message:
+  ```text
+  chore: update developer documentation
+
+  Release-Skip: true
+  ```
+- **PR Title / Merge Subject Marker**: Include **`[release-skip]`** in the pull request title or merge commit subject.
+
+### 2. Manual Release Triggers
+
+You can still cut tags or dispatch either platform workflow manually when needed:
 
 **macOS Release (`ChocliftMac` — Developer ID, Notarization & Sparkle Appcast)**
 ```bash
@@ -181,7 +206,7 @@ gh workflow run ios-release.yml -f version=1.0.0
 ```
 > `ChocliftWatch` (`com.choclift.ios.watchkitapp`) is embedded directly inside the `ChocliftIOS` (`com.choclift.ios`) archive (`Choclift.app/Watch/ChocliftWatch.app`) and uploaded in a single IPA via `xcrun altool`.
 
-### 2. Required GitHub Actions Secrets
+### 3. Required GitHub Actions Secrets
 
 Configure the following repository secrets in **Settings → Secrets and variables → Actions** on `uhyrdtrdtfg-creator/choclift`:
 
@@ -194,14 +219,14 @@ Configure the following repository secrets in **Settings → Secrets and variabl
 | **Mac & iOS** | `ASC_ISSUER_ID` | App Store Connect API Issuer ID |
 | **Mac & iOS** | `ASC_API_KEY_P8` | Base64-encoded `AuthKey_<ASC_KEY_ID>.p8` private key |
 | **Mac (`release.yml`)** | `SPARKLE_PRIVATE_KEY` | Sparkle EdDSA private key used by `sign_update` |
-| **Mac (`release.yml`)** | `RELEASE_REPO_PAT` | GitHub PAT with `contents:write` on the release/appcast repository |
+| **Merge Tag & Mac (`release-on-merge.yml`, `release.yml`)** | `RELEASE_REPO_PAT` | GitHub PAT with `contents:write` on `uhyrdtrdtfg-creator/choclift` (pushes release tags so tag workflows fire, and publishes Sparkle release/appcast) |
 | **Mac (`release.yml`)** | `PROVISIONING_PROFILE_BASE64` | Base64-encoded `.provisionprofile` for `"Choclift Developer ID"` (`com.choclift.mac`) |
 | **iOS/Watch (`ios-release.yml`)** | `IOS_DIST_CERT_P12` | Base64-encoded `Apple Distribution` `.p12` identity (cert + private key) |
 | **iOS/Watch (`ios-release.yml`)** | `IOS_DIST_CERT_PASSWORD` | Password protecting the Apple Distribution `.p12` |
 | **iOS/Watch (`ios-release.yml`)** | `IOS_PROVISION_PROFILE` | Base64-encoded App Store `.mobileprovision` named `"Choclift AppStore"` (`com.choclift.ios`) |
 | **iOS/Watch (`ios-release.yml`)** | `IOS_WATCH_PROVISION_PROFILE` | Base64-encoded App Store `.mobileprovision` named `"Choclift Watch AppStore"` (`com.choclift.ios.watchkitapp`) |
 
-### 3. Apple Developer Portal & Public Distribution Repo Notes
+### 4. Apple Developer Portal & Public Distribution Repo Notes
 - **Apple Developer Portal App IDs & Provisioning Profiles** (Team `4257SFGRFK`):
   - `com.choclift.mac` → **Developer ID** profile named **`Choclift Developer ID`** (matching `ExportOptions.plist`).
   - `com.choclift.ios` → **App Store Connect** profile named **`Choclift AppStore`** (matching `ios/ExportOptions.plist`), plus an App record in App Store Connect.
