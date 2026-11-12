@@ -9,11 +9,13 @@ struct ChocliftMacApp: App {
     var body: some Scene {
         Window("choclift", id: "studio-main") {
             MacMainWindowView(coordinator: coordinator)
+                .preferredColorScheme(.light)
         }
         .defaultSize(width: 960, height: 640)
 
         MenuBarExtra {
             MacMenuBarPopoverView(coordinator: coordinator)
+                .preferredColorScheme(.light)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: coordinator.server.connectedDeviceCount > 0 ? "rectangle.grid.2x2.fill" : "rectangle.grid.2x2")

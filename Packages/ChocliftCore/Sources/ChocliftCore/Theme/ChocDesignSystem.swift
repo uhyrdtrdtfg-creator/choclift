@@ -21,7 +21,7 @@ public extension Color {
         case 8:
             (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
         default:
-            (a, r, g, b) = (255, 68, 34, 18)
+            (a, r, g, b) = (255, 255, 255, 255)
         }
         self.init(
             .sRGB,
@@ -33,9 +33,23 @@ public extension Color {
     }
 }
 
-// MARK: - Chocolate Theme Palette
+// MARK: - Bright & Lively Theme Palette
 
 public struct ChocPalette: Sendable {
+    public static let coreBackgroundTopHex = "#F7F4FF"
+    public static let coreBackgroundBottomHex = "#FFF8F2"
+    public static let coreSurfaceHex = "#FFFFFF"
+    public static let coreTileTopHex = "#FFFFFF"
+    public static let coreTileBottomHex = "#F5F1FF"
+    public static let coreTileBorderHex = "#E0D7FA"
+    public static let corePrimaryTextHex = "#241C33"
+    public static let coreSecondaryTextHex = "#6E6480"
+    public static let coreAccentHex = "#7C5CFF"
+    public static let coreAccentEmphasisHex = "#FF7A59"
+    public static let coreStatusConnectedHex = "#12B981"
+    public static let coreStatusBluetoothHex = "#2F80ED"
+    public static let coreStatusFailureHex = "#E5484D"
+
     public let backgroundTop: Color
     public let backgroundBottom: Color
     public let barSurface: Color
@@ -44,75 +58,98 @@ public struct ChocPalette: Sendable {
     public let tileBorderHighlight: Color
     public let primaryText: Color
     public let secondaryText: Color
-    public let accentGold: Color
-    public let accentRuby: Color
+    public let accent: Color
+    public let accentEmphasis: Color
+    public let accentForeground: Color
+    public let emphasisForeground: Color
+
+    // Semantic design tokens shared across the bright light system
+    public var statusConnected: Color { Color(hex: Self.coreStatusConnectedHex) }
+    public var statusBluetooth: Color { Color(hex: Self.coreStatusBluetoothHex) }
+    public var statusFailure: Color { Color(hex: Self.coreStatusFailureHex) }
+    public var subtleCardStroke: Color { tileBorderHighlight.opacity(0.92) }
 
     public static func forTheme(_ theme: ChocTheme) -> ChocPalette {
         switch theme {
         case .darkChocolate:
+            // Bright Violet (Default)
             return ChocPalette(
-                backgroundTop: Color(hex: "#231007"),
-                backgroundBottom: Color(hex: "#140803"),
-                barSurface: Color(hex: "#2E160A"),
-                tileFillTop: Color(hex: "#4A2513"),
-                tileFillBottom: Color(hex: "#33180B"),
-                tileBorderHighlight: Color(hex: "#784226"),
-                primaryText: Color(hex: "#FFF7EE"),
-                secondaryText: Color(hex: "#CFA987"),
-                accentGold: Color(hex: "#F0AE43"),
-                accentRuby: Color(hex: "#D63230")
+                backgroundTop: Color(hex: "#F7F4FF"),
+                backgroundBottom: Color(hex: "#FFF8F2"),
+                barSurface: Color(hex: "#FFFFFF"),
+                tileFillTop: Color(hex: "#FFFFFF"),
+                tileFillBottom: Color(hex: "#F5F1FF"),
+                tileBorderHighlight: Color(hex: "#E0D7FA"),
+                primaryText: Color(hex: "#241C33"),
+                secondaryText: Color(hex: "#6E6480"),
+                accent: Color(hex: "#7C5CFF"),
+                accentEmphasis: Color(hex: "#FF7A59"),
+                accentForeground: Color(hex: "#FFFFFF"),
+                emphasisForeground: Color(hex: "#FFFFFF")
             )
         case .milkChocolate:
+            // Sunny Coral
             return ChocPalette(
-                backgroundTop: Color(hex: "#3B1E10"),
-                backgroundBottom: Color(hex: "#241108"),
-                barSurface: Color(hex: "#4C2816"),
-                tileFillTop: Color(hex: "#6B3A21"),
-                tileFillBottom: Color(hex: "#512A16"),
-                tileBorderHighlight: Color(hex: "#9B5C3B"),
-                primaryText: Color(hex: "#FFF9F2"),
-                secondaryText: Color(hex: "#E5C3A6"),
-                accentGold: Color(hex: "#F5BD58"),
-                accentRuby: Color(hex: "#E0433E")
+                backgroundTop: Color(hex: "#FFF5F2"),
+                backgroundBottom: Color(hex: "#FFF9F4"),
+                barSurface: Color(hex: "#FFFFFF"),
+                tileFillTop: Color(hex: "#FFFFFF"),
+                tileFillBottom: Color(hex: "#FFF1EC"),
+                tileBorderHighlight: Color(hex: "#FAD6CA"),
+                primaryText: Color(hex: "#241C33"),
+                secondaryText: Color(hex: "#6E6480"),
+                accent: Color(hex: "#FF7A59"),
+                accentEmphasis: Color(hex: "#7C5CFF"),
+                accentForeground: Color(hex: "#FFFFFF"),
+                emphasisForeground: Color(hex: "#FFFFFF")
             )
         case .rubyBerry:
+            // Clear Sky
             return ChocPalette(
-                backgroundTop: Color(hex: "#2D0E18"),
-                backgroundBottom: Color(hex: "#18060C"),
-                barSurface: Color(hex: "#3D1522"),
-                tileFillTop: Color(hex: "#5B2134"),
-                tileFillBottom: Color(hex: "#401523"),
-                tileBorderHighlight: Color(hex: "#8F3D58"),
-                primaryText: Color(hex: "#FFF4F7"),
-                secondaryText: Color(hex: "#DDA4B6"),
-                accentGold: Color(hex: "#F3B562"),
-                accentRuby: Color(hex: "#FF4D6D")
+                backgroundTop: Color(hex: "#F2F8FF"),
+                backgroundBottom: Color(hex: "#FFF9F3"),
+                barSurface: Color(hex: "#FFFFFF"),
+                tileFillTop: Color(hex: "#FFFFFF"),
+                tileFillBottom: Color(hex: "#EDF6FF"),
+                tileBorderHighlight: Color(hex: "#CCE2FA"),
+                primaryText: Color(hex: "#241C33"),
+                secondaryText: Color(hex: "#6E6480"),
+                accent: Color(hex: "#2F80ED"),
+                accentEmphasis: Color(hex: "#FF7A59"),
+                accentForeground: Color(hex: "#FFFFFF"),
+                emphasisForeground: Color(hex: "#FFFFFF")
             )
         case .matchaWhite:
+            // Fresh Lime
             return ChocPalette(
-                backgroundTop: Color(hex: "#19261B"),
-                backgroundBottom: Color(hex: "#0E1710"),
-                barSurface: Color(hex: "#223425"),
-                tileFillTop: Color(hex: "#314B36"),
-                tileFillBottom: Color(hex: "#233727"),
-                tileBorderHighlight: Color(hex: "#577F5E"),
-                primaryText: Color(hex: "#F6FFF7"),
-                secondaryText: Color(hex: "#B4D2B9"),
-                accentGold: Color(hex: "#E8C56B"),
-                accentRuby: Color(hex: "#52B788")
+                backgroundTop: Color(hex: "#F4FCF3"),
+                backgroundBottom: Color(hex: "#FCFFF5"),
+                barSurface: Color(hex: "#FFFFFF"),
+                tileFillTop: Color(hex: "#FFFFFF"),
+                tileFillBottom: Color(hex: "#ECFAEE"),
+                tileBorderHighlight: Color(hex: "#C6ECCB"),
+                primaryText: Color(hex: "#241C33"),
+                secondaryText: Color(hex: "#6E6480"),
+                accent: Color(hex: "#22C55E"),
+                accentEmphasis: Color(hex: "#7C5CFF"),
+                accentForeground: Color(hex: "#FFFFFF"),
+                emphasisForeground: Color(hex: "#FFFFFF")
             )
         case .midnightObsidian:
+            // Warm Amber
             return ChocPalette(
-                backgroundTop: Color(hex: "#18181D"),
-                backgroundBottom: Color(hex: "#0D0D11"),
-                barSurface: Color(hex: "#22222A"),
-                tileFillTop: Color(hex: "#30303C"),
-                tileFillBottom: Color(hex: "#23232D"),
-                tileBorderHighlight: Color(hex: "#4C4C5E"),
-                primaryText: Color(hex: "#F7F7FA"),
-                secondaryText: Color(hex: "#A5A5B8"),
-                accentGold: Color(hex: "#F0AE43"),
-                accentRuby: Color(hex: "#E05252")
+                backgroundTop: Color(hex: "#FFFBF0"),
+                backgroundBottom: Color(hex: "#FFF6F0"),
+                barSurface: Color(hex: "#FFFFFF"),
+                tileFillTop: Color(hex: "#FFFFFF"),
+                tileFillBottom: Color(hex: "#FFF5DC"),
+                tileBorderHighlight: Color(hex: "#F8DFA1"),
+                primaryText: Color(hex: "#241C33"),
+                secondaryText: Color(hex: "#6E6480"),
+                accent: Color(hex: "#F97316"),
+                accentEmphasis: Color(hex: "#7C5CFF"),
+                accentForeground: Color(hex: "#FFFFFF"),
+                emphasisForeground: Color(hex: "#FFFFFF")
             )
         }
     }
@@ -122,10 +159,263 @@ public struct ChocPalette: Sendable {
 
 public enum ChocSwatch {
     public static let tileColors: [String] = [
-        "#6C3EB8", "#C93B2B", "#D97706", "#0D9488",
-        "#2563EB", "#DB2777", "#4F46E5", "#16A34A",
-        "#5C2D16", "#24292F", "#9333EA", "#EA580C"
+        "#F3EEFF", "#FFF1EC", "#EDF6FF", "#ECFAEE",
+        "#FFF6E3", "#EEF2FF", "#ECFAFE", "#F7F0FF",
+        "#FFF3E8", "#EFFAF5", "#F2F5FF", "#FFFFFF"
     ]
+
+    public static func resolvedTileColor(hex: String, fallbackHex: String = "#F3EEFF") -> Color {
+        let cleaned = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        guard cleaned.count == 6, let value = UInt64(cleaned, radix: 16) else {
+            return Color(hex: fallbackHex)
+        }
+        let r = Double((value >> 16) & 0xFF)
+        let g = Double((value >> 8) & 0xFF)
+        let b = Double(value & 0xFF)
+        let perceivedBrightness = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+        if perceivedBrightness < 0.80 {
+            return Color(hex: fallbackHex)
+        }
+        return Color(hex: hex)
+    }
+}
+
+// MARK: - Companion Connection Visual Semantics
+
+public enum ChocConnectionVisualState: Equatable, Sendable {
+    case connected(macName: String, link: CompanionLinkKind)
+    case connecting(targetName: String, link: CompanionLinkKind?)
+    case awaitingPIN(macName: String, link: CompanionLinkKind?, errorMessage: String?)
+    case failed(reason: String, savedMacName: String?)
+    case pairedStandby(macName: String, isPausedForLaunch: Bool)
+    case unpaired
+
+    @MainActor
+    public static func resolve(from client: CompanionClientEngine) -> ChocConnectionVisualState {
+        let lang = client.profile.settings.language
+        switch client.connectionState {
+        case .connected(_, let macName):
+            return .connected(macName: macName, link: client.activeLink ?? .wifi)
+        case .connecting(let targetName):
+            return .connecting(targetName: targetName, link: client.activeLink)
+        case .awaitingPIN(_, let macName, let errorMessage):
+            return .awaitingPIN(macName: macName, link: client.activeLink, errorMessage: errorMessage)
+        case .disconnected:
+            if let issue = client.lastConnectionIssue, !issue.isEmpty {
+                return .failed(reason: issue, savedMacName: client.savedMacs.first?.macName)
+            }
+            if client.bluetoothAvailability.isProblemState && client.discoveredMacs.isEmpty {
+                let reason = client.bluetoothAvailability.detailGuidance(in: lang)
+                    ?? client.bluetoothAvailability.shortStatus(in: lang)
+                return .failed(reason: reason, savedMacName: client.savedMacs.first?.macName)
+            }
+            if let primarySaved = client.savedMacs.first {
+                return .pairedStandby(
+                    macName: primarySaved.macName,
+                    isPausedForLaunch: client.isAutoConnectSuppressedForCurrentLaunch
+                )
+            }
+            return .unpaired
+        }
+    }
+
+    /// True ONLY during an active connection handshake — failures and empty states never spin.
+    public var showsProgressSpinner: Bool {
+        if case .connecting = self { return true }
+        return false
+    }
+
+    public var isFailure: Bool {
+        switch self {
+        case .failed:
+            return true
+        case .awaitingPIN(_, _, let err):
+            return err != nil
+        default:
+            return false
+        }
+    }
+
+    public var sfSymbol: String {
+        switch self {
+        case .connected(_, let link):
+            return link.sfSymbol
+        case .connecting(_, let link):
+            return link?.sfSymbol ?? "dot.radiowaves.left.and.right"
+        case .awaitingPIN(_, _, let err):
+            return err != nil ? "exclamationmark.triangle.fill" : "key.fill"
+        case .failed:
+            return "exclamationmark.triangle.fill"
+        case .pairedStandby(_, let paused):
+            return paused ? "pause.circle.fill" : "arrow.triangle.2.circlepath.circle.fill"
+        case .unpaired:
+            return "link.badge.plus"
+        }
+    }
+
+    public func tintColor(in palette: ChocPalette) -> Color {
+        switch self {
+        case .connected(_, let link):
+            return link == .bluetooth ? palette.statusBluetooth : palette.statusConnected
+        case .connecting(_, let link):
+            return link == .bluetooth ? palette.statusBluetooth : palette.accent
+        case .awaitingPIN(_, _, let err):
+            return err != nil ? palette.statusFailure : palette.accent
+        case .failed:
+            return palette.statusFailure
+        case .pairedStandby:
+            return palette.secondaryText
+        case .unpaired:
+            return palette.secondaryText
+        }
+    }
+
+    public func railShortBadge(in lang: AppLanguage) -> String {
+        switch self {
+        case .connected(_, let link):
+            return link.shortLabel(in: lang)
+        case .connecting:
+            return L10n.tr("连接", "LINK", language: lang)
+        case .awaitingPIN(_, _, let err):
+            return err != nil ? L10n.tr("重试", "ERR", language: lang) : "PIN"
+        case .failed:
+            return L10n.tr("失败", "FAIL", language: lang)
+        case .pairedStandby:
+            return L10n.tr("待机", "IDLE", language: lang)
+        case .unpaired:
+            return L10n.tr("配对", "PAIR", language: lang)
+        }
+    }
+
+    public func compactPillLabel(in lang: AppLanguage) -> String {
+        switch self {
+        case .connected(let macName, let link):
+            return "\(macName) · \(link.shortLabel(in: lang))"
+        case .connecting(let target, let link):
+            if let link {
+                return L10n.tr("连接 \(target) · \(link.shortLabel(in: lang))", "Linking \(target) · \(link.shortLabel(in: lang))", language: lang)
+            }
+            return L10n.tr("正在连接 \(target)…", "Connecting \(target)…", language: lang)
+        case .awaitingPIN(let macName, _, let err):
+            if err != nil {
+                return L10n.tr("配对码有误 · 点击重输", "PIN Failed · Retry", language: lang)
+            }
+            return L10n.tr("输入 \(macName) 配对码", "Enter PIN for \(macName)", language: lang)
+        case .failed:
+            return L10n.tr("连接失败 · 点击重试", "Connection Failed · Retry", language: lang)
+        case .pairedStandby(let macName, let paused):
+            return paused
+                ? L10n.tr("\(macName) · 已暂停", "\(macName) · Paused", language: lang)
+                : L10n.tr("\(macName) · 待重连", "\(macName) · Paired", language: lang)
+        case .unpaired:
+            return L10n.tr("配对 Mac", "Pair Mac", language: lang)
+        }
+    }
+
+    public func watchToolbarLabel(in lang: AppLanguage) -> String {
+        switch self {
+        case .connected(_, let link):
+            return link.shortLabel(in: lang)
+        case .connecting:
+            return L10n.tr("连接中", "Linking", language: lang)
+        case .awaitingPIN(_, _, let err):
+            return err != nil ? L10n.tr("重输码", "Retry PIN", language: lang) : "PIN"
+        case .failed:
+            return L10n.tr("失败", "Failed", language: lang)
+        case .pairedStandby:
+            return L10n.tr("已配对", "Paired", language: lang)
+        case .unpaired:
+            return L10n.tr("配对", "Pair", language: lang)
+        }
+    }
+
+    public func bannerTitle(in lang: AppLanguage) -> String {
+        switch self {
+        case .connected(let macName, let link):
+            return "\(macName) · \(link.displayName(in: lang))"
+        case .connecting(let target, let link):
+            let suffix = link.map { " (\($0.shortLabel(in: lang)))" } ?? ""
+            return L10n.tr("正在连接 \(target)\(suffix)…", "Connecting to \(target)\(suffix)…", language: lang)
+        case .awaitingPIN(let macName, _, let err):
+            if err != nil {
+                return L10n.tr("配对验证未通过", "PIN Verification Failed", language: lang)
+            }
+            return L10n.tr("需要输入 \(macName) 上的 6 位配对码", "Enter 6-Digit PIN Shown on \(macName)", language: lang)
+        case .failed:
+            return L10n.tr("未能连接到 Mac", "Connection Failed", language: lang)
+        case .pairedStandby(let macName, let paused):
+            return paused
+                ? L10n.tr("已手动断开 \(macName)", "Disconnected from \(macName)", language: lang)
+                : L10n.tr("已配对 \(macName) · 等待上线", "Paired with \(macName) · Waiting", language: lang)
+        case .unpaired:
+            return L10n.tr("尚未配对 Mac", "No Mac Paired Yet", language: lang)
+        }
+    }
+
+    public func bannerSubtitle(in lang: AppLanguage) -> String? {
+        switch self {
+        case .connected:
+            return nil
+        case .connecting(_, let link):
+            if let link {
+                return L10n.tr("正在通过 \(link.displayName(in: lang)) 握手…", "Handshaking over \(link.displayName(in: lang))…", language: lang)
+            }
+            return nil
+        case .awaitingPIN(_, _, let err):
+            return err ?? L10n.tr("点此打开数字键盘完成配对", "Tap to open keypad and finish pairing", language: lang)
+        case .failed(let reason, _):
+            return reason
+        case .pairedStandby(_, let paused):
+            return paused
+                ? L10n.tr("点此立即重连，或下次打开自动恢复", "Tap to reconnect now", language: lang)
+                : L10n.tr("开启 Mac 端 Choclift 后将通过 Wi-Fi 或蓝牙自动重连", "Auto-reconnects via Wi-Fi or Bluetooth when Mac is nearby", language: lang)
+        case .unpaired:
+            return L10n.tr("打开 Mac 端 Choclift，点此通过 Wi-Fi 或蓝牙配对", "Open Choclift on Mac and tap here to pair via Wi-Fi or BLE", language: lang)
+        }
+    }
+}
+
+// MARK: - Quiet Transport Link Badge
+
+public struct ChocLinkBadge: View {
+    public let link: CompanionLinkKind
+    public let language: AppLanguage
+    public let palette: ChocPalette
+    public var prominent: Bool
+
+    public init(
+        link: CompanionLinkKind,
+        language: AppLanguage = .system,
+        palette: ChocPalette,
+        prominent: Bool = false
+    ) {
+        self.link = link
+        self.language = language
+        self.palette = palette
+        self.prominent = prominent
+    }
+
+    private var tint: Color {
+        link == .bluetooth ? palette.statusBluetooth : palette.statusConnected
+    }
+
+    public var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: link.sfSymbol)
+                .font(.system(size: prominent ? 11 : 9.5, weight: .bold))
+            Text(prominent ? link.displayName(in: language) : link.shortLabel(in: language))
+                .font(.system(size: prominent ? 11.5 : 10.5, weight: .bold, design: .rounded))
+                .lineLimit(1)
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, prominent ? 9 : 7)
+        .padding(.vertical, prominent ? 4 : 2.5)
+        .background(tint.opacity(0.15), in: Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(tint.opacity(0.32), lineWidth: 0.8)
+        )
+    }
 }
 
 // MARK: - Cross-Platform PNG Data Image Helper
@@ -135,7 +425,7 @@ public struct DataImageView: View {
     public let fallbackSymbol: String
     public let tint: Color
 
-    public init(pngData: Data?, fallbackSymbol: String = "app.fill", tint: Color = .white) {
+    public init(pngData: Data?, fallbackSymbol: String = "app.fill", tint: Color = Color(hex: "#241C33")) {
         self.pngData = pngData
         self.fallbackSymbol = fallbackSymbol
         self.tint = tint
@@ -152,7 +442,7 @@ public struct DataImageView: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundStyle(tint)
-                .padding(8)
+                .padding(7)
         }
     }
 
@@ -169,7 +459,7 @@ public struct DataImageView: View {
     }
 }
 
-// MARK: - Brand Icon ("c" Chocolate Wrapper Logo)
+// MARK: - Brand Icon ("c" Vivid Violet & Coral Mark)
 
 public struct ChocliftBrandIconView: View {
     public var size: CGFloat
@@ -183,24 +473,24 @@ public struct ChocliftBrandIconView: View {
             RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [Color(hex: "#6B3418"), Color(hex: "#381808")],
+                        colors: [Color(hex: "#7C5CFF"), Color(hex: "#6747F0")],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-                        .strokeBorder(Color(hex: "#9A5633").opacity(0.65), lineWidth: max(1, size * 0.03))
+                        .strokeBorder(Color(hex: "#FFFFFF").opacity(0.34), lineWidth: max(1, size * 0.03))
                 )
 
-            // Gold & crimson wrapper ribbon accent at bottom-left
+            // Vivid coral accent ribbon at bottom-left
             VStack {
                 Spacer()
                 HStack {
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [Color(hex: "#D62828"), Color(hex: "#F4A261")],
+                                colors: [Color(hex: "#FF7A59"), Color(hex: "#FF9D7E")],
                                 startPoint: .bottomLeading,
                                 endPoint: .topTrailing
                             )
@@ -216,15 +506,16 @@ public struct ChocliftBrandIconView: View {
             Text("c")
                 .font(.system(size: size * 0.62, weight: .black, design: .serif))
                 .italic()
-                .foregroundStyle(Color(hex: "#FFF3E2"))
-                .shadow(color: .black.opacity(0.4), radius: size * 0.05, x: 0, y: size * 0.03)
+                .foregroundStyle(Color(hex: "#FFFFFF"))
+                .shadow(color: Color(hex: "#241C33").opacity(0.18), radius: size * 0.04, x: 0, y: size * 0.02)
                 .offset(y: -size * 0.04)
         }
         .frame(width: size, height: size)
+        .shadow(color: Color(hex: "#7C5CFF").opacity(0.22), radius: size * 0.14, x: 0, y: size * 0.06)
     }
 }
 
-// MARK: - Molded Chocolate Tile Card
+// MARK: - Bright Surface Tile Card
 
 public struct ChocBarTileCard: View {
     public let item: BarItem?
@@ -253,175 +544,200 @@ public struct ChocBarTileCard: View {
     public var body: some View {
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)
-            let corner = max(side < 64 ? 11 : 14, side * 0.22)
+            let corner = max(side < 68 ? 13 : 16, side * 0.22)
 
-            if let item {
-                filledTile(for: item, side: side, corner: corner)
-            } else {
-                emptyMoldedSquare(corner: corner)
+            Group {
+                if let item {
+                    filledTile(for: item, side: side, corner: corner)
+                } else {
+                    emptyMoldedSquare(side: side, corner: corner)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
         }
     }
 
     @ViewBuilder
     private func filledTile(for item: BarItem, side: CGFloat, corner: CGFloat) -> some View {
+        let isMicro = side < 68
+
         switch item.kind {
         case .macApp(_, let appName, _, let fallbackSymbol):
             ZStack {
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [palette.tileFillTop, palette.tileFillBottom],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: corner, style: .continuous)
-                            .strokeBorder(
-                                isFrontmostApp ? palette.accentGold : palette.tileBorderHighlight.opacity(0.55),
-                                lineWidth: isFrontmostApp ? 2.2 : 1.1
-                            )
-                    )
-                    .shadow(color: .black.opacity(0.35), radius: 6, x: 0, y: 4)
+                moldedBaseShape(
+                    corner: corner,
+                    top: palette.tileFillTop,
+                    bottom: palette.tileFillBottom,
+                    borderColor: isFrontmostApp ? palette.accent : palette.tileBorderHighlight,
+                    borderWidth: isFrontmostApp ? 2.0 : 1.15,
+                    shadowColor: palette.primaryText.opacity(0.06)
+                )
 
-                VStack(spacing: compact ? 3 : 5) {
+                VStack(spacing: isMicro ? 3 : (compact ? 4 : 6)) {
                     DataImageView(
                         pngData: iconData,
                         fallbackSymbol: fallbackSymbol,
-                        tint: palette.primaryText
+                        tint: palette.accent
                     )
-                    .frame(width: side * 0.50, height: side * 0.50)
-                    .shadow(color: .black.opacity(0.28), radius: 3, x: 0, y: 2)
+                    .frame(width: side * (isMicro ? 0.44 : 0.48), height: side * (isMicro ? 0.44 : 0.48))
 
                     Text(appName)
-                        .font(.system(size: max(10, side * 0.115), weight: .semibold, design: .rounded))
+                        .font(.system(size: max(11, side * 0.12), weight: .semibold, design: .rounded))
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
-                        .padding(.horizontal, 6)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, isMicro ? 5 : 8)
                 }
 
                 if isFrontmostApp {
                     VStack {
+                        HStack {
+                            Spacer()
+                            Circle()
+                                .fill(palette.accent)
+                                .frame(width: isMicro ? 5.5 : 7, height: isMicro ? 5.5 : 7)
+                                .shadow(color: palette.accent.opacity(0.45), radius: 3)
+                                .padding(isMicro ? 6 : 8)
+                        }
                         Spacer()
-                        Circle()
-                            .fill(palette.accentGold)
-                            .frame(width: 6, height: 6)
-                            .shadow(color: palette.accentGold.opacity(0.9), radius: 4)
-                            .padding(.bottom, 5)
                     }
                 }
             }
 
         case .shortcut(let shortcutName, let emoji, let backgroundHex):
-            let base = Color(hex: backgroundHex)
+            let base = ChocSwatch.resolvedTileColor(hex: backgroundHex, fallbackHex: "#F3EEFF")
             ZStack {
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [base.opacity(0.96), base.opacity(0.68)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: corner, style: .continuous)
-                            .strokeBorder(.white.opacity(0.24), lineWidth: 1.1)
-                    )
-                    .shadow(color: base.opacity(0.36), radius: 6, x: 0, y: 4)
+                moldedBaseShape(
+                    corner: corner,
+                    top: palette.tileFillTop,
+                    bottom: base,
+                    borderColor: palette.tileBorderHighlight,
+                    borderWidth: 1.15,
+                    shadowColor: palette.primaryText.opacity(0.06)
+                )
 
-                VStack(spacing: compact ? 3 : 5) {
-                    HStack(spacing: 4) {
-                        Text(emoji)
-                            .font(.system(size: side * 0.30))
-                        Image(systemName: "sparkles.rectangle.stack.fill")
-                            .font(.system(size: max(9, side * 0.11), weight: .bold))
-                            .foregroundStyle(.white.opacity(0.8))
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: max(8.5, side * 0.095), weight: .bold))
+                            .foregroundStyle(palette.accentEmphasis)
+                            .padding(isMicro ? 5 : 7)
                     }
-                    Text(shortcutName.uppercased())
-                        .font(.system(size: max(9.5, side * 0.105), weight: .heavy, design: .rounded))
-                        .foregroundStyle(.white)
+                    Spacer()
+                }
+
+                VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
+                    Text(emoji.isEmpty ? "⚡️" : emoji)
+                        .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
+
+                    Text(shortcutName)
+                        .font(.system(size: max(10.5, side * 0.112), weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
                         .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .padding(.horizontal, 6)
+                        .lineLimit(isMicro ? 1 : 2)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, isMicro ? 5 : 7)
                 }
             }
 
         case .website(let url, let title, let emoji, let backgroundHex, let switchExistingTab):
-            let base = Color(hex: backgroundHex)
+            let base = ChocSwatch.resolvedTileColor(hex: backgroundHex, fallbackHex: "#FFF1EC")
             ZStack {
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [base.opacity(0.95), base.opacity(0.65)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: corner, style: .continuous)
-                            .strokeBorder(.white.opacity(0.22), lineWidth: 1.1)
-                    )
-                    .shadow(color: base.opacity(0.32), radius: 6, x: 0, y: 4)
+                moldedBaseShape(
+                    corner: corner,
+                    top: palette.tileFillTop,
+                    bottom: base,
+                    borderColor: palette.tileBorderHighlight,
+                    borderWidth: 1.15,
+                    shadowColor: palette.primaryText.opacity(0.06)
+                )
 
-                VStack(spacing: compact ? 3 : 5) {
-                    ZStack(alignment: .topTrailing) {
-                        Text(emoji.isEmpty ? "🌐" : emoji)
-                            .font(.system(size: side * 0.30))
-                            .frame(width: side * 0.44, height: side * 0.38)
+                VStack {
+                    HStack {
+                        Spacer()
                         Image(systemName: switchExistingTab ? "arrow.triangle.2.circlepath" : "safari.fill")
-                            .font(.system(size: max(8, side * 0.095), weight: .bold))
-                            .foregroundStyle(.white.opacity(0.85))
-                            .offset(x: 6, y: -2)
+                            .font(.system(size: max(8.5, side * 0.095), weight: .bold))
+                            .foregroundStyle(palette.accent)
+                            .padding(isMicro ? 5 : 7)
                     }
+                    Spacer()
+                }
+
+                VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
+                    Text(emoji.isEmpty ? "🌐" : emoji)
+                        .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
 
                     Text(title.isEmpty ? cleanHost(from: url) : title)
-                        .font(.system(size: max(10, side * 0.11), weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                        .font(.system(size: max(10.5, side * 0.115), weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
-                        .padding(.horizontal, 6)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, isMicro ? 5 : 7)
                 }
             }
 
         case .systemAction(let action, let customTitle, let customHex):
-            let base = Color(hex: customHex ?? action.accentHex)
+            let base = ChocSwatch.resolvedTileColor(hex: customHex ?? action.accentHex, fallbackHex: "#EDF6FF")
             ZStack {
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [palette.tileFillTop, base.opacity(0.45)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: corner, style: .continuous)
-                            .strokeBorder(base.opacity(0.7), lineWidth: 1.2)
-                    )
-                    .shadow(color: .black.opacity(0.3), radius: 5, x: 0, y: 3)
+                moldedBaseShape(
+                    corner: corner,
+                    top: palette.tileFillTop,
+                    bottom: base,
+                    borderColor: palette.tileBorderHighlight,
+                    borderWidth: 1.15,
+                    shadowColor: palette.primaryText.opacity(0.06)
+                )
 
-                VStack(spacing: compact ? 4 : 6) {
+                VStack(spacing: isMicro ? 3 : (compact ? 4 : 6)) {
                     Image(systemName: action.sfSymbol)
-                        .font(.system(size: side * 0.27, weight: .semibold))
-                        .foregroundStyle(.white)
-                    let defaultActionLabel = side < 64 ? action.compactTitle(in: language) : action.title(in: language)
+                        .font(.system(size: side * (isMicro ? 0.25 : 0.27), weight: .semibold))
+                        .foregroundStyle(palette.accent)
+
+                    let defaultActionLabel = isMicro ? action.compactTitle(in: language) : action.title(in: language)
                     Text((customTitle?.isEmpty == false ? customTitle! : defaultActionLabel))
-                        .font(.system(size: max(9, side * 0.105), weight: .semibold, design: .rounded))
+                        .font(.system(size: max(10.5, side * 0.11), weight: .semibold, design: .rounded))
                         .foregroundStyle(palette.primaryText)
                         .multilineTextAlignment(.center)
-                        .lineLimit(side < 64 ? 1 : 2)
-                        .padding(.horizontal, 5)
+                        .lineLimit(isMicro ? 1 : 2)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, isMicro ? 4 : 6)
                 }
             }
         }
     }
 
-    private func emptyMoldedSquare(corner: CGFloat) -> some View {
-        ZStack {
+    private func moldedBaseShape(
+        corner: CGFloat,
+        top: Color,
+        bottom: Color,
+        borderColor: Color,
+        borderWidth: CGFloat,
+        shadowColor: Color
+    ) -> some View {
+        RoundedRectangle(cornerRadius: corner, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [top, bottom],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: corner, style: .continuous)
+                    .strokeBorder(borderColor, lineWidth: borderWidth)
+            )
+            .shadow(color: shadowColor, radius: 6, x: 0, y: 2)
+    }
+
+    private func emptyMoldedSquare(side: CGFloat, corner: CGFloat) -> some View {
+        let isMicro = side < 68
+        return ZStack {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [palette.tileFillBottom.opacity(0.55), palette.backgroundBottom.opacity(0.65)],
+                        colors: [palette.barSurface.opacity(0.82), palette.tileFillBottom.opacity(0.75)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -429,14 +745,25 @@ public struct ChocBarTileCard: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: corner, style: .continuous)
                         .strokeBorder(
-                            palette.tileBorderHighlight.opacity(0.28),
-                            style: StrokeStyle(lineWidth: 1.2, dash: [5, 4])
+                            palette.tileBorderHighlight,
+                            style: StrokeStyle(lineWidth: 1.25, dash: [5, 4])
                         )
                 )
 
-            Image(systemName: "plus")
-                .font(.system(size: 18, weight: .semibold, design: .rounded))
-                .foregroundStyle(palette.secondaryText.opacity(0.55))
+            VStack(spacing: 4) {
+                Image(systemName: "plus")
+                    .font(.system(size: isMicro ? 15 : 17, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.accent)
+                    .frame(width: isMicro ? 26 : 32, height: isMicro ? 26 : 32)
+                    .background(palette.accent.opacity(0.11), in: Circle())
+
+                if side >= 78 {
+                    Text(L10n.tr("添加动作", "Assign", language: language))
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                }
+            }
         }
     }
 

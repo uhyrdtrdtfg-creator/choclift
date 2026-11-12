@@ -1,7 +1,7 @@
+import SwiftUI
 import XCTest
 @testable import ChocliftCore
 #if os(iOS)
-import SwiftUI
 import UIKit
 #endif
 
@@ -447,6 +447,42 @@ final class ChocliftCoreTests: XCTestCase {
         )
     }
 
+    func testConnectionVisualStateSeparatesEmptyConnectingFailedAndPairedStates() {
+        let unpaired = ChocConnectionVisualState.unpaired
+        let connectingWiFi = ChocConnectionVisualState.connecting(targetName: "Studio Mac", link: .wifi)
+        let awaitingPIN = ChocConnectionVisualState.awaitingPIN(macName: "Studio Mac", link: .bluetooth, errorMessage: nil)
+        let invalidPIN = ChocConnectionVisualState.awaitingPIN(macName: "Studio Mac", link: .bluetooth, errorMessage: "Wrong PIN")
+        let failed = ChocConnectionVisualState.failed(reason: "Connection timed out", savedMacName: "Studio Mac")
+        let standby = ChocConnectionVisualState.pairedStandby(macName: "Studio Mac", isPausedForLaunch: false)
+        let connectedWiFi = ChocConnectionVisualState.connected(macName: "Studio Mac", link: .wifi)
+        let connectedBLE = ChocConnectionVisualState.connected(macName: "Studio Mac", link: .bluetooth)
+
+        // Only active handshake shows a spinner; failures, PIN errors, standby, and empty never hide behind spinners
+        XCTAssertTrue(connectingWiFi.showsProgressSpinner)
+        XCTAssertFalse(unpaired.showsProgressSpinner)
+        XCTAssertFalse(awaitingPIN.showsProgressSpinner)
+        XCTAssertFalse(invalidPIN.showsProgressSpinner)
+        XCTAssertFalse(failed.showsProgressSpinner)
+        XCTAssertFalse(standby.showsProgressSpinner)
+        XCTAssertFalse(connectedWiFi.showsProgressSpinner)
+        XCTAssertFalse(connectedBLE.showsProgressSpinner)
+
+        XCTAssertTrue(failed.isFailure)
+        XCTAssertTrue(invalidPIN.isFailure)
+        XCTAssertFalse(connectingWiFi.isFailure)
+        XCTAssertFalse(connectedWiFi.isFailure)
+
+        // Active link distinction (Wi-Fi vs BLE) and bilingual localization
+        for lang in [AppLanguage.english, AppLanguage.chinese] {
+            XCTAssertNotEqual(connectedWiFi.railShortBadge(in: lang), connectedBLE.railShortBadge(in: lang))
+            XCTAssertNotEqual(connectedWiFi.watchToolbarLabel(in: lang), connectedBLE.watchToolbarLabel(in: lang))
+            XCTAssertTrue(connectedWiFi.watchToolbarLabel(in: lang).contains("Wi-Fi"))
+            XCTAssertTrue(connectedBLE.watchToolbarLabel(in: lang).contains(CompanionLinkKind.bluetooth.shortLabel(in: lang)))
+            XCTAssertNotEqual(unpaired.watchToolbarLabel(in: lang), failed.watchToolbarLabel(in: lang))
+            XCTAssertNotEqual(standby.watchToolbarLabel(in: lang), connectingWiFi.watchToolbarLabel(in: lang))
+        }
+    }
+
     #if os(iOS)
     @MainActor
     func testPassThroughMultiTouchViewLetsSingleFingerHitsReachUnderlyingControlsAndSwiftUIZStack() {
@@ -629,4 +665,62 @@ final class ChocliftCoreTests: XCTestCase {
         XCTAssertEqual(host.gestureRecognizers?.count ?? 0, 0)
     }
     #endif
+
+    func testBrightLivelyPaletteAndFiveBrightThemes() {
+        XCTAssertEqual(ChocTheme.allCases.count, 5)
+        XCTAssertEqual(ChocPalette.coreBackgroundTopHex, "#F7F4FF")
+        XCTAssertEqual(ChocPalette.coreBackgroundBottomHex, "#FFF8F2")
+        XCTAssertEqual(ChocPalette.coreSurfaceHex, "#FFFFFF")
+        XCTAssertEqual(ChocPalette.corePrimaryTextHex, "#241C33")
+        XCTAssertEqual(ChocPalette.coreSecondaryTextHex, "#6E6480")
+        XCTAssertEqual(ChocPalette.coreAccentHex, "#7C5CFF")
+        XCTAssertEqual(ChocPalette.coreAccentEmphasisHex, "#FF7A59")
+        XCTAssertEqual(ChocPalette.coreStatusConnectedHex, "#12B981")
+        XCTAssertEqual(ChocPalette.coreStatusBluetoothHex, "#2F80ED")
+        XCTAssertEqual(ChocPalette.coreStatusFailureHex, "#E5484D")
+
+        let defaultPalette = ChocPalette.forTheme(.darkChocolate)
+        XCTAssertEqual(defaultPalette.accent, Color(hex: "#7C5CFF"))
+        XCTAssertEqual(defaultPalette.accentEmphasis, Color(hex: "#FF7A59"))
+
+        func brightness(of hex: String) -> Double {
+            let cleaned = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+            guard cleaned.count == 6, let val = UInt64(cleaned, radix: 16) else { return 0 }
+            let r = Double((val >> 16) & 0xFF)
+            let g = Double((val >> 8) & 0xFF)
+            let b = Double(val & 0xFF)
+            return (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+        }
+
+        for swatchHex in ChocSwatch.tileColors {
+            XCTAssertGreaterThanOrEqual(brightness(of: swatchHex), 0.85, "Expected bright light swatch, got \(swatchHex)")
+        }
+
+        for action in SystemQuickAction.allCases {
+            XCTAssertGreaterThanOrEqual(brightness(of: action.accentHex), 0.85, "Expected bright light action tint, got \(action.accentHex)")
+        }
+
+        for theme in ChocTheme.allCases {
+            let titleEN = theme.title(in: .english).lowercased()
+            XCTAssertFalse(titleEN.contains("chocolate"))
+            XCTAssertFalse(titleEN.contains("ruby"))
+            XCTAssertFalse(titleEN.contains("gold"))
+            XCTAssertFalse(titleEN.contains("graphite"))
+            XCTAssertFalse(titleEN.contains("obsidian"))
+
+            let palette = ChocPalette.forTheme(theme)
+            XCTAssertEqual(palette.barSurface, Color(hex: "#FFFFFF"))
+            XCTAssertEqual(palette.primaryText, Color(hex: "#241C33"))
+            XCTAssertEqual(palette.secondaryText, Color(hex: "#6E6480"))
+            XCTAssertEqual(palette.statusConnected, Color(hex: "#12B981"))
+            XCTAssertEqual(palette.statusBluetooth, Color(hex: "#2F80ED"))
+            XCTAssertEqual(palette.statusFailure, Color(hex: "#E5484D"))
+            XCTAssertEqual(ChocConnectionVisualState.connected(macName: "Mac", link: .wifi).tintColor(in: palette), palette.statusConnected)
+            XCTAssertEqual(ChocConnectionVisualState.connected(macName: "Mac", link: .bluetooth).tintColor(in: palette), palette.statusBluetooth)
+            XCTAssertEqual(ChocConnectionVisualState.failed(reason: "Err", savedMacName: nil).tintColor(in: palette), palette.statusFailure)
+            XCTAssertEqual(ChocConnectionVisualState.connecting(targetName: "Mac", link: nil).tintColor(in: palette), palette.accent)
+            XCTAssertEqual(ChocConnectionVisualState.unpaired.tintColor(in: palette), palette.secondaryText)
+            XCTAssertEqual(ChocConnectionVisualState.pairedStandby(macName: "Mac", isPausedForLaunch: false).tintColor(in: palette), palette.secondaryText)
+        }
+    }
 }

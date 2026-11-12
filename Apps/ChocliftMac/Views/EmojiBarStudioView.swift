@@ -20,7 +20,7 @@ public struct EmojiBarStudioView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             autoSurfaceBanner
 
             slideSelectorStrip
@@ -37,21 +37,27 @@ public struct EmojiBarStudioView: View {
 
     private var autoSurfaceBanner: some View {
         HStack(spacing: 14) {
-            Image(systemName: coordinator.isEditingTextOnMac ? "character.cursor.ibeam" : "face.smiling.inverse")
-                .font(.title2)
-                .foregroundStyle(coordinator.isEditingTextOnMac ? .green : palette.accentGold)
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(coordinator.isEditingTextOnMac ? palette.statusConnected.opacity(0.16) : palette.tileFillBottom)
+                    .frame(width: 38, height: 38)
+                Image(systemName: coordinator.isEditingTextOnMac ? "character.cursor.ibeam" : "face.smiling.inverse")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(coordinator.isEditingTextOnMac ? palette.statusConnected : palette.secondaryText)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(L10n.tr("智能光标感知表情栏 (Pick emojis right where you type)", "Smart Cursor-Aware Emoji Bar", language: lang))
+                Text(L10n.tr("智能光标感知表情栏", "Smart Cursor-Aware Emoji Bar", language: lang))
                     .font(.subheadline.bold())
+                    .foregroundStyle(palette.primaryText)
                 if coordinator.isEditingTextOnMac, let appName = coordinator.focusedTextAppName {
-                    Text(L10n.tr("检测到正在「\(appName)」中输入文字 — 已自动在 iPhone 上弹出表情栏！", "Typing detected in \(appName) — Emoji Bar automatically surfaced on companion!", language: lang))
+                    Text(L10n.tr("检测到正在「\(appName)」中输入文字 — 已自动在伴侣设备上弹出表情栏！", "Typing detected in \(appName) — Emoji Bar automatically surfaced on companion!", language: lang))
                         .font(.caption)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(palette.statusConnected)
                 } else {
-                    Text(L10n.tr("当你在 Mac 任意输入框点击打字时，iPhone / iPad 会自动切换到表情栏，轻点即可输入。", "Automatically switches your iPhone/iPad to Emoji Bar whenever you click into a text field on Mac.", language: lang))
+                    Text(L10n.tr("在 Mac 任意文本框点击打字时，iPhone / iPad / Watch 会自动切换到表情栏。", "Automatically switches your companion to Emoji Bar whenever you focus a text field on Mac.", language: lang))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.secondaryText)
                 }
             }
 
@@ -67,13 +73,19 @@ public struct EmojiBarStudioView: View {
                 )
             )
             .toggleStyle(.switch)
+            .tint(palette.accent)
+            .foregroundStyle(palette.primaryText)
         }
         .padding(14)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 14))
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
     }
 
     private var slideSelectorStrip: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             ForEach(coordinator.profile.emojiSlides) { slide in
                 let isSelected = (slide.index == coordinator.selectedEmojiSlideIndex)
                 Button {
@@ -84,17 +96,22 @@ public struct EmojiBarStudioView: View {
                         Text(slide.iconEmoji)
                         if isSelected {
                             Text(slide.title)
-                                .font(.caption.bold())
+                                .font(.system(.caption, design: .rounded, weight: .bold))
                         } else {
                             Text("\(slide.index + 1)")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(palette.secondaryText)
                         }
                     }
-                    .padding(.horizontal, isSelected ? 12 : 9)
-                    .padding(.vertical, 6)
-                    .background(isSelected ? palette.tileFillTop : Color.primary.opacity(0.05), in: Capsule())
-                    .foregroundStyle(isSelected ? palette.primaryText : .primary)
+                    .padding(.horizontal, isSelected ? 13 : 10)
+                    .padding(.vertical, 6.5)
+                    .background(isSelected ? palette.tileFillTop : palette.barSurface.opacity(0.75), in: Capsule())
+                    .foregroundStyle(isSelected ? palette.primaryText : palette.secondaryText)
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(isSelected ? palette.accent.opacity(0.85) : palette.subtleCardStroke, lineWidth: 1)
+                    )
+                    .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
             }
@@ -118,13 +135,13 @@ public struct EmojiBarStudioView: View {
                     )
                 )
                 .textFieldStyle(.roundedBorder)
-                .frame(width: 160)
+                .frame(width: 164)
 
                 Spacer()
 
-                Text(L10n.tr("选中格 #\(selectedEmojiSlot + 1)，点击右侧替换", "Selected #\(selectedEmojiSlot + 1) — pick on right", language: lang))
+                Text(L10n.tr("选中格 #\(selectedEmojiSlot + 1) · 点击右侧替换", "Slot #\(selectedEmojiSlot + 1) · Pick right to replace", language: lang))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.secondaryText)
             }
 
             LazyVGrid(columns: columns, spacing: 12) {
@@ -132,44 +149,49 @@ public struct EmojiBarStudioView: View {
                     let emoji = currentSlide.emojis[slotIdx]
                     let isSelected = (selectedEmojiSlot == slotIdx)
 
-                    Button {
-                        selectedEmojiSlot = slotIdx
-                    } label: {
-                        ZStack(alignment: .bottomTrailing) {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(
-                                    LinearGradient(
-                                        colors: [palette.tileFillTop, palette.tileFillBottom],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                        .strokeBorder(
-                                            isSelected ? palette.accentGold : palette.tileBorderHighlight.opacity(0.45),
-                                            lineWidth: isSelected ? 2.5 : 1
+                    ZStack(alignment: .bottomTrailing) {
+                        Button {
+                            selectedEmojiSlot = slotIdx
+                        } label: {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [palette.tileFillTop, palette.tileFillBottom],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
                                         )
-                                )
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                            .strokeBorder(
+                                                isSelected ? palette.accent : palette.tileBorderHighlight.opacity(0.48),
+                                                lineWidth: isSelected ? 2.4 : 1
+                                            )
+                                    )
 
-                            Text(emoji)
-                                .font(.system(size: 36))
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                            Button {
-                                _ = coordinator.executeEmojiInsertion(emoji, triggeredBy: "Mac Studio")
-                            } label: {
-                                Image(systemName: "paperplane.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(palette.secondaryText)
-                                    .padding(5)
+                                Text(emoji)
+                                    .font(.system(size: 36))
                             }
-                            .buttonStyle(.plain)
-                            .help(L10n.tr("发送到最近活动窗口", "Type into active Mac app", language: lang))
+                            .aspectRatio(1.0, contentMode: .fit)
+                            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                         }
-                        .aspectRatio(1.0, contentMode: .fit)
+                        .buttonStyle(.plain)
+
+                        Button {
+                            _ = coordinator.executeEmojiInsertion(emoji, triggeredBy: "Mac Studio")
+                        } label: {
+                            Image(systemName: "paperplane.fill")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(palette.secondaryText)
+                                .frame(width: 22, height: 22)
+                                .background(palette.backgroundBottom.opacity(0.65), in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(5)
+                        .help(L10n.tr("发送到最近活动窗口", "Type into active Mac app", language: lang))
                     }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(18)
@@ -181,6 +203,10 @@ public struct EmojiBarStudioView: View {
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 26, style: .continuous)
+                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1.5)
                     )
             )
         }
@@ -202,11 +228,17 @@ public struct EmojiBarStudioView: View {
                             HStack(spacing: 4) {
                                 Text(cat.icon)
                                 Text(cat.title(in: lang))
-                                    .font(.caption.weight(.medium))
+                                    .font(.caption.weight(isSel ? .bold : .medium))
                             }
                             .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(isSel ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05), in: Capsule())
+                            .padding(.vertical, 5.5)
+                            .background(isSel ? palette.tileFillTop : palette.barSurface.opacity(0.75), in: Capsule())
+                            .foregroundStyle(isSel ? palette.primaryText : palette.secondaryText)
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(isSel ? palette.accent.opacity(0.75) : palette.subtleCardStroke, lineWidth: 1)
+                            )
+                            .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
                     }
@@ -221,20 +253,26 @@ public struct EmojiBarStudioView: View {
                         } label: {
                             Text(emoji)
                                 .font(.system(size: 24))
-                                .frame(width: 36, height: 36)
-                                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                                .frame(width: 38, height: 38)
+                                .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
+                                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(4)
+                .padding(6)
             }
-            .frame(maxHeight: 210)
-            .background(Color.primary.opacity(0.03), in: RoundedRectangle(cornerRadius: 12))
+            .frame(maxHeight: 216)
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+            )
 
             HStack(spacing: 8) {
                 TextField(
-                    L10n.tr("或输入任意自定义 Emoji / 颜文字…", "Or enter any custom Emoji / symbol…", language: lang),
+                    L10n.tr("或输入任意自定义 Emoji / 符号…", "Or enter any custom Emoji / symbol…", language: lang),
                     text: $customEmojiInput
                 )
                 .textFieldStyle(.roundedBorder)
@@ -246,6 +284,8 @@ public struct EmojiBarStudioView: View {
                     customEmojiInput = ""
                 }
                 .buttonStyle(.borderedProminent)
+                .tint(palette.accent)
+                .foregroundStyle(palette.accentForeground)
                 .disabled(customEmojiInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
