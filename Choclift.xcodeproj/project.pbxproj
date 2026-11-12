@@ -529,12 +529,15 @@
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					0C42B94BA0F9CD39A6B27250 = {
+						DevelopmentTeam = 4257SFGRFK;
 						ProvisioningStyle = Automatic;
 					};
 					1FB93D743967AC4526702A6D = {
+						DevelopmentTeam = 4257SFGRFK;
 						ProvisioningStyle = Automatic;
 					};
 					508016B23E76BDBE04DA3CF0 = {
+						DevelopmentTeam = 4257SFGRFK;
 						ProvisioningStyle = Manual;
 					};
 				};
@@ -792,7 +795,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 236;
+				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -806,7 +809,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.3.6;
+				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -824,6 +827,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 4257SFGRFK;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Apps/ChocliftIOS/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -836,7 +841,8 @@
 					"-ObjC",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.choclift.ios;
-				PRODUCT_NAME = choclift;
+				PRODUCT_NAME = Choclift;
+				PROVISIONING_PROFILE_SPECIFIER = "Choclift AppStore";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -845,6 +851,8 @@
 		6870ADD81CD42AE79B4BAFAA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEFINES_MODULE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -863,11 +871,16 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_IDENTITY = "-";
+				CHOCLIFT_DEVELOPER_ID_PROFILE = "Choclift Developer ID";
+				CODE_SIGN_ENTITLEMENTS = Apps/ChocliftMac/ChocliftMac.entitlements;
+				CODE_SIGN_IDENTITY = "Developer ID Application";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 4257SFGRFK;
 				ENABLE_APP_SANDBOX = NO;
-				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Apps/ChocliftMac/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -879,7 +892,8 @@
 					"-ObjC",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.choclift.mac;
-				PRODUCT_NAME = choclift;
+				PRODUCT_NAME = Choclift;
+				PROVISIONING_PROFILE_SPECIFIER = "Choclift Developer ID";
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -887,6 +901,8 @@
 		7F062512F2DBCF990C0513D8 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
 				DEFINES_MODULE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -904,6 +920,8 @@
 		842DC231AA8DF7111CFB1AED /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
 				DEFINES_MODULE = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.choclift.ChocliftCoreWatch;
 				PRODUCT_MODULE_NAME = ChocliftCore;
@@ -920,6 +938,8 @@
 				AD_HOC_CODE_SIGNING_ALLOWED = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 4257SFGRFK;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Apps/ChocliftWatch/Info.plist;
 				OTHER_LDFLAGS = (
@@ -928,6 +948,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.choclift.ios.watchkitapp;
 				PRODUCT_NAME = ChocliftWatch;
+				PROVISIONING_PROFILE_SPECIFIER = "Choclift Watch AppStore";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = 4;
@@ -939,11 +960,16 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CHOCLIFT_DEVELOPER_ID_PROFILE = "Choclift Developer ID";
+				CODE_SIGN_ENTITLEMENTS = Apps/ChocliftMac/ChocliftMac.entitlements;
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = 4257SFGRFK;
 				ENABLE_APP_SANDBOX = NO;
-				ENABLE_HARDENED_RUNTIME = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Apps/ChocliftMac/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -955,7 +981,7 @@
 					"-ObjC",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.choclift.mac;
-				PRODUCT_NAME = choclift;
+				PRODUCT_NAME = Choclift;
 				SDKROOT = macosx;
 			};
 			name = Debug;
@@ -963,6 +989,8 @@
 		9D8C10C42C327DA38AAC9A11 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
 				DEFINES_MODULE = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.choclift.ChocliftCoreWatch;
 				PRODUCT_MODULE_NAME = ChocliftCore;
@@ -976,6 +1004,8 @@
 		A3AA8F9DCD84CA5B5DFC7856 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEFINES_MODULE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -997,6 +1027,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 4257SFGRFK;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Apps/ChocliftIOS/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
@@ -1009,7 +1041,8 @@
 					"-ObjC",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.choclift.ios;
-				PRODUCT_NAME = choclift;
+				PRODUCT_NAME = Choclift;
+				PROVISIONING_PROFILE_SPECIFIER = "Choclift AppStore";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -1018,6 +1051,8 @@
 		C9AAD9D30F3C835B884B227B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
 				DEFINES_MODULE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1038,6 +1073,8 @@
 				AD_HOC_CODE_SIGNING_ALLOWED = YES;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 4257SFGRFK;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Apps/ChocliftWatch/Info.plist;
 				OTHER_LDFLAGS = (
@@ -1046,6 +1083,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.choclift.ios.watchkitapp;
 				PRODUCT_NAME = ChocliftWatch;
+				PROVISIONING_PROFILE_SPECIFIER = "Choclift Watch AppStore";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = 4;
@@ -1087,7 +1125,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 236;
+				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
@@ -1107,7 +1145,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 2.3.6;
+				MARKETING_VERSION = 1.0.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

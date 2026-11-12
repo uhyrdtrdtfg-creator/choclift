@@ -3,19 +3,19 @@ import CoreGraphics
 import CoreText
 import Foundation
 
-func renderIcon(size: Int, outputPath: String) throws {
+func renderIcon(size: Int, opaque: Bool = false, outputPath: String) throws {
     let s = CGFloat(size)
     guard let rep = NSBitmapImageRep(
         bitmapDataPlanes: nil,
         pixelsWide: size,
         pixelsHigh: size,
         bitsPerSample: 8,
-        samplesPerPixel: 4,
-        hasAlpha: true,
+        samplesPerPixel: opaque ? 3 : 4,
+        hasAlpha: !opaque,
         isPlanar: false,
         colorSpaceName: .deviceRGB,
-        bytesPerRow: 0,
-        bitsPerPixel: 0
+        bytesPerRow: size * 4,
+        bitsPerPixel: 32
     ) else {
         fatalError("Failed to allocate bitmap")
     }
@@ -127,9 +127,9 @@ try fm.createDirectory(atPath: iosIconDir, withIntermediateDirectories: true)
 try fm.createDirectory(atPath: watchIconDir, withIntermediateDirectories: true)
 try fm.createDirectory(atPath: macIconDir, withIntermediateDirectories: true)
 
-try renderIcon(size: 1024, outputPath: "\(iosIconDir)/AppIcon-1024.png")
-try renderIcon(size: 1024, outputPath: "\(watchIconDir)/AppIcon-1024.png")
+try renderIcon(size: 1024, opaque: true, outputPath: "\(iosIconDir)/AppIcon-1024.png")
+try renderIcon(size: 1024, opaque: true, outputPath: "\(watchIconDir)/AppIcon-1024.png")
 for sz in [16, 32, 64, 128, 256, 512, 1024] {
-    try renderIcon(size: sz, outputPath: "\(macIconDir)/icon_\(sz).png")
+    try renderIcon(size: sz, opaque: false, outputPath: "\(macIconDir)/icon_\(sz).png")
 }
 print("Generated icons successfully")

@@ -1,0 +1,49 @@
+# macOS 自动发版调用方 workflow —— 复用公共 kit 仓库 macuhy/macos-app-release-kit 的 reusable workflow。
+# 触发: ① git tag -a v1.0.0 -m "Release v1.0.0" && git push origin v1.0.0
+#       ② Actions 页手动 Run workflow（填版本号，如 1.0.0）
+#
+# 版本: tag `v1.0.0` → MARKETING_VERSION=1.0.0；CURRENT_PROJECT_VERSION = git 提交数（单调递增）。
+# 分发说明: 当前尚未创建独立的公共分发仓库，因此 public_repo 与 download_url_prefix 暂指向本私有仓库
+# uhyrdtrdtfg-creator/choclift（Release ZIP 与 appcast.xml 保留在本私有仓内）。
+# 若要启用 Kown 同款「私有源码仓 → 公共分发仓」双仓发布，仍需创建公共分发仓库并配置具备其读写权限的
+# RELEASE_REPO_PAT，随后更新下方 public_repo 与 download_url_prefix。
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 1.0.0）'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    uses: macuhy/macos-app-release-kit/.github/workflows/release-reusable.yml@main
+    # 跨仓库调用 reusable workflow 时必须显式逐个转发所需 secrets。
+    secrets:
+      DEVELOPER_ID_CERTIFICATE_P12:      ${{ secrets.DEVELOPER_ID_CERTIFICATE_P12 }}
+      DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+      APPLE_TEAM_ID:                     ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID:                        ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID:                     ${{ secrets.ASC_ISSUER_ID }}
+      ASC_API_KEY_P8:                    ${{ secrets.ASC_API_KEY_P8 }}
+      SPARKLE_PRIVATE_KEY:               ${{ secrets.SPARKLE_PRIVATE_KEY }}
+      RELEASE_REPO_PAT:                  ${{ secrets.RELEASE_REPO_PAT }}
+      PROVISIONING_PROFILE_BASE64:       ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+    with:
+      app_name: "Choclift"
+      scheme: "ChocliftMac"
+      project: "Choclift.xcodeproj"
+      public_repo: "uhyrdtrdtfg-creator/choclift"
+      download_url_prefix: "https://github.com/uhyrdtrdtfg-creator/choclift/releases/download/"
+      export_options: "ExportOptions.plist"
+      # Choclift.xcodeproj 已由 xcodegen 本地生成并提交，CI 直接构建
+      use_xcodegen: false
+      # Target-local 变量仅在 ChocliftMac target 展开为 "Choclift Developer ID"，
+      # 静态库 ChocliftCoreMac 展开为空，避免静态库 target 报 provisioning profile 错误。
+      provisioning_profile_specifier: "$(CHOCLIFT_DEVELOPER_ID_PROFILE)"

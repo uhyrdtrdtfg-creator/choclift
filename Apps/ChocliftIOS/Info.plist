@@ -20,6 +20,8 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>choclift 在不处于同一 Wi-Fi 时，通过蓝牙与 Mac 配对并发送触控栏操作。</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>

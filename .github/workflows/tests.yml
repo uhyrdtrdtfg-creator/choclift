@@ -1,0 +1,41 @@
+# 单元与回环集成测试 —— 每次 push / PR 到 main 或手动触发时在 macOS-15 上跑 ChocliftCore 测试。
+# CompanionLoopbackIntegrationTests 需绑定本机 127.0.0.1 TCP 端口，因此加 --disable-sandbox 关闭 SwiftPM 沙箱。
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: Packages/ChocliftCore/.build
+          key: spm-${{ runner.os }}-${{ hashFiles('Packages/ChocliftCore/Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Run ChocliftCore tests
+        run: swift test --disable-sandbox --package-path Packages/ChocliftCore

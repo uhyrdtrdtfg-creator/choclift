@@ -1,0 +1,178 @@
+# iOS / iPadOS + 内嵌 Apple Watch 发版 —— 打 `ios-v*` tag 或手动触发，归档并上传到 TestFlight。
+# 与 macOS（release.yml，`v*.*.*` + Developer ID / Sparkle）完全独立：iOS 归档内嵌 ChocliftWatch，单次上传 App Store Connect。
+#
+# 版本: tag `ios-v1.0.0` → MARKETING_VERSION=1.0.0；CURRENT_PROJECT_VERSION = git 提交数（单调递增）。
+# 签名: manual（导入 Apple Distribution 证书 + 安装两个 bundle ID 对应的 AppStore provisioning profiles）：
+#   - com.choclift.ios              → "Choclift AppStore"        (IOS_PROVISION_PROFILE)
+#   - com.choclift.ios.watchkitapp  → "Choclift Watch AppStore"  (IOS_WATCH_PROVISION_PROFILE)
+# 上传: xcrun altool --upload-app 使用 App Store Connect API key。
+#
+# 需要的 secrets（配置在 uhyrdtrdtfg-creator/choclift）:
+#   IOS_DIST_CERT_P12, IOS_DIST_CERT_PASSWORD
+#   IOS_PROVISION_PROFILE, IOS_WATCH_PROVISION_PROFILE
+#   APPLE_TEAM_ID, ASC_KEY_ID, ASC_ISSUER_ID, ASC_API_KEY_P8
+name: iOS Release
+
+on:
+  push:
+    tags: ['ios-v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（如 1.0.0）'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    env:
+      BUNDLE_ID: "com.choclift.ios"
+      WATCH_BUNDLE_ID: "com.choclift.ios.watchkitapp"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Determine version
+        id: version
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW_VERSION="${{ github.event.inputs.version }}"
+            RAW_VERSION="${RAW_VERSION#ios-v}"
+            VERSION="${RAW_VERSION#v}"
+          else
+            VERSION="${GITHUB_REF_NAME#ios-v}"
+          fi
+          BUILD_NUMBER=$(git rev-list --count HEAD)
+          echo "version=$VERSION"           >> "$GITHUB_OUTPUT"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "iOS + Watch $VERSION ($BUILD_NUMBER)"
+
+      - name: Install distribution certificate
+        env:
+          P12_BASE64:   ${{ secrets.IOS_DIST_CERT_P12 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          CERT="$RUNNER_TEMP/dist.p12"
+          printf '%s' "$P12_BASE64" | base64 --decode > "$CERT"
+          DECODED_BYTES=$(wc -c < "$CERT" | tr -d ' ')
+          echo "Decoded .p12 bytes: $DECODED_BYTES"
+          if [ "$DECODED_BYTES" -lt 100 ]; then
+            echo "::error::IOS_DIST_CERT_P12 解码后过小 ($DECODED_BYTES B) —— GitHub Actions secret 缺失或损坏"; exit 1
+          fi
+          # 不加 -t cert：.p12 是 identity（证书 + 私钥），加 -t cert 会干扰类型识别。
+          security import "$CERT" -P "$P12_PASSWORD" -A -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+          echo "== 签名身份 =="
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+      - name: Install provisioning profiles
+        env:
+          PROFILE_BASE64:       ${{ secrets.IOS_PROVISION_PROFILE }}
+          WATCH_PROFILE_BASE64: ${{ secrets.IOS_WATCH_PROVISION_PROFILE }}
+        run: |
+          set -euo pipefail
+          DEST_MOBILE="$HOME/Library/MobileDevice/Provisioning Profiles"
+          DEST_XCODE="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
+          mkdir -p "$DEST_MOBILE" "$DEST_XCODE"
+          install_profile() {
+            local b64="$1" name="$2" secret_name="$3"
+            if [ -z "$b64" ]; then
+              echo "::error::缺少 GitHub Actions secret: $secret_name"; exit 1
+            fi
+            local tmp="$RUNNER_TEMP/$name.mobileprovision"
+            printf '%s' "$b64" | base64 --decode > "$tmp"
+            local uuid
+            uuid=$(security cms -D -i "$tmp" | plutil -extract UUID raw -)
+            cp "$tmp" "$DEST_MOBILE/$uuid.mobileprovision"
+            cp "$tmp" "$DEST_XCODE/$uuid.mobileprovision"
+            echo "installed $name profile UUID=$uuid"
+          }
+          # 主 iOS/iPadOS App (com.choclift.ios) + 内嵌 Apple Watch App (com.choclift.ios.watchkitapp)
+          install_profile "$PROFILE_BASE64" main IOS_PROVISION_PROFILE
+          install_profile "$WATCH_PROFILE_BASE64" watch IOS_WATCH_PROVISION_PROFILE
+
+      - name: Write App Store Connect API key
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID:     ${{ secrets.ASC_KEY_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ASC_KEY_ID" ] || [ -z "$ASC_API_KEY_P8" ]; then
+            echo "::error::缺少 ASC_KEY_ID 或 ASC_API_KEY_P8 secret"; exit 1
+          fi
+          mkdir -p "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$ASC_API_KEY_P8" | base64 --decode > "$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
+
+      - name: Archive
+        env:
+          VERSION:      ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+          TEAM_ID:      ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          TEAM_ID="${TEAM_ID:-4257SFGRFK}"
+          # 不在命令行传单一 PROVISIONING_PROFILE_SPECIFIER：主 App 与内嵌 Watch App 各自的
+          # PROVISIONING_PROFILE_SPECIFIER 已在 project.yml 按 target 声明，Manual 模式下逐 target 匹配。
+          xcodebuild archive \
+            -project Choclift.xcodeproj -scheme ChocliftIOS \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/ChocliftIOS.xcarchive" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            MARKETING_VERSION="$VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
+          test -d "$RUNNER_TEMP/ChocliftIOS.xcarchive/Products/Applications/Choclift.app/Watch/ChocliftWatch.app"
+
+      - name: Export IPA
+        run: |
+          set -euo pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/ChocliftIOS.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist ios/ExportOptions.plist
+          ls -la "$RUNNER_TEMP/export"
+
+      - name: Upload to TestFlight
+        env:
+          ASC_KEY_ID:    ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          IPA=$(ls "$RUNNER_TEMP/export"/*.ipa | head -1)
+          echo "uploading $IPA"
+          xcrun altool --upload-app -f "$IPA" -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/build.keychain-db" 2>/dev/null || true
+          rm -f "$HOME/.appstoreconnect/private_keys/"*.p8 2>/dev/null || true

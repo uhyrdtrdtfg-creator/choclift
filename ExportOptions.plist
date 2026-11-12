@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 供 xcodebuild -exportArchive 使用：macOS Developer ID 导出（App Store 之外分发）。
+     手动签名 + Developer ID Application 证书 + "Choclift Developer ID" provisioning profile。 -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key>
+    <string>developer-id</string>
+
+    <key>teamID</key>
+    <string>4257SFGRFK</string>
+
+    <key>signingStyle</key>
+    <string>manual</string>
+
+    <key>signingCertificate</key>
+    <string>Developer ID Application</string>
+
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>com.choclift.mac</key>
+        <string>Choclift Developer ID</string>
+    </dict>
+</dict>
+</plist>

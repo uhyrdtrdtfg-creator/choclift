@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- iOS / iPadOS + 内嵌 Apple Watch 的 App Store Connect / TestFlight 导出选项（供 xcodebuild -exportArchive 使用）。
+     manual 签名 + 指定主 App ("Choclift AppStore") 与内嵌 Watch App ("Choclift Watch AppStore") profiles；
+     上传走 App Store Connect API key（见 .github/workflows/ios-release.yml）。 -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>method</key>
+    <string>app-store-connect</string>
+
+    <key>teamID</key>
+    <string>4257SFGRFK</string>
+
+    <key>signingStyle</key>
+    <string>manual</string>
+
+    <key>signingCertificate</key>
+    <string>Apple Distribution</string>
+
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>com.choclift.ios</key>
+        <string>Choclift AppStore</string>
+        <key>com.choclift.ios.watchkitapp</key>
+        <string>Choclift Watch AppStore</string>
+    </dict>
+
+    <key>destination</key>
+    <string>export</string>
+
+    <key>uploadSymbols</key>
+    <true/>
+
+    <key>manageAppVersionAndBuildNumber</key>
+    <false/>
+</dict>
+</plist>

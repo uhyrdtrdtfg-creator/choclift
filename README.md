@@ -51,10 +51,17 @@ Turn your **iPhone**, **iPad**, and **Apple Watch** into tactile, customizable *
 
 ```text
 choclift/
+├── .github/workflows/
+│   ├── tests.yml                       # CI unit + loopback + BLE chunking tests on macOS-15
+│   ├── release.yml                     # macOS Developer ID + notarization + Sparkle appcast workflow (v*.*.*)
+│   └── ios-release.yml                 # iOS / iPadOS + embedded Apple Watch TestFlight upload workflow (ios-v*)
+├── ExportOptions.plist                 # macOS Developer ID manual signing export options
+├── ios/
+│   └── ExportOptions.plist             # iOS + embedded Watch App Store Connect manual signing export options
 ├── project.yml                         # XcodeGen multi-platform spec (macOS 14+, iOS 17+, watchOS 10+)
 ├── Choclift.xcodeproj                  # Generated Xcode project (ChocliftMac, ChocliftIOS, ChocliftWatch)
 ├── Packages/
-│   └── ChocliftCore/                   # Shared models, length-prefixed TCP wire protocol, networking & theme
+│   └── ChocliftCore/                   # Shared models, length-prefixed TCP/BLE wire protocol, networking & theme
 ├── Apps/
 │   ├── ChocliftMac/                    # macOS Studio + MenuBarExtra + AX Window/Emoji/Shortcuts/Browser services
 │   ├── ChocliftIOS/                    # iPhone Touch Bar + Resizable iPad Dashboard + Multi-Touch Gesture Engine (embeds ChocliftWatch)
@@ -148,3 +155,57 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   --scratch-path /tmp/chocliftcore-build \
   --cache-path /tmp/swiftpm-cache
 ```
+
+---
+
+## CI & Automatic Release (macOS + iOS/iPadOS + Embedded Apple Watch)
+
+Releases follow the manual-signing Kown pattern across two independent tag families, with `MARKETING_VERSION` derived from the git tag (`v1.0.0` or `ios-v1.0.0` → `1.0.0`) and `CURRENT_PROJECT_VERSION` computed monotonically from `git rev-list --count HEAD`:
+
+### 1. Triggering Releases
+
+**macOS Release (`ChocliftMac` — Developer ID, Notarization & Sparkle Appcast)**
+```bash
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+# Or run manually from CLI:
+gh workflow run release.yml -f version=1.0.0
+```
+
+**iOS / iPadOS + Embedded Apple Watch Release (`ChocliftIOS` + `ChocliftWatch` — TestFlight / App Store Connect)**
+```bash
+git tag -a ios-v1.0.0 -m "iOS Release v1.0.0"
+git push origin ios-v1.0.0
+# Or run manually from CLI:
+gh workflow run ios-release.yml -f version=1.0.0
+```
+> `ChocliftWatch` (`com.choclift.ios.watchkitapp`) is embedded directly inside the `ChocliftIOS` (`com.choclift.ios`) archive (`Choclift.app/Watch/ChocliftWatch.app`) and uploaded in a single IPA via `xcrun altool`.
+
+### 2. Required GitHub Actions Secrets
+
+Configure the following repository secrets in **Settings → Secrets and variables → Actions** on `uhyrdtrdtfg-creator/choclift`:
+
+| Workflow | Secret Name | Purpose |
+|---|---|---|
+| **Mac (`release.yml`)** | `DEVELOPER_ID_CERTIFICATE_P12` | Base64-encoded `Developer ID Application` `.p12` identity (cert + private key) |
+| **Mac (`release.yml`)** | `DEVELOPER_ID_CERTIFICATE_PASSWORD` | Password protecting the Developer ID `.p12` |
+| **Mac & iOS** | `APPLE_TEAM_ID` | Apple Developer Team ID (`4257SFGRFK`) |
+| **Mac & iOS** | `ASC_KEY_ID` | App Store Connect API Key ID (notarization + TestFlight upload) |
+| **Mac & iOS** | `ASC_ISSUER_ID` | App Store Connect API Issuer ID |
+| **Mac & iOS** | `ASC_API_KEY_P8` | Base64-encoded `AuthKey_<ASC_KEY_ID>.p8` private key |
+| **Mac (`release.yml`)** | `SPARKLE_PRIVATE_KEY` | Sparkle EdDSA private key used by `sign_update` |
+| **Mac (`release.yml`)** | `RELEASE_REPO_PAT` | GitHub PAT with `contents:write` on the release/appcast repository |
+| **Mac (`release.yml`)** | `PROVISIONING_PROFILE_BASE64` | Base64-encoded `.provisionprofile` for `"Choclift Developer ID"` (`com.choclift.mac`) |
+| **iOS/Watch (`ios-release.yml`)** | `IOS_DIST_CERT_P12` | Base64-encoded `Apple Distribution` `.p12` identity (cert + private key) |
+| **iOS/Watch (`ios-release.yml`)** | `IOS_DIST_CERT_PASSWORD` | Password protecting the Apple Distribution `.p12` |
+| **iOS/Watch (`ios-release.yml`)** | `IOS_PROVISION_PROFILE` | Base64-encoded App Store `.mobileprovision` named `"Choclift AppStore"` (`com.choclift.ios`) |
+| **iOS/Watch (`ios-release.yml`)** | `IOS_WATCH_PROVISION_PROFILE` | Base64-encoded App Store `.mobileprovision` named `"Choclift Watch AppStore"` (`com.choclift.ios.watchkitapp`) |
+
+### 3. Apple Developer Portal & Public Distribution Repo Notes
+- **Apple Developer Portal App IDs & Provisioning Profiles** (Team `4257SFGRFK`):
+  - `com.choclift.mac` → **Developer ID** profile named **`Choclift Developer ID`** (matching `ExportOptions.plist`).
+  - `com.choclift.ios` → **App Store Connect** profile named **`Choclift AppStore`** (matching `ios/ExportOptions.plist`), plus an App record in App Store Connect.
+  - `com.choclift.ios.watchkitapp` → **App Store Connect** profile named **`Choclift Watch AppStore`** (matching `ios/ExportOptions.plist`).
+- **Two-Repo Public Distribution Note (macOS)**:
+  - Because no separate public distribution repository exists yet, `.github/workflows/release.yml` currently sets `public_repo: "uhyrdtrdtfg-creator/choclift"` and `download_url_prefix: "https://github.com/uhyrdtrdtfg-creator/choclift/releases/download/"` so the Mac artifact ZIP and `appcast.xml` stay inside this private repository.
+  - To enable the full Kown-style two-repo public distribution flow (private source repo → public Sparkle release repo), create a dedicated public repository (e.g. `choclift-mac`), grant `RELEASE_REPO_PAT` write access to that public repository, and update `public_repo` and `download_url_prefix` in `.github/workflows/release.yml`.
