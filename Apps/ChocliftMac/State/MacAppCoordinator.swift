@@ -6,6 +6,7 @@ import SwiftUI
 
 public enum MacStudioSection: String, CaseIterable, Identifiable {
     case chocolateBar
+    case flows
     case emojiBar
     case timeTravel
     case gestures
@@ -16,6 +17,7 @@ public enum MacStudioSection: String, CaseIterable, Identifiable {
     public var sfSymbol: String {
         switch self {
         case .chocolateBar: return "square.grid.2x2.fill"
+        case .flows: return "arrow.triangle.branch"
         case .emojiBar: return "face.smiling.inverse"
         case .timeTravel: return "clock.arrow.circlepath"
         case .gestures: return "hand.draw.fill"
@@ -26,6 +28,7 @@ public enum MacStudioSection: String, CaseIterable, Identifiable {
     public func title(in lang: AppLanguage) -> String {
         switch self {
         case .chocolateBar: return L10n.tr("巧克力栏", "Chocolate Bar", language: lang)
+        case .flows: return L10n.tr("动作流", "Flows", language: lang)
         case .emojiBar: return L10n.tr("表情栏", "Emoji Bar", language: lang)
         case .timeTravel: return L10n.tr("时间旅行", "Time Travel", language: lang)
         case .gestures: return L10n.tr("触控手势", "Gestures", language: lang)
@@ -59,6 +62,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     @Published public private(set) var activityLog: [MacActivityEvent] = []
     @Published public private(set) var statusBannerMessage: String?
     @Published public private(set) var launchAtLoginEnabled: Bool = false
+    @Published public private(set) var runningFlowID: UUID?
 
     public let server: MacServerEngine
     public let timeTravel: MacTimeTravelMonitor
@@ -70,6 +74,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     private let profileFileURL: URL
     private let pairedDevicesFileURL: URL
     private var monitorTimerTask: Task<Void, Never>?
+    private var pendingFlowQueueTask: Task<Void, Never>?
 
     public init() {
         let fm = FileManager.default
@@ -220,16 +225,43 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         )
 
         server.broadcast(.profileUpdated(next), excludingDeviceID: broadcastOriginDeviceID)
+        server.pushMissingIconsToAllSessions(bundleIDs: next.referencedAppBundleIdentifiers)
+    }
 
-        var referencedBundles = Set<String>()
-        for page in next.pages {
-            for slot in page.slots {
-                if let bid = slot?.bundleIdentifier {
-                    referencedBundles.insert(bid)
-                }
-            }
+    public func saveFlow(_ flow: ActionFlow) {
+        var normalized = flow
+        normalized.updatedAt = Date()
+        mutateProfile { draft in
+            draft.upsertFlow(normalized)
         }
-        server.pushMissingIconsToAllSessions(bundleIDs: referencedBundles)
+    }
+
+    public func deleteFlow(id: UUID) {
+        mutateProfile { draft in
+            _ = draft.deleteFlow(id: id)
+        }
+    }
+
+    public func moveFlow(from sourceIndex: Int, to destinationIndex: Int) {
+        mutateProfile { draft in
+            draft.moveFlow(from: sourceIndex, to: destinationIndex)
+        }
+    }
+
+    public func moveFlows(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        mutateProfile { draft in
+            draft.moveFlows(fromOffsets: offsets, toOffset: destination)
+        }
+    }
+
+    public func assignFlowToSlot(_ flow: ActionFlow, pageIndex: Int, slotIndex: Int) {
+        guard profile.pages.indices.contains(pageIndex),
+              profile.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
+        mutateProfile { draft in
+            draft.upsertFlow(flow)
+            let existingID = draft.pages[pageIndex].slots[slotIndex]?.id ?? UUID()
+            draft.pages[pageIndex].slots[slotIndex] = draft.makeBarItem(for: flow, id: existingID)
+        }
     }
 
     public func setSlotItem(_ item: BarItem?, pageIndex: Int, slotIndex: Int) {
@@ -314,25 +346,93 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
     // MARK: - Local & Remote Action Execution
 
+    public func executeFlow(_ flow: ActionFlow, triggeredBy deviceName: String = "Mac Studio") {
+        Task { @MainActor in
+            _ = await enqueueAndExecuteFlow(flow, triggeredBy: deviceName)
+        }
+    }
+
     public func executeBarItem(_ item: BarItem, triggeredBy deviceName: String) {
         Task { @MainActor in
-            let result: (success: Bool, message: String)
             switch item.kind {
             case .macApp(let bundleID, _, let appPath, _):
-                result = await catalogService.launchOrActivateApp(
+                let result = await catalogService.launchOrActivateApp(
                     bundleIdentifier: bundleID,
                     appPath: appPath,
                     windowService: windowService
                 )
+                recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+
             case .shortcut(let shortcutName, _, _):
-                result = await catalogService.runShortcut(named: shortcutName)
+                let result = await catalogService.runShortcut(named: shortcutName)
+                recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+
             case .website(let url, _, _, _, let switchExistingTab):
-                result = await catalogService.openWebsite(rawURL: url, switchExistingTab: switchExistingTab)
+                let result = await catalogService.openWebsite(rawURL: url, switchExistingTab: switchExistingTab)
+                recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+
             case .systemAction(let action, _, _):
-                result = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
+                let result = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
+                recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+
+            case .flow(let flowID, let titleSnapshot, _, _, _):
+                _ = await runFlowByID(flowID, fallbackName: titleSnapshot, triggeredBy: deviceName)
             }
-            recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
         }
+    }
+
+    public func runFlowByID(
+        _ flowID: UUID,
+        fallbackName: String? = nil,
+        triggeredBy deviceName: String
+    ) async -> ActionFlowRunResult {
+        guard let flow = profile.flow(withID: flowID) else {
+            let label = (fallbackName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+                ? fallbackName!
+                : L10n.tr("动作流", "Action Flow", language: lang)
+            let msg = L10n.tr(
+                "未找到动作流「\(label)」，可能已被删除",
+                "Flow \"\(label)\" was not found (it may have been deleted)",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: msg, isSuccess: false)
+            return ActionFlowRunResult(success: false, title: msg, detail: msg, executedStepCount: 0)
+        }
+        return await enqueueAndExecuteFlow(flow, triggeredBy: deviceName)
+    }
+
+    private func enqueueAndExecuteFlow(
+        _ flow: ActionFlow,
+        triggeredBy deviceName: String
+    ) async -> ActionFlowRunResult {
+        let previousTask = pendingFlowQueueTask
+        var capturedResult: ActionFlowRunResult?
+
+        let nextTask = Task { @MainActor [weak self] in
+            if let previousTask {
+                await previousTask.value
+            }
+            guard let self else { return }
+            self.runningFlowID = flow.id
+            defer {
+                if self.runningFlowID == flow.id {
+                    self.runningFlowID = nil
+                }
+            }
+            let driver = MacCoordinatorFlowDriver(coordinator: self)
+            let res = await ActionFlowRunner.run(flow, driver: driver, language: self.lang)
+            capturedResult = res
+            self.recordActivity(deviceName: deviceName, summary: res.detail, isSuccess: res.success)
+        }
+
+        pendingFlowQueueTask = nextTask
+        await nextTask.value
+
+        if let capturedResult {
+            return capturedResult
+        }
+        let fallbackMsg = L10n.tr("动作流已取消", "Flow was cancelled", language: lang)
+        return ActionFlowRunResult(success: false, title: fallbackMsg, detail: fallbackMsg, executedStepCount: 0)
     }
 
     public func executeEmojiInsertion(_ emoji: String, triggeredBy deviceName: String) -> (success: Bool, message: String) {
@@ -416,23 +516,49 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         switch message {
         case .triggerBarItem(let item):
             Task { @MainActor in
-                let result: (success: Bool, message: String)
                 switch item.kind {
                 case .macApp(let bundleID, _, let appPath, _):
-                    result = await catalogService.launchOrActivateApp(
+                    let result = await catalogService.launchOrActivateApp(
                         bundleIdentifier: bundleID,
                         appPath: appPath,
                         windowService: windowService
                     )
+                    recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
+                    reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
+
                 case .shortcut(let shortcutName, _, _):
-                    result = await catalogService.runShortcut(named: shortcutName)
+                    let result = await catalogService.runShortcut(named: shortcutName)
+                    recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
+                    reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
+
                 case .website(let url, _, _, _, let switchExistingTab):
-                    result = await catalogService.openWebsite(rawURL: url, switchExistingTab: switchExistingTab)
+                    let result = await catalogService.openWebsite(rawURL: url, switchExistingTab: switchExistingTab)
+                    recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
+                    reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
+
                 case .systemAction(let action, _, _):
-                    result = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
+                    let result = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
+                    recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
+                    reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
+
+                case .flow(let flowID, let titleSnapshot, _, _, _):
+                    let flowResult = await runFlowByID(
+                        flowID,
+                        fallbackName: titleSnapshot,
+                        triggeredBy: device.deviceName
+                    )
+                    reply(.actionFeedback(success: flowResult.success, title: flowResult.title, detail: flowResult.detail))
                 }
-                recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
-                reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
+            }
+
+        case .triggerFlow(let flowID):
+            Task { @MainActor in
+                let flowResult = await runFlowByID(
+                    flowID,
+                    fallbackName: nil,
+                    triggeredBy: device.deviceName
+                )
+                reply(.actionFeedback(success: flowResult.success, title: flowResult.title, detail: flowResult.detail))
             }
 
         case .activateRecentApp(let bundleIdentifier, let appPath):
@@ -499,5 +625,114 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         default:
             break
         }
+    }
+}
+
+// MARK: - Existing-Services ActionFlowDriver Adapter
+
+@MainActor
+private final class MacCoordinatorFlowDriver: ActionFlowDriver {
+    private weak var coordinator: MacAppCoordinator?
+
+    init(coordinator: MacAppCoordinator) {
+        self.coordinator = coordinator
+    }
+
+    var fallbackExternalAppPID: Int32? {
+        coordinator?.timeTravel.lastExternalAppPID
+    }
+
+    func launchOrActivateApp(
+        bundleIdentifier: String,
+        appPath: String?
+    ) async -> (success: Bool, message: String, app: FlowAppHandle?) {
+        guard let coordinator else {
+            return (false, "Mac coordinator unavailable", nil)
+        }
+        return await coordinator.catalogService.launchOrActivateAppWithHandle(
+            bundleIdentifier: bundleIdentifier,
+            appPath: appPath,
+            windowService: coordinator.windowService
+        )
+    }
+
+    func currentFrontmostApp() -> FlowAppHandle? {
+        guard let front = NSWorkspace.shared.frontmostApplication,
+              !front.isTerminated,
+              let bundleID = front.bundleIdentifier else {
+            return nil
+        }
+        return FlowAppHandle(
+            bundleIdentifier: bundleID,
+            appName: front.localizedName ?? bundleID,
+            processIdentifier: front.processIdentifier
+        )
+    }
+
+    func runningApp(forBundleIdentifier bundleIdentifier: String) -> FlowAppHandle? {
+        let direct = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
+            .first(where: { !$0.isTerminated })
+        let resolved = direct ?? NSWorkspace.shared.runningApplications.first {
+            !$0.isTerminated &&
+            $0.bundleIdentifier?.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
+        }
+        guard let app = resolved else { return nil }
+        let bid = app.bundleIdentifier ?? bundleIdentifier
+        return FlowAppHandle(
+            bundleIdentifier: bid,
+            appName: app.localizedName ?? bid,
+            processIdentifier: app.processIdentifier
+        )
+    }
+
+    func waitForAdjustableWindowIfNeeded(
+        for app: FlowAppHandle,
+        action: SystemQuickAction
+    ) async {
+        guard let coordinator,
+              action.isWindowAction,
+              coordinator.windowService.isAccessibilityTrusted() else {
+            return
+        }
+        coordinator.windowService.unminimizeFirstWindowIfAllMinimized(pid: app.processIdentifier)
+        if coordinator.windowService.hasAdjustableWindow(forPID: app.processIdentifier) {
+            return
+        }
+        for _ in 0..<30 {
+            if Task.isCancelled { return }
+            try? await Task.sleep(for: .milliseconds(50))
+            coordinator.windowService.unminimizeFirstWindowIfAllMinimized(pid: app.processIdentifier)
+            if coordinator.windowService.hasAdjustableWindow(forPID: app.processIdentifier) {
+                return
+            }
+        }
+    }
+
+    func executeSystemAction(
+        _ action: SystemQuickAction,
+        target: FlowSystemActionTarget
+    ) -> (success: Bool, message: String) {
+        guard let coordinator else {
+            return (false, "Mac coordinator unavailable")
+        }
+        switch target {
+        case .defaultTarget(let preferredPID):
+            return coordinator.inputService.executeSystemAction(
+                action,
+                preferredPID: preferredPID,
+                strictTargetPID: false
+            )
+        case .strictApp(_, let processIdentifier):
+            return coordinator.inputService.executeSystemAction(
+                action,
+                preferredPID: processIdentifier,
+                strictTargetPID: true
+            )
+        }
+    }
+
+    func sleep(seconds: Double) async {
+        guard seconds > 0 else { return }
+        try? await Task.sleep(for: .seconds(seconds))
     }
 }

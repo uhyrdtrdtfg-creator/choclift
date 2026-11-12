@@ -38,6 +38,7 @@ public struct IOSRootTouchBarView: View {
     @State private var currentPageIndex: Int = 0
     @State private var currentEmojiSlideIndex: Int = 0
     @State private var showPairingSheet: Bool = false
+    @State private var showFlowsManagerSheet: Bool = false
     @State private var editingSlot: IOSEditSlotSelection?
     @State private var gestureHUDText: String?
 
@@ -110,6 +111,9 @@ public struct IOSRootTouchBarView: View {
         .sheet(isPresented: $showPairingSheet) {
             IOSPairingAndConnectionSheet(client: client)
         }
+        .sheet(isPresented: $showFlowsManagerSheet) {
+            IOSFlowsManagerSheet(client: client, defaultPageIndex: currentPageIndex)
+        }
         .sheet(item: $editingSlot) { selection in
             IOSSlotEditorSheet(
                 client: client,
@@ -179,8 +183,10 @@ public struct IOSRootTouchBarView: View {
             }
 
             // Right-hand Vertical Control Rail — quiet link badge + generous 44pt mode targets
-            VStack(spacing: 8) {
+            VStack(spacing: 6) {
                 railConnectionStatusButton
+
+                railFlowsManagerButton
 
                 if activeMode == .chocolateBar || activeMode == .emojiBar {
                     verticalPagePillButton
@@ -241,6 +247,8 @@ public struct IOSRootTouchBarView: View {
                     .foregroundStyle(palette.primaryText)
 
                 Spacer(minLength: 6)
+
+                flowsQuickManagerButton
 
                 connectionStatusPillButton
             }
@@ -344,6 +352,21 @@ public struct IOSRootTouchBarView: View {
                 }
 
                 Spacer(minLength: 8)
+
+                Button {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    showFlowsManagerSheet = true
+                } label: {
+                    Label(L10n.tr("动作流", "Flows", language: lang), systemImage: "arrow.triangle.branch")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 38)
+                        .background(palette.tileFillTop.opacity(0.9), in: Capsule())
+                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
 
                 connectionStatusPillButton
             }
@@ -518,6 +541,48 @@ public struct IOSRootTouchBarView: View {
 
     /// Compact 44x44 rail button for iPhone landscape: shows Wi-Fi / BLE quietly when connected,
     /// and unmistakable state badges when connecting, failed, or unpaired.
+    private var railFlowsManagerButton: some View {
+        Button {
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            showFlowsManagerSheet = true
+        } label: {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 13.5, weight: .bold))
+                .foregroundStyle(palette.accent)
+                .frame(width: 44, height: 34)
+                .background(
+                    palette.tileFillBottom.opacity(0.9),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("ios-flows-manager-button")
+        .accessibilityLabel(L10n.tr("动作流", "Action Flows", language: lang))
+    }
+
+    private var flowsQuickManagerButton: some View {
+        Button {
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            showFlowsManagerSheet = true
+        } label: {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.system(size: 13.5, weight: .bold))
+                .foregroundStyle(palette.accent)
+                .frame(width: 38, height: 38)
+                .background(palette.tileFillTop.opacity(0.9), in: Circle())
+                .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("ios-flows-manager-button")
+        .accessibilityLabel(L10n.tr("动作流", "Action Flows", language: lang))
+    }
+
     private var railConnectionStatusButton: some View {
         let tint = visualState.tintColor(in: palette)
 

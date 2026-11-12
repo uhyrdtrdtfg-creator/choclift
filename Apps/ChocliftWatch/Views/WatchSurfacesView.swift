@@ -302,6 +302,31 @@ private struct WatchSlotQuickAssignSheet: View {
 
     var body: some View {
         List {
+            if !client.profile.flows.isEmpty {
+                Section(L10n.tr("动作流 (Flows)", "Action Flows", language: lang)) {
+                    ForEach(client.profile.flows) { flow in
+                        Button {
+                            assign(client.profile.makeBarItem(for: flow))
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(flow.emoji.isEmpty ? "⚡️" : flow.emoji)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(flow.name)
+                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(palette.primaryText)
+                                        .lineLimit(1)
+                                    Text(L10n.tr("\(flow.enabledStepCount) 步", "\(flow.enabledStepCount) steps", language: lang))
+                                        .font(.caption2)
+                                        .foregroundStyle(palette.secondaryText)
+                                }
+                            }
+                            .frame(minHeight: 38)
+                        }
+                        .listRowBackground(palette.barSurface)
+                    }
+                }
+            }
+
             if !client.recentApps.isEmpty {
                 Section(L10n.tr("最近 Mac 应用", "Recent Mac Apps", language: lang)) {
                     ForEach(client.recentApps.prefix(8)) { entry in

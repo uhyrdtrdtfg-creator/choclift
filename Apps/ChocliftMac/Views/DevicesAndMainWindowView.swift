@@ -954,6 +954,8 @@ public struct MacMainWindowView: View {
                     switch coordinator.selectedSection {
                     case .chocolateBar:
                         ChocolateBarStudioView(coordinator: coordinator)
+                    case .flows:
+                        ActionFlowsStudioView(coordinator: coordinator)
                     case .emojiBar:
                         EmojiBarStudioView(coordinator: coordinator)
                     case .timeTravel:
@@ -986,7 +988,7 @@ public struct MacMainWindowView: View {
             }
             .animation(.easeInOut(duration: 0.2), value: coordinator.statusBannerMessage)
         }
-        .frame(minWidth: 920, minHeight: 610)
+        .frame(minWidth: 960, minHeight: 610)
         .background(
             LinearGradient(
                 colors: [palette.backgroundTop, palette.backgroundBottom],
