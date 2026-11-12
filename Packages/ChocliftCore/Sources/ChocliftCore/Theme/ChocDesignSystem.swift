@@ -459,7 +459,7 @@ public struct DataImageView: View {
     }
 }
 
-// MARK: - Brand Icon ("c" Vivid Violet & Coral Mark)
+// MARK: - Brand Icon (original chocolate mark; independent of the UI palette)
 
 public struct ChocliftBrandIconView: View {
     public var size: CGFloat
@@ -473,24 +473,23 @@ public struct ChocliftBrandIconView: View {
             RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [Color(hex: "#7C5CFF"), Color(hex: "#6747F0")],
+                        colors: [Color(hex: "#6B3418"), Color(hex: "#381808")],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-                        .strokeBorder(Color(hex: "#FFFFFF").opacity(0.34), lineWidth: max(1, size * 0.03))
+                        .strokeBorder(Color(hex: "#9A5633").opacity(0.65), lineWidth: max(1, size * 0.03))
                 )
 
-            // Vivid coral accent ribbon at bottom-left
             VStack {
                 Spacer()
                 HStack {
                     Capsule()
                         .fill(
                             LinearGradient(
-                                colors: [Color(hex: "#FF7A59"), Color(hex: "#FF9D7E")],
+                                colors: [Color(hex: "#D62828"), Color(hex: "#F4A261")],
                                 startPoint: .bottomLeading,
                                 endPoint: .topTrailing
                             )
@@ -506,12 +505,11 @@ public struct ChocliftBrandIconView: View {
             Text("c")
                 .font(.system(size: size * 0.62, weight: .black, design: .serif))
                 .italic()
-                .foregroundStyle(Color(hex: "#FFFFFF"))
-                .shadow(color: Color(hex: "#241C33").opacity(0.18), radius: size * 0.04, x: 0, y: size * 0.02)
+                .foregroundStyle(Color(hex: "#FFF3E2"))
+                .shadow(color: .black.opacity(0.4), radius: size * 0.05, x: 0, y: size * 0.03)
                 .offset(y: -size * 0.04)
         }
         .frame(width: size, height: size)
-        .shadow(color: Color(hex: "#7C5CFF").opacity(0.22), radius: size * 0.14, x: 0, y: size * 0.06)
     }
 }
 
