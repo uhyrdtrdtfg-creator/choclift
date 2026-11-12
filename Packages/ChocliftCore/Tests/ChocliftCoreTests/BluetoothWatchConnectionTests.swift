@@ -1,6 +1,7 @@
 #if os(macOS) || os(iOS) || os(watchOS)
 import CoreBluetooth
 import Foundation
+import Network
 import XCTest
 @testable import ChocliftCore
 
@@ -787,6 +788,515 @@ final class BluetoothWatchConnectionTests: XCTestCase {
             XCTAssertFalse(watch.lastConnectionIssue?.isEmpty ?? true)
         }
     }
+
+    func testWatchBLEPINScreenNeverAdvancesAfterIdleSweepDuringPINEntry() async throws {
+        let suiteName = "com.choclift.tests.watchpinsweep.\(UUID().uuidString)"
+        let isolatedDefaults = UserDefaults(suiteName: suiteName)!
+        defer { isolatedDefaults.removePersistentDomain(forName: suiteName) }
+
+        let delegate = WatchTestServerDelegate()
+        let server = MacServerEngine(macID: "mac-watch-pin-sweep", macName: "Studio MacBook Pro")
+        server.delegate = delegate
+        // Reproduce the exact Mac-side Bluetooth idle sweep firing while the user reads and taps the 6-digit PIN.
+        server.bluetoothSessionTimeoutSeconds = 0.15
+        server.heartbeatSweepIntervalSeconds = 0.03
+        defer { server.stop() }
+
+        // Models real macOS CBPeripheralManager + BluetoothCompanionAdvertiser + BluetoothServerLink behavior:
+        // 1. Central subscribes once on initial GATT connect (`didSubscribeTo` -> `markReady()`).
+        // 2. When MacServerEngine cancels an idle session link, CBPeripheralManager CANNOT disconnect the Watch
+        //    radio (`BluetoothServerLink.cancel()` only marks the server wrapper closed and removes it from
+        //    `subscribers`; the Watch remains connected and subscribed on `.awaitingPIN`).
+        // 3. When the Watch subsequently writes `submitPIN`, `didReceiveWrite` allocates a fresh server link via
+        //    `link(for: central)`, and CoreBluetooth does NOT fire `didSubscribeTo` a second time.
+        final class RealisticCoreBluetoothServerLink: CompanionFrameTransport {
+            var onReady: (() -> Void)?
+            var onPayload: ((Data) -> Void)?
+            var onClosed: (() -> Void)?
+            var onCancelled: (() -> Void)?
+
+            weak var clientLink: BluetoothClientLink?
+            private(set) var ready = false
+            private(set) var closed = false
+            private let inbound = BluetoothFrameCodec()
+            private let outbound = BluetoothOutboundBuffer()
+
+            func start() {}
+
+            func markReady() {
+                guard !closed else { return }
+                if !ready {
+                    ready = true
+                    onReady?()
+                }
+                flush()
+            }
+
+            func accept(_ chunk: Data) throws {
+                guard !closed else { return }
+                for frame in try inbound.append(chunk) {
+                    onPayload?(frame)
+                }
+            }
+
+            func send(_ data: Data) {
+                guard !closed else { return }
+                outbound.enqueue(data)
+                flush()
+            }
+
+            func cancel() {
+                guard !closed else { return }
+                closed = true
+                ready = false
+                outbound.clear()
+                inbound.reset()
+                onCancelled?()
+                onClosed?()
+            }
+
+            func flush() {
+                guard ready, !closed else { return }
+                outbound.drain(maxChunkBytes: 23) { [weak self] chunk in
+                    Task { @MainActor [weak self] in
+                        guard let self, !self.closed, let client = self.clientLink, !client.isLinkClosed else { return }
+                        try? client.accept(chunk)
+                    }
+                    return true
+                }
+            }
+        }
+
+        let withResponseLimit = 28
+        let withoutResponseLimit = 185
+        var locallyRejectedOversizedWrites = 0
+        var activeServerSubscriber: RealisticCoreBluetoothServerLink?
+        var centralSubscribedOnRadio = false
+        weak var latestClientLink: BluetoothClientLink?
+
+        let host = DiscoveredBluetoothMac(id: UUID(), name: "Mac", macID: nil)
+        let watch = CompanionClientEngine(
+            deviceID: "watch-pin-sweep-1",
+            deviceName: "Apple Watch",
+            platform: .appleWatch,
+            userDefaults: isolatedDefaults,
+            storageKeyPrefix: "pin-sweep"
+        )
+        watch.heartbeatIntervalSeconds = 0.05
+        defer { watch.disconnect() }
+
+        watch.simulatedBluetoothConnector = { targetHost in
+            var clientRef: BluetoothClientLink?
+
+            @MainActor
+            func serverLinkForSubscribedCentral() -> RealisticCoreBluetoothServerLink {
+                if let existing = activeServerSubscriber, !existing.closed {
+                    return existing
+                }
+                let created = RealisticCoreBluetoothServerLink()
+                created.clientLink = clientRef
+                created.onCancelled = {
+                    if activeServerSubscriber === created {
+                        activeServerSubscriber = nil
+                    }
+                }
+                activeServerSubscriber = created
+                server.acceptCompanionTransport(created, link: .bluetooth)
+                return created
+            }
+
+            let driver = BluetoothClientWriteDriver(
+                isConnected: { true },
+                supportsWriteWithResponse: { true },
+                maximumWriteValueLength: { writeType in
+                    writeType == .withResponse ? withResponseLimit : withoutResponseLimit
+                },
+                writeValue: { chunk, writeType in
+                    let limit = (writeType == .withResponse) ? withResponseLimit : withoutResponseLimit
+                    if chunk.count > limit {
+                        locallyRejectedOversizedWrites += 1
+                        return
+                    }
+                    Task { @MainActor in
+                        guard let client = clientRef, !client.isLinkClosed else { return }
+                        let serverLink = serverLinkForSubscribedCentral()
+                        try? serverLink.accept(chunk)
+                        client.didCompleteInFlightWrite()
+                    }
+                },
+                cancelConnection: {
+                    centralSubscribedOnRadio = false
+                    activeServerSubscriber?.cancel()
+                    activeServerSubscriber = nil
+                }
+            )
+
+            let clientLink = BluetoothClientLink(
+                host: targetHost,
+                writeDriver: driver,
+                simulatedMetadata: BluetoothServiceMetadata(macID: server.macID, macName: server.macName),
+                writeAckTimeoutSeconds: 0.4
+            )
+            clientRef = clientLink
+            latestClientLink = clientLink
+
+            // Initial GATT connect + CCCD subscribe (`didSubscribeTo` fires once per BLE connection).
+            centralSubscribedOnRadio = true
+            let initialServerLink = serverLinkForSubscribedCentral()
+            initialServerLink.markReady()
+            _ = centralSubscribedOnRadio
+            return clientLink
+        }
+
+        watch.simulateDiscoveredBluetoothMacs([host], autoConnect: false)
+        watch.connectBluetooth(to: host)
+
+        try await waitUntil("Watch reached awaitingPIN over BLE") {
+            if case .awaitingPIN(let id, let name, let err) = watch.connectionState {
+                return id == "mac-watch-pin-sweep" && name == "Studio MacBook Pro" && err == nil
+            }
+            return false
+        }
+
+        // User spends > bluetoothSessionTimeoutSeconds reading the 6-digit PIN on Mac and tapping 6 digits on Watch.
+        try await Task.sleep(for: .milliseconds(240))
+        XCTAssertEqual(
+            watch.connectionState,
+            .awaitingPIN(macID: "mac-watch-pin-sweep", macName: "Studio MacBook Pro", errorMessage: nil),
+            "Watch UI is still rendering the PIN pad before the 6th digit is tapped"
+        )
+
+        watch.submitPIN(server.currentPIN)
+
+        let pinDeadline = Date().addingTimeInterval(0.6)
+        while Date() < pinDeadline, !watch.connectionState.isConnected {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(
+            watch.connectionState,
+            .connected(macID: "mac-watch-pin-sweep", macName: "Studio MacBook Pro"),
+            "Watch must advance past .awaitingPIN to .connected after submitting valid 6-digit PIN"
+        )
+        XCTAssertEqual(watch.activeLink, .bluetooth)
+        XCTAssertEqual(locallyRejectedOversizedWrites, 0)
+        XCTAssertEqual(latestClientLink?.isWriteInFlight, false)
+    }
+
+    func testWatchSameLANWiFiNeverStaysConnectingForeverOnSilentHandshake() async throws {
+        let suiteName = "com.choclift.tests.watchwificonnecting.\(UUID().uuidString)"
+        let isolatedDefaults = UserDefaults(suiteName: suiteName)!
+        defer { isolatedDefaults.removePersistentDomain(forName: suiteName) }
+
+        // Part A: Same-LAN TCP listener accepts socket (`.ready` fires, `ClientMessage.hello` is sent),
+        // but no ServerMessage arrives back. Watch must NOT remain in `.connecting` forever.
+        let listenerQueue = DispatchQueue(label: "com.choclift.tests.silentwifi")
+        let silentListener = try NWListener(using: .tcp, on: .any)
+        var acceptedSockets: [NWConnection] = []
+        var receivedHelloPayloads: [ClientMessage] = []
+        let readyExp = expectation(description: "Silent TCP listener ready")
+
+        silentListener.stateUpdateHandler = { state in
+            if case .ready = state {
+                readyExp.fulfill()
+            }
+        }
+        silentListener.newConnectionHandler = { conn in
+            conn.start(queue: listenerQueue)
+            conn.receive(minimumIncompleteLength: 1, maximumLength: 4096) { data, _, _, _ in
+                if let data {
+                    Task { @MainActor in
+                        var acc = WireStreamAccumulator()
+                        if let frames = try? acc.appendAndExtractPayloads(data) {
+                            for frame in frames {
+                                if let msg = try? WireFrameCodec.decodePayload(ClientMessage.self, from: frame) {
+                                    receivedHelloPayloads.append(msg)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Task { @MainActor in
+                acceptedSockets.append(conn)
+            }
+        }
+        silentListener.start(queue: listenerQueue)
+        defer {
+            silentListener.cancel()
+            for conn in acceptedSockets {
+                conn.cancel()
+            }
+        }
+        await fulfillment(of: [readyExp], timeout: 2.0)
+        let silentPort = try XCTUnwrap(silentListener.port?.rawValue)
+
+        let watchSilent = CompanionClientEngine(
+            deviceID: "watch-wifi-silent",
+            deviceName: "Apple Watch",
+            platform: .appleWatch,
+            userDefaults: isolatedDefaults,
+            storageKeyPrefix: "wifi-silent"
+        )
+        watchSilent.connectTimeoutSeconds = 0.22
+        watchSilent.maxAutoReconnectAttempts = 0
+        defer { watchSilent.disconnect() }
+
+        watchSilent.connectToHost(host: "127.0.0.1", port: silentPort, targetName: "Same-LAN Mac")
+        XCTAssertEqual(watchSilent.connectionState, .connecting(targetName: "Same-LAN Mac"))
+
+        try await waitUntil("Watch sent ClientMessage.hello over TCP", timeoutSeconds: 0.8) {
+            !receivedHelloPayloads.isEmpty
+        }
+
+        let silentDeadline = Date().addingTimeInterval(0.6)
+        while Date() < silentDeadline, watchSilent.connectionState != .disconnected {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(
+            watchSilent.connectionState,
+            .disconnected,
+            "Silent same-LAN Wi-Fi handshake must time out cleanly instead of staying .connecting forever"
+        )
+        XCTAssertNil(watchSilent.activeLink)
+        XCTAssertNotNil(watchSilent.lastConnectionIssue)
+    }
+
+    func testWatchSameLANWiFiNeverLoopsConnectingForeverWhenDiscoveryRefreshes() async throws {
+        let suiteName = "com.choclift.tests.watchwifiloop.\(UUID().uuidString)"
+        let isolatedDefaults = UserDefaults(suiteName: suiteName)!
+        defer { isolatedDefaults.removePersistentDomain(forName: suiteName) }
+
+        // Unreachable Wi-Fi endpoint while foreground BLE discovery refreshes (`onDiscoveredChanged` /
+        // `browseResultsChangedHandler`). Discovery callbacks must NOT reset `consecutiveReconnectFailures`
+        // and trap the Watch in a perpetual `.connecting` retry loop.
+        let watchLoop = CompanionClientEngine(
+            deviceID: "watch-wifi-loop",
+            deviceName: "Apple Watch",
+            platform: .appleWatch,
+            userDefaults: isolatedDefaults,
+            storageKeyPrefix: "wifi-loop"
+        )
+        watchLoop.connectTimeoutSeconds = 0.15
+        watchLoop.reconnectDelaySeconds = 0.08
+        watchLoop.maxAutoReconnectAttempts = 1
+        defer { watchLoop.disconnect() }
+
+        let nearbyUnpairedBLE = DiscoveredBluetoothMac(id: UUID(), name: "Mac", macID: nil)
+        let discoveryNoiseTask = Task { @MainActor in
+            while !Task.isCancelled {
+                watchLoop.simulateDiscoveredBluetoothMacs([nearbyUnpairedBLE], autoConnect: false)
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+        }
+        defer { discoveryNoiseTask.cancel() }
+
+        // Bind a silent socket that never accepts/replies or closes immediately via port 9:
+        // on macOS loopback port 9 immediately fails TCP (`ECONNREFUSED`) and enters `scheduleRecoveryAttempt`.
+        watchLoop.connectToHost(host: "127.0.0.1", port: 9, targetName: "Unreachable LAN Mac")
+
+        // Allow more than (maxAutoReconnectAttempts + 1) retry cycles; if discovery resets
+        // consecutiveReconnectFailures, scheduleRecoveryAttempt keeps re-entering .connecting forever.
+        try await Task.sleep(for: .milliseconds(360))
+        var sawConnectingAfterBudget = false
+        for _ in 0..<25 {
+            if case .connecting = watchLoop.connectionState {
+                sawConnectingAfterBudget = true
+            }
+            try await Task.sleep(for: .milliseconds(12))
+        }
+        XCTAssertFalse(
+            sawConnectingAfterBudget,
+            "Watch must not keep re-entering .connecting forever while discovery callbacks fire"
+        )
+        XCTAssertEqual(watchLoop.connectionState, .disconnected)
+        XCTAssertNotNil(watchLoop.lastConnectionIssue)
+    }
+
+    #if os(macOS)
+    func testBluetoothCompanionAdvertiserMarksRecreatedLinkReadyForAlreadySubscribedWatchCentral() async throws {
+        let suiteName = "com.choclift.tests.advertiserresub.\(UUID().uuidString)"
+        let isolatedDefaults = UserDefaults(suiteName: suiteName)!
+        defer { isolatedDefaults.removePersistentDomain(forName: suiteName) }
+
+        let delegate = WatchTestServerDelegate()
+        let server = MacServerEngine(macID: "mac-real-advertiser", macName: "MacBook Pro BLE")
+        server.delegate = delegate
+        // Force even the pairing idle window to expire before PIN submission so the server-side
+        // BluetoothServerLink is cancelled while the Watch's GATT CCCD subscription remains active.
+        server.bluetoothPairingTimeoutSeconds = 0.12
+        server.bluetoothSessionTimeoutSeconds = 0.12
+        server.heartbeatSweepIntervalSeconds = 0.03
+        defer { server.stop() }
+
+        let advertiser = BluetoothCompanionAdvertiser(macID: server.macID, macName: server.macName)
+        var acceptedLinkCount = 0
+        advertiser.onAccepted = { [weak server] transport in
+            acceptedLinkCount += 1
+            server?.acceptCompanionTransport(transport, link: .bluetooth)
+        }
+        defer { advertiser.stop() }
+
+        let watchCentralID = UUID()
+        let withResponseLimit = 28
+        let withoutResponseLimit = 185
+        weak var activeWatchLink: BluetoothClientLink?
+
+        let watch = CompanionClientEngine(
+            deviceID: "watch-real-adv-1",
+            deviceName: "Apple Watch",
+            platform: .appleWatch,
+            userDefaults: isolatedDefaults,
+            storageKeyPrefix: "real-adv"
+        )
+        // Suppress client heartbeats so the server sweep is guaranteed to evict the initial BluetoothServerLink.
+        watch.heartbeatIntervalSeconds = 60.0
+        defer { watch.disconnect() }
+
+        let notifyDriver = BluetoothServerNotifyDriver(
+            centralID: watchCentralID,
+            maximumUpdateValueLength: { 23 },
+            sendNotification: { chunk in
+                Task { @MainActor in
+                    guard let link = activeWatchLink, !link.isLinkClosed else { return }
+                    try? link.accept(chunk)
+                }
+                return true
+            }
+        )
+
+        let bleHost = DiscoveredBluetoothMac(id: watchCentralID, name: "Mac", macID: nil)
+        watch.simulatedBluetoothConnector = { targetHost in
+            var clientRef: BluetoothClientLink?
+            let writeDriver = BluetoothClientWriteDriver(
+                isConnected: { true },
+                supportsWriteWithResponse: { true },
+                maximumWriteValueLength: { $0 == .withResponse ? withResponseLimit : withoutResponseLimit },
+                writeValue: { chunk, writeType in
+                    XCTAssertEqual(writeType, .withResponse)
+                    XCTAssertLessThanOrEqual(chunk.count, withResponseLimit)
+                    Task { @MainActor in
+                        guard let client = clientRef, !client.isLinkClosed else { return }
+                        try? advertiser.handleSimulatedCentralWrite(chunk, from: notifyDriver)
+                        client.didCompleteInFlightWrite()
+                    }
+                },
+                cancelConnection: {
+                    Task { @MainActor in
+                        advertiser.handleSimulatedCentralUnsubscribed(centralID: watchCentralID)
+                    }
+                }
+            )
+            let clientLink = BluetoothClientLink(
+                host: targetHost,
+                writeDriver: writeDriver,
+                simulatedMetadata: BluetoothServiceMetadata(macID: server.macID, macName: server.macName),
+                writeAckTimeoutSeconds: 0.4
+            )
+            clientRef = clientLink
+            activeWatchLink = clientLink
+            // CoreBluetooth fires didSubscribeTo ONCE when the Watch enables notifications on connect.
+            advertiser.handleSimulatedCentralSubscribed(notifyDriver)
+            return clientLink
+        }
+
+        watch.simulateDiscoveredBluetoothMacs([bleHost], autoConnect: false)
+        watch.connectBluetooth(to: bleHost)
+
+        try await waitUntil("Watch reached awaitingPIN via real BluetoothCompanionAdvertiser") {
+            if case .awaitingPIN(let id, _, _) = watch.connectionState {
+                return id == "mac-real-advertiser"
+            }
+            return false
+        }
+        XCTAssertEqual(acceptedLinkCount, 1)
+
+        // Wait past bluetoothPairingTimeoutSeconds so the first BluetoothServerLink is cancelled on Mac,
+        // without firing didSubscribeTo again on the Watch radio.
+        try await Task.sleep(for: .milliseconds(220))
+
+        watch.submitPIN(server.currentPIN)
+
+        try await waitUntil("Recreated BluetoothServerLink marked itself ready and delivered authSucceeded + icons") {
+            watch.connectionState == .connected(macID: "mac-real-advertiser", macName: "MacBook Pro BLE") &&
+            watch.activeLink == .bluetooth &&
+            watch.appIconsByBundleID["com.apple.finder"] != nil
+        }
+        XCTAssertEqual(acceptedLinkCount, 2, "Write after idle sweep must allocate a second server link that is immediately ready")
+    }
+
+    func testWatchSameLANWiFiWaitingENETDOWNFallsBackToHTTPAndCompletesPINPairing() async throws {
+        let suiteName = "com.choclift.tests.watchhttpwifi.\(UUID().uuidString)"
+        let isolatedDefaults = UserDefaults(suiteName: suiteName)!
+        defer { isolatedDefaults.removePersistentDomain(forName: suiteName) }
+
+        let delegate = WatchTestServerDelegate()
+        let server = MacServerEngine(macID: "mac-lan-http-1", macName: "Same-LAN Studio Mac")
+        server.delegate = delegate
+        server.httpPollHoldSeconds = 1.5
+        server.start(preferredPort: 0, advertiseBonjour: false, advertiseBluetooth: false)
+        defer { server.stop() }
+
+        try await waitUntil("MacServerEngine listening on ephemeral port") {
+            server.isListening && (server.listeningPort ?? 0) > 0
+        }
+        let port = try XCTUnwrap(server.listeningPort)
+
+        let watch = CompanionClientEngine(
+            deviceID: "watch-http-wifi-1",
+            deviceName: "Apple Watch",
+            platform: .appleWatch,
+            userDefaults: isolatedDefaults,
+            storageKeyPrefix: "http-wifi"
+        )
+        // Simulate exact watchOS NECP behavior per TN3135: NWConnection enters .waiting(.posix(.ENETDOWN)).
+        watch.simulatedTCPWaitingErrorProvider = { _ in .posix(.ENETDOWN) }
+        defer { watch.disconnect() }
+
+        watch.connectToHost(host: "127.0.0.1", port: port, targetName: "Same-LAN Studio Mac")
+
+        try await waitUntil("Watch switched from .waiting(ENETDOWN) TCP to HTTP Wi-Fi and reached .awaitingPIN") {
+            if case .awaitingPIN(let id, let name, let err) = watch.connectionState {
+                return id == "mac-lan-http-1" && name == "Same-LAN Studio Mac" && err == nil && watch.activeLink == .wifi
+            }
+            return false
+        }
+
+        watch.submitPIN(server.currentPIN)
+
+        try await waitUntil("Watch completed PIN pairing and icon sync over HTTP Wi-Fi") {
+            watch.connectionState == .connected(macID: "mac-lan-http-1", macName: "Same-LAN Studio Mac") &&
+            watch.activeLink == .wifi &&
+            watch.appIconsByBundleID["com.apple.finder"] != nil
+        }
+
+        watch.performQuickAction(.lockScreen)
+        try await waitUntil("Quick action delivered from Watch to Mac over HTTP Wi-Fi") {
+            delegate.receivedQuickActions == [.lockScreen]
+        }
+
+        server.broadcast(.frontmostAppChanged(bundleIdentifier: "com.apple.Safari", appName: "Safari"))
+        try await waitUntil("Server broadcast delivered to Watch via HTTP long-poll") {
+            watch.frontmostBundleID == "com.apple.Safari"
+        }
+
+        // Confirm an iPhone raw TCP client still connects simultaneously to the exact same Mac listener port.
+        let iphone = CompanionClientEngine(
+            deviceID: "iphone-raw-tcp-1",
+            deviceName: "iPhone",
+            platform: .iPhone,
+            userDefaults: isolatedDefaults,
+            storageKeyPrefix: "raw-tcp-coexist"
+        )
+        defer { iphone.disconnect() }
+        iphone.connectToHost(host: "127.0.0.1", port: port, targetName: "Same-LAN Studio Mac")
+        try await waitUntil("Raw TCP iPhone client reached awaitingPIN on the same listener port") {
+            if case .awaitingPIN(let id, _, _) = iphone.connectionState {
+                return id == "mac-lan-http-1"
+            }
+            return false
+        }
+    }
+    #endif
     #endif
 
     private func waitUntil(

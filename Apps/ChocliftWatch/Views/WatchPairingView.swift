@@ -6,7 +6,11 @@ public struct WatchPairingView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var enteredPIN: String = ""
+    #if targetEnvironment(simulator)
     @State private var manualHost: String = "127.0.0.1"
+    #else
+    @State private var manualHost: String = ""
+    #endif
     @State private var manualPort: String = "\(ChocliftDefaults.defaultTCPPort)"
 
     private var lang: AppLanguage { client.profile.settings.language }
@@ -31,7 +35,9 @@ public struct WatchPairingView: View {
                         connectingCard(targetName: targetName)
                     case .disconnected:
                         disconnectedIssueBanner
+                        #if targetEnvironment(simulator)
                         quickLocalhostButton
+                        #endif
                         bluetoothMacsSection
                         discoveredMacsSection
                         savedMacsSection
@@ -289,8 +295,8 @@ public struct WatchPairingView: View {
             if client.discoveredMacs.isEmpty {
                 Text(
                     L10n.tr(
-                        "注意：Bonjour 局域网广播不会穿过 iPhone 网络代理，Apple Watch 真机通常通过上方蓝牙 LE 连接（手表直连 Wi-Fi 或使用手动 IP / 127.0.0.1 时可用 TCP）。",
-                        "Note: Bonjour does not cross the iPhone network proxy, so Bluetooth LE above is the normal Watch path (Wi-Fi works on direct Watch Wi-Fi or Manual IP / 127.0.0.1).",
+                        "提示：真机首选上方蓝牙 LE；同一局域网 Wi-Fi 下也可在下方输入 Mac 的局域网 IP（Mac 端菜单栏可查看）直接连接。",
+                        "Tip: Bluetooth LE above is fastest on Watch hardware; on the same Wi-Fi LAN, you can also enter your Mac's LAN IP below.",
                         language: lang
                     )
                 )

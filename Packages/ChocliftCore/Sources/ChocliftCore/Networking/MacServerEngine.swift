@@ -33,14 +33,22 @@ public final class MacServerEngine: ObservableObject {
     public var macName: String
     public weak var delegate: MacServerEngineDelegate?
 
-    /// Application-level idle timeout for Bluetooth sessions so a companion that disappears
+    /// Application-level idle timeout for authenticated Bluetooth sessions so a companion that disappears
     /// without sending a GATT unsubscribe is evicted cleanly on the Mac.
     public var bluetoothSessionTimeoutSeconds: TimeInterval = 16.0
+    /// Extended idle window while a Bluetooth companion is on `.awaitingPIN` so reading the 6-digit code
+    /// on the Mac and tapping it on Apple Watch does not prematurely evict the unauthenticated session.
+    public var bluetoothPairingTimeoutSeconds: TimeInterval = 180.0
+    /// Application-level idle timeout for HTTP-framed Wi-Fi sessions (used on watchOS per TN3135).
+    public var httpSessionTimeoutSeconds: TimeInterval = 35.0
+    public var httpPollHoldSeconds: TimeInterval = 10.0
     public var heartbeatSweepIntervalSeconds: TimeInterval = 2.0
 
     private var listener: NWListener?
     private let networkQueue = DispatchQueue(label: "com.choclift.server.network", qos: .userInteractive)
     private var sessions: [UUID: ClientSessionContext] = [:]
+    private var httpSessionsByToken: [String: UUID] = [:]
+    private var activeHTTPConnections: [UUID: NWConnection] = [:]
     private var didFallbackToRandomPort = false
     private let bluetoothAdvertiser: BluetoothCompanionAdvertiser
     private var heartbeatMonitorTask: Task<Void, Never>?
@@ -48,10 +56,18 @@ public final class MacServerEngine: ObservableObject {
     private final class ClientSessionContext {
         let id: UUID
         let link: CompanionLinkKind
-        let sendFrame: (Data) -> Void
+        var sendFrame: (Data) -> Void
         var cancelTransport: () -> Void = {}
         var usesStream: Bool = false
+        var hasClassifiedStreamProtocol: Bool = false
         var stream: NWConnection?
+        var isHTTPSession: Bool = false
+        var httpSessionToken: String?
+        var isCapturingDirectHTTPReply: Bool = false
+        var directHTTPReplyBuffer = Data()
+        var asyncHTTPOutboundBuffer = Data()
+        var pendingHTTPPollResponder: ((Int, Data) -> Void)?
+        var pendingHTTPPollTimeoutTask: Task<Void, Never>?
         var accumulator = WireStreamAccumulator()
         var deviceID: String?
         var deviceName: String?
@@ -145,15 +161,7 @@ public final class MacServerEngine: ObservableObject {
             let newListener = try NWListener(using: params, on: nwPort)
 
             if advertiseBonjour {
-                var txtRecord = NWTXTRecord()
-                txtRecord["macID"] = macID
-                txtRecord["macName"] = macName
-                txtRecord["ver"] = "\(ChocliftDefaults.protocolVersion)"
-                newListener.service = NWListener.Service(
-                    name: macName,
-                    type: ChocliftDefaults.bonjourServiceType,
-                    txtRecord: txtRecord
-                )
+                newListener.service = makeBonjourService(port: port == 0 ? nil : port)
             }
 
             newListener.stateUpdateHandler = { [weak self] state in
@@ -164,6 +172,9 @@ public final class MacServerEngine: ObservableObject {
                         self.isListening = true
                         self.listeningPort = newListener.port?.rawValue
                         self.lastErrorMessage = nil
+                        if advertiseBonjour, let boundPort = newListener.port?.rawValue {
+                            newListener.service = self.makeBonjourService(port: boundPort)
+                        }
                     case .failed(let error):
                         self.isListening = false
                         newListener.cancel()
@@ -199,6 +210,24 @@ public final class MacServerEngine: ObservableObject {
         }
     }
 
+    private func makeBonjourService(port: UInt16?) -> NWListener.Service {
+        var txtRecord = NWTXTRecord()
+        txtRecord["macID"] = macID
+        txtRecord["macName"] = macName
+        txtRecord["ver"] = "\(ChocliftDefaults.protocolVersion)"
+        if let primaryIP = localIPAddresses.first, !primaryIP.isEmpty {
+            txtRecord["ip"] = primaryIP
+        }
+        if let port, port > 0 {
+            txtRecord["port"] = "\(port)"
+        }
+        return NWListener.Service(
+            name: macName,
+            type: ChocliftDefaults.bonjourServiceType,
+            txtRecord: txtRecord
+        )
+    }
+
     public func stop() {
         heartbeatMonitorTask?.cancel()
         heartbeatMonitorTask = nil
@@ -207,7 +236,15 @@ public final class MacServerEngine: ObservableObject {
         bluetoothAdvertiser.stop()
         isListening = false
         listeningPort = nil
+        for (_, httpConn) in activeHTTPConnections {
+            httpConn.cancel()
+        }
+        activeHTTPConnections.removeAll()
+        httpSessionsByToken.removeAll()
         for (_, session) in sessions {
+            session.pendingHTTPPollTimeoutTask?.cancel()
+            session.pendingHTTPPollTimeoutTask = nil
+            session.pendingHTTPPollResponder = nil
             session.cancelTransport()
         }
         sessions.removeAll()
@@ -228,11 +265,21 @@ public final class MacServerEngine: ObservableObject {
 
     private func sweepExpiredBluetoothSessions() {
         let now = Date()
-        let timeout = max(0.05, bluetoothSessionTimeoutSeconds)
+        let authBLETimeout = max(0.05, bluetoothSessionTimeoutSeconds)
+        let pairingBLETimeout = max(0.05, bluetoothPairingTimeoutSeconds)
+        let httpTimeout = max(0.2, httpSessionTimeoutSeconds)
         var staleIDs: [UUID] = []
-        for (id, session) in sessions where session.link == .bluetooth {
-            if now.timeIntervalSince(session.lastActivityAt) > timeout {
-                staleIDs.append(id)
+        for (id, session) in sessions {
+            if session.link == .bluetooth {
+                let allowedIdle = session.isAuthenticated ? authBLETimeout : pairingBLETimeout
+                if now.timeIntervalSince(session.lastActivityAt) > allowedIdle {
+                    staleIDs.append(id)
+                }
+            } else if session.isHTTPSession {
+                let allowedIdle = session.isAuthenticated ? httpTimeout : max(httpTimeout, pairingBLETimeout)
+                if now.timeIntervalSince(session.lastActivityAt) > allowedIdle {
+                    staleIDs.append(id)
+                }
             }
         }
         for id in staleIDs {
@@ -328,6 +375,15 @@ public final class MacServerEngine: ObservableObject {
 
     private func cleanupSession(sessionID: UUID) {
         guard let removed = sessions.removeValue(forKey: sessionID) else { return }
+        if let token = removed.httpSessionToken, httpSessionsByToken[token] == sessionID {
+            httpSessionsByToken.removeValue(forKey: token)
+        }
+        removed.pendingHTTPPollTimeoutTask?.cancel()
+        removed.pendingHTTPPollTimeoutTask = nil
+        if let pollResponder = removed.pendingHTTPPollResponder {
+            removed.pendingHTTPPollResponder = nil
+            pollResponder(410, Data())
+        }
         removed.cancelTransport()
         syncConnectedFlags()
     }
@@ -339,16 +395,321 @@ public final class MacServerEngine: ObservableObject {
                 guard let self, let activeSession = self.sessions[sessionID] else { return }
 
                 if let data, !data.isEmpty {
+                    if !activeSession.hasClassifiedStreamProtocol {
+                        let firstByte = data.first ?? 0
+                        // Raw Choclift wire frames always begin with a 4-byte BE length <= 16 MB (first byte 0x00..0x01).
+                        // HTTP requests begin with ASCII 'P' (POST), 'G' (GET), or 'O' (OPTIONS).
+                        if firstByte == 0x50 || firstByte == 0x47 || firstByte == 0x4F {
+                            activeSession.usesStream = false
+                            activeSession.stream = nil
+                            activeSession.cancelTransport = {}
+                            self.sessions.removeValue(forKey: sessionID)
+                            self.startHTTPConnectionLoop(connection, initialBuffer: data)
+                            return
+                        }
+                        activeSession.hasClassifiedStreamProtocol = true
+                    }
                     self.ingest(data, sessionID: sessionID)
                 }
 
                 if isComplete || error != nil {
                     self.cleanupSession(sessionID: sessionID)
-                } else if activeSession.usesStream {
+                } else if activeSession.usesStream, self.sessions[sessionID] != nil {
                     self.receiveNextChunk(sessionID: sessionID)
                 }
             }
         }
+    }
+
+    // MARK: - HTTP/1.1 Session Multiplexing on Same Listener Port (watchOS TN3135 Wi-Fi Path)
+
+    private struct ParsedHTTPRequest {
+        let method: String
+        let path: String
+        let sessionToken: String?
+        let keepAlive: Bool
+        let body: Data
+        let consumedBytes: Int
+    }
+
+    private static func tryParseHTTPRequest(from buffer: Data) -> Result<ParsedHTTPRequest?, WireFrameError> {
+        let delimiter = Data([0x0D, 0x0A, 0x0D, 0x0A]) // \r\n\r\n
+        guard let headerEndRange = buffer.range(of: delimiter) else {
+            if buffer.count > 65_536 {
+                return .failure(.frameTooLarge(buffer.count))
+            }
+            return .success(nil)
+        }
+
+        let headerData = buffer.subdata(in: buffer.startIndex..<headerEndRange.lowerBound)
+        guard let headerString = String(data: headerData, encoding: .utf8) else {
+            return .failure(.frameTooLarge(headerData.count))
+        }
+
+        let lines = headerString.components(separatedBy: "\r\n")
+        guard let requestLine = lines.first else {
+            return .failure(.frameTooLarge(0))
+        }
+        let parts = requestLine.split(separator: " ")
+        guard parts.count >= 2 else {
+            return .failure(.frameTooLarge(0))
+        }
+        let method = String(parts[0]).uppercased()
+        let rawTarget = String(parts[1])
+        let path = rawTarget.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? rawTarget
+
+        var contentLength = 0
+        var sessionToken: String?
+        var keepAlive = true
+
+        for headerLine in lines.dropFirst() {
+            guard let colon = headerLine.firstIndex(of: ":") else { continue }
+            let name = headerLine[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
+            let value = headerLine[headerLine.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            switch name {
+            case "content-length":
+                contentLength = Int(value) ?? 0
+            case "x-choclift-session":
+                sessionToken = value
+            case "connection":
+                if value.lowercased().contains("close") {
+                    keepAlive = false
+                }
+            default:
+                break
+            }
+        }
+
+        if contentLength < 0 || contentLength > WireFrameCodec.maxFrameBytes + 4096 {
+            return .failure(.frameTooLarge(contentLength))
+        }
+
+        let bodyStart = headerEndRange.upperBound
+        let totalNeeded = (bodyStart - buffer.startIndex) + contentLength
+        guard buffer.count >= totalNeeded else {
+            return .success(nil)
+        }
+
+        let bodyEnd = buffer.index(bodyStart, offsetBy: contentLength)
+        let body = Data(buffer[bodyStart..<bodyEnd])
+        return .success(
+            ParsedHTTPRequest(
+                method: method,
+                path: path,
+                sessionToken: sessionToken,
+                keepAlive: keepAlive,
+                body: body,
+                consumedBytes: totalNeeded
+            )
+        )
+    }
+
+    private func startHTTPConnectionLoop(_ connection: NWConnection, initialBuffer: Data) {
+        let connID = UUID()
+        activeHTTPConnections[connID] = connection
+        connection.stateUpdateHandler = { [weak self] state in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch state {
+                case .failed, .cancelled:
+                    self.activeHTTPConnections.removeValue(forKey: connID)
+                default:
+                    break
+                }
+            }
+        }
+        processHTTPBuffer(initialBuffer, on: connection, connID: connID)
+    }
+
+    private func readMoreHTTPBytes(into existing: Data, on connection: NWConnection, connID: UUID) {
+        guard activeHTTPConnections[connID] != nil else { return }
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] chunk, _, isComplete, error in
+            Task { @MainActor [weak self] in
+                guard let self, self.activeHTTPConnections[connID] != nil else { return }
+                var combined = existing
+                if let chunk, !chunk.isEmpty {
+                    combined.append(chunk)
+                }
+                if !combined.isEmpty {
+                    self.processHTTPBuffer(combined, on: connection, connID: connID)
+                    return
+                }
+                if isComplete || error != nil {
+                    self.activeHTTPConnections.removeValue(forKey: connID)
+                    connection.cancel()
+                }
+            }
+        }
+    }
+
+    private func processHTTPBuffer(_ buffer: Data, on connection: NWConnection, connID: UUID) {
+        switch Self.tryParseHTTPRequest(from: buffer) {
+        case .failure:
+            sendHTTPResponse(status: 400, body: Data(), keepAlive: false, on: connection, connID: connID) { _ in }
+        case .success(nil):
+            readMoreHTTPBytes(into: buffer, on: connection, connID: connID)
+        case .success(.some(let req)):
+            let remaining = Data(buffer.dropFirst(req.consumedBytes))
+            handleHTTPRequest(req, on: connection, connID: connID) { [weak self] shouldContinue in
+                guard let self, shouldContinue, self.activeHTTPConnections[connID] != nil else { return }
+                if !remaining.isEmpty {
+                    self.processHTTPBuffer(remaining, on: connection, connID: connID)
+                } else {
+                    self.readMoreHTTPBytes(into: Data(), on: connection, connID: connID)
+                }
+            }
+        }
+    }
+
+    private func handleHTTPRequest(
+        _ req: ParsedHTTPRequest,
+        on connection: NWConnection,
+        connID: UUID,
+        completion: @escaping @MainActor (Bool) -> Void
+    ) {
+        guard req.method == "POST" || req.method == "GET" else {
+            sendHTTPResponse(status: 405, body: Data(), keepAlive: false, on: connection, connID: connID, completion: completion)
+            return
+        }
+        guard let token = req.sessionToken?.trimmingCharacters(in: .whitespacesAndNewlines), !token.isEmpty else {
+            sendHTTPResponse(status: 400, body: Data(), keepAlive: false, on: connection, connID: connID, completion: completion)
+            return
+        }
+
+        switch req.path {
+        case "/choclift/v1/close":
+            if let sessionID = httpSessionsByToken[token] {
+                cleanupSession(sessionID: sessionID)
+            }
+            sendHTTPResponse(status: 200, body: Data(), keepAlive: req.keepAlive, on: connection, connID: connID, completion: completion)
+
+        case "/choclift/v1/session":
+            let session = resolveOrCreateHTTPSession(token: token)
+            session.lastActivityAt = Date()
+            session.isCapturingDirectHTTPReply = true
+            session.directHTTPReplyBuffer.removeAll(keepingCapacity: false)
+
+            if !req.body.isEmpty {
+                ingest(req.body, sessionID: session.id)
+            }
+
+            var replyPayload = session.directHTTPReplyBuffer
+            session.directHTTPReplyBuffer.removeAll(keepingCapacity: false)
+            session.isCapturingDirectHTTPReply = false
+
+            if sessions[session.id] != nil, session.pendingHTTPPollResponder == nil, !session.asyncHTTPOutboundBuffer.isEmpty {
+                replyPayload.append(session.asyncHTTPOutboundBuffer)
+                session.asyncHTTPOutboundBuffer.removeAll(keepingCapacity: false)
+            }
+
+            sendHTTPResponse(status: 200, body: replyPayload, keepAlive: req.keepAlive, on: connection, connID: connID, completion: completion)
+
+        case "/choclift/v1/poll":
+            guard let sessionID = httpSessionsByToken[token], let session = sessions[sessionID] else {
+                sendHTTPResponse(status: 410, body: Data(), keepAlive: false, on: connection, connID: connID, completion: completion)
+                return
+            }
+            session.lastActivityAt = Date()
+
+            session.pendingHTTPPollTimeoutTask?.cancel()
+            session.pendingHTTPPollTimeoutTask = nil
+            if let superseded = session.pendingHTTPPollResponder {
+                session.pendingHTTPPollResponder = nil
+                superseded(204, Data())
+            }
+
+            if !session.asyncHTTPOutboundBuffer.isEmpty {
+                let queued = session.asyncHTTPOutboundBuffer
+                session.asyncHTTPOutboundBuffer.removeAll(keepingCapacity: false)
+                sendHTTPResponse(status: 200, body: queued, keepAlive: req.keepAlive, on: connection, connID: connID, completion: completion)
+                return
+            }
+
+            let holdSeconds = max(0.1, httpPollHoldSeconds)
+            session.pendingHTTPPollResponder = { [weak self] status, payload in
+                guard let self else { return }
+                self.sendHTTPResponse(status: status, body: payload, keepAlive: req.keepAlive, on: connection, connID: connID, completion: completion)
+            }
+            session.pendingHTTPPollTimeoutTask = Task { @MainActor [weak self, weak session] in
+                try? await Task.sleep(for: .seconds(holdSeconds))
+                guard let self, !Task.isCancelled, let session, self.sessions[session.id] != nil else { return }
+                guard let responder = session.pendingHTTPPollResponder else { return }
+                session.pendingHTTPPollResponder = nil
+                session.pendingHTTPPollTimeoutTask = nil
+                responder(204, Data())
+            }
+
+        default:
+            sendHTTPResponse(status: 404, body: Data(), keepAlive: false, on: connection, connID: connID, completion: completion)
+        }
+    }
+
+    private func resolveOrCreateHTTPSession(token: String) -> ClientSessionContext {
+        if let existingID = httpSessionsByToken[token], let existing = sessions[existingID] {
+            return existing
+        }
+        let context = ClientSessionContext(link: .wifi) { _ in }
+        context.isHTTPSession = true
+        context.httpSessionToken = token
+        context.sendFrame = { [weak context] frameData in
+            guard let context, !frameData.isEmpty else { return }
+            if context.isCapturingDirectHTTPReply {
+                context.directHTTPReplyBuffer.append(frameData)
+            } else if let pollResponder = context.pendingHTTPPollResponder {
+                context.pendingHTTPPollResponder = nil
+                context.pendingHTTPPollTimeoutTask?.cancel()
+                context.pendingHTTPPollTimeoutTask = nil
+                context.asyncHTTPOutboundBuffer.append(frameData)
+                let drained = context.asyncHTTPOutboundBuffer
+                context.asyncHTTPOutboundBuffer.removeAll(keepingCapacity: false)
+                pollResponder(200, drained)
+            } else {
+                context.asyncHTTPOutboundBuffer.append(frameData)
+            }
+        }
+        sessions[context.id] = context
+        httpSessionsByToken[token] = context.id
+        ensureHeartbeatMonitorRunning()
+        return context
+    }
+
+    private func sendHTTPResponse(
+        status: Int,
+        body: Data,
+        keepAlive: Bool,
+        on connection: NWConnection,
+        connID: UUID,
+        completion: @escaping @MainActor (Bool) -> Void
+    ) {
+        let reason: String = {
+            switch status {
+            case 200: return "OK"
+            case 204: return "No Content"
+            case 400: return "Bad Request"
+            case 404: return "Not Found"
+            case 405: return "Method Not Allowed"
+            case 410: return "Gone"
+            default: return "Error"
+            }
+        }()
+        let connHeader = keepAlive ? "keep-alive" : "close"
+        let header = "HTTP/1.1 \(status) \(reason)\r\nContent-Type: application/octet-stream\r\nContent-Length: \(body.count)\r\nCache-Control: no-store\r\nConnection: \(connHeader)\r\n\r\n"
+        var wire = Data(header.utf8)
+        if status != 204 && !body.isEmpty {
+            wire.append(body)
+        }
+        connection.send(content: wire, completion: .contentProcessed { [weak self] sendError in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if sendError != nil || !keepAlive {
+                    self.activeHTTPConnections.removeValue(forKey: connID)
+                    connection.cancel()
+                    completion(false)
+                } else {
+                    completion(true)
+                }
+            }
+        })
     }
 
     private func ingest(_ data: Data, sessionID: UUID) {

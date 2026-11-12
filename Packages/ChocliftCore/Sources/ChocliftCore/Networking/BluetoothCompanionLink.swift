@@ -489,6 +489,12 @@ public final class SimulatedBLECompanionPipe: BluetoothMetadataAwareTransport {
 }
 
 #if os(macOS)
+struct BluetoothServerNotifyDriver {
+    let centralID: UUID
+    var maximumUpdateValueLength: () -> Int
+    var sendNotification: (Data) -> Bool
+}
+
 @MainActor
 public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBPeripheralManagerDelegate {
     @Published public private(set) var isAdvertising = false
@@ -502,6 +508,10 @@ public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBP
     private var metadataCharacteristic: CBMutableCharacteristic?
     private var wantsAdvertising = false
     private var subscribers: [UUID: BluetoothServerLink] = [:]
+    /// Tracks centrals whose GATT notification subscription (`didSubscribeTo`) is still active on the radio,
+    /// independent of application-level `BluetoothServerLink` idle sweeps (`CBPeripheralManager` cannot disconnect
+    /// a `CBCentral`, so a re-created link on subsequent ATT writes will NOT receive a second `didSubscribeTo`).
+    private var subscribedCentralIDs: Set<UUID> = []
 
     public let macID: String
     public var macName: String
@@ -534,6 +544,7 @@ public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBP
         manager?.stopAdvertising()
         manager?.removeAllServices()
         updateAdvertisingState(false, availability: availability, error: nil)
+        subscribedCentralIDs.removeAll()
         let activeLinks = Array(subscribers.values)
         subscribers.removeAll()
         activeLinks.forEach { $0.cancel() }
@@ -541,6 +552,7 @@ public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBP
 
     private func beginAdvertising() {
         guard wantsAdvertising, let manager, manager.state == .poweredOn else { return }
+        subscribedCentralIDs.removeAll()
         let service = CBMutableService(type: ChocliftBluetooth.serviceUUID, primary: true)
         let frame = CBMutableCharacteristic(
             type: ChocliftBluetooth.frameUUID,
@@ -605,6 +617,7 @@ public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBP
                 self.availability = .ready
                 self.beginAdvertising()
             } else {
+                self.subscribedCentralIDs.removeAll()
                 let activeLinks = Array(self.subscribers.values)
                 self.subscribers.removeAll()
                 activeLinks.forEach { $0.cancel() }
@@ -689,6 +702,7 @@ public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBP
     ) {
         runOnMain {
             guard characteristic.uuid == ChocliftBluetooth.frameUUID else { return }
+            self.subscribedCentralIDs.insert(central.identifier)
             let link = self.link(for: central)
             link.updateCentral(central)
             link.markReady()
@@ -702,6 +716,7 @@ public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBP
     ) {
         runOnMain {
             guard characteristic.uuid == ChocliftBluetooth.frameUUID else { return }
+            self.subscribedCentralIDs.remove(central.identifier)
             self.removeLink(for: central.identifier)
         }
     }
@@ -714,31 +729,106 @@ public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBP
         }
     }
 
+    private func isCentralCurrentlySubscribed(_ centralID: UUID) -> Bool {
+        if subscribedCentralIDs.contains(centralID) {
+            return true
+        }
+        if frameCharacteristic?.subscribedCentrals?.contains(where: { $0.identifier == centralID }) == true {
+            subscribedCentralIDs.insert(centralID)
+            return true
+        }
+        return false
+    }
+
     private func link(for central: CBCentral) -> BluetoothServerLink {
-        let centralID = central.identifier
+        resolveSubscriberLink(
+            centralID: central.identifier,
+            makeLink: {
+                BluetoothServerLink(
+                    manager: manager,
+                    characteristic: frameCharacteristic,
+                    central: central
+                )
+            },
+            updateExisting: { existing in
+                existing.updateCentral(central)
+            }
+        )
+    }
+
+    private func resolveSubscriberLink(
+        centralID: UUID,
+        makeLink: () -> BluetoothServerLink,
+        updateExisting: (BluetoothServerLink) -> Void
+    ) -> BluetoothServerLink {
         if let existing = subscribers[centralID], !existing.closed {
-            existing.updateCentral(central)
+            updateExisting(existing)
+            if !existing.isReady && isCentralCurrentlySubscribed(centralID) {
+                existing.markReady()
+            }
             return existing
         }
-        let link = BluetoothServerLink(
-            manager: manager,
-            characteristic: frameCharacteristic,
-            central: central
-        )
+        let link = makeLink()
         link.onCancelled = { [weak self, weak link] in
-            Task { @MainActor [weak self] in
+            let cleanup: @MainActor () -> Void = {
                 guard let self, let link, self.subscribers[centralID] === link else { return }
                 self.subscribers.removeValue(forKey: centralID)
+            }
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { cleanup() }
+            } else {
+                Task { @MainActor in cleanup() }
             }
         }
         subscribers[centralID] = link
         onAccepted?(link)
+        if isCentralCurrentlySubscribed(centralID) {
+            link.markReady()
+        }
         return link
     }
 
     private func removeLink(for id: UUID) {
         guard let existing = subscribers.removeValue(forKey: id) else { return }
         existing.cancel()
+    }
+
+    // MARK: - Deterministic Test Hooks Exercising Real Subscriber Link Management
+
+    func handleSimulatedCentralSubscribed(_ driver: BluetoothServerNotifyDriver) {
+        subscribedCentralIDs.insert(driver.centralID)
+        let link = resolveSubscriberLink(
+            centralID: driver.centralID,
+            makeLink: { BluetoothServerLink(notifyDriver: driver) },
+            updateExisting: { $0.updateNotifyDriver(driver) }
+        )
+        link.markReady()
+    }
+
+    func handleSimulatedCentralWrite(_ chunk: Data, from driver: BluetoothServerNotifyDriver) throws {
+        guard !chunk.isEmpty else { return }
+        let link = resolveSubscriberLink(
+            centralID: driver.centralID,
+            makeLink: { BluetoothServerLink(notifyDriver: driver) },
+            updateExisting: { $0.updateNotifyDriver(driver) }
+        )
+        do {
+            try link.accept(chunk)
+        } catch {
+            removeLink(for: driver.centralID)
+            throw error
+        }
+    }
+
+    func handleSimulatedCentralUnsubscribed(centralID: UUID) {
+        subscribedCentralIDs.remove(centralID)
+        removeLink(for: centralID)
+    }
+
+    func handleSimulatedReadyToUpdateSubscribers() {
+        for link in subscribers.values {
+            link.flush()
+        }
     }
 }
 
@@ -750,11 +840,14 @@ final class BluetoothServerLink: CompanionFrameTransport {
 
     private weak var manager: CBPeripheralManager?
     private weak var frameCharacteristic: CBMutableCharacteristic?
-    private var central: CBCentral
+    private var central: CBCentral?
+    private var notifyDriver: BluetoothServerNotifyDriver?
     private var ready = false
     private(set) var closed = false
     private let codec = BluetoothFrameCodec()
     private let outbound = BluetoothOutboundBuffer()
+
+    var isReady: Bool { ready && !closed }
 
     init(manager: CBPeripheralManager?, characteristic: CBMutableCharacteristic?, central: CBCentral) {
         self.manager = manager
@@ -762,10 +855,18 @@ final class BluetoothServerLink: CompanionFrameTransport {
         self.central = central
     }
 
+    init(notifyDriver: BluetoothServerNotifyDriver) {
+        self.notifyDriver = notifyDriver
+    }
+
     func start() {}
 
     func updateCentral(_ updated: CBCentral) {
         self.central = updated
+    }
+
+    func updateNotifyDriver(_ updated: BluetoothServerNotifyDriver) {
+        self.notifyDriver = updated
     }
 
     func markReady() {
@@ -801,12 +902,20 @@ final class BluetoothServerLink: CompanionFrameTransport {
     }
 
     func flush() {
-        guard ready, !closed, let manager, let frameCharacteristic else { return }
+        guard ready, !closed else { return }
+        if let driver = notifyDriver {
+            let maxUpdate = driver.maximumUpdateValueLength()
+            let effectiveLimit = maxUpdate > 0 ? maxUpdate : ChocliftBluetooth.minATTChunkSize
+            let chunkSize = ChocliftBluetooth.negotiatedWriteChunkSize(maximumWriteValueLength: effectiveLimit) ?? 1
+            outbound.drain(maxChunkBytes: chunkSize) { chunk in
+                driver.sendNotification(chunk)
+            }
+            return
+        }
+        guard let manager, let frameCharacteristic, let central else { return }
         let maxUpdate = central.maximumUpdateValueLength
-        let chunkSize = max(
-            ChocliftBluetooth.minATTChunkSize,
-            min(ChocliftBluetooth.defaultChunkSize, maxUpdate > 0 ? maxUpdate : ChocliftBluetooth.minATTChunkSize)
-        )
+        let effectiveLimit = maxUpdate > 0 ? maxUpdate : ChocliftBluetooth.minATTChunkSize
+        let chunkSize = ChocliftBluetooth.negotiatedWriteChunkSize(maximumWriteValueLength: effectiveLimit) ?? 1
         outbound.drain(maxChunkBytes: chunkSize) { chunk in
             manager.updateValue(chunk, for: frameCharacteristic, onSubscribedCentrals: [central])
         }

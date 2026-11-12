@@ -6,12 +6,23 @@ public struct DiscoveredMacHost: Identifiable, Equatable, Hashable, Sendable {
     public let name: String
     public let macID: String?
     public let endpoint: NWEndpoint
+    public let directHost: String?
+    public let directPort: UInt16?
 
-    public init(id: String, name: String, macID: String?, endpoint: NWEndpoint) {
+    public init(
+        id: String,
+        name: String,
+        macID: String?,
+        endpoint: NWEndpoint,
+        directHost: String? = nil,
+        directPort: UInt16? = nil
+    ) {
         self.id = id
         self.name = name
         self.macID = macID
         self.endpoint = endpoint
+        self.directHost = directHost
+        self.directPort = directPort
     }
 }
 
@@ -101,6 +112,8 @@ public final class CompanionClientEngine: ObservableObject {
     public var simulatedBluetoothReconnectProvider: (() -> CompanionFrameTransport?)?
     /// Internal test hook allowing simulated BLE discovery + GATT metadata sessions without physical radio hardware.
     var simulatedBluetoothConnector: ((DiscoveredBluetoothMac) -> CompanionFrameTransport?)?
+    /// Internal test hook allowing unit tests to deterministically simulate watchOS NECP `.waiting(NWError)` states.
+    var simulatedTCPWaitingErrorProvider: ((NWEndpoint) -> NWError?)?
     public var reconnectDelaySeconds: TimeInterval = 2.0
     public var connectTimeoutSeconds: TimeInterval = 8.0
     public var heartbeatIntervalSeconds: TimeInterval = 5.0
@@ -145,11 +158,13 @@ public final class CompanionClientEngine: ObservableObject {
     private var pendingPINSubmission: String?
 
     private var intentionalDisconnect = false
+    private var didAttemptHTTPFallbackInCurrentConnect = false
     private var wifiPreferenceTask: Task<Void, Never>?
     private var connectWatchdogTask: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
     private var pinGlitchExpiryTask: Task<Void, Never>?
+    private var pinSubmissionWatchdogTask: Task<Void, Never>?
 
     public init(
         deviceID: String,
@@ -189,10 +204,18 @@ public final class CompanionClientEngine: ObservableObject {
                     if case let .service(name, type, domain, _) = result.endpoint {
                         var macID: String?
                         var customName = name
+                        var txtHost: String?
+                        var txtPort: UInt16?
                         if case let .bonjour(txtRecord) = result.metadata {
                             macID = txtRecord["macID"]
                             if let txtName = txtRecord["macName"], !txtName.isEmpty {
                                 customName = txtName
+                            }
+                            if let ip = txtRecord["ip"], !ip.isEmpty {
+                                txtHost = ip
+                            }
+                            if let portStr = txtRecord["port"], let parsedPort = UInt16(portStr), parsedPort > 0 {
+                                txtPort = parsedPort
                             }
                         }
                         let uniqueID = "\(name).\(type).\(domain)"
@@ -201,7 +224,9 @@ public final class CompanionClientEngine: ObservableObject {
                                 id: uniqueID,
                                 name: customName,
                                 macID: macID,
-                                endpoint: result.endpoint
+                                endpoint: result.endpoint,
+                                directHost: txtHost,
+                                directPort: txtPort
                             )
                         )
                     }
@@ -209,7 +234,11 @@ public final class CompanionClientEngine: ObservableObject {
                 self.discoveredMacs = hosts.sorted {
                     $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
-                self.consecutiveReconnectFailures = 0
+                if self.connectionState == .disconnected,
+                   self.reconnectTask == nil,
+                   self.matchingSavedWiFiHost() != nil {
+                    self.consecutiveReconnectFailures = 0
+                }
                 self.autoConnectIfAppropriate()
             }
         }
@@ -236,7 +265,9 @@ public final class CompanionClientEngine: ObservableObject {
             self.discoveredBluetoothMacs = self.enrichedDiscoveredBluetoothMacs(from: hosts)
             self.isBluetoothPoweredOn = scanner.isPoweredOn
             self.bluetoothAvailability = scanner.availability
-            if !hosts.isEmpty {
+            if self.connectionState == .disconnected,
+               self.reconnectTask == nil,
+               self.matchingSavedDiscoveredBluetoothHost() != nil {
                 self.consecutiveReconnectFailures = 0
             }
             self.autoConnectIfAppropriate()
@@ -276,7 +307,9 @@ public final class CompanionClientEngine: ObservableObject {
     ) {
         isBrowsingActive = true
         discoveredBluetoothMacs = enrichedDiscoveredBluetoothMacs(from: hosts)
-        if !hosts.isEmpty {
+        if connectionState == .disconnected,
+           reconnectTask == nil,
+           matchingSavedDiscoveredBluetoothHost() != nil {
             consecutiveReconnectFailures = 0
         }
         if autoConnect {
@@ -504,8 +537,8 @@ public final class CompanionClientEngine: ObservableObject {
         reconnectTask?.cancel()
         candidateMacID = discovered.macID
             ?? savedMacs.first(where: { $0.macName.caseInsensitiveCompare(discovered.name) == .orderedSame })?.macID
-        activeDirectHost = nil
-        activeDirectPort = nil
+        activeDirectHost = discovered.directHost
+        activeDirectPort = discovered.directPort
         activeBluetoothPeripheralID = nil
         openConnection(to: discovered.endpoint, targetName: discovered.name, preservePINState: false)
     }
@@ -749,10 +782,18 @@ public final class CompanionClientEngine: ObservableObject {
         transport.onReady = { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.currentSessionID == sessionID else { return }
-                self.connectWatchdogTask?.cancel()
-                self.connectWatchdogTask = nil
                 self.isTransportReady = true
                 self.lastServerActivityAt = Date()
+                if armWatchdog {
+                    self.armHandshakeWatchdog(
+                        sessionID: sessionID,
+                        failedLink: .bluetooth,
+                        timeoutSeconds: max(0.2, self.connectTimeoutSeconds)
+                    )
+                } else {
+                    self.connectWatchdogTask?.cancel()
+                    self.connectWatchdogTask = nil
+                }
                 self.sendHello()
                 if let pendingPIN = self.pendingPINSubmission {
                     self.pendingPINSubmission = nil
@@ -779,12 +820,11 @@ public final class CompanionClientEngine: ObservableObject {
         }
 
         if armWatchdog {
-            let timeout = max(0.2, connectTimeoutSeconds)
-            connectWatchdogTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(timeout))
-                guard let self, !Task.isCancelled, self.currentSessionID == sessionID, !self.isTransportReady else { return }
-                self.handleConnectionDropped(failedLink: .bluetooth)
-            }
+            armHandshakeWatchdog(
+                sessionID: sessionID,
+                failedLink: .bluetooth,
+                timeoutSeconds: max(0.2, connectTimeoutSeconds)
+            )
         }
 
         transport.start()
@@ -948,12 +988,15 @@ public final class CompanionClientEngine: ObservableObject {
         wifiPreferenceTask?.cancel()
         reconnectTask?.cancel()
         connectWatchdogTask?.cancel()
+        pinSubmissionWatchdogTask?.cancel()
+        pinSubmissionWatchdogTask = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
 
         let sessionID = UUID()
         currentSessionID = sessionID
         isTransportReady = false
+        didAttemptHTTPFallbackInCurrentConnect = false
 
         let oldConn = connection
         connection = nil
@@ -973,6 +1016,24 @@ public final class CompanionClientEngine: ObservableObject {
             connectionState = .connecting(targetName: targetName)
         }
 
+        #if os(watchOS) && !targetEnvironment(simulator)
+        // Per Apple TN3135, low-level Network.framework sockets (`NWConnection`) are blocked by NECP on physical
+        // watchOS hardware, whereas high-level `URLSession` HTTP is permitted over direct Watch Wi-Fi and iPhone LAN relay.
+        if let (directHost, directPort) = resolvedDirectHostAndPort(from: endpoint) {
+            didAttemptHTTPFallbackInCurrentConnect = true
+            openHTTPWiFiConnection(
+                host: directHost,
+                port: directPort,
+                targetName: targetName,
+                preservePINState: preservePINState
+            )
+            return
+        }
+        #endif
+
+        let hasBluetoothFallback = matchingSavedDiscoveredBluetoothHost(preferMacID: candidateMacID) != nil
+        let watchdogSeconds = hasBluetoothFallback ? min(3.5, connectTimeoutSeconds) : max(0.2, connectTimeoutSeconds)
+
         let params = NWParameters.tcp
         params.includePeerToPeer = true
         if let tcpOptions = params.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options {
@@ -989,10 +1050,13 @@ public final class CompanionClientEngine: ObservableObject {
                 guard let self, let conn, self.currentSessionID == sessionID, self.connection === conn else { return }
                 switch state {
                 case .ready:
-                    self.connectWatchdogTask?.cancel()
-                    self.connectWatchdogTask = nil
                     self.isTransportReady = true
                     self.lastServerActivityAt = Date()
+                    self.armHandshakeWatchdog(
+                        sessionID: sessionID,
+                        failedLink: .wifi,
+                        timeoutSeconds: watchdogSeconds
+                    )
                     self.receiveLoop(for: conn, sessionID: sessionID)
                     self.sendHello()
                     if let pendingPIN = self.pendingPINSubmission {
@@ -1004,6 +1068,8 @@ public final class CompanionClientEngine: ObservableObject {
                             platform: self.platform
                         ))
                     }
+                case .waiting(let error):
+                    self.handleTCPConnectionWaiting(error, sessionID: sessionID)
                 case .failed:
                     self.handleConnectionDropped(failedLink: .wifi)
                 case .cancelled:
@@ -1016,15 +1082,214 @@ public final class CompanionClientEngine: ObservableObject {
             }
         }
 
-        let hasBluetoothFallback = matchingSavedDiscoveredBluetoothHost(preferMacID: candidateMacID) != nil
-        let watchdogSeconds = hasBluetoothFallback ? min(3.5, connectTimeoutSeconds) : max(0.2, connectTimeoutSeconds)
-        connectWatchdogTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(watchdogSeconds))
-            guard let self, !Task.isCancelled, self.currentSessionID == sessionID, !self.isTransportReady else { return }
-            self.handleConnectionDropped(failedLink: .wifi)
+        armHandshakeWatchdog(
+            sessionID: sessionID,
+            failedLink: .wifi,
+            timeoutSeconds: watchdogSeconds
+        )
+
+        if let simulatedWaiting = simulatedTCPWaitingErrorProvider?(endpoint) {
+            Task { @MainActor [weak self] in
+                guard let self, self.currentSessionID == sessionID else { return }
+                self.handleTCPConnectionWaiting(simulatedWaiting, sessionID: sessionID)
+            }
+        } else {
+            conn.start(queue: networkQueue)
+        }
+    }
+
+    func handleTCPConnectionWaiting(_ error: NWError, sessionID: UUID) {
+        guard currentSessionID == sessionID, !isTransportReady else { return }
+
+        var posixCode: POSIXErrorCode?
+        if case let .posix(code) = error {
+            posixCode = code
         }
 
-        conn.start(queue: networkQueue)
+        let shouldTryHTTPWiFiFallback: Bool = {
+            guard !didAttemptHTTPFallbackInCurrentConnect else { return false }
+            if platform == .appleWatch {
+                return true
+            }
+            if let code = posixCode {
+                return code == .ENETDOWN || code == .EACCES || code == .EPERM
+            }
+            return false
+        }()
+
+        if shouldTryHTTPWiFiFallback,
+           let (host, port) = resolvedDirectHostAndPort(from: activeEndpoint) {
+            didAttemptHTTPFallbackInCurrentConnect = true
+            openHTTPWiFiConnection(
+                host: host,
+                port: port,
+                targetName: activeTargetName,
+                preservePINState: pinGlitchState != nil
+            )
+            return
+        }
+
+        if let code = posixCode,
+           code == .ECONNREFUSED || code == .ENETDOWN || code == .ENETUNREACH || code == .EHOSTUNREACH || code == .EACCES || code == .EPERM {
+            handleConnectionDropped(failedLink: .wifi)
+        }
+    }
+
+    private func resolvedDirectHostAndPort(from endpoint: NWEndpoint?) -> (String, UInt16)? {
+        if let host = activeDirectHost, !host.isEmpty,
+           let port = activeDirectPort, port > 0 {
+            return (host, port)
+        }
+        if let endpoint, case let .hostPort(nwHost, nwPort) = endpoint, nwPort.rawValue > 0 {
+            let cleanHost: String? = {
+                switch nwHost {
+                case .name(let name, _):
+                    return name
+                case .ipv4(let v4):
+                    return String(describing: v4).split(separator: "%").first.map(String.init)
+                case .ipv6(let v6):
+                    return String(describing: v6).split(separator: "%").first.map(String.init)
+                @unknown default:
+                    return nil
+                }
+            }()
+            if let cleanHost, !cleanHost.isEmpty {
+                return (cleanHost, nwPort.rawValue)
+            }
+        }
+        if let candidateMacID,
+           let saved = savedMacs.first(where: { $0.macID == candidateMacID }),
+           let host = saved.lastDirectHost, !host.isEmpty,
+           let port = saved.lastDirectPort, port > 0 {
+            return (host, port)
+        }
+        return nil
+    }
+
+    private func openHTTPWiFiConnection(
+        host: String,
+        port: UInt16,
+        targetName: String,
+        preservePINState: Bool
+    ) {
+        wifiPreferenceTask?.cancel()
+        reconnectTask?.cancel()
+        connectWatchdogTask?.cancel()
+        pinSubmissionWatchdogTask?.cancel()
+        pinSubmissionWatchdogTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+
+        let sessionID = UUID()
+        currentSessionID = sessionID
+        isTransportReady = false
+
+        let oldConn = connection
+        connection = nil
+        oldConn?.cancel()
+
+        let oldTransport = frameTransport
+        frameTransport = nil
+        oldTransport?.cancel()
+
+        accumulator.reset()
+        retriedTokenMacIDs.removeAll()
+
+        activeDirectHost = host
+        activeDirectPort = port
+        if let nwPort = NWEndpoint.Port(rawValue: port) {
+            activeEndpoint = .hostPort(host: NWEndpoint.Host(host), port: nwPort)
+        }
+        activeTargetName = targetName
+        activeLink = .wifi
+        if !preservePINState {
+            connectionState = .connecting(targetName: targetName)
+        }
+
+        let hasBluetoothFallback = matchingSavedDiscoveredBluetoothHost(preferMacID: candidateMacID) != nil
+        let watchdogSeconds = hasBluetoothFallback ? min(3.5, connectTimeoutSeconds) : max(0.2, connectTimeoutSeconds)
+        let pollSeconds = max(0.5, min(10.0, heartbeatTimeoutSeconds * 0.6))
+        let httpTransport = HTTPCompanionClientLink(
+            host: host,
+            port: port,
+            requestTimeoutSeconds: watchdogSeconds,
+            pollTimeoutSeconds: pollSeconds
+        )
+        frameTransport = httpTransport
+
+        httpTransport.onReady = { [weak self] in
+            let apply: @MainActor () -> Void = {
+                guard let self, self.currentSessionID == sessionID else { return }
+                self.isTransportReady = true
+                self.lastServerActivityAt = Date()
+                self.armHandshakeWatchdog(
+                    sessionID: sessionID,
+                    failedLink: .wifi,
+                    timeoutSeconds: watchdogSeconds
+                )
+                self.sendHello()
+                if let pendingPIN = self.pendingPINSubmission {
+                    self.pendingPINSubmission = nil
+                    self.send(.submitPIN(
+                        pin: pendingPIN,
+                        deviceID: self.deviceID,
+                        deviceName: self.deviceName,
+                        platform: self.platform
+                    ))
+                }
+            }
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { apply() }
+            } else {
+                Task { @MainActor in apply() }
+            }
+        }
+
+        httpTransport.onPayload = { [weak self] payload in
+            Task { @MainActor [weak self] in
+                guard let self, self.currentSessionID == sessionID else { return }
+                self.ingest(payload, sessionID: sessionID)
+            }
+        }
+
+        httpTransport.onClosed = { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, self.currentSessionID == sessionID else { return }
+                self.handleConnectionDropped(failedLink: .wifi)
+            }
+        }
+
+        armHandshakeWatchdog(
+            sessionID: sessionID,
+            failedLink: .wifi,
+            timeoutSeconds: watchdogSeconds
+        )
+
+        httpTransport.start()
+    }
+
+    private func armHandshakeWatchdog(
+        sessionID: UUID,
+        failedLink: CompanionLinkKind,
+        timeoutSeconds: TimeInterval
+    ) {
+        connectWatchdogTask?.cancel()
+        let bounded = max(0.2, timeoutSeconds)
+        connectWatchdogTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(bounded))
+            guard let self, !Task.isCancelled, self.currentSessionID == sessionID else { return }
+            let stillWaitingForHandshake: Bool = {
+                if case .connecting = self.connectionState {
+                    return true
+                }
+                if self.pinGlitchState != nil && !self.isTransportReady {
+                    return true
+                }
+                return false
+            }()
+            guard stillWaitingForHandshake else { return }
+            self.handleConnectionDropped(failedLink: failedLink)
+        }
     }
 
     public func disconnect() {
@@ -1038,6 +1303,8 @@ public final class CompanionClientEngine: ObservableObject {
         wifiPreferenceTask = nil
         connectWatchdogTask?.cancel()
         connectWatchdogTask = nil
+        pinSubmissionWatchdogTask?.cancel()
+        pinSubmissionWatchdogTask = nil
         reconnectTask?.cancel()
         reconnectTask = nil
         heartbeatTask?.cancel()
@@ -1065,13 +1332,26 @@ public final class CompanionClientEngine: ObservableObject {
         pendingPINSubmission = nil
     }
 
+    private var shouldSendSessionHeartbeats: Bool {
+        if connectionState.isConnected {
+            return true
+        }
+        if case .awaitingPIN = connectionState, isTransportReady {
+            return true
+        }
+        return false
+    }
+
     private func startHeartbeat(sessionID: UUID) {
         heartbeatTask?.cancel()
         heartbeatTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 let interval = max(0.05, self?.heartbeatIntervalSeconds ?? 5.0)
                 try? await Task.sleep(for: .seconds(interval))
-                guard let self, !Task.isCancelled, self.currentSessionID == sessionID, self.connectionState.isConnected else {
+                guard let self,
+                      !Task.isCancelled,
+                      self.currentSessionID == sessionID,
+                      self.shouldSendSessionHeartbeats else {
                     break
                 }
                 if Date().timeIntervalSince(self.lastServerActivityAt) > max(0.1, self.heartbeatTimeoutSeconds) {
@@ -1120,6 +1400,8 @@ public final class CompanionClientEngine: ObservableObject {
         isTransportReady = false
         connectWatchdogTask?.cancel()
         connectWatchdogTask = nil
+        pinSubmissionWatchdogTask?.cancel()
+        pinSubmissionWatchdogTask = nil
         heartbeatTask?.cancel()
         heartbeatTask = nil
 
@@ -1329,6 +1611,31 @@ public final class CompanionClientEngine: ObservableObject {
     // MARK: - Pairing & Commands
 
     public func submitPIN(_ pin: String) {
+        if case .awaitingPIN(let macID, let macName, let existingErr) = connectionState, existingErr != nil {
+            connectionState = .awaitingPIN(macID: macID, macName: macName, errorMessage: nil)
+        }
+        pinSubmissionWatchdogTask?.cancel()
+        let submittedSessionID = currentSessionID
+        let pinTimeout = max(0.3, connectTimeoutSeconds)
+        pinSubmissionWatchdogTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(pinTimeout))
+            guard let self, !Task.isCancelled, self.currentSessionID == submittedSessionID else { return }
+            guard case .awaitingPIN(let macID, let macName, let currentErr) = self.connectionState,
+                  currentErr == nil else {
+                return
+            }
+            let lang = self.profile.settings.language
+            self.connectionState = .awaitingPIN(
+                macID: macID,
+                macName: macName,
+                errorMessage: L10n.tr(
+                    "验证超时，Mac 未响应配对结果，请重试。",
+                    "PIN verification timed out with no reply from your Mac. Please try again.",
+                    language: lang
+                )
+            )
+        }
+
         if isTransportReady {
             pendingPINSubmission = nil
             send(.submitPIN(pin: pin, deviceID: deviceID, deviceName: deviceName, platform: platform))
@@ -1438,6 +1745,11 @@ public final class CompanionClientEngine: ObservableObject {
                 if pinGlitchState == nil {
                     connectionState = .connecting(targetName: macName)
                 }
+                armHandshakeWatchdog(
+                    sessionID: currentSessionID,
+                    failedLink: activeLink ?? .wifi,
+                    timeoutSeconds: max(0.2, connectTimeoutSeconds)
+                )
                 send(.hello(
                     protocolVersion: ChocliftDefaults.protocolVersion,
                     deviceID: deviceID,
@@ -1446,8 +1758,11 @@ public final class CompanionClientEngine: ObservableObject {
                     savedAuthToken: existing.authToken
                 ))
             } else {
+                connectWatchdogTask?.cancel()
+                connectWatchdogTask = nil
                 let preservedErr = pinGlitchState?.errorMessage
                 connectionState = .awaitingPIN(macID: macID, macName: macName, errorMessage: preservedErr)
+                startHeartbeat(sessionID: currentSessionID)
             }
 
         case .authSucceeded(
@@ -1461,6 +1776,10 @@ public final class CompanionClientEngine: ObservableObject {
             let focusedApp,
             let axTrusted
         ):
+            connectWatchdogTask?.cancel()
+            connectWatchdogTask = nil
+            pinSubmissionWatchdogTask?.cancel()
+            pinSubmissionWatchdogTask = nil
             clearPINGlitchState()
             isSavedMacProbeConnect = false
             probeTargetMacID = nil
@@ -1495,6 +1814,10 @@ public final class CompanionClientEngine: ObservableObject {
             requestMissingIconsIfNeeded()
 
         case .authFailed(let reason):
+            connectWatchdogTask?.cancel()
+            connectWatchdogTask = nil
+            pinSubmissionWatchdogTask?.cancel()
+            pinSubmissionWatchdogTask = nil
             if case .awaitingPIN(let macID, let macName, _) = connectionState {
                 connectionState = .awaitingPIN(macID: macID, macName: macName, errorMessage: reason)
             } else {

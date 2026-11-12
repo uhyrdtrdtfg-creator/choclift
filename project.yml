@@ -184,6 +184,8 @@ targets:
         NSLocalNetworkUsageDescription: "choclift 通过同一局域网 Wi-Fi 与你的 Mac 实时同步腕上触控栏与快捷控制。"
         NSBluetoothAlwaysUsageDescription: "choclift 在手表与 Mac 不在同一 Wi-Fi 时，通过蓝牙配对并发送快捷控制。"
         NSBluetoothPeripheralUsageDescription: "choclift 在手表与 Mac 不在同一 Wi-Fi 时，通过蓝牙配对并发送快捷控制。"
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
         NSBonjourServices:
           - "_choclift._tcp"
     settings:
