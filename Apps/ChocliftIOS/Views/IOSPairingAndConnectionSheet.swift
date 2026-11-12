@@ -65,6 +65,13 @@ public struct IOSPairingAndConnectionSheet: View {
             if newState.isConnected {
                 CompanionHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, type: .success)
                 enteredPIN = ""
+            } else if case .awaitingPIN(_, _, let err) = newState {
+                if err != nil && enteredPIN.count == 6 {
+                    CompanionHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, type: .error)
+                    enteredPIN = ""
+                }
+            } else {
+                enteredPIN = ""
             }
         }
     }

@@ -156,6 +156,60 @@ final class BluetoothWatchConnectionTests: XCTestCase {
         XCTAssertFalse(decodedClamped.macName.isEmpty)
     }
 
+    func testBluetoothClientLinkUsesWithResponseLimitDirectlyAndNeverMixesWriteTypes() throws {
+        XCTAssertNil(ChocliftBluetooth.negotiatedWriteChunkSize(maximumWriteValueLength: 0))
+        XCTAssertNil(ChocliftBluetooth.negotiatedWriteChunkSize(maximumWriteValueLength: -4))
+        XCTAssertEqual(ChocliftBluetooth.negotiatedWriteChunkSize(maximumWriteValueLength: 24), 24)
+        XCTAssertEqual(ChocliftBluetooth.negotiatedWriteChunkSize(maximumWriteValueLength: 512), ChocliftBluetooth.defaultChunkSize)
+
+        var queriedTypes: [CBCharacteristicWriteType] = []
+        var dispatchedWrites: [(Data, CBCharacteristicWriteType)] = []
+        let reassembler = BluetoothFrameCodec()
+        var reassembledFrames: [Data] = []
+        var linkRef: BluetoothClientLink?
+
+        let driver = BluetoothClientWriteDriver(
+            isConnected: { true },
+            supportsWriteWithResponse: { true },
+            maximumWriteValueLength: { writeType in
+                queriedTypes.append(writeType)
+                return (writeType == .withResponse) ? 24 : 185
+            },
+            writeValue: { chunk, writeType in
+                dispatchedWrites.append((chunk, writeType))
+                if let extracted = try? reassembler.append(chunk) {
+                    reassembledFrames.append(contentsOf: extracted)
+                }
+                linkRef?.didCompleteInFlightWrite()
+            },
+            cancelConnection: {}
+        )
+
+        let link = BluetoothClientLink(
+            host: DiscoveredBluetoothMac(id: UUID(), name: "Mac", macID: "mac-unit-1"),
+            writeDriver: driver
+        )
+        linkRef = link
+        link.start()
+
+        let pinFrame = try WireFrameCodec.encode(
+            ClientMessage.submitPIN(
+                pin: "654321",
+                deviceID: "watch-unit-device-001",
+                deviceName: "Apple Watch",
+                platform: .appleWatch
+            )
+        )
+        XCTAssertGreaterThan(pinFrame.count, 24 * 3)
+        link.send(pinFrame)
+
+        XCTAssertFalse(link.isWriteInFlight)
+        XCTAssertEqual(link.pendingOutboundByteCount, 0)
+        XCTAssertTrue(queriedTypes.allSatisfy { $0 == .withResponse })
+        XCTAssertTrue(dispatchedWrites.allSatisfy { $0.1 == .withResponse && $0.0.count <= 24 })
+        XCTAssertEqual(reassembledFrames, [pinFrame])
+    }
+
     #if os(macOS)
     func testAppleWatchBLEConnectPostConnectionMetadataReconnectAndUnpairedProbeSkip() async throws {
         let suiteName = "com.choclift.tests.watchble.\(UUID().uuidString)"
@@ -399,6 +453,339 @@ final class BluetoothWatchConnectionTests: XCTestCase {
             activeWatch.activeLink == .bluetooth
         }
         XCTAssertEqual(activeWatch.savedMacs.first?.lastBluetoothPeripheralID, blePeripheralID)
+    }
+
+    func testWatchBLEPINPairingSplitsFrameUsingSmallerWithResponseLimitAndReceivesAuthSucceeded() async throws {
+        let suiteName = "com.choclift.tests.watchpinmtu.\(UUID().uuidString)"
+        let isolatedDefaults = UserDefaults(suiteName: suiteName)!
+        defer { isolatedDefaults.removePersistentDomain(forName: suiteName) }
+
+        let delegate = WatchTestServerDelegate()
+        let server = MacServerEngine(macID: "mac-watch-pin-fix", macName: "Studio MacBook Pro")
+        server.delegate = delegate
+        defer { server.stop() }
+
+        // Confirm the wire-encoded submitPIN frame is much larger than the 28-byte withResponse ATT limit
+        let samplePINFrame = try WireFrameCodec.encode(
+            ClientMessage.submitPIN(
+                pin: server.currentPIN,
+                deviceID: "watch-series-11-pin",
+                deviceName: "Apple Watch",
+                platform: .appleWatch
+            )
+        )
+        let withoutResponseLimit = 185
+        let withResponseLimit = 28
+        XCTAssertLessThan(withResponseLimit, withoutResponseLimit)
+        XCTAssertGreaterThan(samplePINFrame.count, withResponseLimit * 3)
+
+        final class ServerGATTBridge: CompanionFrameTransport {
+            var onReady: (() -> Void)?
+            var onPayload: ((Data) -> Void)?
+            var onClosed: (() -> Void)?
+            weak var clientLink: BluetoothClientLink?
+            private var closed = false
+
+            func start() {
+                onReady?()
+            }
+
+            func send(_ data: Data) {
+                guard !closed else { return }
+                let notifyChunks = BluetoothFrameCodec.chunks(for: data, maxChunkBytes: 23)
+                Task { @MainActor [weak self] in
+                    guard let self, !self.closed, let link = self.clientLink, !link.isLinkClosed else { return }
+                    for chunk in notifyChunks {
+                        try? link.accept(chunk)
+                    }
+                }
+            }
+
+            func cancel() {
+                guard !closed else { return }
+                closed = true
+                onClosed?()
+            }
+        }
+
+        var queriedLimitTypes: [CBCharacteristicWriteType] = []
+        var writtenChunks: [(size: Int, type: CBCharacteristicWriteType)] = []
+        var locallyRejectedOversizedWrites = 0
+        weak var latestClientLink: BluetoothClientLink?
+
+        let peripheralID = UUID()
+        var adv = ChocliftBluetooth.makeConnectableAdvertisementData()
+        adv[CBAdvertisementDataIsConnectable] = NSNumber(value: true)
+        let browser = BluetoothCompanionBrowser()
+        let discoveredHost = try XCTUnwrap(
+            browser.ingestAdvertisement(
+                peripheralID: peripheralID,
+                peripheralName: nil,
+                advertisementData: adv
+            )
+        )
+
+        let watch = CompanionClientEngine(
+            deviceID: "watch-series-11-pin",
+            deviceName: "Apple Watch",
+            platform: .appleWatch,
+            userDefaults: isolatedDefaults,
+            storageKeyPrefix: "watch-pin-mtu"
+        )
+        defer { watch.disconnect() }
+
+        watch.simulatedBluetoothConnector = { host in
+            let serverBridge = ServerGATTBridge()
+            let serverInboundCodec = BluetoothFrameCodec()
+            var linkRef: BluetoothClientLink?
+
+            let driver = BluetoothClientWriteDriver(
+                isConnected: { true },
+                supportsWriteWithResponse: { true },
+                maximumWriteValueLength: { writeType in
+                    queriedLimitTypes.append(writeType)
+                    switch writeType {
+                    case .withResponse:
+                        return withResponseLimit
+                    case .withoutResponse:
+                        return withoutResponseLimit
+                    @unknown default:
+                        return withResponseLimit
+                    }
+                },
+                writeValue: { chunk, writeType in
+                    let allowedLimit = (writeType == .withResponse) ? withResponseLimit : withoutResponseLimit
+                    if chunk.count > allowedLimit {
+                        // Exact watchOS CoreBluetooth behavior: oversized withResponse write is rejected locally
+                        // and peripheral(_:didWriteValueFor:error:) is never invoked.
+                        locallyRejectedOversizedWrites += 1
+                        return
+                    }
+                    writtenChunks.append((size: chunk.count, type: writeType))
+                    Task { @MainActor in
+                        guard let link = linkRef, !link.isLinkClosed else { return }
+                        if let frames = try? serverInboundCodec.append(chunk) {
+                            for frame in frames {
+                                serverBridge.onPayload?(frame)
+                            }
+                        }
+                        link.didCompleteInFlightWrite()
+                    }
+                },
+                cancelConnection: {
+                    serverBridge.cancel()
+                }
+            )
+
+            let clientLink = BluetoothClientLink(
+                host: host,
+                writeDriver: driver,
+                simulatedMetadata: BluetoothServiceMetadata(
+                    macID: server.macID,
+                    macName: server.macName
+                ),
+                writeAckTimeoutSeconds: 0.5
+            )
+            linkRef = clientLink
+            latestClientLink = clientLink
+            serverBridge.clientLink = clientLink
+            server.acceptCompanionTransport(serverBridge, link: .bluetooth)
+            return clientLink
+        }
+
+        watch.simulateDiscoveredBluetoothMacs([discoveredHost], autoConnect: false)
+        watch.connectBluetooth(to: discoveredHost)
+
+        try await waitUntil("Watch reached awaitingPIN over real BluetoothClientLink") {
+            if case .awaitingPIN(let id, let name, let err) = watch.connectionState {
+                return id == "mac-watch-pin-fix" && name == "Studio MacBook Pro" && err == nil
+            }
+            return false
+        }
+
+        let chunksBeforePIN = writtenChunks.count
+        watch.submitPIN(server.currentPIN)
+
+        try await waitUntil("Watch split PIN frame within withResponse limit and received authSucceeded + icons") {
+            watch.connectionState == .connected(macID: "mac-watch-pin-fix", macName: "Studio MacBook Pro") &&
+            watch.activeLink == .bluetooth &&
+            watch.appIconsByBundleID["com.apple.finder"] != nil &&
+            latestClientLink?.isWriteInFlight == false
+        }
+
+        let pinAndPostAuthChunks = writtenChunks.dropFirst(chunksBeforePIN)
+        XCTAssertEqual(locallyRejectedOversizedWrites, 0, "No BLE write may exceed maximumWriteValueLength(for: .withResponse)")
+        XCTAssertFalse(queriedLimitTypes.isEmpty)
+        XCTAssertTrue(
+            queriedLimitTypes.allSatisfy { $0 == .withResponse },
+            "BluetoothClientLink must query maximumWriteValueLength(for: .withResponse), never .withoutResponse"
+        )
+        XCTAssertGreaterThanOrEqual(
+            pinAndPostAuthChunks.count,
+            4,
+            "Oversized PIN frame must be safely split across multiple <= \(withResponseLimit)B .withResponse chunks"
+        )
+        for recorded in writtenChunks {
+            XCTAssertEqual(recorded.type, .withResponse)
+            XCTAssertLessThanOrEqual(recorded.size, withResponseLimit)
+        }
+        XCTAssertEqual(watch.savedMacs.first?.macID, "mac-watch-pin-fix")
+        XCTAssertEqual(watch.savedMacs.first?.lastBluetoothPeripheralID, peripheralID)
+
+        // Verify saved-token reconnect also succeeds under the same smaller withResponse limit after PIN rotation
+        watch.disconnect()
+        server.regeneratePIN()
+        watch.reconnectSavedMac( try XCTUnwrap(watch.savedMacs.first) )
+        try await waitUntil("Saved-token BLE reconnect succeeded with smaller withResponse limit") {
+            watch.connectionState == .connected(macID: "mac-watch-pin-fix", macName: "Studio MacBook Pro") &&
+            watch.activeLink == .bluetooth
+        }
+        XCTAssertEqual(locallyRejectedOversizedWrites, 0)
+    }
+
+    func testWatchBLEWriteRejectionAndFailureClearInFlightLockAndSurfaceConnectionError() async throws {
+        let suiteName = "com.choclift.tests.watchwriteerr.\(UUID().uuidString)"
+        let isolatedDefaults = UserDefaults(suiteName: suiteName)!
+        defer { isolatedDefaults.removePersistentDomain(forName: suiteName) }
+
+        let delegate = WatchTestServerDelegate()
+        let server = MacServerEngine(macID: "mac-watch-write-err", macName: "Studio Mac")
+        server.delegate = delegate
+        defer { server.stop() }
+
+        enum PINWriteFailureMode {
+            case attCallbackError
+            case zeroMaxLengthRejection
+            case silentLocalDropWithoutCallback
+        }
+
+        for mode in [
+            PINWriteFailureMode.attCallbackError,
+            PINWriteFailureMode.zeroMaxLengthRejection,
+            PINWriteFailureMode.silentLocalDropWithoutCallback
+        ] {
+            let watch = CompanionClientEngine(
+                deviceID: "watch-err-\(mode)",
+                deviceName: "Apple Watch",
+                platform: .appleWatch,
+                userDefaults: isolatedDefaults,
+                storageKeyPrefix: "err-\(mode)"
+            )
+            watch.pinGlitchRecoveryWindowSeconds = 10.0
+            defer { watch.disconnect() }
+
+            final class ServerSidePipe: CompanionFrameTransport {
+                var onReady: (() -> Void)?
+                var onPayload: ((Data) -> Void)?
+                var onClosed: (() -> Void)?
+                weak var clientLink: BluetoothClientLink?
+                func start() { onReady?() }
+                func send(_ data: Data) {
+                    Task { @MainActor [weak self] in
+                        try? self?.clientLink?.accept(data)
+                    }
+                }
+                func cancel() { onClosed?() }
+            }
+
+            var allowWritesUntilAwaitingPIN = true
+            var cancelConnectionCount = 0
+            var activeClientLink: BluetoothClientLink?
+            let host = DiscoveredBluetoothMac(id: UUID(), name: "Mac", macID: nil)
+
+            watch.simulatedBluetoothConnector = { targetHost in
+                let serverPipe = ServerSidePipe()
+                let serverCodec = BluetoothFrameCodec()
+                var linkBox: BluetoothClientLink?
+
+                let driver = BluetoothClientWriteDriver(
+                    isConnected: { true },
+                    supportsWriteWithResponse: { true },
+                    maximumWriteValueLength: { writeType in
+                        XCTAssertEqual(writeType, .withResponse)
+                        if !allowWritesUntilAwaitingPIN && mode == .zeroMaxLengthRejection {
+                            return 0
+                        }
+                        return 40
+                    },
+                    writeValue: { chunk, writeType in
+                        XCTAssertEqual(writeType, .withResponse)
+                        if allowWritesUntilAwaitingPIN {
+                            Task { @MainActor in
+                                guard let link = linkBox, !link.isLinkClosed else { return }
+                                if let frames = try? serverCodec.append(chunk) {
+                                    for frame in frames {
+                                        serverPipe.onPayload?(frame)
+                                    }
+                                }
+                                link.didCompleteInFlightWrite()
+                            }
+                            return
+                        }
+
+                        switch mode {
+                        case .attCallbackError:
+                            Task { @MainActor in
+                                let attError = NSError(
+                                    domain: CBATTErrorDomain,
+                                    code: CBATTError.writeNotPermitted.rawValue,
+                                    userInfo: [NSLocalizedDescriptionKey: "ATT write not permitted"]
+                                )
+                                linkBox?.didFailInFlightWrite(attError)
+                            }
+                        case .zeroMaxLengthRejection:
+                            XCTFail("writeValue must not be called when maximumWriteValueLength returns 0")
+                        case .silentLocalDropWithoutCallback:
+                            // Simulate CoreBluetooth dropping the write locally without ever calling didWriteValueFor
+                            break
+                        }
+                    },
+                    cancelConnection: {
+                        cancelConnectionCount += 1
+                        serverPipe.cancel()
+                    }
+                )
+
+                let link = BluetoothClientLink(
+                    host: targetHost,
+                    writeDriver: driver,
+                    simulatedMetadata: BluetoothServiceMetadata(macID: server.macID, macName: server.macName),
+                    writeAckTimeoutSeconds: 0.08
+                )
+                linkBox = link
+                activeClientLink = link
+                serverPipe.clientLink = link
+                server.acceptCompanionTransport(serverPipe, link: .bluetooth)
+                return link
+            }
+
+            watch.simulateDiscoveredBluetoothMacs([host], autoConnect: false)
+            watch.connectBluetooth(to: host)
+
+            try await waitUntil("Watch reached awaitingPIN for mode \(mode)") {
+                if case .awaitingPIN = watch.connectionState { return true }
+                return false
+            }
+
+            let link = try XCTUnwrap(activeClientLink)
+            allowWritesUntilAwaitingPIN = false
+            watch.submitPIN(server.currentPIN)
+
+            if mode == .silentLocalDropWithoutCallback {
+                XCTAssertTrue(link.isWriteInFlight, "Write should initially be in flight before watchdog detects dropped callback")
+            }
+
+            try await waitUntil("Rejected/failed write cleared in-flight lock and surfaced connection error (\(mode))") {
+                !link.isWriteInFlight &&
+                link.isLinkClosed &&
+                watch.connectionState == .disconnected &&
+                watch.activeLink == nil &&
+                watch.lastConnectionIssue != nil
+            }
+
+            XCTAssertGreaterThanOrEqual(cancelConnectionCount, 1, "Peripheral connection must be cancelled on write failure (\(mode))")
+            XCTAssertFalse(watch.lastConnectionIssue?.isEmpty ?? true)
+        }
     }
     #endif
 

@@ -49,6 +49,13 @@ public struct WatchPairingView: View {
                 CompanionFeedbackHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, kind: .success)
                 enteredPIN = ""
                 dismiss()
+            } else if case .awaitingPIN(_, _, let err) = newState {
+                if err != nil && enteredPIN.count == 6 {
+                    CompanionFeedbackHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, kind: .error)
+                    enteredPIN = ""
+                }
+            } else {
+                enteredPIN = ""
             }
         }
     }
@@ -96,6 +103,17 @@ public struct WatchPairingView: View {
                     .foregroundStyle(.red)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
+            } else if enteredPIN.count == 6 {
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .scaleEffect(0.65)
+                        .frame(width: 12, height: 12)
+                        .tint(palette.accentGold)
+                    Text(L10n.tr("正在验证配对码…", "Verifying PIN…", language: lang))
+                        .font(.system(size: 9.5, weight: .semibold))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                }
             }
 
             let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "CLR", "0", "⌫"]

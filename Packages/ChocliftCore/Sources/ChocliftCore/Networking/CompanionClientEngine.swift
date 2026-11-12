@@ -732,6 +732,20 @@ public final class CompanionClientEngine: ObservableObject {
             }
         }
 
+        if let errorTransport = transport as? BluetoothErrorReportingTransport {
+            errorTransport.onTransportError = { [weak self] message in
+                let applyBlock: @MainActor () -> Void = {
+                    guard let self, self.currentSessionID == sessionID else { return }
+                    self.handleBluetoothWriteFailure(message)
+                }
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated { applyBlock() }
+                } else {
+                    Task { @MainActor in applyBlock() }
+                }
+            }
+        }
+
         transport.onReady = { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.currentSessionID == sessionID else { return }
@@ -774,6 +788,66 @@ public final class CompanionClientEngine: ObservableObject {
         }
 
         transport.start()
+    }
+
+    private func handleBluetoothWriteFailure(_ reason: String) {
+        currentSessionID = UUID()
+        isTransportReady = false
+        isSavedMacProbeConnect = false
+        probeTargetMacID = nil
+        clearPINGlitchState()
+        wifiPreferenceTask?.cancel()
+        wifiPreferenceTask = nil
+        connectWatchdogTask?.cancel()
+        connectWatchdogTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+
+        let oldConn = connection
+        connection = nil
+        oldConn?.cancel()
+
+        let oldTransport = frameTransport
+        frameTransport = nil
+        oldTransport?.cancel()
+
+        accumulator.reset()
+        retriedTokenMacIDs.removeAll()
+
+        if intentionalDisconnect {
+            activeLink = nil
+            connectionState = .disconnected
+            return
+        }
+
+        let lang = profile.settings.language
+        let target = activeTargetName
+        let trimmed = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        let issue: String
+        if trimmed.isEmpty {
+            issue = L10n.tr(
+                "向 \(target) 发送蓝牙数据失败，请重新选择设备连接。",
+                "Bluetooth write to \(target) failed. Select your Mac to reconnect.",
+                language: lang
+            )
+        } else {
+            issue = L10n.tr(
+                "向 \(target) 发送蓝牙数据失败（\(trimmed)），请重新选择设备连接。",
+                "Bluetooth write to \(target) failed (\(trimmed)). Select your Mac to reconnect.",
+                language: lang
+            )
+        }
+
+        activeLink = nil
+        lastConnectionIssue = issue
+        lastFeedback = CompanionFeedbackToast(
+            success: false,
+            title: L10n.tr("蓝牙发送失败", "Bluetooth Write Failed", language: lang),
+            detail: issue
+        )
+        connectionState = .disconnected
     }
 
     private func handleResolvedBluetoothIdentity(

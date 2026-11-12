@@ -22,10 +22,22 @@ public enum ChocliftBluetooth {
     public static let minATTChunkSize = 20
     /// Conservative upper cap per GATT notification/write PDU across macOS, iOS, and watchOS.
     public static let defaultChunkSize = 180
+    /// Per-chunk acknowledgment timeout for `.withResponse` GATT writes so a locally dropped write never locks TX forever.
+    public static let defaultWriteAckTimeoutSeconds: TimeInterval = 5.0
     /// Legacy BLE 4.x connectable undirected advertising (`ADV_IND`) payload limit in bytes.
     public static let maxLegacyConnectableAdvertisingBytes = 31
     public static let macIDKey = "macID"
     public static let macNameKey = "macName"
+
+    /// Computes a safe ATT write chunk size from `CBPeripheral.maximumWriteValueLength(for:)` for the exact write type in use.
+    /// Returns `nil` when CoreBluetooth reports `<= 0` writable bytes so callers fail fast instead of issuing an oversized write.
+    public static func negotiatedWriteChunkSize(
+        maximumWriteValueLength: Int,
+        upperCap: Int = defaultChunkSize
+    ) -> Int? {
+        guard maximumWriteValueLength > 0 else { return nil }
+        return max(1, min(max(1, upperCap), maximumWriteValueLength))
+    }
 
     /// Builds the primary connectable CoreBluetooth advertising payload for `CBPeripheralManager.startAdvertising(_:)`.
     ///
@@ -188,6 +200,10 @@ public struct BluetoothServiceMetadata: Codable, Equatable, Sendable {
 
 public protocol BluetoothMetadataAwareTransport: CompanionFrameTransport {
     var onBluetoothMetadata: ((BluetoothServiceMetadata) -> Void)? { get set }
+}
+
+public protocol BluetoothErrorReportingTransport: CompanionFrameTransport {
+    var onTransportError: ((String) -> Void)? { get set }
 }
 
 /// Segments and reassembles standard Choclift length-prefixed wire frames (`[4-byte BE length][JSON]`)
@@ -867,6 +883,10 @@ public final class BluetoothCompanionBrowser: NSObject, ObservableObject, CBCent
         }
 
         let link = BluetoothClientLink(manager: manager, peripheral: peripheral, host: host)
+        link.onInvalidated = { [weak self, weak link] in
+            guard let self, let link, self.activeLink === link else { return }
+            self.activeLink = nil
+        }
         peripheral.delegate = self
         activeLink = link
 
@@ -941,9 +961,9 @@ public final class BluetoothCompanionBrowser: NSObject, ObservableObject, CBCent
             self.onPowerStateChanged?(self.isPoweredOn)
 
             if central.state == .poweredOn {
-                if let link = self.activeLink, link.isAwaitingPowerOnConnect {
+                if let link = self.activeLink, link.isAwaitingPowerOnConnect, let peripheral = link.peripheral {
                     link.isAwaitingPowerOnConnect = false
-                    central.connect(link.peripheral, options: nil)
+                    central.connect(peripheral, options: nil)
                 }
                 if self.wantsScanning {
                     self.beginScanning()
@@ -1222,9 +1242,9 @@ public final class BluetoothCompanionBrowser: NSObject, ObservableObject, CBCent
         runOnMain {
             guard characteristic.uuid == ChocliftBluetooth.frameUUID else { return }
             guard let link = self.activeLink, link.matches(peripheral: peripheral) else { return }
-            if error != nil {
+            if let error {
                 self.activeLink = nil
-                link.failAndCancelConnection()
+                link.didFailInFlightWrite(error)
                 return
             }
             link.didCompleteInFlightWrite()
@@ -1232,40 +1252,118 @@ public final class BluetoothCompanionBrowser: NSObject, ObservableObject, CBCent
     }
 }
 
-final class BluetoothClientLink: BluetoothMetadataAwareTransport {
+struct BluetoothClientWriteDriver {
+    var isConnected: () -> Bool
+    var supportsWriteWithResponse: () -> Bool
+    var maximumWriteValueLength: (CBCharacteristicWriteType) -> Int
+    var writeValue: (Data, CBCharacteristicWriteType) -> Void
+    var cancelConnection: () -> Void
+}
+
+final class BluetoothClientLink: BluetoothMetadataAwareTransport, BluetoothErrorReportingTransport {
+    /// Single ATT write type used for both maximum-length queries and `writeValue` calls (never mixed).
+    static let frameWriteType: CBCharacteristicWriteType = .withResponse
+
     var onReady: (() -> Void)?
     var onPayload: ((Data) -> Void)?
     var onClosed: (() -> Void)?
     var onBluetoothMetadata: ((BluetoothServiceMetadata) -> Void)?
+    var onTransportError: ((String) -> Void)?
+    var onInvalidated: (() -> Void)?
 
-    private let manager: CBCentralManager
-    let peripheral: CBPeripheral
+    let peripheral: CBPeripheral?
+    private let peripheralID: UUID
     private(set) var host: DiscoveredBluetoothMac
+    private let writeAckTimeoutSeconds: TimeInterval
+    private let cancelConnectionHandler: () -> Void
+    private let simulatedMetadataOnStart: BluetoothServiceMetadata?
+    private let autoActivateOnStart: Bool
 
     var isAwaitingPowerOnConnect = false
 
-    private var characteristic: CBCharacteristic?
     private var pendingFrameCharacteristic: CBCharacteristic?
+    private var writeDriver: BluetoothClientWriteDriver?
     private var isNotificationReady = false
     private var isMetadataComplete = false
     private var didActivate = false
     private var writeInFlight = false
+    private var writeSequence: UInt64 = 0
+    private var writeAckWatchdogTask: Task<Void, Never>?
+    private var isFlushingWrites = false
     private var isClosed = false
 
     private let codec = BluetoothFrameCodec()
     private let outbound = BluetoothOutboundBuffer()
 
-    init(manager: CBCentralManager, peripheral: CBPeripheral, host: DiscoveredBluetoothMac) {
-        self.manager = manager
+    var isWriteInFlight: Bool {
+        writeInFlight
+    }
+
+    var isLinkClosed: Bool {
+        isClosed
+    }
+
+    var pendingOutboundByteCount: Int {
+        outbound.remainingByteCount
+    }
+
+    init(
+        manager: CBCentralManager,
+        peripheral: CBPeripheral,
+        host: DiscoveredBluetoothMac,
+        writeAckTimeoutSeconds: TimeInterval = ChocliftBluetooth.defaultWriteAckTimeoutSeconds
+    ) {
         self.peripheral = peripheral
+        self.peripheralID = peripheral.identifier
         self.host = host
+        self.writeAckTimeoutSeconds = writeAckTimeoutSeconds
+        self.simulatedMetadataOnStart = nil
+        self.autoActivateOnStart = false
+        self.cancelConnectionHandler = { [weak manager, weak peripheral] in
+            guard let manager, let peripheral else { return }
+            manager.cancelPeripheralConnection(peripheral)
+        }
+    }
+
+    init(
+        host: DiscoveredBluetoothMac,
+        writeDriver: BluetoothClientWriteDriver,
+        simulatedMetadata: BluetoothServiceMetadata? = nil,
+        writeAckTimeoutSeconds: TimeInterval = ChocliftBluetooth.defaultWriteAckTimeoutSeconds
+    ) {
+        self.peripheral = nil
+        self.peripheralID = host.id
+        self.host = host
+        self.writeDriver = writeDriver
+        self.writeAckTimeoutSeconds = writeAckTimeoutSeconds
+        self.simulatedMetadataOnStart = simulatedMetadata
+        self.autoActivateOnStart = true
+        self.cancelConnectionHandler = writeDriver.cancelConnection
     }
 
     func matches(peripheral other: CBPeripheral) -> Bool {
-        peripheral.identifier == other.identifier
+        peripheralID == other.identifier
     }
 
-    func start() {}
+    func start() {
+        guard autoActivateOnStart, !isClosed, !didActivate else { return }
+        if let metadata = simulatedMetadataOnStart {
+            onBluetoothMetadata?(metadata)
+            guard !isClosed else { return }
+            let resolvedHost = DiscoveredBluetoothMac(
+                id: host.id,
+                name: metadata.macName.isEmpty ? host.name : metadata.macName,
+                macID: metadata.macID
+            )
+            markMetadataComplete(updatedHost: resolvedHost)
+        } else {
+            markMetadataComplete(updatedHost: nil)
+        }
+        isNotificationReady = true
+        if prepareActivationIfReady() {
+            fireReadyAndFlush()
+        }
+    }
 
     func markNotificationReady(_ frameCharacteristic: CBCharacteristic) {
         pendingFrameCharacteristic = frameCharacteristic
@@ -1281,12 +1379,32 @@ final class BluetoothClientLink: BluetoothMetadataAwareTransport {
 
     /// Transitions to active once both CCCD notification state and GATT metadata read have settled.
     func prepareActivationIfReady() -> Bool {
-        guard !isClosed, !didActivate, isNotificationReady, isMetadataComplete,
-              let frameCharacteristic = pendingFrameCharacteristic else {
+        guard !isClosed, !didActivate, isNotificationReady, isMetadataComplete else {
             return false
         }
+        if writeDriver == nil {
+            guard let frameCharacteristic = pendingFrameCharacteristic, let peripheral else {
+                return false
+            }
+            let cancelHandler = cancelConnectionHandler
+            writeDriver = BluetoothClientWriteDriver(
+                isConnected: { [weak peripheral] in
+                    peripheral?.state == .connected
+                },
+                supportsWriteWithResponse: { [weak frameCharacteristic] in
+                    frameCharacteristic?.properties.contains(.write) == true
+                },
+                maximumWriteValueLength: { [weak peripheral] writeType in
+                    peripheral?.maximumWriteValueLength(for: writeType) ?? 0
+                },
+                writeValue: { [weak peripheral, weak frameCharacteristic] chunk, writeType in
+                    guard let peripheral, let frameCharacteristic else { return }
+                    peripheral.writeValue(chunk, for: frameCharacteristic, type: writeType)
+                },
+                cancelConnection: cancelHandler
+            )
+        }
         didActivate = true
-        characteristic = frameCharacteristic
         return true
     }
 
@@ -1310,49 +1428,141 @@ final class BluetoothClientLink: BluetoothMetadataAwareTransport {
     }
 
     func didCompleteInFlightWrite() {
+        guard !isClosed else {
+            cancelWriteAckWatchdog()
+            writeInFlight = false
+            return
+        }
+        cancelWriteAckWatchdog()
         writeInFlight = false
         flushNextWrite()
+    }
+
+    func didFailInFlightWrite(_ error: Error) {
+        failWrite(reason: error.localizedDescription)
+    }
+
+    func failWrite(reason: String) {
+        guard !isClosed else {
+            cancelWriteAckWatchdog()
+            writeInFlight = false
+            return
+        }
+        isClosed = true
+        cancelWriteAckWatchdog()
+        writeInFlight = false
+        outbound.clear()
+        codec.reset()
+        onInvalidated?()
+        cancelConnectionHandler()
+        onTransportError?(reason)
+        onClosed?()
     }
 
     func failAndCancelConnection() {
         guard !isClosed else { return }
         isClosed = true
+        cancelWriteAckWatchdog()
         writeInFlight = false
         outbound.clear()
         codec.reset()
-        manager.cancelPeripheralConnection(peripheral)
+        onInvalidated?()
+        cancelConnectionHandler()
         onClosed?()
     }
 
     func handleDisconnected() {
         guard !isClosed else { return }
         isClosed = true
+        cancelWriteAckWatchdog()
         writeInFlight = false
         outbound.clear()
         codec.reset()
+        onInvalidated?()
         onClosed?()
     }
 
     func cancel() {
         guard !isClosed else { return }
         isClosed = true
+        cancelWriteAckWatchdog()
         writeInFlight = false
         outbound.clear()
         codec.reset()
-        manager.cancelPeripheralConnection(peripheral)
+        onInvalidated?()
+        cancelConnectionHandler()
         onClosed?()
     }
 
+    private func cancelWriteAckWatchdog() {
+        writeAckWatchdogTask?.cancel()
+        writeAckWatchdogTask = nil
+    }
+
+    private func armWriteAckWatchdog(sequence: UInt64) {
+        cancelWriteAckWatchdog()
+        let timeout = max(0.01, writeAckTimeoutSeconds)
+        writeAckWatchdogTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(timeout))
+            guard let self,
+                  !Task.isCancelled,
+                  !self.isClosed,
+                  self.writeInFlight,
+                  self.writeSequence == sequence else {
+                return
+            }
+            self.failWrite(
+                reason: L10n.tr(
+                    "蓝牙写入未收到确认（可能超出设备 ATT 写入上限被拒绝）。",
+                    "Bluetooth write was not acknowledged (rejected locally or timed out)."
+                )
+            )
+        }
+    }
+
     private func flushNextWrite() {
-        guard !isClosed, !writeInFlight, let characteristic else { return }
-        let rawMax = peripheral.maximumWriteValueLength(for: .withoutResponse)
-        let chunkSize = max(
-            ChocliftBluetooth.minATTChunkSize,
-            min(ChocliftBluetooth.defaultChunkSize, rawMax > 0 ? rawMax : ChocliftBluetooth.minATTChunkSize)
-        )
-        guard let chunk = outbound.popNextChunk(maxBytes: chunkSize) else { return }
-        writeInFlight = true
-        peripheral.writeValue(chunk, for: characteristic, type: .withResponse)
+        guard !isFlushingWrites else { return }
+        isFlushingWrites = true
+        defer { isFlushingWrites = false }
+
+        while !isClosed, !writeInFlight, didActivate, !outbound.isEmpty {
+            guard let driver = writeDriver, driver.isConnected() else {
+                failWrite(
+                    reason: L10n.tr(
+                        "蓝牙外设已断开连接，无法发送数据。",
+                        "Bluetooth peripheral is disconnected; unable to write frame."
+                    )
+                )
+                return
+            }
+            guard driver.supportsWriteWithResponse() else {
+                failWrite(
+                    reason: L10n.tr(
+                        "蓝牙特征不支持带确认写入。",
+                        "Bluetooth characteristic does not permit write-with-response."
+                    )
+                )
+                return
+            }
+            let rawMax = driver.maximumWriteValueLength(Self.frameWriteType)
+            guard let chunkSize = ChocliftBluetooth.negotiatedWriteChunkSize(maximumWriteValueLength: rawMax) else {
+                failWrite(
+                    reason: L10n.tr(
+                        "蓝牙连接返回的带确认写入长度上限无效（\(rawMax) 字节）。",
+                        "Bluetooth write rejected: maximumWriteValueLength(for: .withResponse) returned \(rawMax)."
+                    )
+                )
+                return
+            }
+            guard let chunk = outbound.popNextChunk(maxBytes: chunkSize) else {
+                return
+            }
+            writeInFlight = true
+            writeSequence &+= 1
+            let sequence = writeSequence
+            armWriteAckWatchdog(sequence: sequence)
+            driver.writeValue(chunk, Self.frameWriteType)
+        }
     }
 }
 #endif
