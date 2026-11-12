@@ -523,7 +523,7 @@ final class CompanionLoopbackIntegrationTests: XCTestCase {
         client.disconnect()
 
         // Intercept wire frames sent to Mac B (which shares the same human-readable name "MacBook Pro"
-        // and advertises its 32-bit macIDTag before GATT metadata or TCP hello completes)
+        // and is discovered with only ChocliftBluetooth.serviceUUID — macID is nil prior to post-connection read)
         let serverBPipe = serverB.acceptInMemoryCompanion()
         var clientMessagesToMacB: [ClientMessage] = []
         var wireAcc = WireStreamAccumulator()
@@ -542,7 +542,6 @@ final class CompanionLoopbackIntegrationTests: XCTestCase {
             to: inspectingTransport,
             targetName: "MacBook Pro",
             macID: nil,
-            macIDTag: ChocliftBluetooth.macIDTag(for: "mac-B-secondary"),
             peripheralID: UUID()
         )
 

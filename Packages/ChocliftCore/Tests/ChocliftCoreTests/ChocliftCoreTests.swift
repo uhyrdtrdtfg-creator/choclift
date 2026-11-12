@@ -276,47 +276,72 @@ final class ChocliftCoreTests: XCTestCase {
     }
 
     @MainActor
-    func testAdvertisedMacIDTagUUIDAndSecondSavedMacTokenIsolation() throws {
+    func testPostConnectionMacIdentityAndSecondSavedMacTokenIsolation() throws {
         let macAlpha = "mac-studio-alpha-001"
         let macBeta = "mac-studio-beta-002"
+        let alphaPeripheralID = UUID()
+        let unknownPeripheralID = UUID()
 
-        let alphaTagUUID = ChocliftBluetooth.macIDTagUUID(for: macAlpha)
-        let betaTagUUID = ChocliftBluetooth.macIDTagUUID(for: macBeta)
+        let adv = ChocliftBluetooth.makeConnectableAdvertisementData()
+        XCTAssertLessThanOrEqual(
+            ChocliftBluetooth.connectableAdvertisementByteCount(adv),
+            ChocliftBluetooth.maxLegacyConnectableAdvertisingBytes
+        )
 
-        // 32-bit CBUUID occupies 4 bytes so serviceUUID (16B) + macIDTagUUID (4B) fits inside 31-byte BLE primary AD
-        XCTAssertEqual(alphaTagUUID.data.count, 4)
-        XCTAssertEqual(betaTagUUID.data.count, 4)
-        XCTAssertNotEqual(alphaTagUUID, betaTagUUID)
+        let browser = BluetoothCompanionBrowser()
+        let scanned = try XCTUnwrap(
+            browser.ingestAdvertisement(
+                peripheralID: alphaPeripheralID,
+                peripheralName: nil,
+                advertisementData: adv
+            )
+        )
+        XCTAssertNil(scanned.macID)
 
-        let extractedAlpha = ChocliftBluetooth.extractMacIDTag(from: [ChocliftBluetooth.serviceUUID, alphaTagUUID])
-        XCTAssertEqual(extractedAlpha, ChocliftBluetooth.macIDTag(for: macAlpha))
+        let metadataBytes = try BluetoothServiceMetadata(
+            macID: macAlpha,
+            macName: "MacBook Pro"
+        ).encodedCharacteristicValue()
+        let resolved = try XCTUnwrap(
+            browser.applyMetadataCharacteristicValue(
+                metadataBytes,
+                for: alphaPeripheralID,
+                fallbackName: scanned.name
+            )
+        )
+        XCTAssertEqual(resolved.host.macID, macAlpha)
+        XCTAssertEqual(resolved.host.name, "MacBook Pro")
 
-        let suiteName = "com.choclift.tests.tag.\(UUID().uuidString)"
+        let suiteName = "com.choclift.tests.identity.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let seeded = [
             SavedMacCredential(macID: "mac-other-top", macName: "Home iMac", authToken: "tok-home-imac"),
-            SavedMacCredential(macID: macAlpha, macName: "MacBook Pro", authToken: "tok-secret-alpha")
+            SavedMacCredential(
+                macID: macAlpha,
+                macName: "MacBook Pro",
+                authToken: "tok-secret-alpha",
+                lastBluetoothPeripheralID: alphaPeripheralID
+            )
         ]
-        defaults.set(try JSONEncoder().encode(seeded), forKey: "tagtest.savedMacs")
+        defaults.set(try JSONEncoder().encode(seeded), forKey: "idtest.savedMacs")
 
         let client = CompanionClientEngine(
-            deviceID: "iphone-tag-1",
-            deviceName: "iPhone",
-            platform: .iPhone,
+            deviceID: "watch-id-1",
+            deviceName: "Apple Watch",
+            platform: .appleWatch,
             userDefaults: defaults,
-            storageKeyPrefix: "tagtest"
+            storageKeyPrefix: "idtest"
         )
 
-        // Exact match for saved Mac Alpha via advertised 32-bit BLE tag (even though Mac Alpha is not savedMacs[0])
+        // Exact match for saved Mac Alpha via post-connection GATT metadata macID (even though Mac Alpha is not savedMacs[0])
         XCTAssertEqual(
             client.tokenForConnectAttempt(
-                macID: nil,
-                macIDTag: ChocliftBluetooth.macIDTag(for: macAlpha),
-                peripheralID: nil,
+                macID: resolved.host.macID,
+                peripheralID: unknownPeripheralID,
                 directHost: nil,
-                targetName: "MacBook Pro"
+                targetName: "Mac"
             ),
             "tok-secret-alpha"
         )
@@ -325,20 +350,20 @@ final class ChocliftCoreTests: XCTestCase {
         XCTAssertNil(
             client.tokenForConnectAttempt(
                 macID: macBeta,
-                macIDTag: nil,
-                peripheralID: nil,
+                peripheralID: alphaPeripheralID,
                 directHost: nil,
                 targetName: "MacBook Pro"
-            )
+            ),
+            "Known different macID must override any cached peripheralID or display name"
         )
         XCTAssertNil(
             client.tokenForConnectAttempt(
                 macID: nil,
-                macIDTag: ChocliftBluetooth.macIDTag(for: macBeta),
-                peripheralID: nil,
+                peripheralID: unknownPeripheralID,
                 directHost: nil,
                 targetName: "MacBook Pro"
-            )
+            ),
+            "Unidentified peripheral sharing only display name must never receive another Mac's saved token"
         )
     }
 

@@ -6,14 +6,11 @@ public struct DiscoveredBluetoothMac: Identifiable, Equatable, Hashable, Sendabl
     public let id: UUID
     public var name: String
     public var macID: String?
-    /// Compact 8-hex-digit 32-bit FNV-1a tag derived from `macID` and broadcast inside the BLE primary advertisement.
-    public var macIDTag: String?
 
-    public init(id: UUID, name: String, macID: String?, macIDTag: String? = nil) {
+    public init(id: UUID, name: String, macID: String?) {
         self.id = id
         self.name = name
         self.macID = macID
-        self.macIDTag = macIDTag ?? macID.map { ChocliftBluetooth.macIDTag(for: $0) }
     }
 }
 
@@ -25,32 +22,86 @@ public enum ChocliftBluetooth {
     public static let minATTChunkSize = 20
     /// Conservative upper cap per GATT notification/write PDU across macOS, iOS, and watchOS.
     public static let defaultChunkSize = 180
+    /// Legacy BLE 4.x connectable undirected advertising (`ADV_IND`) payload limit in bytes.
+    public static let maxLegacyConnectableAdvertisingBytes = 31
     public static let macIDKey = "macID"
     public static let macNameKey = "macName"
 
-    /// Deterministic 8-hex-digit 32-bit tag for `macID`, avoiding the 16-bit Bluetooth SIG range (`0x00000000...0x0000FFFF`)
-    /// so `CBUUID(string:)` encodes a 4-byte 32-bit service UUID that fits alongside `serviceUUID` in a 31-byte BLE packet.
-    public static func macIDTag(for macID: String) -> String {
-        var hash: UInt32 = 0x811C_9DC5
-        for byte in macID.utf8 {
-            hash ^= UInt32(byte)
-            hash &*= 0x0100_0193
-        }
-        if hash <= 0x0000_FFFF {
-            hash |= 0xC40C_0000
-        }
-        return String(format: "%08X", hash)
+    /// Builds the primary connectable CoreBluetooth advertising payload for `CBPeripheralManager.startAdvertising(_:)`.
+    ///
+    /// `CBPeripheralManager.startAdvertising(_:)` accepts a single dictionary and offers no separate scan-response
+    /// parameter: placing a second UUID or `CBAdvertisementDataLocalNameKey` in this dictionary overflows the
+    /// 31-byte legacy connectable `ADV_IND` budget on macOS and can silently downgrade the advertisement to
+    /// non-connectable, which watchOS ignores during foreground BLE scanning.
+    ///
+    /// Only the single 128-bit `serviceUUID` is advertised here (`3B Flags + 18B 128-bit UUID list = 21 bytes`).
+    /// macOS supplies the system GAP device name in active scan responses (`CBPeripheral.name`), and full `macID` +
+    /// `macName` identity is resolved post-connection via the readable `metadataUUID` GATT characteristic.
+    public static func makeConnectableAdvertisementData() -> [String: Any] {
+        [
+            CBAdvertisementDataServiceUUIDsKey: [serviceUUID]
+        ]
     }
 
-    public static func macIDTagUUID(for macID: String) -> CBUUID {
-        CBUUID(string: macIDTag(for: macID))
+    /// Calculates the over-the-air BLE legacy `ADV_IND` payload size in bytes for a `startAdvertising` dictionary:
+    /// - `3` bytes for mandatory BLE Flags AD structure (`[0x02, 0x01, flags]`)
+    /// - Service UUID list AD structures (`1-byte length + 1-byte AD type + N * uuidBytes`), where non-16-bit
+    ///   UUIDs occupy 16 bytes each on the air in CoreBluetooth BLE advertisements
+    /// - Optional Local Name (`2 + utf8.count`), Tx Power (`3`), Manufacturer Data (`2 + count`), and Service Data
+    public static func connectableAdvertisementByteCount(_ advertisementData: [String: Any]) -> Int {
+        var totalBytes = 3 // Mandatory BLE Flags AD structure: [Length=2, Type=0x01, Flags]
+
+        func uuidListByteCount(_ uuids: [CBUUID]) -> Int {
+            guard !uuids.isEmpty else { return 0 }
+            let sixteenBitCount = uuids.filter { $0.data.count == 2 }.count
+            let oneTwentyEightBitCount = uuids.count - sixteenBitCount
+            var bytes = 0
+            if sixteenBitCount > 0 {
+                bytes += 2 + (sixteenBitCount * 2)
+            }
+            if oneTwentyEightBitCount > 0 {
+                bytes += 2 + (oneTwentyEightBitCount * 16)
+            }
+            return bytes
+        }
+
+        if let serviceUUIDs = advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] {
+            totalBytes += uuidListByteCount(serviceUUIDs)
+        }
+
+        if let solicitedUUIDs = advertisementData[CBAdvertisementDataSolicitedServiceUUIDsKey] as? [CBUUID] {
+            totalBytes += uuidListByteCount(solicitedUUIDs)
+        }
+
+        if let localName = advertisementData[CBAdvertisementDataLocalNameKey] as? String,
+           !localName.isEmpty {
+            totalBytes += 2 + localName.utf8.count
+        }
+
+        if advertisementData[CBAdvertisementDataTxPowerLevelKey] != nil {
+            totalBytes += 3
+        }
+
+        if let manufacturerData = advertisementData[CBAdvertisementDataManufacturerDataKey] as? Data,
+           !manufacturerData.isEmpty {
+            totalBytes += 2 + manufacturerData.count
+        }
+
+        if let serviceData = advertisementData[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data] {
+            for (uuid, data) in serviceData {
+                let uuidWidth = (uuid.data.count == 2) ? 2 : 16
+                totalBytes += 2 + uuidWidth + data.count
+            }
+        }
+
+        return totalBytes
     }
 
-    public static func extractMacIDTag(from advertisedUUIDs: [CBUUID]) -> String? {
-        advertisedUUIDs
-            .first(where: { $0 != serviceUUID && $0.data.count == 4 })?
-            .uuidString
-            .uppercased()
+    public static func isAdvertisementConnectable(_ advertisementData: [String: Any]) -> Bool {
+        if let connectable = advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber {
+            return connectable.boolValue
+        }
+        return true
     }
 
     /// Ensures packaged `.app` / `.appex` bundles carry `NSBluetoothAlwaysUsageDescription` before touching CoreBluetooth,
@@ -94,6 +145,8 @@ public enum ChocliftBluetooth {
 }
 
 public struct BluetoothServiceMetadata: Codable, Equatable, Sendable {
+    public static let maxGATTAttributeBytes = 512
+
     public var macID: String
     public var macName: String
     public var protocolVersion: Int
@@ -107,6 +160,34 @@ public struct BluetoothServiceMetadata: Codable, Equatable, Sendable {
         self.macName = macName
         self.protocolVersion = protocolVersion
     }
+
+    public func encodedCharacteristicValue(maxBytes: Int = Self.maxGATTAttributeBytes) throws -> Data {
+        let encoder = JSONEncoder()
+        let encoded = try encoder.encode(self)
+        guard encoded.count > maxBytes, !macName.isEmpty else {
+            return encoded
+        }
+        var trimmed = self
+        var scalars = Array(macName.unicodeScalars)
+        while !scalars.isEmpty {
+            scalars.removeLast()
+            trimmed.macName = String(String.UnicodeScalarView(scalars))
+            let candidate = try encoder.encode(trimmed)
+            if candidate.count <= maxBytes {
+                return candidate
+            }
+        }
+        trimmed.macName = ""
+        return try encoder.encode(trimmed)
+    }
+
+    public static func decodeCharacteristicValue(_ data: Data) throws -> BluetoothServiceMetadata {
+        try JSONDecoder().decode(BluetoothServiceMetadata.self, from: data)
+    }
+}
+
+public protocol BluetoothMetadataAwareTransport: CompanionFrameTransport {
+    var onBluetoothMetadata: ((BluetoothServiceMetadata) -> Void)? { get set }
 }
 
 /// Segments and reassembles standard Choclift length-prefixed wire frames (`[4-byte BE length][JSON]`)
@@ -249,16 +330,19 @@ public final class BluetoothOutboundBuffer {
 }
 
 /// Deterministic BLE transport simulator exercising `BluetoothOutboundBuffer` MTU chunking,
-/// partial 1..3 byte header splits, `updateValue` notify backpressure, and disconnect handling
-/// without requiring physical Bluetooth hardware in automated tests.
-public final class SimulatedBLECompanionPipe: CompanionFrameTransport {
+/// partial 1..3 byte header splits, `updateValue` notify backpressure, post-connection GATT metadata read,
+/// and disconnect handling without requiring physical Bluetooth hardware in automated tests.
+public final class SimulatedBLECompanionPipe: BluetoothMetadataAwareTransport {
     public var onReady: (() -> Void)?
     public var onPayload: ((Data) -> Void)?
     public var onClosed: (() -> Void)?
+    public var onBluetoothMetadata: ((BluetoothServiceMetadata) -> Void)?
 
     public let mtu: Int
     public var maxChunksPerFlush: Int?
     public var splitFirstHeaderBytes: Int?
+    /// Raw JSON characteristic value served when the peer simulates reading `ChocliftBluetooth.metadataUUID`.
+    public var advertisedMetadataData: Data?
 
     public private(set) var totalChunksSent: Int = 0
     public private(set) var backpressurePauseCount: Int = 0
@@ -273,23 +357,27 @@ public final class SimulatedBLECompanionPipe: CompanionFrameTransport {
     public init(
         mtu: Int = ChocliftBluetooth.minATTChunkSize,
         maxChunksPerFlush: Int? = nil,
-        splitFirstHeaderBytes: Int? = nil
+        splitFirstHeaderBytes: Int? = nil,
+        advertisedMetadataData: Data? = nil
     ) {
         self.mtu = max(1, mtu)
         self.maxChunksPerFlush = maxChunksPerFlush
         self.splitFirstHeaderBytes = splitFirstHeaderBytes
+        self.advertisedMetadataData = advertisedMetadataData
     }
 
     public static func pair(
         mtu: Int = ChocliftBluetooth.minATTChunkSize,
         maxServerChunksPerFlush: Int? = nil,
         maxClientChunksPerFlush: Int? = nil,
-        splitFirstHeaderBytes: Int? = nil
+        splitFirstHeaderBytes: Int? = nil,
+        serverMetadata: BluetoothServiceMetadata? = nil
     ) -> (server: SimulatedBLECompanionPipe, client: SimulatedBLECompanionPipe) {
         let server = SimulatedBLECompanionPipe(
             mtu: mtu,
             maxChunksPerFlush: maxServerChunksPerFlush,
-            splitFirstHeaderBytes: splitFirstHeaderBytes
+            splitFirstHeaderBytes: splitFirstHeaderBytes,
+            advertisedMetadataData: try? serverMetadata?.encodedCharacteristicValue()
         )
         let client = SimulatedBLECompanionPipe(
             mtu: mtu,
@@ -308,6 +396,11 @@ public final class SimulatedBLECompanionPipe: CompanionFrameTransport {
     public func start() {
         guard !started, !closed else { return }
         started = true
+        if let metadataData = peer?.advertisedMetadataData,
+           let metadata = try? BluetoothServiceMetadata.decodeCharacteristicValue(metadataData) {
+            onBluetoothMetadata?(metadata)
+        }
+        guard !closed else { return }
         onReady?()
         flush()
     }
@@ -454,13 +547,17 @@ public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBP
         manager.add(service)
     }
 
-    private func encodedMetadata() -> Data {
+    public var connectableAdvertisementData: [String: Any] {
+        ChocliftBluetooth.makeConnectableAdvertisementData()
+    }
+
+    public func encodedMetadata() -> Data {
         let payload = BluetoothServiceMetadata(
             macID: macID,
             macName: macName,
             protocolVersion: ChocliftDefaults.protocolVersion
         )
-        return (try? JSONEncoder().encode(payload)) ?? Data()
+        return (try? payload.encodedCharacteristicValue()) ?? Data()
     }
 
     private func updateAdvertisingState(
@@ -509,13 +606,7 @@ public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBP
                 return
             }
             guard self.wantsAdvertising else { return }
-            peripheral.startAdvertising([
-                CBAdvertisementDataServiceUUIDsKey: [
-                    ChocliftBluetooth.serviceUUID,
-                    ChocliftBluetooth.macIDTagUUID(for: self.macID)
-                ],
-                CBAdvertisementDataLocalNameKey: self.macName
-            ])
+            peripheral.startAdvertising(self.connectableAdvertisementData)
         }
     }
 
@@ -870,6 +961,69 @@ public final class BluetoothCompanionBrowser: NSObject, ObservableObject, CBCent
         }
     }
 
+    @discardableResult
+    public func ingestAdvertisement(
+        peripheralID: UUID,
+        peripheralName: String?,
+        advertisementData: [String: Any]
+    ) -> DiscoveredBluetoothMac? {
+        guard ChocliftBluetooth.isAdvertisementConnectable(advertisementData) else {
+            return nil
+        }
+
+        let advName = (advertisementData[CBAdvertisementDataLocalNameKey] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackName = peripheralName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let existing = knownHosts[peripheralID]
+
+        let resolvedName: String = {
+            if let existing, existing.macID != nil, !existing.name.isEmpty {
+                return existing.name
+            }
+            if let advName, !advName.isEmpty {
+                return advName
+            }
+            if let fallbackName, !fallbackName.isEmpty {
+                return fallbackName
+            }
+            return existing?.name ?? "Mac"
+        }()
+
+        let host = DiscoveredBluetoothMac(
+            id: peripheralID,
+            name: resolvedName,
+            macID: existing?.macID
+        )
+        upsertDiscoveredHost(host)
+        return host
+    }
+
+    @discardableResult
+    public func applyMetadataCharacteristicValue(
+        _ data: Data,
+        for peripheralID: UUID,
+        fallbackName: String
+    ) -> (host: DiscoveredBluetoothMac, metadata: BluetoothServiceMetadata)? {
+        guard let metadata = try? BluetoothServiceMetadata.decodeCharacteristicValue(data) else {
+            return nil
+        }
+        let updated = DiscoveredBluetoothMac(
+            id: peripheralID,
+            name: metadata.macName.isEmpty ? fallbackName : metadata.macName,
+            macID: metadata.macID
+        )
+        upsertDiscoveredHost(updated)
+        onMetadataResolved?(updated)
+        return (updated, metadata)
+    }
+
+    private func activateLinkIfReady(_ link: BluetoothClientLink) {
+        guard activeLink === link, link.prepareActivationIfReady() else { return }
+        onLinkReady?(link, link.host)
+        guard activeLink === link else { return }
+        link.fireReadyAndFlush()
+    }
+
     public nonisolated func centralManager(
         _ central: CBCentralManager,
         didDiscover peripheral: CBPeripheral,
@@ -877,39 +1031,35 @@ public final class BluetoothCompanionBrowser: NSObject, ObservableObject, CBCent
         rssi RSSI: NSNumber
     ) {
         runOnMain {
-            if let connectable = advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber,
-               !connectable.boolValue {
+            guard ChocliftBluetooth.isAdvertisementConnectable(advertisementData) else {
                 return
             }
-
             self.peripherals[peripheral.identifier] = peripheral
-            let advName = (advertisementData[CBAdvertisementDataLocalNameKey] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            let fallbackName = peripheral.name?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let advertisedUUIDs = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID]) ?? []
-            let advertisedTag = ChocliftBluetooth.extractMacIDTag(from: advertisedUUIDs)
-            let existing = self.knownHosts[peripheral.identifier]
-
-            let resolvedName: String = {
-                if let existing, existing.macID != nil, !existing.name.isEmpty {
-                    return existing.name
-                }
-                if let advName, !advName.isEmpty {
-                    return advName
-                }
-                if let fallbackName, !fallbackName.isEmpty {
-                    return fallbackName
-                }
-                return existing?.name ?? "Mac"
-            }()
-
-            let host = DiscoveredBluetoothMac(
-                id: peripheral.identifier,
-                name: resolvedName,
-                macID: existing?.macID,
-                macIDTag: advertisedTag ?? existing?.macIDTag
+            peripheral.delegate = self
+            _ = self.ingestAdvertisement(
+                peripheralID: peripheral.identifier,
+                peripheralName: peripheral.name,
+                advertisementData: advertisementData
             )
-            self.upsertDiscoveredHost(host)
+        }
+    }
+
+    public nonisolated func peripheralDidUpdateName(_ peripheral: CBPeripheral) {
+        runOnMain {
+            guard let updatedName = peripheral.name?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !updatedName.isEmpty,
+                  let existing = self.knownHosts[peripheral.identifier],
+                  existing.macID == nil,
+                  existing.name != updatedName else {
+                return
+            }
+            self.upsertDiscoveredHost(
+                DiscoveredBluetoothMac(
+                    id: peripheral.identifier,
+                    name: updatedName,
+                    macID: nil
+                )
+            )
         }
     }
 
@@ -999,9 +1149,7 @@ public final class BluetoothCompanionBrowser: NSObject, ObservableObject, CBCent
             }
 
             peripheral.setNotifyValue(true, for: frameChar)
-            if link.activateIfReady() {
-                self.onLinkReady?(link, link.host)
-            }
+            self.activateLinkIfReady(link)
         }
     }
 
@@ -1020,9 +1168,7 @@ public final class BluetoothCompanionBrowser: NSObject, ObservableObject, CBCent
             }
 
             link.markNotificationReady(characteristic)
-            if link.activateIfReady() {
-                self.onLinkReady?(link, link.host)
-            }
+            self.activateLinkIfReady(link)
         }
     }
 
@@ -1038,21 +1184,17 @@ public final class BluetoothCompanionBrowser: NSObject, ObservableObject, CBCent
                 var resolvedHost: DiscoveredBluetoothMac?
                 if error == nil,
                    let data = characteristic.value,
-                   let metadata = try? JSONDecoder().decode(BluetoothServiceMetadata.self, from: data) {
-                    let updated = DiscoveredBluetoothMac(
-                        id: peripheral.identifier,
-                        name: metadata.macName.isEmpty ? link.host.name : metadata.macName,
-                        macID: metadata.macID,
-                        macIDTag: ChocliftBluetooth.macIDTag(for: metadata.macID)
-                    )
-                    self.upsertDiscoveredHost(updated)
-                    self.onMetadataResolved?(updated)
-                    resolvedHost = updated
+                   let resolved = self.applyMetadataCharacteristicValue(
+                       data,
+                       for: peripheral.identifier,
+                       fallbackName: link.host.name
+                   ) {
+                    resolvedHost = resolved.host
+                    link.onBluetoothMetadata?(resolved.metadata)
                 }
+                guard self.activeLink === link else { return }
                 link.markMetadataComplete(updatedHost: resolvedHost)
-                if link.activateIfReady() {
-                    self.onLinkReady?(link, link.host)
-                }
+                self.activateLinkIfReady(link)
                 return
             }
 
@@ -1090,10 +1232,11 @@ public final class BluetoothCompanionBrowser: NSObject, ObservableObject, CBCent
     }
 }
 
-final class BluetoothClientLink: CompanionFrameTransport {
+final class BluetoothClientLink: BluetoothMetadataAwareTransport {
     var onReady: (() -> Void)?
     var onPayload: ((Data) -> Void)?
     var onClosed: (() -> Void)?
+    var onBluetoothMetadata: ((BluetoothServiceMetadata) -> Void)?
 
     private let manager: CBCentralManager
     let peripheral: CBPeripheral
@@ -1136,18 +1279,21 @@ final class BluetoothClientLink: CompanionFrameTransport {
         isMetadataComplete = true
     }
 
-    /// Fires `onReady` once both CCCD notification state and optional GATT metadata read have settled.
-    @discardableResult
-    func activateIfReady() -> Bool {
+    /// Transitions to active once both CCCD notification state and GATT metadata read have settled.
+    func prepareActivationIfReady() -> Bool {
         guard !isClosed, !didActivate, isNotificationReady, isMetadataComplete,
               let frameCharacteristic = pendingFrameCharacteristic else {
             return false
         }
         didActivate = true
         characteristic = frameCharacteristic
+        return true
+    }
+
+    func fireReadyAndFlush() {
+        guard !isClosed, didActivate else { return }
         onReady?()
         flushNextWrite()
-        return true
     }
 
     func accept(_ chunk: Data) throws {

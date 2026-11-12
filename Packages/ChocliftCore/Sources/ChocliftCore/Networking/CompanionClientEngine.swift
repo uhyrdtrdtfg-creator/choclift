@@ -99,6 +99,8 @@ public final class CompanionClientEngine: ObservableObject {
 
     /// Optional test hook allowing simulated BLE transports to exercise automatic token reconnect on drop.
     public var simulatedBluetoothReconnectProvider: (() -> CompanionFrameTransport?)?
+    /// Internal test hook allowing simulated BLE discovery + GATT metadata sessions without physical radio hardware.
+    var simulatedBluetoothConnector: ((DiscoveredBluetoothMac) -> CompanionFrameTransport?)?
     public var reconnectDelaySeconds: TimeInterval = 2.0
     public var connectTimeoutSeconds: TimeInterval = 8.0
     public var heartbeatIntervalSeconds: TimeInterval = 5.0
@@ -132,8 +134,10 @@ public final class CompanionClientEngine: ObservableObject {
     private var activeDirectHost: String?
     private var activeDirectPort: UInt16?
     private var activeBluetoothPeripheralID: UUID?
-    private var activeBluetoothMacIDTag: String?
     private var candidateMacID: String?
+    private var isSavedMacProbeConnect = false
+    private var probeTargetMacID: String?
+    private var rejectedAutoProbePeripheralIDs: Set<UUID> = []
     private var retriedTokenMacIDs: Set<String> = []
     private var consecutiveReconnectFailures: Int = 0
 
@@ -166,6 +170,7 @@ public final class CompanionClientEngine: ObservableObject {
 
     public func startBrowsing() {
         stopBrowsing()
+        rejectedAutoProbePeripheralIDs.removeAll()
         isBrowsingActive = true
         browsingStartedAt = Date()
 
@@ -228,7 +233,7 @@ public final class CompanionClientEngine: ObservableObject {
         }
         scanner.onDiscoveredChanged = { [weak self] hosts in
             guard let self else { return }
-            self.discoveredBluetoothMacs = hosts
+            self.discoveredBluetoothMacs = self.enrichedDiscoveredBluetoothMacs(from: hosts)
             self.isBluetoothPoweredOn = scanner.isPoweredOn
             self.bluetoothAvailability = scanner.availability
             if !hosts.isEmpty {
@@ -238,37 +243,58 @@ public final class CompanionClientEngine: ObservableObject {
         }
         scanner.onMetadataResolved = { [weak self] host in
             guard let self else { return }
-            self.discoveredBluetoothMacs = scanner.discovered
-            if self.activeLink == .bluetooth && self.activeBluetoothPeripheralID == host.id {
-                self.activeTargetName = host.name
-                if let macID = host.macID {
-                    self.candidateMacID = macID
-                    self.activeBluetoothMacIDTag = ChocliftBluetooth.macIDTag(for: macID)
-                }
-                if case .connecting = self.connectionState {
-                    self.connectionState = .connecting(targetName: host.name)
-                }
+            self.discoveredBluetoothMacs = self.enrichedDiscoveredBluetoothMacs(from: scanner.discovered)
+            if let macID = host.macID {
+                self.handleResolvedBluetoothIdentity(
+                    macID: macID,
+                    macName: host.name,
+                    peripheralID: host.id
+                )
             }
         }
         scanner.onLinkReady = { [weak self] _, host in
             guard let self else { return }
-            self.discoveredBluetoothMacs = scanner.discovered
+            self.discoveredBluetoothMacs = self.enrichedDiscoveredBluetoothMacs(from: scanner.discovered)
             self.isBluetoothPoweredOn = scanner.isPoweredOn
             self.bluetoothAvailability = scanner.availability
             if self.activeLink == .bluetooth && self.activeBluetoothPeripheralID == host.id {
                 self.activeTargetName = host.name
                 if let macID = host.macID {
                     self.candidateMacID = macID
-                    self.activeBluetoothMacIDTag = ChocliftBluetooth.macIDTag(for: macID)
-                } else if let tag = host.macIDTag {
-                    self.activeBluetoothMacIDTag = tag
                 }
             }
         }
         scanner.start()
         isBluetoothPoweredOn = scanner.isPoweredOn
         bluetoothAvailability = scanner.availability
-        discoveredBluetoothMacs = scanner.discovered
+        discoveredBluetoothMacs = enrichedDiscoveredBluetoothMacs(from: scanner.discovered)
+    }
+
+    func simulateDiscoveredBluetoothMacs(
+        _ hosts: [DiscoveredBluetoothMac],
+        autoConnect: Bool = true
+    ) {
+        isBrowsingActive = true
+        discoveredBluetoothMacs = enrichedDiscoveredBluetoothMacs(from: hosts)
+        if !hosts.isEmpty {
+            consecutiveReconnectFailures = 0
+        }
+        if autoConnect {
+            autoConnectIfAppropriate()
+        }
+    }
+
+    private func enrichedDiscoveredBluetoothMacs(from hosts: [DiscoveredBluetoothMac]) -> [DiscoveredBluetoothMac] {
+        let mapped = hosts.map { host -> DiscoveredBluetoothMac in
+            guard host.macID == nil,
+                  host.name == "Mac",
+                  let saved = savedMacs.first(where: { $0.lastBluetoothPeripheralID == host.id }),
+                  !saved.macName.isEmpty else {
+                return host
+            }
+            return DiscoveredBluetoothMac(id: host.id, name: saved.macName, macID: nil)
+        }
+        return mapped.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     public func stopBrowsing() {
@@ -283,10 +309,15 @@ public final class CompanionClientEngine: ObservableObject {
 
     /// Re-arms discovery and saved-token auto-reconnect when returning to foreground (e.g. watchOS wrist raise).
     public func handleAppDidBecomeActive() {
-        if !isBrowsingActive {
-            startBrowsing()
-        } else {
-            bluetoothBrowser?.start()
+        if connectionState == .disconnected && !intentionalDisconnect {
+            rejectedAutoProbePeripheralIDs.removeAll()
+        }
+        if simulatedBluetoothConnector == nil {
+            if !isBrowsingActive {
+                startBrowsing()
+            } else {
+                bluetoothBrowser?.start()
+            }
         }
         if connectionState == .disconnected && !intentionalDisconnect {
             consecutiveReconnectFailures = 0
@@ -314,7 +345,16 @@ public final class CompanionClientEngine: ObservableObject {
         if allowBluetoothNow || elapsed >= 0.65 {
             wifiPreferenceTask?.cancel()
             wifiPreferenceTask = nil
-            connectBluetooth(to: btHost)
+            intentionalDisconnect = false
+            consecutiveReconnectFailures = 0
+            lastConnectionIssue = nil
+            clearPINGlitchState()
+            connectBluetoothInternal(
+                to: btHost,
+                preservePINState: false,
+                probeSavedMac: btHost.macID == nil,
+                probeTargetMacID: nil
+            )
         } else if wifiPreferenceTask == nil {
             let remaining = max(0.05, 0.65 - elapsed)
             wifiPreferenceTask = Task { @MainActor [weak self] in
@@ -357,23 +397,32 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     private func matchingDiscoveredBluetoothHost(for saved: SavedMacCredential) -> DiscoveredBluetoothMac? {
-        let expectedTag = ChocliftBluetooth.macIDTag(for: saved.macID)
         if let byID = discoveredBluetoothMacs.first(where: { $0.macID == saved.macID }) {
             return byID
         }
-        if let byTag = discoveredBluetoothMacs.first(where: { $0.macIDTag == expectedTag }) {
-            return byTag
-        }
         if let pid = saved.lastBluetoothPeripheralID,
-           let byPeripheral = discoveredBluetoothMacs.first(where: { $0.id == pid && $0.macID == nil && $0.macIDTag == nil }) {
+           let byPeripheral = discoveredBluetoothMacs.first(where: {
+               $0.id == pid &&
+               $0.macID == nil &&
+               !rejectedAutoProbePeripheralIDs.contains($0.id)
+           }) {
             return byPeripheral
         }
         if let byName = discoveredBluetoothMacs.first(where: {
             $0.macID == nil &&
-            $0.macIDTag == nil &&
+            !rejectedAutoProbePeripheralIDs.contains($0.id) &&
             Self.namesLikelyMatch(savedName: saved.macName, advertisedName: $0.name)
         }) {
             return byName
+        }
+        if let unprobed = discoveredBluetoothMacs.first(where: { candidate in
+            candidate.macID == nil &&
+            !rejectedAutoProbePeripheralIDs.contains(candidate.id) &&
+            !savedMacs.contains(where: { other in
+                other.macID != saved.macID && other.lastBluetoothPeripheralID == candidate.id
+            })
+        }) {
+            return unprobed
         }
         return nil
     }
@@ -412,6 +461,7 @@ public final class CompanionClientEngine: ObservableObject {
     public func reconnectSavedMac(_ saved: SavedMacCredential) {
         consecutiveReconnectFailures = 0
         lastConnectionIssue = nil
+        rejectedAutoProbePeripheralIDs.removeAll()
         if let wifiHost = discoveredMacs.first(where: {
             $0.macID == saved.macID || $0.name.caseInsensitiveCompare(saved.macName) == .orderedSame
         }) {
@@ -419,7 +469,14 @@ public final class CompanionClientEngine: ObservableObject {
             return
         }
         if let btHost = matchingDiscoveredBluetoothHost(for: saved) {
-            connectBluetooth(to: btHost)
+            intentionalDisconnect = false
+            clearPINGlitchState()
+            connectBluetoothInternal(
+                to: btHost,
+                preservePINState: false,
+                probeSavedMac: btHost.macID == nil,
+                probeTargetMacID: saved.macID
+            )
             return
         }
         if let host = saved.lastDirectHost, let port = saved.lastDirectPort {
@@ -438,6 +495,8 @@ public final class CompanionClientEngine: ObservableObject {
 
     public func connect(to discovered: DiscoveredMacHost) {
         intentionalDisconnect = false
+        isSavedMacProbeConnect = false
+        probeTargetMacID = nil
         consecutiveReconnectFailures = 0
         lastConnectionIssue = nil
         clearPINGlitchState()
@@ -448,7 +507,6 @@ public final class CompanionClientEngine: ObservableObject {
         activeDirectHost = nil
         activeDirectPort = nil
         activeBluetoothPeripheralID = nil
-        activeBluetoothMacIDTag = nil
         openConnection(to: discovered.endpoint, targetName: discovered.name, preservePINState: false)
     }
 
@@ -460,6 +518,8 @@ public final class CompanionClientEngine: ObservableObject {
         let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedHost.isEmpty, let nwPort = NWEndpoint.Port(rawValue: port) else { return }
         intentionalDisconnect = false
+        isSavedMacProbeConnect = false
+        probeTargetMacID = nil
         consecutiveReconnectFailures = 0
         lastConnectionIssue = nil
         clearPINGlitchState()
@@ -468,7 +528,6 @@ public final class CompanionClientEngine: ObservableObject {
         activeDirectHost = trimmedHost
         activeDirectPort = port
         activeBluetoothPeripheralID = nil
-        activeBluetoothMacIDTag = nil
         candidateMacID = savedMacs.first(where: { $0.lastDirectHost == trimmedHost })?.macID
             ?? candidateMacID
         let endpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(trimmedHost), port: nwPort)
@@ -479,19 +538,39 @@ public final class CompanionClientEngine: ObservableObject {
         intentionalDisconnect = false
         consecutiveReconnectFailures = 0
         lastConnectionIssue = nil
+        rejectedAutoProbePeripheralIDs.remove(host.id)
         clearPINGlitchState()
-        connectBluetoothInternal(to: host, preservePINState: false)
+        connectBluetoothInternal(
+            to: host,
+            preservePINState: false,
+            probeSavedMac: false,
+            probeTargetMacID: nil
+        )
     }
 
-    private func connectBluetoothInternal(to host: DiscoveredBluetoothMac, preservePINState: Bool) {
-        if bluetoothBrowser == nil {
-            startBluetoothBrowsing()
-        }
-        guard let link = bluetoothBrowser?.connect(to: host) else {
+    private func connectBluetoothInternal(
+        to host: DiscoveredBluetoothMac,
+        preservePINState: Bool,
+        probeSavedMac: Bool = false,
+        probeTargetMacID: String? = nil
+    ) {
+        let resolvedTransport: CompanionFrameTransport? = {
+            if let simulatedBluetoothConnector {
+                return simulatedBluetoothConnector(host)
+            }
+            if bluetoothBrowser == nil {
+                startBluetoothBrowsing()
+            }
+            return bluetoothBrowser?.connect(to: host)
+        }()
+
+        guard let link = resolvedTransport else {
             let lang = profile.settings.language
             lastConnectionIssue = bluetoothAvailability.detailGuidance(in: lang)
                 ?? L10n.tr("无法建立蓝牙连接，请确认蓝牙已开启。", "Unable to start Bluetooth connection. Check that Bluetooth is enabled.", language: lang)
             activeLink = nil
+            isSavedMacProbeConnect = false
+            self.probeTargetMacID = nil
             connectionState = .disconnected
             return
         }
@@ -499,22 +578,29 @@ public final class CompanionClientEngine: ObservableObject {
             if let explicit = host.macID {
                 return explicit
             }
-            if let tag = host.macIDTag {
-                return savedMacs.first(where: { ChocliftBluetooth.macIDTag(for: $0.macID) == tag })?.macID
-            }
             if let byPeripheral = savedMacs.first(where: { $0.lastBluetoothPeripheralID == host.id }) {
                 return byPeripheral.macID
             }
-            return savedMacs.first(where: { Self.namesLikelyMatch(savedName: $0.macName, advertisedName: host.name) })?.macID
+            return nil
+        }()
+        let displayTargetName: String = {
+            if host.name == "Mac",
+               let resolvedMacID,
+               let savedName = savedMacs.first(where: { $0.macID == resolvedMacID })?.macName,
+               !savedName.isEmpty {
+                return savedName
+            }
+            return host.name
         }()
         attachBluetoothTransport(
             link,
-            targetName: host.name,
+            targetName: displayTargetName,
             macID: resolvedMacID,
-            macIDTag: host.macIDTag,
             peripheralID: host.id,
-            armWatchdog: true,
-            preservePINState: preservePINState
+            armWatchdog: simulatedBluetoothConnector == nil,
+            preservePINState: preservePINState,
+            probeSavedMac: probeSavedMac,
+            probeTargetMacID: probeTargetMacID
         )
     }
 
@@ -546,10 +632,11 @@ public final class CompanionClientEngine: ObservableObject {
             link,
             targetName: targetName,
             macID: macID,
-            macIDTag: macID.map { ChocliftBluetooth.macIDTag(for: $0) },
             peripheralID: id,
             armWatchdog: true,
-            preservePINState: preservePINState
+            preservePINState: preservePINState,
+            probeSavedMac: false,
+            probeTargetMacID: nil
         )
         return true
     }
@@ -558,7 +645,6 @@ public final class CompanionClientEngine: ObservableObject {
         to transport: CompanionFrameTransport,
         targetName: String,
         macID: String? = nil,
-        macIDTag: String? = nil,
         peripheralID: UUID? = nil
     ) {
         intentionalDisconnect = false
@@ -567,22 +653,20 @@ public final class CompanionClientEngine: ObservableObject {
         clearPINGlitchState()
         let resolvedMacID: String? = {
             if let macID { return macID }
-            if let macIDTag {
-                return savedMacs.first(where: { ChocliftBluetooth.macIDTag(for: $0.macID) == macIDTag })?.macID
-            }
             if let byPeripheral = savedMacs.first(where: { $0.lastBluetoothPeripheralID != nil && $0.lastBluetoothPeripheralID == peripheralID }) {
                 return byPeripheral.macID
             }
-            return savedMacs.first(where: { Self.namesLikelyMatch(savedName: $0.macName, advertisedName: targetName) })?.macID
+            return nil
         }()
         attachBluetoothTransport(
             transport,
             targetName: targetName,
             macID: resolvedMacID,
-            macIDTag: macIDTag ?? macID.map { ChocliftBluetooth.macIDTag(for: $0) },
             peripheralID: peripheralID,
             armWatchdog: false,
-            preservePINState: false
+            preservePINState: false,
+            probeSavedMac: false,
+            probeTargetMacID: nil
         )
     }
 
@@ -590,10 +674,11 @@ public final class CompanionClientEngine: ObservableObject {
         _ transport: CompanionFrameTransport,
         targetName: String,
         macID: String?,
-        macIDTag: String?,
         peripheralID: UUID?,
         armWatchdog: Bool,
-        preservePINState: Bool
+        preservePINState: Bool,
+        probeSavedMac: Bool,
+        probeTargetMacID: String?
     ) {
         intentionalDisconnect = false
         wifiPreferenceTask?.cancel()
@@ -618,13 +703,34 @@ public final class CompanionClientEngine: ObservableObject {
         retriedTokenMacIDs.removeAll()
         activeLink = .bluetooth
         activeTargetName = targetName
+        activeDirectHost = nil
+        activeDirectPort = nil
         activeBluetoothPeripheralID = peripheralID
-        activeBluetoothMacIDTag = macIDTag ?? macID.map { ChocliftBluetooth.macIDTag(for: $0) }
         candidateMacID = macID
+        isSavedMacProbeConnect = probeSavedMac
+        self.probeTargetMacID = probeTargetMacID
         if !preservePINState {
             connectionState = .connecting(targetName: targetName)
         }
         frameTransport = transport
+
+        if let metadataTransport = transport as? BluetoothMetadataAwareTransport {
+            metadataTransport.onBluetoothMetadata = { [weak self] metadata in
+                let applyBlock: @MainActor () -> Void = {
+                    guard let self, self.currentSessionID == sessionID else { return }
+                    self.handleResolvedBluetoothIdentity(
+                        macID: metadata.macID,
+                        macName: metadata.macName,
+                        peripheralID: peripheralID
+                    )
+                }
+                if Thread.isMainThread {
+                    MainActor.assumeIsolated { applyBlock() }
+                } else {
+                    Task { @MainActor in applyBlock() }
+                }
+            }
+        }
 
         transport.onReady = { [weak self] in
             Task { @MainActor [weak self] in
@@ -668,6 +774,100 @@ public final class CompanionClientEngine: ObservableObject {
         }
 
         transport.start()
+    }
+
+    private func handleResolvedBluetoothIdentity(
+        macID: String,
+        macName: String,
+        peripheralID: UUID?
+    ) {
+        if let peripheralID,
+           let idx = discoveredBluetoothMacs.firstIndex(where: { $0.id == peripheralID }) {
+            let updatedName = macName.isEmpty ? discoveredBluetoothMacs[idx].name : macName
+            let updatedHost = DiscoveredBluetoothMac(id: peripheralID, name: updatedName, macID: macID)
+            if discoveredBluetoothMacs[idx] != updatedHost {
+                discoveredBluetoothMacs[idx] = updatedHost
+                discoveredBluetoothMacs.sort {
+                    $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+                }
+            }
+        }
+
+        guard activeLink == .bluetooth,
+              peripheralID == nil || activeBluetoothPeripheralID == peripheralID else {
+            return
+        }
+
+        if isSavedMacProbeConnect {
+            let matchesSavedProbe: Bool = {
+                if let targetID = probeTargetMacID {
+                    return macID == targetID && savedMacs.contains(where: { $0.macID == targetID })
+                }
+                return savedMacs.contains(where: { $0.macID == macID })
+            }()
+
+            if !matchesSavedProbe {
+                if let peripheralID {
+                    rejectedAutoProbePeripheralIDs.insert(peripheralID)
+                }
+                abortUnmatchedSavedMacProbe(unmatchedTargetMacID: probeTargetMacID)
+                return
+            }
+
+            isSavedMacProbeConnect = false
+            probeTargetMacID = nil
+        }
+
+        candidateMacID = macID
+        if !macName.isEmpty {
+            activeTargetName = macName
+        }
+        if case .connecting = connectionState {
+            connectionState = .connecting(targetName: activeTargetName)
+        }
+    }
+
+    private func abortUnmatchedSavedMacProbe(unmatchedTargetMacID: String?) {
+        currentSessionID = UUID()
+        isTransportReady = false
+        isSavedMacProbeConnect = false
+        probeTargetMacID = nil
+        connectWatchdogTask?.cancel()
+        connectWatchdogTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+
+        let oldTransport = frameTransport
+        frameTransport = nil
+        oldTransport?.cancel()
+
+        accumulator.reset()
+        retriedTokenMacIDs.removeAll()
+        activeLink = nil
+        candidateMacID = nil
+        activeBluetoothPeripheralID = nil
+        connectionState = .disconnected
+
+        if let specificMacID = unmatchedTargetMacID,
+           let saved = savedMacs.first(where: { $0.macID == specificMacID }) {
+            if let nextHost = matchingDiscoveredBluetoothHost(for: saved) {
+                connectBluetoothInternal(
+                    to: nextHost,
+                    preservePINState: false,
+                    probeSavedMac: nextHost.macID == nil,
+                    probeTargetMacID: specificMacID
+                )
+            } else {
+                let lang = profile.settings.language
+                lastConnectionIssue = L10n.tr(
+                    "附近未找到已配对的 \(saved.macName)。",
+                    "\(saved.macName) was not found in nearby Bluetooth range.",
+                    language: lang
+                )
+            }
+        } else {
+            autoConnectIfAppropriate(allowBluetoothNow: true)
+        }
     }
 
     private func openConnection(to endpoint: NWEndpoint, targetName: String, preservePINState: Bool) {
@@ -755,6 +955,8 @@ public final class CompanionClientEngine: ObservableObject {
 
     public func disconnect() {
         intentionalDisconnect = true
+        isSavedMacProbeConnect = false
+        probeTargetMacID = nil
         currentSessionID = UUID()
         isTransportReady = false
         clearPINGlitchState()
@@ -808,12 +1010,20 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     private func sendHello() {
+        let matched = tokenMatchForConnectAttempt(
+            macID: candidateMacID,
+            peripheralID: activeBluetoothPeripheralID,
+            directHost: activeDirectHost
+        )
+        if let matched {
+            retriedTokenMacIDs.insert(matched.macID)
+        }
         send(.hello(
             protocolVersion: ChocliftDefaults.protocolVersion,
             deviceID: deviceID,
             deviceName: deviceName,
             platform: platform,
-            savedAuthToken: lookupSavedToken()
+            savedAuthToken: matched?.authToken
         ))
     }
 
@@ -921,8 +1131,32 @@ public final class CompanionClientEngine: ObservableObject {
         if failedLink == .wifi,
            let btFallback = matchingSavedDiscoveredBluetoothHost(preferMacID: candidateMacID) {
             consecutiveReconnectFailures = 0
-            connectBluetoothInternal(to: btFallback, preservePINState: false)
+            connectBluetoothInternal(
+                to: btFallback,
+                preservePINState: false,
+                probeSavedMac: btFallback.macID == nil,
+                probeTargetMacID: nil
+            )
             return
+        }
+
+        if failedLink == .bluetooth, isSavedMacProbeConnect, candidateMacID == nil {
+            if let failedProbeID = activeBluetoothPeripheralID {
+                rejectedAutoProbePeripheralIDs.insert(failedProbeID)
+            }
+            let targetID = probeTargetMacID
+            isSavedMacProbeConnect = false
+            probeTargetMacID = nil
+            if let nextCandidate = matchingSavedDiscoveredBluetoothHost(preferMacID: targetID) {
+                lastConnectionIssue = nil
+                connectBluetoothInternal(
+                    to: nextCandidate,
+                    preservePINState: false,
+                    probeSavedMac: nextCandidate.macID == nil,
+                    probeTargetMacID: targetID
+                )
+                return
+            }
         }
 
         consecutiveReconnectFailures += 1
@@ -951,7 +1185,6 @@ public final class CompanionClientEngine: ObservableObject {
         let retryName = activeTargetName
         let retryMacID = candidateMacID
         let retryPeripheralID = activeBluetoothPeripheralID
-        let retryTag = activeBluetoothMacIDTag
 
         reconnectTask?.cancel()
         reconnectTask = Task { @MainActor [weak self] in
@@ -974,7 +1207,12 @@ public final class CompanionClientEngine: ObservableObject {
             // 2. Otherwise use live discovered Bluetooth Mac if available.
             if let btHost = self.matchingSavedDiscoveredBluetoothHost(preferMacID: retryMacID)
                 ?? (preservePINState ? self.discoveredBluetoothMacs.first(where: { $0.id == retryPeripheralID || $0.macID == retryMacID }) : nil) {
-                self.connectBluetoothInternal(to: btHost, preservePINState: preservePINState)
+                self.connectBluetoothInternal(
+                    to: btHost,
+                    preservePINState: preservePINState,
+                    probeSavedMac: !preservePINState && btHost.macID == nil,
+                    probeTargetMacID: nil
+                )
                 return
             }
 
@@ -985,10 +1223,11 @@ public final class CompanionClientEngine: ObservableObject {
                     simTransport,
                     targetName: retryName,
                     macID: retryMacID,
-                    macIDTag: retryTag,
                     peripheralID: retryPeripheralID,
                     armWatchdog: false,
-                    preservePINState: preservePINState
+                    preservePINState: preservePINState,
+                    probeSavedMac: false,
+                    probeTargetMacID: nil
                 )
                 return
             }
@@ -1109,6 +1348,14 @@ public final class CompanionClientEngine: ObservableObject {
     private func handleServerMessage(_ message: ServerMessage) {
         switch message {
         case .pairingRequired(let macID, let macName):
+            if activeLink == .bluetooth {
+                handleResolvedBluetoothIdentity(
+                    macID: macID,
+                    macName: macName,
+                    peripheralID: activeBluetoothPeripheralID
+                )
+                guard activeLink == .bluetooth else { return }
+            }
             candidateMacID = macID
             activeTargetName = macName
             if let existing = savedMacs.first(where: { $0.macID == macID }),
@@ -1141,6 +1388,8 @@ public final class CompanionClientEngine: ObservableObject {
             let axTrusted
         ):
             clearPINGlitchState()
+            isSavedMacProbeConnect = false
+            probeTargetMacID = nil
             consecutiveReconnectFailures = 0
             lastConnectionIssue = nil
             candidateMacID = macID
@@ -1148,7 +1397,6 @@ public final class CompanionClientEngine: ObservableObject {
             let resolvedPeripheralID = activeBluetoothPeripheralID
                 ?? discoveredBluetoothMacs.first(where: {
                     $0.macID == macID ||
-                    $0.macIDTag == ChocliftBluetooth.macIDTag(for: macID) ||
                     $0.name.caseInsensitiveCompare(macName) == .orderedSame
                 })?.id
             saveCredential(
@@ -1241,41 +1489,34 @@ public final class CompanionClientEngine: ObservableObject {
 
     func tokenForConnectAttempt(
         macID: String?,
-        macIDTag: String?,
         peripheralID: UUID?,
         directHost: String?,
         targetName: String
     ) -> String? {
+        tokenMatchForConnectAttempt(
+            macID: macID,
+            peripheralID: peripheralID,
+            directHost: directHost
+        )?.authToken
+    }
+
+    private func tokenMatchForConnectAttempt(
+        macID: String?,
+        peripheralID: UUID?,
+        directHost: String?
+    ) -> SavedMacCredential? {
         if let macID {
-            return savedMacs.first(where: { $0.macID == macID })?.authToken
-        }
-        if let macIDTag {
-            return savedMacs.first(where: { ChocliftBluetooth.macIDTag(for: $0.macID) == macIDTag })?.authToken
+            return savedMacs.first(where: { $0.macID == macID })
         }
         if let peripheralID,
            let cred = savedMacs.first(where: { $0.lastBluetoothPeripheralID == peripheralID }) {
-            return cred.authToken
+            return cred
         }
         if let directHost,
            let cred = savedMacs.first(where: { $0.lastDirectHost == directHost }) {
-            return cred.authToken
+            return cred
         }
-        if let cred = savedMacs.first(where: {
-            Self.namesLikelyMatch(savedName: $0.macName, advertisedName: targetName)
-        }) {
-            return cred.authToken
-        }
-        return savedMacs.first?.authToken
-    }
-
-    private func lookupSavedToken() -> String? {
-        tokenForConnectAttempt(
-            macID: candidateMacID,
-            macIDTag: activeBluetoothMacIDTag,
-            peripheralID: activeBluetoothPeripheralID,
-            directHost: activeDirectHost,
-            targetName: activeTargetName
-        )
+        return nil
     }
 
     private func saveCredential(_ credential: SavedMacCredential) {

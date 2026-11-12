@@ -294,6 +294,15 @@ public final class MacServerEngine: ObservableObject {
     }
 
     public func acceptCompanionTransport(_ transport: CompanionFrameTransport, link: CompanionLinkKind) {
+        if link == .bluetooth,
+           let blePipe = transport as? SimulatedBLECompanionPipe,
+           blePipe.advertisedMetadataData == nil {
+            blePipe.advertisedMetadataData = try? BluetoothServiceMetadata(
+                macID: macID,
+                macName: macName,
+                protocolVersion: ChocliftDefaults.protocolVersion
+            ).encodedCharacteristicValue()
+        }
         let context = ClientSessionContext(link: link) { data in
             transport.send(data)
         }
