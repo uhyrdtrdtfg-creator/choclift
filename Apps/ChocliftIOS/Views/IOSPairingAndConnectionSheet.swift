@@ -41,13 +41,16 @@ public struct IOSPairingAndConnectionSheet: View {
                             pinEntryView(macName: macName, errorMessage: errorMsg)
                         case .connected(let macID, let macName):
                             connectedSummaryCard(macID: macID, macName: macName)
+                            IOSHapticQuietHoursCard(client: client)
                             discoveredHostsCard
                             bluetoothHostsCard
                             savedMacsCard
                         case .connecting(let targetName):
                             connectingCard(targetName: targetName)
+                            IOSHapticQuietHoursCard(client: client)
                         case .disconnected:
                             disconnectedHeroOrIssueCard
+                            IOSHapticQuietHoursCard(client: client)
                             discoveredHostsCard
                             bluetoothHostsCard
                             directConnectionCard
@@ -75,11 +78,11 @@ public struct IOSPairingAndConnectionSheet: View {
         .preferredColorScheme(.light)
         .onChange(of: client.connectionState) { _, newState in
             if newState.isConnected {
-                CompanionHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, type: .success)
+                CompanionHaptics.notify(enabled: client.shouldPlayOutcomeHaptics(), type: .success)
                 enteredPIN = ""
             } else if case .awaitingPIN(_, _, let err) = newState {
                 if err != nil {
-                    CompanionHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, type: .error)
+                    CompanionHaptics.notify(enabled: client.shouldPlayOutcomeHaptics(), type: .error)
                     enteredPIN = ""
                 }
             } else {

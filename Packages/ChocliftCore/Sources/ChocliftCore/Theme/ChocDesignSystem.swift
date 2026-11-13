@@ -528,6 +528,7 @@ public struct ChocBarTileCard: View {
     public let compact: Bool
     public let profile: ChocliftWorkspaceProfile?
     public let slotOrigin: SlotCoordinate?
+    public let lastTriggeredText: String?
     public let iconLookup: ((String) -> Data?)?
 
     public init(
@@ -542,6 +543,7 @@ public struct ChocBarTileCard: View {
         compact: Bool = false,
         profile: ChocliftWorkspaceProfile? = nil,
         slotOrigin: SlotCoordinate? = nil,
+        lastTriggeredText: String? = nil,
         iconLookup: ((String) -> Data?)? = nil
     ) {
         self.item = item
@@ -555,6 +557,7 @@ public struct ChocBarTileCard: View {
         self.compact = compact
         self.profile = profile
         self.slotOrigin = slotOrigin
+        self.lastTriggeredText = lastTriggeredText
         self.iconLookup = iconLookup
     }
 
@@ -620,6 +623,25 @@ public struct ChocBarTileCard: View {
                         .padding(.vertical, isMicro ? 2.5 : 3.5)
                         .background(outcomeTint, in: Capsule())
                         .padding(.bottom, isMicro ? 4 : 6)
+                    }
+                    .allowsHitTesting(false)
+                } else if let lastTriggeredText, !lastTriggeredText.isEmpty, let item {
+                    VStack {
+                        if item.isSlotReference {
+                            Spacer()
+                            HStack {
+                                Spacer()
+                                lastTriggeredPill(lastTriggeredText, side: side, isMicro: isMicro)
+                                    .padding(isMicro ? 4 : 6)
+                            }
+                        } else {
+                            HStack {
+                                lastTriggeredPill(lastTriggeredText, side: side, isMicro: isMicro)
+                                    .padding(isMicro ? 4 : 6)
+                                Spacer()
+                            }
+                            Spacer()
+                        }
                     }
                     .allowsHitTesting(false)
                 }
@@ -949,9 +971,67 @@ public struct ChocBarTileCard: View {
                 }
             }
 
+        case .folder(let folder):
+            let base = ChocSwatch.resolvedTileColor(hex: folder.backgroundHex, fallbackHex: "#FFF6E3")
+            ZStack {
+                moldedBaseShape(
+                    corner: corner,
+                    top: palette.tileFillTop,
+                    bottom: base,
+                    borderColor: palette.tileBorderHighlight,
+                    borderWidth: 1.15,
+                    shadowColor: palette.primaryText.opacity(0.06)
+                )
+
+                VStack {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 2.5) {
+                            Image(systemName: "square.grid.2x2.fill")
+                                .font(.system(size: max(7.5, side * 0.082), weight: .bold))
+                            Text("\(folder.children.count)")
+                                .font(.system(size: max(8, side * 0.085), weight: .heavy, design: .rounded))
+                                .monospacedDigit()
+                        }
+                        .foregroundStyle(palette.accent)
+                        .padding(.horizontal, isMicro ? 4 : 5.5)
+                        .padding(.vertical, 2)
+                        .background(palette.accent.opacity(0.12), in: Capsule())
+                        .padding(isMicro ? 4 : 6)
+                    }
+                    Spacer()
+                }
+
+                VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
+                    Text(folder.emoji.isEmpty ? TileFolder.defaultEmoji : folder.emoji)
+                        .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
+
+                    Text(folder.displayTitle(in: language))
+                        .font(.system(size: max(10.5, side * 0.112), weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(isMicro ? 1 : 2)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, isMicro ? 5 : 7)
+                }
+            }
+
         case .slotReference:
             quietMissingReferenceTile(side: side, corner: corner)
         }
+    }
+
+    private func lastTriggeredPill(_ text: String, side: CGFloat, isMicro: Bool) -> some View {
+        Text(text)
+            .font(.system(size: max(7.5, side * 0.082), weight: .semibold, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(palette.secondaryText)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .padding(.horizontal, isMicro ? 4 : 5)
+            .padding(.vertical, 1.8)
+            .background(palette.barSurface.opacity(0.92), in: Capsule())
+            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.75))
     }
 
     private func quietMissingReferenceTile(side: CGFloat, corner: CGFloat) -> some View {

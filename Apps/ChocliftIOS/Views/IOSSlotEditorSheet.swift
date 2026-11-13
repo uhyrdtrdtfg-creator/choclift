@@ -4,12 +4,13 @@ import SwiftUI
 public struct IOSSlotEditorSheet: View {
     public enum EditorTab: String, CaseIterable, Identifiable {
         case apps
+        case folder
+        case actions
         case flows
         case sounds
         case reference
         case shortcuts
         case website
-        case actions
 
         public var id: String { rawValue }
 
@@ -22,6 +23,7 @@ public struct IOSSlotEditorSheet: View {
             case .shortcuts: return "bolt.fill"
             case .website: return "globe"
             case .actions: return "command.square.fill"
+            case .folder: return "folder.fill"
             }
         }
 
@@ -34,6 +36,7 @@ public struct IOSSlotEditorSheet: View {
             case .shortcuts: return L10n.tr("指令", "Shortcuts", language: lang)
             case .website: return L10n.tr("网页", "Web", language: lang)
             case .actions: return L10n.tr("动作", "Actions", language: lang)
+            case .folder: return L10n.tr("文件夹", "Folder", language: lang)
             }
         }
     }
@@ -127,6 +130,22 @@ public struct IOSSlotEditorSheet: View {
                         websiteForm
                     case .actions:
                         actionsGrid
+                    case .folder:
+                        IOSFolderSlotEditorView(
+                            client: client,
+                            pageIndex: pageIndex,
+                            slotIndex: slotIndex,
+                            onJumpToExistingFolder: { existingFolderIdx in
+                                onEditOriginalSlot?(pageIndex, existingFolderIdx)
+                            },
+                            onSaveFolder: { folder in
+                                let item = BarItem(
+                                    id: existingItem?.id ?? UUID(),
+                                    kind: .folder(folder)
+                                )
+                                assignItem(item)
+                            }
+                        )
                     }
                 }
             }
@@ -828,9 +847,7 @@ public struct IOSSlotEditorSheet: View {
 
     private func assignItem(_ item: BarItem?) {
         var updated = client.profile
-        guard updated.pages.indices.contains(pageIndex),
-              updated.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
-        updated.pages[pageIndex].slots[slotIndex] = item
+        guard updated.setSlotItem(item, pageIndex: pageIndex, slotIndex: slotIndex) else { return }
         client.pushUpdatedProfile(updated)
         dismiss()
     }
@@ -957,6 +974,8 @@ public struct IOSSlotEditorSheet: View {
             tab = .flows
         case .soundboard:
             tab = .sounds
+        case .folder:
+            tab = .folder
         case .slotReference:
             tab = .reference
         }

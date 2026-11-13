@@ -254,6 +254,7 @@ public struct WatchChocolateBarView: View {
 
     @State private var showPagePickerSheet: Bool = false
     @State private var assigningSlot: WatchSlotCoordinate?
+    @State private var openFolderSlot: WatchSlotCoordinate?
     @State private var pressedSlotKey: String?
     @State private var confirmGate = DestructiveActionConfirmGate()
     @State private var crownVolume: Double = 0.5
@@ -265,7 +266,7 @@ public struct WatchChocolateBarView: View {
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
     private var isCrownActiveForBar: Bool {
-        isBarVisible && !showPagePickerSheet && assigningSlot == nil
+        isBarVisible && !showPagePickerSheet && assigningSlot == nil && openFolderSlot == nil
     }
 
     private var safePageIndex: Int {
@@ -390,6 +391,13 @@ public struct WatchChocolateBarView: View {
         }
         .sheet(item: $assigningSlot) { coord in
             WatchSlotQuickAssignSheet(
+                client: client,
+                pageIndex: coord.pageIndex,
+                slotIndex: coord.slotIndex
+            )
+        }
+        .sheet(item: $openFolderSlot) { coord in
+            WatchTileFolderSheet(
                 client: client,
                 pageIndex: coord.pageIndex,
                 slotIndex: coord.slotIndex
@@ -697,6 +705,12 @@ public struct WatchChocolateBarView: View {
         return Button {
             ChocPressFeedback.completeTap(key: key, pressedKey: $pressedSlotKey)
             if let item {
+                if item.isFolder {
+                    confirmGate.disarm()
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    openFolderSlot = WatchSlotCoordinate(pageIndex: pageIndex, slotIndex: slotIndex)
+                    return
+                }
                 if item.isSlotReference,
                    client.profile.resolveBarItem(item, from: slotOrigin).isMissing {
                     confirmGate.disarm()
@@ -748,6 +762,7 @@ public struct WatchChocolateBarView: View {
                 compact: true,
                 profile: client.profile,
                 slotOrigin: slotOrigin,
+                lastTriggeredText: client.lastTriggeredText(for: item, from: slotOrigin),
                 iconLookup: { bundleID in
                     client.appIconsByBundleID[bundleID] ?? BundledAppIcons.pngData(for: bundleID)
                 }
@@ -1736,5 +1751,70 @@ public struct WatchEmojiBarView: View {
         guard count > 0 else { return }
         CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
         currentSlideIndex = (safeSlideIndex + delta + count) % count
+    }
+}
+
+private struct WatchTileFolderSheet: View {
+    @ObservedObject var client: CompanionClientEngine
+    let pageIndex: Int
+    let slotIndex: Int
+    @Environment(\.dismiss) private var dismiss
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
+    private var folderContext: (page: BarPage, folder: TileFolder)? {
+        guard client.profile.pages.indices.contains(pageIndex) else { return nil }
+        let page = client.profile.pages[pageIndex]
+        guard page.slots.indices.contains(slotIndex),
+              case .folder(let folder) = page.slots[slotIndex]?.kind else { return nil }
+        return (page, folder)
+    }
+
+    var body: some View {
+        List {
+            if let ctx = folderContext {
+                let origin = SlotCoordinate(pageID: ctx.page.id, slotIndex: slotIndex)
+                Section("\(ctx.folder.emoji) \(ctx.folder.displayTitle(in: lang))") {
+                    if ctx.folder.children.isEmpty {
+                        Text(L10n.tr("暂无子动作", "No Child Actions", language: lang))
+                            .font(.caption)
+                            .foregroundStyle(palette.secondaryText)
+                    } else {
+                        ForEach(ctx.folder.children) { child in
+                            Button {
+                                CompanionFeedbackHaptics.tap(
+                                    enabled: client.profile.settings.hapticFeedbackEnabled,
+                                    intensity: .medium
+                                )
+                                if client.connectionState.isConnected {
+                                    client.triggerBarItem(child, from: origin)
+                                } else {
+                                    client.recordOfflineTileFailure(
+                                        slot: origin,
+                                        title: client.profile.displayTitle(for: child, in: lang),
+                                        detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                                    )
+                                }
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    Text(client.profile.displayTitle(for: child, in: lang))
+                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(palette.primaryText)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    if let ago = client.lastTriggeredText(for: child) {
+                                        Text(ago)
+                                            .font(.caption2.monospacedDigit())
+                                            .foregroundStyle(palette.secondaryText)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

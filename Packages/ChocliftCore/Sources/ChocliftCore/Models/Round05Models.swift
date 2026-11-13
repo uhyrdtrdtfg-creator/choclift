@@ -238,15 +238,18 @@ public struct RecentlyTriggeredTileEntry: Codable, Equatable, Hashable, Identifi
 
     public let id: UUID
     public var title: String
+    public var lastTriggeredAt: Date?
 
     private enum CodingKeys: String, CodingKey {
         case id
         case title
+        case lastTriggeredAt
     }
 
-    public init(id: UUID, title: String) {
+    public init(id: UUID, title: String, lastTriggeredAt: Date? = nil) {
         self.id = id
         self.title = Self.sanitizeTitle(title)
+        self.lastTriggeredAt = lastTriggeredAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -254,12 +257,18 @@ public struct RecentlyTriggeredTileEntry: Codable, Equatable, Hashable, Identifi
         self.id = try container.decode(UUID.self, forKey: .id)
         let rawTitle = try container.decode(String.self, forKey: .title)
         self.title = Self.sanitizeTitle(rawTitle)
+        self.lastTriggeredAt = try container.decodeIfPresent(Date.self, forKey: .lastTriggeredAt)
     }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(Self.sanitizeTitle(title), forKey: .title)
+        try container.encodeIfPresent(lastTriggeredAt, forKey: .lastTriggeredAt)
+    }
+
+    public func formattedLastTriggered(now: Date = Date()) -> String? {
+        LastTriggeredTimeFormatter.compactRelativeString(since: lastTriggeredAt, now: now)
     }
 
     /// Ensures single-line display labels and strips query/fragment/credential parts if a raw URL was used as title.
@@ -325,15 +334,27 @@ public struct RecentlyTriggeredTileList: Codable, Equatable, Sendable {
         entries.count
     }
 
-    public mutating func record(id: UUID, title: String) {
+    public mutating func record(id: UUID, title: String, triggeredAt: Date? = Date()) {
         let cleanTitle = RecentlyTriggeredTileEntry.sanitizeTitle(title)
         guard !cleanTitle.isEmpty else { return }
         var next = entries.filter { $0.id != id }
-        next.insert(RecentlyTriggeredTileEntry(id: id, title: cleanTitle), at: 0)
+        next.insert(
+            RecentlyTriggeredTileEntry(id: id, title: cleanTitle, lastTriggeredAt: triggeredAt),
+            at: 0
+        )
         if next.count > Self.maxEntries {
             next = Array(next.prefix(Self.maxEntries))
         }
         entries = next
+    }
+
+    public func lastTriggeredDate(for id: UUID) -> Date? {
+        entries.first(where: { $0.id == id })?.lastTriggeredAt
+    }
+
+    public func formattedLastTriggered(for id: UUID, now: Date = Date()) -> String? {
+        guard let date = lastTriggeredDate(for: id) else { return nil }
+        return LastTriggeredTimeFormatter.compactRelativeString(since: date, now: now)
     }
 
     public mutating func remove(id: UUID) {
@@ -351,7 +372,13 @@ public struct RecentlyTriggeredTileList: Codable, Equatable, Sendable {
             let cleanTitle = RecentlyTriggeredTileEntry.sanitizeTitle(entry.title)
             guard !cleanTitle.isEmpty, !seen.contains(entry.id) else { continue }
             seen.insert(entry.id)
-            result.append(RecentlyTriggeredTileEntry(id: entry.id, title: cleanTitle))
+            result.append(
+                RecentlyTriggeredTileEntry(
+                    id: entry.id,
+                    title: cleanTitle,
+                    lastTriggeredAt: entry.lastTriggeredAt
+                )
+            )
             if result.count >= maxEntries {
                 break
             }

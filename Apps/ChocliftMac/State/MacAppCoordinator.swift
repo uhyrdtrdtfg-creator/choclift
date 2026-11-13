@@ -459,7 +459,21 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     }
 
     private func applyAndSaveProfile(_ next: ChocliftWorkspaceProfile, broadcastOriginDeviceID: String?) {
+        let previouslySelectedPageID: UUID? = profile.pages.indices.contains(selectedPageIndex)
+            ? profile.pages[selectedPageIndex].id
+            : nil
         self.profile = next
+        if let previouslySelectedPageID,
+           let movedIndex = next.pages.firstIndex(where: { $0.id == previouslySelectedPageID }) {
+            if selectedPageIndex != movedIndex {
+                selectedPageIndex = movedIndex
+            }
+        } else if !next.pages.isEmpty {
+            let clamped = min(max(0, selectedPageIndex), next.pages.count - 1)
+            if selectedPageIndex != clamped {
+                selectedPageIndex = clamped
+            }
+        }
         if let data = try? JSONEncoder().encode(next) {
             try? data.write(to: profileFileURL, options: .atomic)
         }
@@ -479,6 +493,13 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
     private func sanitizeCompanionProfileUpdate(_ incoming: ChocliftWorkspaceProfile) -> ChocliftWorkspaceProfile {
         var merged = incoming
+        if merged.pages.count > BarPage.maxPages {
+            merged.pages = Array(merged.pages.prefix(BarPage.maxPages))
+        }
+        for idx in merged.pages.indices {
+            merged.pages[idx].index = idx
+            merged.pages[idx].slots = BarPage.normalizeSlots(merged.pages[idx].slots)
+        }
         // Companion devices never upload audio or define arbitrary local Mac file paths.
         // Reconcile incoming soundboardClips against Mac's validated clips by UUID.
         let authoritativeByID = Dictionary(uniqueKeysWithValues: profile.soundboardClips.map { ($0.id, $0) })
@@ -697,9 +718,18 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         guard profile.pages.indices.contains(pageIndex),
               profile.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
         mutateProfile { draft in
-            draft.pages[pageIndex].slots[slotIndex] = item
-            draft.prunePinnedStripSlots()
+            _ = draft.setSlotItem(item, pageIndex: pageIndex, slotIndex: slotIndex)
         }
+    }
+
+    @discardableResult
+    public func movePage(at pageIndex: Int, direction: PageReorderDirection) -> Int? {
+        guard profile.canMovePage(at: pageIndex, direction: direction) else { return nil }
+        var updatedIndex: Int?
+        mutateProfile { draft in
+            updatedIndex = draft.movePage(at: pageIndex, direction: direction)
+        }
+        return updatedIndex
     }
 
     @discardableResult
@@ -927,6 +957,10 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 triggeredBy: deviceName
             )
             return soundResult
+
+        case .folder:
+            // Folders open locally on companion/notch surfaces; child BarItems execute individually.
+            return (true, "", "")
 
         case .slotReference:
             switch profile.resolveBarItem(item) {

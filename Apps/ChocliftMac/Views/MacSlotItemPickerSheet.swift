@@ -11,6 +11,7 @@ public struct MacSlotItemPickerSheet: View {
         case shortcuts
         case website
         case actions
+        case folder
         case reference
 
         public var id: String { rawValue }
@@ -23,6 +24,7 @@ public struct MacSlotItemPickerSheet: View {
             case .shortcuts: return "bolt.fill"
             case .website: return "safari.fill"
             case .actions: return "macwindow.badge.plus"
+            case .folder: return "folder.fill"
             case .reference: return "link"
             }
         }
@@ -35,6 +37,7 @@ public struct MacSlotItemPickerSheet: View {
             case .shortcuts: return L10n.tr("快捷指令", "Shortcuts", language: lang)
             case .website: return L10n.tr("网页", "Website", language: lang)
             case .actions: return L10n.tr("系统动作", "Actions", language: lang)
+            case .folder: return L10n.tr("文件夹", "Folder", language: lang)
             case .reference: return L10n.tr("引用槽位", "Reference", language: lang)
             }
         }
@@ -64,6 +67,12 @@ public struct MacSlotItemPickerSheet: View {
     @State private var websiteEmoji: String = "🌐"
     @State private var websiteColorHex: String = "#FFF1EC"
     @State private var websiteSwitchExistingTab: Bool = true
+
+    // Folder draft (max 1 folder per page, up to 8 child actions)
+    @State private var folderTitle: String = ""
+    @State private var folderEmoji: String = TileFolder.defaultEmoji
+    @State private var folderColorHex: String = TileFolder.defaultBackgroundHex
+    @State private var folderChildren: [BarItem] = []
 
     // Action flow editor sheet
     @State private var flowEditorSession: SlotFlowEditorSession?
@@ -147,6 +156,8 @@ public struct MacSlotItemPickerSheet: View {
                     websitePickerBody
                 case .actions:
                     actionsPickerBody
+                case .folder:
+                    folderPickerBody
                 case .reference:
                     referencePickerBody
                 }
@@ -1405,6 +1416,243 @@ public struct MacSlotItemPickerSheet: View {
         .padding(18)
     }
 
+    // MARK: - Tab 7: Tile Folder (1 Per Page, Up to 8 Child Actions)
+
+    private var canPlaceFolderInCurrentSlot: Bool {
+        guard coordinator.profile.pages.indices.contains(pageIndex) else { return false }
+        return coordinator.profile.pages[pageIndex].canPlaceFolder(at: slotIndex)
+    }
+
+    private var folderPickerBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !canPlaceFolderInCurrentSlot,
+               coordinator.profile.pages.indices.contains(pageIndex),
+               let existingFolderIdx = coordinator.profile.pages[pageIndex].folderSlotIndex {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "folder.badge.exclamationmark")
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(palette.accent)
+                    Text(L10n.tr("每页最多放置 1 个文件夹磁贴", "One Folder Per Page", language: lang))
+                        .font(.headline)
+                        .foregroundStyle(palette.primaryText)
+                    Text(
+                        L10n.tr(
+                            "当前页槽位 #\(existingFolderIdx + 1) 已有一个文件夹。这不会增加新页面。",
+                            "Slot #\(existingFolderIdx + 1) on this page already holds a folder. Folders do not add pages.",
+                            language: lang
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+                    if let onEditOriginalSlot {
+                        Button {
+                            dismiss()
+                            onEditOriginalSlot(pageIndex, existingFolderIdx)
+                        } label: {
+                            Text(L10n.tr("打开槽位 #\(existingFolderIdx + 1)", "Open Slot #\(existingFolderIdx + 1)", language: lang))
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(palette.accent, in: Capsule())
+                                .foregroundStyle(palette.accentForeground)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                HStack(spacing: 10) {
+                    TextField(L10n.tr("图标", "Icon", language: lang), text: $folderEmoji)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 56)
+
+                    TextField(L10n.tr("文件夹名称（如：媒体工具）", "Folder Name (e.g. Media Tools)", language: lang), text: $folderTitle)
+                        .textFieldStyle(.roundedBorder)
+
+                    HStack(spacing: 5) {
+                        ForEach(Array(ChocSwatch.tileColors.prefix(6)), id: \.self) { hex in
+                            Button {
+                                folderColorHex = hex
+                            } label: {
+                                Circle()
+                                    .fill(Color(hex: hex))
+                                    .frame(width: 20, height: 20)
+                                    .overlay(
+                                        Circle()
+                                            .strokeBorder(
+                                                folderColorHex.caseInsensitiveCompare(hex) == .orderedSame
+                                                    ? palette.accent
+                                                    : palette.subtleCardStroke,
+                                                lineWidth: folderColorHex.caseInsensitiveCompare(hex) == .orderedSame ? 2 : 1
+                                            )
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Button {
+                        let folderPayload = TileFolder(
+                            title: folderTitle,
+                            emoji: folderEmoji,
+                            backgroundHex: folderColorHex,
+                            children: folderChildren
+                        )
+                        let item = BarItem(
+                            id: existingItem?.id ?? UUID(),
+                            kind: .folder(folderPayload)
+                        )
+                        coordinator.setSlotItem(item, pageIndex: pageIndex, slotIndex: slotIndex)
+                        dismiss()
+                    } label: {
+                        Text(L10n.tr("保存文件夹", "Save Folder", language: lang))
+                            .font(.callout.weight(.bold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(palette.accent, in: Capsule())
+                            .foregroundStyle(palette.accentForeground)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                HStack {
+                    Text(
+                        L10n.tr(
+                            "文件夹内动作（\(folderChildren.count)/\(TileFolder.maxChildren)）",
+                            "Folder Actions (\(folderChildren.count)/\(TileFolder.maxChildren))",
+                            language: lang
+                        )
+                    )
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(palette.primaryText)
+
+                    Spacer()
+
+                    Menu {
+                        Section(L10n.tr("常用系统动作", "System Actions", language: lang)) {
+                            ForEach(SystemQuickAction.allCases) { action in
+                                Button(action.title(in: lang)) {
+                                    guard folderChildren.count < TileFolder.maxChildren else { return }
+                                    folderChildren.append(BarItem(kind: .systemAction(action: action)))
+                                }
+                            }
+                        }
+                        if !coordinator.installedApps.isEmpty {
+                            Section(L10n.tr("已安装应用", "Installed Apps", language: lang)) {
+                                ForEach(coordinator.installedApps.prefix(20)) { app in
+                                    Button(app.appName) {
+                                        guard folderChildren.count < TileFolder.maxChildren else { return }
+                                        folderChildren.append(
+                                            BarItem(
+                                                kind: .macApp(
+                                                    bundleIdentifier: app.bundleIdentifier,
+                                                    appName: app.appName,
+                                                    appPath: app.appPath
+                                                )
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if !coordinator.installedShortcuts.isEmpty {
+                            Section(L10n.tr("快捷指令", "Shortcuts", language: lang)) {
+                                ForEach(coordinator.installedShortcuts.prefix(15)) { shortcut in
+                                    Button(shortcut.name) {
+                                        guard folderChildren.count < TileFolder.maxChildren else { return }
+                                        folderChildren.append(
+                                            BarItem(
+                                                kind: .shortcut(
+                                                    shortcutName: shortcut.name,
+                                                    emoji: "⚡️",
+                                                    backgroundHex: "#FFF6E3"
+                                                )
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Label(
+                            L10n.tr("添加子动作", "Add Child Action", language: lang),
+                            systemImage: "plus.circle.fill"
+                        )
+                        .font(.caption.weight(.bold))
+                    }
+                    .disabled(folderChildren.count >= TileFolder.maxChildren)
+                }
+
+                if folderChildren.isEmpty {
+                    VStack(spacing: 8) {
+                        Spacer()
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 26))
+                            .foregroundStyle(palette.secondaryText)
+                        Text(L10n.tr("点击右上角「添加子动作」，最多添加 8 个动作", "Use \"Add Child Action\" to add up to 8 actions", language: lang))
+                            .font(.caption)
+                            .foregroundStyle(palette.secondaryText)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 9) {
+                            ForEach(Array(folderChildren.enumerated()), id: \.element.id) { idx, child in
+                                HStack(spacing: 8) {
+                                    Text("#\(idx + 1)")
+                                        .font(.caption2.monospacedDigit().weight(.bold))
+                                        .foregroundStyle(palette.secondaryText)
+
+                                    Text(coordinator.profile.displayTitle(for: child, in: lang))
+                                        .font(.callout.weight(.semibold))
+                                        .foregroundStyle(palette.primaryText)
+                                        .lineLimit(1)
+
+                                    Spacer()
+
+                                    Button {
+                                        guard idx > 0 else { return }
+                                        folderChildren.swapAt(idx, idx - 1)
+                                    } label: {
+                                        Image(systemName: "chevron.left")
+                                            .font(.caption2.weight(.bold))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(idx == 0)
+
+                                    Button {
+                                        guard idx + 1 < folderChildren.count else { return }
+                                        folderChildren.swapAt(idx, idx + 1)
+                                    } label: {
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption2.weight(.bold))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(idx + 1 >= folderChildren.count)
+
+                                    Button {
+                                        folderChildren.remove(at: idx)
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(palette.statusFailure)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(10)
+                                .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(18)
+    }
+
     private func hydrateFromExisting() {
         guard let existingItem else { return }
         switch existingItem.kind {
@@ -1429,6 +1677,12 @@ public struct MacSlotItemPickerSheet: View {
             activeTab = .flows
         case .soundboard:
             activeTab = .sounds
+        case .folder(let folder):
+            activeTab = .folder
+            folderTitle = folder.title
+            folderEmoji = folder.emoji
+            folderColorHex = folder.backgroundHex
+            folderChildren = folder.children
         case .slotReference:
             activeTab = .reference
         }

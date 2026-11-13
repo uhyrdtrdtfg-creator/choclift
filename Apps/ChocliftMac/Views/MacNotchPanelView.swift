@@ -7,6 +7,7 @@ public final class NotchPanelPresentationState: ObservableObject {
     @Published public var anchor: NotchPanelAnchor = .topNotch
     @Published public var hoveredSlotIndex: Int?
     @Published public var pressedSlotIndex: Int?
+    @Published public var openFolderSlotIndex: Int?
     @Published public var inlineFeedback: String?
 
     private var feedbackTask: Task<Void, Never>?
@@ -67,6 +68,15 @@ public struct MacNotchPanelView: View {
         return coordinator.profile.pages[safePageIndex]
     }
 
+    private var activeFolder: TileFolder? {
+        guard let idx = presentation.openFolderSlotIndex,
+              currentPage.slots.indices.contains(idx),
+              case .folder(let folder) = currentPage.slots[idx]?.kind else {
+            return nil
+        }
+        return folder
+    }
+
     public init(
         coordinator: MacAppCoordinator,
         presentation: NotchPanelPresentationState,
@@ -117,16 +127,38 @@ public struct MacNotchPanelView: View {
 
     private var headerBar: some View {
         HStack(spacing: 7) {
-            HStack(spacing: 5) {
-                Text(currentPage.iconEmoji)
-                    .font(.system(size: 13.5))
-                Text(currentPage.title)
-                    .font(.system(size: 12.5, weight: .bold, design: .rounded))
+            if let activeFolder {
+                Button {
+                    presentation.openFolderSlotIndex = nil
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(activeFolder.emoji)
+                            .font(.system(size: 13))
+                        Text(activeFolder.displayTitle(in: lang))
+                            .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                    }
                     .foregroundStyle(palette.primaryText)
-                    .lineLimit(1)
-                Text("\(safePageIndex + 1)/\(safePageCount)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(palette.secondaryText)
+                    .padding(.horizontal, 8)
+                    .frame(height: 22)
+                    .background(palette.barSurface.opacity(0.92), in: Capsule())
+                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+            } else {
+                HStack(spacing: 5) {
+                    Text(currentPage.iconEmoji)
+                        .font(.system(size: 13.5))
+                    Text(currentPage.title)
+                        .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(1)
+                    Text("\(safePageIndex + 1)/\(safePageCount)")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(palette.secondaryText)
+                }
             }
 
             if let feedback = presentation.inlineFeedback {
@@ -327,7 +359,12 @@ public struct MacNotchPanelView: View {
 
         return LazyVGrid(columns: columns, spacing: Self.gridSpacing) {
             ForEach(0..<BarPage.slotsPerPage, id: \.self) { slotIdx in
-                let slotItem = currentPage.slots.indices.contains(slotIdx) ? currentPage.slots[slotIdx] : nil
+                let slotItem: BarItem? = {
+                    if let activeFolder {
+                        return activeFolder.children.indices.contains(slotIdx) ? activeFolder.children[slotIdx] : nil
+                    }
+                    return currentPage.slots.indices.contains(slotIdx) ? currentPage.slots[slotIdx] : nil
+                }()
                 let iconData = slotItem?.bundleIdentifier.flatMap { coordinator.catalogService.iconData(forBundleID: $0) }
                 let isFrontmost = (slotItem?.bundleIdentifier != nil && slotItem?.bundleIdentifier == frontmostBundleID)
                 let isHovered = (presentation.hoveredSlotIndex == slotIdx)
@@ -361,7 +398,11 @@ public struct MacNotchPanelView: View {
 
             Button {
                 guard !isBrokenRef else { return }
-                onTriggerSlot(slotIndex, item)
+                if activeFolder == nil, item.isFolder {
+                    presentation.openFolderSlotIndex = slotIndex
+                } else {
+                    onTriggerSlot(slotIndex, item)
+                }
             } label: {
                 ChocBarTileCard(
                     item: item,
@@ -389,7 +430,11 @@ public struct MacNotchPanelView: View {
             .accessibilityLabel(coordinator.profile.displayTitle(for: item, from: origin, in: lang))
         } else {
             Button {
-                onTriggerSlot(slotIndex, nil)
+                if let folderSlotIdx = presentation.openFolderSlotIndex {
+                    onTriggerSlot(folderSlotIdx, nil)
+                } else {
+                    onTriggerSlot(slotIndex, nil)
+                }
             } label: {
                 ChocBarTileCard(
                     item: nil,
@@ -419,6 +464,7 @@ public struct MacNotchPanelView: View {
     private func stepPage(by delta: Int) {
         let count = safePageCount
         guard count > 0 else { return }
+        presentation.openFolderSlotIndex = nil
         coordinator.selectedPageIndex = (safePageIndex + delta + count) % count
     }
 

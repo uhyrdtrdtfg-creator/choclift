@@ -248,6 +248,11 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .openEmojiPicker: return L10n.tr("表情框", "Emoji", language: lang)
         }
     }
+
+    /// Only `.volumeUp`, `.volumeDown`, and `.mediaNext` repeat while held down.
+    public var supportsHoldToRepeat: Bool {
+        HoldToRepeatPolicy.supportsHoldToRepeat(self)
+    }
 }
 
 // MARK: - Chocolate Bar Items & Pages
@@ -294,6 +299,8 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
         targetPageID: UUID,
         targetSlotIndex: Int
     )
+    /// Opens up to 8 concrete child actions without adding a new `BarPage` (at most 1 folder per page).
+    case folder(TileFolder)
 
     private enum CodingKeys: String, CodingKey {
         case macApp
@@ -303,6 +310,7 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
         case flow
         case soundboard
         case slotReference
+        case folder
     }
 
     private enum MacAppKeys: String, CodingKey {
@@ -434,6 +442,9 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
                 targetPageID: targetPageID,
                 targetSlotIndex: targetSlotIndex
             )
+        } else if container.contains(.folder) {
+            let decodedFolder = try container.decode(TileFolder.self, forKey: .folder)
+            self = .folder(decodedFolder)
         } else {
             throw DecodingError.dataCorrupted(
                 DecodingError.Context(
@@ -493,6 +504,9 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
             var nested = container.nestedContainer(keyedBy: SlotReferenceKeys.self, forKey: .slotReference)
             try nested.encode(targetPageID, forKey: .targetPageID)
             try nested.encode(targetSlotIndex, forKey: .targetSlotIndex)
+
+        case .folder(let folder):
+            try container.encode(folder, forKey: .folder)
         }
     }
 }
@@ -503,7 +517,18 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     public init(id: UUID = UUID(), kind: BarItemKind) {
         self.id = id
-        self.kind = kind
+        if case .folder(let folder) = kind {
+            self.kind = .folder(
+                TileFolder(
+                    title: folder.title,
+                    emoji: folder.emoji,
+                    backgroundHex: folder.backgroundHex,
+                    children: folder.children
+                )
+            )
+        } else {
+            self.kind = kind
+        }
     }
 
     public func displayTitle(in lang: AppLanguage = .system) -> String {
@@ -527,6 +552,8 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
             return trimmed.isEmpty ? L10n.tr("音效", "Sound", language: lang) : trimmed
         case .slotReference(_, let targetSlotIndex):
             return L10n.tr("引用 #\(targetSlotIndex + 1)", "Ref #\(targetSlotIndex + 1)", language: lang)
+        case .folder(let folder):
+            return folder.displayTitle(in: lang)
         }
     }
 
@@ -562,6 +589,24 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
         slotReferenceCoordinate != nil
     }
 
+    public var folder: TileFolder? {
+        if case .folder(let folder) = kind {
+            return folder
+        }
+        return nil
+    }
+
+    public var isFolder: Bool {
+        folder != nil
+    }
+
+    public func supportsHoldToRepeat(
+        in profile: ChocliftWorkspaceProfile? = nil,
+        from origin: SlotCoordinate? = nil
+    ) -> Bool {
+        HoldToRepeatPolicy.supportsHoldToRepeat(self, in: profile, from: origin)
+    }
+
     public func requiresDestructiveConfirmation(in profile: ChocliftWorkspaceProfile, from origin: SlotCoordinate? = nil) -> Bool {
         switch kind {
         case .systemAction(let action, _, _):
@@ -576,7 +621,7 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
                 in: profile,
                 from: SlotCoordinate(pageID: pageID, slotIndex: slotIdx)
             )
-        case .macApp, .shortcut, .website, .soundboard:
+        case .macApp, .shortcut, .website, .soundboard, .folder:
             return false
         }
     }
@@ -647,10 +692,69 @@ public struct BarPage: Codable, Equatable, Hashable, Identifiable, Sendable {
         try container.encode(Self.normalizeSlots(slots), forKey: .slots)
     }
 
-    private static func normalizeSlots(_ slots: [BarItem?]) -> [BarItem?] {
+    /// Returns the index of the single folder tile on this page, if any.
+    public var folderSlotIndex: Int? {
+        slots.firstIndex(where: { $0?.isFolder == true })
+    }
+
+    public var containsFolder: Bool {
+        folderSlotIndex != nil
+    }
+
+    /// Enforces the 1-folder-per-page rule: returns `true` if `slotIndex` is valid and either no folder
+    /// exists on this page yet or the existing folder already occupies `slotIndex`.
+    public func canPlaceFolder(at slotIndex: Int) -> Bool {
+        guard (0..<Self.slotsPerPage).contains(slotIndex) else { return false }
+        if let existingFolderIdx = folderSlotIndex {
+            return existingFolderIdx == slotIndex
+        }
+        return true
+    }
+
+    /// Assigns `item` into `slotIndex`, rejecting a second folder tile on the same page (`maxFoldersPerPage == 1`).
+    @discardableResult
+    public mutating func setSlot(_ item: BarItem?, at slotIndex: Int) -> Bool {
+        var normalized = Self.normalizeSlots(slots)
+        guard normalized.indices.contains(slotIndex) else { return false }
+        if let item, let folder = item.folder {
+            if let existingFolderIdx = normalized.firstIndex(where: { $0?.isFolder == true }),
+               existingFolderIdx != slotIndex {
+                return false
+            }
+            let sanitizedFolder = TileFolder(
+                title: folder.title,
+                emoji: folder.emoji,
+                backgroundHex: folder.backgroundHex,
+                children: folder.children
+            )
+            normalized[slotIndex] = BarItem(id: item.id, kind: .folder(sanitizedFolder))
+        } else {
+            normalized[slotIndex] = item
+        }
+        slots = Self.normalizeSlots(normalized)
+        return true
+    }
+
+    public static func normalizeSlots(_ slots: [BarItem?]) -> [BarItem?] {
         var normalized = Array(slots.prefix(Self.slotsPerPage))
         while normalized.count < Self.slotsPerPage {
             normalized.append(nil)
+        }
+        var folderCount = 0
+        for idx in normalized.indices {
+            guard let item = normalized[idx], let folder = item.folder else { continue }
+            if folderCount >= TileFolder.maxFoldersPerPage {
+                normalized[idx] = nil
+                continue
+            }
+            folderCount += 1
+            let sanitizedFolder = TileFolder(
+                title: folder.title,
+                emoji: folder.emoji,
+                backgroundHex: folder.backgroundHex,
+                children: folder.children
+            )
+            normalized[idx] = BarItem(id: item.id, kind: .folder(sanitizedFolder))
         }
         return normalized
     }
@@ -1215,6 +1319,15 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                    !appName.isEmpty {
                     return appName
                 }
+                if let folder = slot.folder {
+                    for child in folder.children {
+                        if case .macApp(let bid, let appName, _, _) = child.kind,
+                           bid.caseInsensitiveCompare(trimmed) == .orderedSame,
+                           !appName.isEmpty {
+                            return appName
+                        }
+                    }
+                }
             }
         }
         for flow in flows {
@@ -1348,6 +1461,13 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                 if pages[pIdx].slots[sIdx]?.flowID == id {
                     pages[pIdx].slots[sIdx] = nil
                     removedFromSlot = true
+                } else if let slot = pages[pIdx].slots[sIdx], var folder = slot.folder {
+                    let beforeChildren = folder.children.count
+                    folder.children.removeAll { $0.flowID == id }
+                    if folder.children.count != beforeChildren {
+                        pages[pIdx].slots[sIdx] = BarItem(id: slot.id, kind: .folder(folder))
+                        removedFromSlot = true
+                    }
                 }
             }
         }
@@ -1379,9 +1499,19 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     private mutating func syncFlowBarItems(for flow: ActionFlow) {
         for pIdx in pages.indices {
             for sIdx in pages[pIdx].slots.indices {
-                guard let existing = pages[pIdx].slots[sIdx],
-                      existing.flowID == flow.id else { continue }
-                pages[pIdx].slots[sIdx] = makeBarItem(for: flow, id: existing.id)
+                guard let existing = pages[pIdx].slots[sIdx] else { continue }
+                if existing.flowID == flow.id {
+                    pages[pIdx].slots[sIdx] = makeBarItem(for: flow, id: existing.id)
+                } else if var folder = existing.folder {
+                    var changed = false
+                    for cIdx in folder.children.indices where folder.children[cIdx].flowID == flow.id {
+                        folder.children[cIdx] = makeBarItem(for: flow, id: folder.children[cIdx].id)
+                        changed = true
+                    }
+                    if changed {
+                        pages[pIdx].slots[sIdx] = BarItem(id: existing.id, kind: .folder(folder))
+                    }
+                }
             }
         }
     }
@@ -1463,6 +1593,13 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                 if pages[pIdx].slots[sIdx]?.soundID == id {
                     pages[pIdx].slots[sIdx] = nil
                     removedFromSlot = true
+                } else if let slot = pages[pIdx].slots[sIdx], var folder = slot.folder {
+                    let beforeChildren = folder.children.count
+                    folder.children.removeAll { $0.soundID == id }
+                    if folder.children.count != beforeChildren {
+                        pages[pIdx].slots[sIdx] = BarItem(id: slot.id, kind: .folder(folder))
+                        removedFromSlot = true
+                    }
                 }
             }
         }
@@ -1475,9 +1612,19 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     private mutating func syncSoundboardBarItems(for clip: SoundboardClip) {
         for pIdx in pages.indices {
             for sIdx in pages[pIdx].slots.indices {
-                guard let existing = pages[pIdx].slots[sIdx],
-                      existing.soundID == clip.id else { continue }
-                pages[pIdx].slots[sIdx] = makeBarItem(for: clip, id: existing.id)
+                guard let existing = pages[pIdx].slots[sIdx] else { continue }
+                if existing.soundID == clip.id {
+                    pages[pIdx].slots[sIdx] = makeBarItem(for: clip, id: existing.id)
+                } else if var folder = existing.folder {
+                    var changed = false
+                    for cIdx in folder.children.indices where folder.children[cIdx].soundID == clip.id {
+                        folder.children[cIdx] = makeBarItem(for: clip, id: folder.children[cIdx].id)
+                        changed = true
+                    }
+                    if changed {
+                        pages[pIdx].slots[sIdx] = BarItem(id: existing.id, kind: .folder(folder))
+                    }
+                }
             }
         }
     }
@@ -1549,6 +1696,10 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                 continue
             }
 
+            if slotItem.isFolder {
+                return .missing
+            }
+
             return .resolved(
                 pageID: page.id,
                 pageIndex: pageIdx,
@@ -1600,8 +1751,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                 guard let item = maybeItem else { continue }
                 let coord = SlotCoordinate(pageID: page.id, slotIndex: sIdx)
                 if coord == origin { continue }
-                // Prefer pointing directly at concrete non-reference slots so references stay 1-hop & crystal clear.
-                if item.isSlotReference { continue }
+                // Prefer pointing directly at concrete non-reference, non-folder slots so references stay 1-hop & never bypass the 1-folder-per-page rule.
+                if item.isSlotReference || item.isFolder { continue }
                 candidates.append((pageIndex: pIdx, page: page, slotIndex: sIdx, item: item))
             }
         }
@@ -1784,12 +1935,68 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     ) -> (pageIndex: Int, slotIndex: Int, coordinate: SlotCoordinate, item: BarItem)? {
         for (pIdx, page) in pages.enumerated() {
             for (sIdx, maybeItem) in page.slots.enumerated() {
-                guard let item = maybeItem, item.id == tileID else { continue }
+                guard let item = maybeItem else { continue }
                 let coord = SlotCoordinate(pageID: page.id, slotIndex: sIdx)
-                return (pageIndex: pIdx, slotIndex: sIdx, coordinate: coord, item: item)
+                if item.id == tileID {
+                    return (pageIndex: pIdx, slotIndex: sIdx, coordinate: coord, item: item)
+                }
+                if let folder = item.folder,
+                   let child = folder.children.first(where: { $0.id == tileID }) {
+                    return (pageIndex: pIdx, slotIndex: sIdx, coordinate: coord, item: child)
+                }
             }
         }
         return nil
+    }
+
+    // MARK: - Slot Assignment & Page Reordering Helpers (Round 10)
+
+    /// Assigns `item` into `pages[pageIndex].slots[slotIndex]`, enforcing `<= 1` folder tile per page
+    /// (`TileFolder.maxFoldersPerPage == 1`) and `<= 8` non-folder child actions per folder.
+    @discardableResult
+    public mutating func setSlotItem(_ item: BarItem?, pageIndex: Int, slotIndex: Int) -> Bool {
+        guard pages.indices.contains(pageIndex) else { return false }
+        guard pages[pageIndex].setSlot(item, at: slotIndex) else { return false }
+        if item == nil {
+            pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
+        }
+        return true
+    }
+
+    public func canMovePage(at index: Int, direction: PageReorderDirection) -> Bool {
+        guard pages.indices.contains(index) else { return false }
+        let target = index + direction.indexDelta
+        return pages.indices.contains(target)
+    }
+
+    /// Reorders `pages[sourceIndex]` to `destinationIndex`, normalizing `BarPage.index` (`0..<pages.count`)
+    /// while preserving every `BarPage.id`, `appDeckBindings` (`[String: UUID]`), `pinnedStripSlots`,
+    /// and `.slotReference` coordinates. Does not alter the 8-page limit (`BarPage.maxPages == 8`).
+    @discardableResult
+    public mutating func movePage(from sourceIndex: Int, to destinationIndex: Int) -> Int? {
+        guard pages.indices.contains(sourceIndex),
+              pages.indices.contains(destinationIndex),
+              sourceIndex != destinationIndex else {
+            return nil
+        }
+        let moving = pages.remove(at: sourceIndex)
+        pages.insert(moving, at: destinationIndex)
+        for idx in pages.indices {
+            pages[idx].index = idx
+        }
+        return pages.firstIndex(where: { $0.id == moving.id })
+    }
+
+    @discardableResult
+    public mutating func movePage(at index: Int, direction: PageReorderDirection) -> Int? {
+        let target = index + direction.indexDelta
+        return movePage(from: index, to: target)
+    }
+
+    @discardableResult
+    public mutating func movePage(withID pageID: UUID, direction: PageReorderDirection) -> Int? {
+        guard let currentIndex = pages.firstIndex(where: { $0.id == pageID }) else { return nil }
+        return movePage(at: currentIndex, direction: direction)
     }
 
     public var referencedAppBundleIdentifiers: Set<String> {
@@ -1799,6 +2006,12 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                 guard let slot = maybeSlot else { continue }
                 if let bundleID = slot.bundleIdentifier {
                     result.insert(bundleID)
+                } else if let folder = slot.folder {
+                    for child in folder.children {
+                        if let bundleID = child.bundleIdentifier {
+                            result.insert(bundleID)
+                        }
+                    }
                 } else if slot.isSlotReference,
                           case .resolved(_, _, _, _, _, let resolved) = resolveBarItem(
                               slot,

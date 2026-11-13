@@ -114,6 +114,7 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var recentlyTriggeredTiles: [RecentlyTriggeredTileEntry] = []
     @Published public private(set) var maintenanceConfirmController = Round08MaintenanceConfirmController()
     @Published public private(set) var lockScreenConfirmController = Round09LockScreenConfirmController()
+    @Published public private(set) var hapticQuietHours: HapticQuietHoursSettings = .disabled
     @Published public private(set) var observedClipboardPreviewTexts: Set<String> = []
     @Published public var lastFeedback: CompanionFeedbackToast?
 
@@ -143,6 +144,7 @@ public final class CompanionClientEngine: ObservableObject {
     private let storageDefaults: UserDefaults
     private let savedMacsKey: String
     private let recentlyTriggeredTilesKey: String
+    private let hapticQuietHoursKey: String
     private let networkQueue = DispatchQueue(label: "com.choclift.client.network", qos: .userInteractive)
 
     private var browser: NWBrowser?
@@ -199,8 +201,10 @@ public final class CompanionClientEngine: ObservableObject {
         self.storageDefaults = userDefaults
         self.savedMacsKey = "\(storageKeyPrefix).savedMacs"
         self.recentlyTriggeredTilesKey = "\(storageKeyPrefix).recentlyTriggeredTiles"
+        self.hapticQuietHoursKey = "\(storageKeyPrefix).hapticQuietHours"
         loadSavedCredentials()
         loadRecentlyTriggeredTiles()
+        loadHapticQuietHours()
     }
 
     // MARK: - Discovery
@@ -1783,22 +1787,33 @@ public final class CompanionClientEngine: ObservableObject {
         }
     }
 
-    public func triggerBarItem(_ item: BarItem, from slotOrigin: SlotCoordinate? = nil) {
+    public func triggerBarItem(
+        _ item: BarItem,
+        from slotOrigin: SlotCoordinate? = nil,
+        triggeredAt: Date = Date()
+    ) {
+        // Folders open locally on the companion and never send `.folder` directly over the wire.
+        guard !item.isFolder else { return }
         let resolvedSlot = slotOrigin ?? locateSlot(for: item.id)
         if let resolvedSlot {
             tileFeedbackTracker.recordTileTriggered(slot: resolvedSlot)
         } else {
             tileFeedbackTracker.clearPendingWithoutFeedback()
         }
-        recordRecentlyTriggeredTile(item, from: resolvedSlot)
+        recordRecentlyTriggeredTile(item, from: resolvedSlot, triggeredAt: triggeredAt)
         send(.triggerBarItem(item))
     }
 
-    public func recordOfflineTileFailure(slot: SlotCoordinate?, title: String, detail: String) {
+    public func recordOfflineTileFailure(
+        slot: SlotCoordinate?,
+        title: String,
+        detail: String,
+        triggeredAt: Date = Date()
+    ) {
         if let slot {
             publishTileFeedback(tileFeedbackTracker.recordImmediateOutcome(slot: slot, outcome: .failure))
-            if let slotItem = profile.barItem(at: slot) {
-                recordRecentlyTriggeredTile(slotItem, from: slot)
+            if let slotItem = profile.barItem(at: slot), !slotItem.isFolder {
+                recordRecentlyTriggeredTile(slotItem, from: slot, triggeredAt: triggeredAt)
             }
         } else {
             tileFeedbackTracker.clearPendingWithoutFeedback()
@@ -1806,15 +1821,58 @@ public final class CompanionClientEngine: ObservableObject {
         lastFeedback = CompanionFeedbackToast(success: false, title: title, detail: detail)
     }
 
-    public func recordRecentlyTriggeredTile(_ item: BarItem, from slotOrigin: SlotCoordinate? = nil) {
+    public func recordRecentlyTriggeredTile(
+        _ item: BarItem,
+        from slotOrigin: SlotCoordinate? = nil,
+        triggeredAt: Date = Date()
+    ) {
+        guard !item.isFolder else { return }
         if item.isSlotReference, profile.resolveBarItem(item, from: slotOrigin).isMissing {
             return
         }
         let resolvedTitle = profile.displayTitle(for: item, from: slotOrigin, in: profile.settings.language)
         var list = RecentlyTriggeredTileList(entries: recentlyTriggeredTiles)
-        list.record(id: item.id, title: resolvedTitle)
+        list.record(id: item.id, title: resolvedTitle, triggeredAt: triggeredAt)
         recentlyTriggeredTiles = list.entries
         persistRecentlyTriggeredTiles()
+    }
+
+    /// Resolves when `item` last ran using ONLY `recentlyTriggeredTiles` (never clipboard text).
+    public func lastTriggeredDate(for item: BarItem?, from slotOrigin: SlotCoordinate? = nil) -> Date? {
+        guard let item else { return nil }
+        let list = RecentlyTriggeredTileList(entries: recentlyTriggeredTiles)
+        var candidateDates: [Date] = []
+        if let direct = list.lastTriggeredDate(for: item.id) {
+            candidateDates.append(direct)
+        }
+        switch item.kind {
+        case .slotReference:
+            if let resolved = profile.resolveBarItem(item, from: slotOrigin).resolvedItem,
+               let targetDate = list.lastTriggeredDate(for: resolved.id) {
+                candidateDates.append(targetDate)
+            }
+        case .folder(let folder):
+            for child in folder.children {
+                if let childDate = list.lastTriggeredDate(for: child.id) {
+                    candidateDates.append(childDate)
+                }
+            }
+        default:
+            break
+        }
+        return candidateDates.max()
+    }
+
+    /// Formats a compact relative age string (such as `"2m"`) for `item` from `recentlyTriggeredTiles`.
+    public func lastTriggeredText(
+        for item: BarItem?,
+        from slotOrigin: SlotCoordinate? = nil,
+        now: Date = Date()
+    ) -> String? {
+        LastTriggeredTimeFormatter.compactRelativeString(
+            since: lastTriggeredDate(for: item, from: slotOrigin),
+            now: now
+        )
     }
 
     public func clearRecentlyTriggeredTiles() {
@@ -2400,6 +2458,65 @@ public final class CompanionClientEngine: ObservableObject {
         return pinSlotToStrip(coordinate)
     }
 
+    // MARK: - Round 10 Page Reordering & Haptic Quiet Hours
+
+    public func canMovePage(at index: Int, direction: PageReorderDirection) -> Bool {
+        profile.canMovePage(at: index, direction: direction)
+    }
+
+    @discardableResult
+    public func movePage(at index: Int, direction: PageReorderDirection) -> Int? {
+        var next = profile
+        guard let updatedIndex = next.movePage(at: index, direction: direction) else {
+            return nil
+        }
+        pushUpdatedProfile(next)
+        return updatedIndex
+    }
+
+    @discardableResult
+    public func movePage(withID pageID: UUID, direction: PageReorderDirection) -> Int? {
+        var next = profile
+        guard let updatedIndex = next.movePage(withID: pageID, direction: direction) else {
+            return nil
+        }
+        pushUpdatedProfile(next)
+        return updatedIndex
+    }
+
+    public func setHapticQuietHours(_ settings: HapticQuietHoursSettings) {
+        hapticQuietHours = settings
+        persistHapticQuietHours()
+    }
+
+    public func setHapticQuietHoursEnabled(_ isEnabled: Bool) {
+        var next = hapticQuietHours
+        next.isEnabled = isEnabled
+        setHapticQuietHours(next)
+    }
+
+    public func setHapticQuietHoursWindow(startMinuteOfDay: Int, endMinuteOfDay: Int) {
+        let next = HapticQuietHoursSettings(
+            isEnabled: hapticQuietHours.isEnabled,
+            startMinuteOfDay: startMinuteOfDay,
+            endMinuteOfDay: endMinuteOfDay
+        )
+        setHapticQuietHours(next)
+    }
+
+    public func isHapticQuietTime(at date: Date = Date(), calendar: Calendar = .current) -> Bool {
+        hapticQuietHours.isQuietTime(at: date, calendar: calendar)
+    }
+
+    /// Returns whether success/failure outcome haptics may fire at `date` (false during quiet hours or when haptics are disabled).
+    public func shouldPlayOutcomeHaptics(at date: Date = Date(), calendar: Calendar = .current) -> Bool {
+        hapticQuietHours.shouldPlayOutcomeHaptics(
+            hapticFeedbackEnabled: profile.settings.hapticFeedbackEnabled,
+            at: date,
+            calendar: calendar
+        )
+    }
+
     public func pushUpdatedProfile(_ updated: ChocliftWorkspaceProfile) {
         var next = updated
         next.prunePinnedStripSlots()
@@ -2683,8 +2800,14 @@ public final class CompanionClientEngine: ObservableObject {
 
     private func locateSlot(for itemID: UUID) -> SlotCoordinate? {
         for page in profile.pages {
-            for (slotIndex, candidate) in page.slots.enumerated() where candidate?.id == itemID {
-                return SlotCoordinate(pageID: page.id, slotIndex: slotIndex)
+            for (slotIndex, candidate) in page.slots.enumerated() {
+                if candidate?.id == itemID {
+                    return SlotCoordinate(pageID: page.id, slotIndex: slotIndex)
+                }
+                if case .folder(let folder) = candidate?.kind,
+                   folder.children.contains(where: { $0.id == itemID }) {
+                    return SlotCoordinate(pageID: page.id, slotIndex: slotIndex)
+                }
             }
         }
         return nil
@@ -2802,6 +2925,21 @@ public final class CompanionClientEngine: ObservableObject {
         let list = RecentlyTriggeredTileList(entries: recentlyTriggeredTiles)
         if let data = try? JSONEncoder().encode(list) {
             storageDefaults.set(data, forKey: recentlyTriggeredTilesKey)
+        }
+    }
+
+    private func loadHapticQuietHours() {
+        guard let data = storageDefaults.data(forKey: hapticQuietHoursKey),
+              let decoded = try? JSONDecoder().decode(HapticQuietHoursSettings.self, from: data) else {
+            hapticQuietHours = .disabled
+            return
+        }
+        hapticQuietHours = decoded
+    }
+
+    private func persistHapticQuietHours() {
+        if let data = try? JSONEncoder().encode(hapticQuietHours) {
+            storageDefaults.set(data, forKey: hapticQuietHoursKey)
         }
     }
 }

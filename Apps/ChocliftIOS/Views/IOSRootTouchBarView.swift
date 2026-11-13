@@ -655,6 +655,9 @@ public struct IOSRootTouchBarView: View {
                                 deckFollower.selectManualPage(index: pageOffset, in: client.profile)
                             }
                         },
+                        onMovePage: { direction in
+                            moveActiveBarPage(direction)
+                        },
                         availableWidth: leftColumnWidth,
                         isLandscape: true,
                         onPromptHUD: { message in
@@ -1193,11 +1196,23 @@ public struct IOSRootTouchBarView: View {
                 .accessibilityIdentifier("ios-page-next-button")
             }
 
-            reachablePageDotsRow(count: count, isEmoji: isEmoji, activeIdx: activeIdx)
-                .padding(.horizontal, 4)
-                .frame(height: 26)
-                .background(palette.barSurface.opacity(0.82), in: Capsule())
-                .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+            HStack(spacing: 6) {
+                if !isEmoji {
+                    IOSPageReorderControls(
+                        client: client,
+                        activePageIndex: activeIdx,
+                        compact: false
+                    ) { direction in
+                        moveActiveBarPage(direction)
+                    }
+                }
+
+                reachablePageDotsRow(count: count, isEmoji: isEmoji, activeIdx: activeIdx)
+                    .padding(.horizontal, 4)
+                    .frame(height: 26)
+                    .background(palette.barSurface.opacity(0.82), in: Capsule())
+                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+            }
         }
     }
 
@@ -1223,6 +1238,16 @@ public struct IOSRootTouchBarView: View {
             reachablePageNamesRow(count: count, isEmoji: isEmoji, activeIdx: activeIdx, compact: true)
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
+
+            if !isEmoji {
+                IOSPageReorderControls(
+                    client: client,
+                    activePageIndex: activeIdx,
+                    compact: true
+                ) { direction in
+                    moveActiveBarPage(direction)
+                }
+            }
 
             reachablePageDotsRow(count: count, isEmoji: isEmoji, activeIdx: activeIdx)
                 .padding(.horizontal, 6)
@@ -1394,6 +1419,21 @@ public struct IOSRootTouchBarView: View {
         }
     }
 
+    private func moveActiveBarPage(_ direction: PageReorderDirection) {
+        guard !client.profile.pages.isEmpty else { return }
+        deckFollower.syncCurrentPage(with: client.profile)
+        let safeIdx = min(max(0, currentPageIndex), client.profile.pages.count - 1)
+        let movingPageID = client.profile.pages[safeIdx].id
+        guard client.movePage(withID: movingPageID, direction: direction) != nil else { return }
+        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+            deckFollower.handleProfileUpdated(
+                client.profile,
+                frontmostBundleIdentifier: client.frontmostBundleID
+            )
+        }
+    }
+
     private func resumeFollowingFrontmostApp() {
         let previousPageID = deckFollower.currentPageID
         withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
@@ -1466,7 +1506,7 @@ public struct IOSRootTouchBarView: View {
         let trimmedDetail = (toast.detail ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
         if !toast.success {
-            CompanionHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, type: .error)
+            CompanionHaptics.notify(enabled: client.shouldPlayOutcomeHaptics(), type: .error)
             if !trimmedTitle.isEmpty,
                !trimmedDetail.isEmpty,
                trimmedTitle.caseInsensitiveCompare(trimmedDetail) != .orderedSame,
@@ -1481,7 +1521,7 @@ public struct IOSRootTouchBarView: View {
             return
         }
 
-        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+        CompanionHaptics.tap(enabled: client.shouldPlayOutcomeHaptics(), style: .light)
         let message = !trimmedDetail.isEmpty ? trimmedDetail : trimmedTitle
         guard !message.isEmpty else { return }
         showHUD(primary: message, secondary: nil, isFailure: false, duration: 1.8)

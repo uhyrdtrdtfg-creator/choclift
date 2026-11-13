@@ -501,6 +501,7 @@ public final class MacNotchPanelController {
         isCompletingClickDismissal = false
         presentation.anchor = anchor
         presentation.pressedSlotIndex = nil
+        presentation.openFolderSlotIndex = nil
         presentation.inlineFeedback = nil
 
         let targetSize = MacNotchPanelView.windowSize

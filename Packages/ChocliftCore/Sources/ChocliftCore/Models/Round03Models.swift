@@ -348,6 +348,46 @@ public enum CompanionWorkspaceSearch {
                     let effectiveItem: BarItem
                     let isRef: Bool
                     switch item.kind {
+                    case .folder(let folder):
+                        let folderLabel = "\(page.iconEmoji) \(page.title) · \(folder.emoji) \(folder.displayTitle(in: language))"
+                        for (childIdx, child) in folder.children.enumerated() {
+                            let childTitle = profile.displayTitle(for: child, from: origin, in: language)
+                            var childFields = tileSearchableStrings(
+                                effectiveItem: child,
+                                page: page,
+                                profile: profile,
+                                language: language
+                            )
+                            childFields.append(folder.displayTitle(in: language))
+                            childFields.append(folder.title)
+                            let childHaystack = SoundboardSearch.fold(childFields.joined(separator: " "))
+                            guard tokens.allSatisfy({ childHaystack.contains($0) }) else { continue }
+                            let childShortcutBadge: String? = {
+                                if case .systemAction(let action, _, _) = child.kind {
+                                    return action.sentKeyboardShortcut
+                                }
+                                return nil
+                            }()
+                            results.append(
+                                CompanionSearchResult(
+                                    id: "folder-child-\(page.id.uuidString)-\(slotIdx)-\(childIdx)-\(child.id.uuidString)",
+                                    title: childTitle,
+                                    subtitle: folderLabel,
+                                    badgeText: childShortcutBadge,
+                                    payload: .tile(
+                                        pageID: page.id,
+                                        pageIndex: pageIdx,
+                                        pageTitle: page.title,
+                                        pageEmoji: page.iconEmoji,
+                                        slotIndex: slotIdx,
+                                        item: child,
+                                        effectiveItem: child,
+                                        isReference: false
+                                    )
+                                )
+                            )
+                        }
+                        continue
                     case .slotReference:
                         guard case .resolved(_, _, _, _, _, let target) = profile.resolveBarItem(item, from: origin) else {
                             // Missing reference slots do not run anything and are excluded from runnable search hits.
@@ -492,6 +532,9 @@ public enum CompanionWorkspaceSearch {
             }
         case .slotReference:
             break
+        case .folder(let folder):
+            parts.append(folder.title)
+            parts.append(folder.emoji)
         }
         return parts
     }

@@ -839,6 +839,14 @@ public struct IOSWorkspaceSearchSheet: View {
                         ChocSwatch.resolvedTileColor(hex: hex),
                         in: RoundedRectangle(cornerRadius: 9, style: .continuous)
                     )
+            case .folder(let folder):
+                Text(folder.emoji)
+                    .font(.system(size: 18))
+                    .frame(width: 34, height: 34)
+                    .background(
+                        ChocSwatch.resolvedTileColor(hex: folder.backgroundHex),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    )
             case .slotReference:
                 Image(systemName: "arrow.turn.up.right")
                     .font(.system(size: 14, weight: .bold))

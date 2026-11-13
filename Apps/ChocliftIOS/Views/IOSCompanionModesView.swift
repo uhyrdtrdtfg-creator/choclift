@@ -17,6 +17,9 @@ struct TileHoldToEditButtonStyle: ButtonStyle {
     let key: String
     let isSuppressed: Bool
     let holdDurationSeconds: TimeInterval
+    var repeatableAction: SystemQuickAction? = nil
+    var onRepeatBegan: (() -> Void)? = nil
+    var onRepeatFire: (() -> Void)? = nil
     let onTouchDown: () -> Void
     let onTouchEnded: () -> Void
     let onLongPressHold: () -> Void
@@ -28,6 +31,9 @@ struct TileHoldToEditButtonStyle: ButtonStyle {
             key: key,
             isSuppressed: isSuppressed,
             holdDurationSeconds: holdDurationSeconds,
+            repeatableAction: repeatableAction,
+            onRepeatBegan: onRepeatBegan,
+            onRepeatFire: onRepeatFire,
             onTouchDown: onTouchDown,
             onTouchEnded: onTouchEnded,
             onLongPressHold: onLongPressHold
@@ -41,6 +47,9 @@ private struct TileHoldToEditLabelView: View {
     let key: String
     let isSuppressed: Bool
     let holdDurationSeconds: TimeInterval
+    let repeatableAction: SystemQuickAction?
+    let onRepeatBegan: (() -> Void)?
+    let onRepeatFire: (() -> Void)?
     let onTouchDown: () -> Void
     let onTouchEnded: () -> Void
     let onLongPressHold: () -> Void
@@ -73,10 +82,35 @@ private struct TileHoldToEditLabelView: View {
             }
             .task(id: isHolding) {
                 guard isHolding else { return }
-                try? await Task.sleep(for: .seconds(max(0.25, holdDurationSeconds)))
-                guard !Task.isCancelled, configuration.isPressed, !isSuppressed else { return }
-                ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
-                onLongPressHold()
+                if let repeatableAction, HoldToRepeatPolicy.supportsHoldToRepeat(repeatableAction) {
+                    // Brief stationary slop so horizontal page swipes cancel cleanly and quick taps run once on release.
+                    try? await Task.sleep(for: .milliseconds(70))
+                    guard !Task.isCancelled, configuration.isPressed, !isSuppressed else { return }
+
+                    var repeatController = HoldToRepeatController()
+                    let startedAt = ProcessInfo.processInfo.systemUptime
+                    guard repeatController.beginHold(for: repeatableAction, at: startedAt) else { return }
+                    onRepeatBegan?()
+                    onRepeatFire?()
+
+                    while !Task.isCancelled && configuration.isPressed && !isSuppressed {
+                        try? await Task.sleep(for: .milliseconds(40))
+                        guard !Task.isCancelled, configuration.isPressed, !isSuppressed else {
+                            repeatController.endHold()
+                            return
+                        }
+                        let now = ProcessInfo.processInfo.systemUptime
+                        if repeatController.shouldFireRepeat(at: now) {
+                            onRepeatFire?()
+                        }
+                    }
+                    repeatController.endHold()
+                } else {
+                    try? await Task.sleep(for: .seconds(max(0.25, holdDurationSeconds)))
+                    guard !Task.isCancelled, configuration.isPressed, !isSuppressed else { return }
+                    ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
+                    onLongPressHold()
+                }
             }
             .onDisappear {
                 ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
@@ -99,6 +133,7 @@ public struct IOSChocolateBarSurfaceView: View {
     @State private var pressedKey: String?
     @State private var confirmGate = DestructiveActionConfirmGate()
     @State private var suppressedLongPressKey: String?
+    @State private var openFolderSelection: IOSTileFolderSelection?
     @GestureState private var activePageDragTranslation: CGSize = .zero
     @State private var didCancelTapInActiveDrag: Bool = false
 
@@ -159,6 +194,15 @@ public struct IOSChocolateBarSurfaceView: View {
                     didCancelTapInActiveDrag = false
                 }
             }
+        }
+        .sheet(item: $openFolderSelection) { selection in
+            IOSTileFolderSheet(
+                client: client,
+                pageIndex: selection.pageIndex,
+                slotIndex: selection.slotIndex,
+                onPromptHUD: onPromptHUD,
+                onEditFolderSlot: onEditSlot
+            )
         }
     }
 
@@ -333,37 +377,41 @@ public struct IOSChocolateBarSurfaceView: View {
             let tileW = availW / CGFloat(colCount)
             let tileH = availH / CGFloat(rowCount)
 
-            VStack(spacing: spacing) {
-                ForEach(0..<rowCount, id: \.self) { row in
-                    HStack(spacing: spacing) {
-                        ForEach(0..<colCount, id: \.self) { col in
-                            let slotIdx = row * colCount + col
-                            let item = page.slots[slotIdx]
-                            let key = "\(pageOffset)-\(slotIdx)"
-                            let slotOrigin = SlotCoordinate(pageID: page.id, slotIndex: slotIdx)
-                            let effectiveItem = item.flatMap { client.profile.resolveBarItem($0, from: slotOrigin).resolvedItem }
-                            let iconData = effectiveItem?.bundleIdentifier.flatMap {
-                                client.appIconsByBundleID[$0] ?? BundledAppIcons.pngData(for: $0)
-                            }
-                            let isFrontmost = (effectiveItem?.bundleIdentifier != nil && effectiveItem?.bundleIdentifier == client.frontmostBundleID)
+            TimelineView(.periodic(from: .now, by: 15.0)) { timeline in
+                VStack(spacing: spacing) {
+                    ForEach(0..<rowCount, id: \.self) { row in
+                        HStack(spacing: spacing) {
+                            ForEach(0..<colCount, id: \.self) { col in
+                                let slotIdx = row * colCount + col
+                                let item = page.slots[slotIdx]
+                                let key = "\(pageOffset)-\(slotIdx)"
+                                let slotOrigin = SlotCoordinate(pageID: page.id, slotIndex: slotIdx)
+                                let effectiveItem = item.flatMap { client.profile.resolveBarItem($0, from: slotOrigin).resolvedItem }
+                                let iconData = effectiveItem?.bundleIdentifier.flatMap {
+                                    client.appIconsByBundleID[$0] ?? BundledAppIcons.pngData(for: $0)
+                                }
+                                let isFrontmost = (effectiveItem?.bundleIdentifier != nil && effectiveItem?.bundleIdentifier == client.frontmostBundleID)
 
-                            tileButton(
-                                pageIndex: pageOffset,
-                                slotIndex: slotIdx,
-                                slotOrigin: slotOrigin,
-                                key: key,
-                                item: item,
-                                iconData: iconData,
-                                isFrontmost: isFrontmost
-                            )
-                            .frame(width: tileW, height: tileH)
+                                tileButton(
+                                    pageIndex: pageOffset,
+                                    slotIndex: slotIdx,
+                                    slotOrigin: slotOrigin,
+                                    key: key,
+                                    item: item,
+                                    effectiveItem: effectiveItem,
+                                    iconData: iconData,
+                                    isFrontmost: isFrontmost,
+                                    now: timeline.date
+                                )
+                                .frame(width: tileW, height: tileH)
+                            }
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, horizontalPad)
+                .padding(.vertical, verticalPad)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, horizontalPad)
-            .padding(.vertical, verticalPad)
         }
     }
 
@@ -373,8 +421,10 @@ public struct IOSChocolateBarSurfaceView: View {
         slotOrigin: SlotCoordinate,
         key: String,
         item: BarItem?,
+        effectiveItem: BarItem?,
         iconData: Data?,
-        isFrontmost: Bool
+        isFrontmost: Bool,
+        now: Date
     ) -> some View {
         let isPressed = (pressedKey == key)
         let isAwaitingConfirm = (item != nil) && confirmGate.isArmed(
@@ -382,6 +432,15 @@ public struct IOSChocolateBarSurfaceView: View {
             at: ProcessInfo.processInfo.systemUptime
         )
         let lastRunOutcome = client.tileOutcome(for: slotOrigin)
+        let lastTriggeredText = client.lastTriggeredText(for: item, from: slotOrigin, now: now)
+        let repeatableAction: SystemQuickAction? = {
+            guard let effectiveItem,
+                  case .systemAction(let action, _, _) = effectiveItem.kind,
+                  HoldToRepeatPolicy.supportsHoldToRepeat(action) else {
+                return nil
+            }
+            return action
+        }()
 
         return Button {
             handleTileShortTap(
@@ -404,6 +463,7 @@ public struct IOSChocolateBarSurfaceView: View {
                 compact: true,
                 profile: client.profile,
                 slotOrigin: slotOrigin,
+                lastTriggeredText: lastTriggeredText,
                 iconLookup: { bundleID in
                     client.appIconsByBundleID[bundleID] ?? BundledAppIcons.pngData(for: bundleID)
                 }
@@ -416,6 +476,15 @@ public struct IOSChocolateBarSurfaceView: View {
                 key: key,
                 isSuppressed: didCancelTapInActiveDrag,
                 holdDurationSeconds: CompanionInteractionPolicy.tileLongPressDurationSeconds,
+                repeatableAction: repeatableAction,
+                onRepeatBegan: {
+                    suppressedLongPressKey = key
+                    confirmGate.disarm()
+                },
+                onRepeatFire: {
+                    guard let item else { return }
+                    fireTileActionImmediately(item: item, slotOrigin: slotOrigin)
+                },
                 onTouchDown: {
                     suppressedLongPressKey = nil
                     if activePageDragTranslation == .zero {
@@ -471,6 +540,13 @@ public struct IOSChocolateBarSurfaceView: View {
             return
         }
 
+        if item.isFolder {
+            confirmGate.disarm()
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            openFolderSelection = IOSTileFolderSelection(pageIndex: pageIndex, slotIndex: slotIndex)
+            return
+        }
+
         // If a reference tile's target slot was deleted, stay quiet and do not run anything.
         if item.isSlotReference,
            client.profile.resolveBarItem(item, from: slotOrigin).isMissing {
@@ -506,16 +582,21 @@ public struct IOSChocolateBarSurfaceView: View {
             }
 
         case .runImmediately, .confirmedRun:
-            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-            if client.connectionState.isConnected {
-                client.triggerBarItem(item, from: slotOrigin)
-            } else {
-                client.recordOfflineTileFailure(
-                    slot: slotOrigin,
-                    title: resolvedTitle,
-                    detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
-                )
-            }
+            fireTileActionImmediately(item: item, slotOrigin: slotOrigin)
+        }
+    }
+
+    private func fireTileActionImmediately(item: BarItem, slotOrigin: SlotCoordinate) {
+        let resolvedTitle = client.profile.displayTitle(for: item, from: slotOrigin, in: lang)
+        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+        if client.connectionState.isConnected {
+            client.triggerBarItem(item, from: slotOrigin)
+        } else {
+            client.recordOfflineTileFailure(
+                slot: slotOrigin,
+                title: resolvedTitle,
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
         }
     }
 }
@@ -1955,6 +2036,7 @@ public struct IOSIPadChocolateBarDeckView: View {
     var isDeckSwitchHighlighted: Bool
     var onFollowFrontmostApp: (() -> Void)?
     var onSelectManualPage: ((Int) -> Void)?
+    var onMovePage: ((PageReorderDirection) -> Void)?
     let availableWidth: CGFloat
     var isLandscape: Bool
     var onPromptHUD: ((String) -> Void)?
@@ -1970,6 +2052,7 @@ public struct IOSIPadChocolateBarDeckView: View {
         isDeckSwitchHighlighted: Bool = false,
         onFollowFrontmostApp: (() -> Void)? = nil,
         onSelectManualPage: ((Int) -> Void)? = nil,
+        onMovePage: ((PageReorderDirection) -> Void)? = nil,
         availableWidth: CGFloat,
         isLandscape: Bool = true,
         onPromptHUD: ((String) -> Void)? = nil,
@@ -1981,6 +2064,7 @@ public struct IOSIPadChocolateBarDeckView: View {
         self.isDeckSwitchHighlighted = isDeckSwitchHighlighted
         self.onFollowFrontmostApp = onFollowFrontmostApp
         self.onSelectManualPage = onSelectManualPage
+        self.onMovePage = onMovePage
         self.availableWidth = availableWidth
         self.isLandscape = isLandscape
         self.onPromptHUD = onPromptHUD
@@ -2104,42 +2188,53 @@ public struct IOSIPadChocolateBarDeckView: View {
                     .accessibilityIdentifier("ios-page-next-button")
                 }
 
-                HStack(spacing: 2) {
-                    ForEach(0..<pageCount, id: \.self) { dotIdx in
-                        let isSelected = (dotIdx == activeIdx)
-                        Button {
-                            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                            if let onSelectManualPage {
-                                onSelectManualPage(dotIdx)
-                            } else {
-                                withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
-                                    currentPageIndex = dotIdx
-                                }
-                            }
-                        } label: {
-                            ZStack {
-                                if isSelected {
-                                    Capsule()
-                                        .fill(palette.accent)
-                                        .frame(width: 18, height: 7)
-                                } else {
-                                    Circle()
-                                        .fill(palette.secondaryText.opacity(0.35))
-                                        .frame(width: 7, height: 7)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("ios-page-dot-\(dotIdx)")
+                HStack(spacing: 8) {
+                    if let onMovePage {
+                        IOSPageReorderControls(
+                            client: client,
+                            activePageIndex: activeIdx,
+                            compact: false,
+                            onMove: onMovePage
+                        )
                     }
+
+                    HStack(spacing: 2) {
+                        ForEach(0..<pageCount, id: \.self) { dotIdx in
+                            let isSelected = (dotIdx == activeIdx)
+                            Button {
+                                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                if let onSelectManualPage {
+                                    onSelectManualPage(dotIdx)
+                                } else {
+                                    withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                                        currentPageIndex = dotIdx
+                                    }
+                                }
+                            } label: {
+                                ZStack {
+                                    if isSelected {
+                                        Capsule()
+                                            .fill(palette.accent)
+                                            .frame(width: 18, height: 7)
+                                    } else {
+                                        Circle()
+                                            .fill(palette.secondaryText.opacity(0.35))
+                                            .frame(width: 7, height: 7)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("ios-page-dot-\(dotIdx)")
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 24)
+                    .background(palette.barSurface.opacity(0.88), in: Capsule())
+                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
                 }
-                .padding(.horizontal, 6)
-                .frame(maxWidth: .infinity)
-                .frame(height: 24)
-                .background(palette.barSurface.opacity(0.88), in: Capsule())
-                .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
             }
             .padding(.horizontal, 14)
             .padding(.top, 10)
@@ -2194,6 +2289,7 @@ public struct IOSPersistentControlStripView: View {
     var onEditSlot: ((IOSEditSlotSelection) -> Void)?
 
     @State private var pressedKey: String?
+    @State private var suppressedRepeatStripKey: String?
     @State private var volumeDragLevel: Double?
     @State private var brightnessDragLevel: Double?
     @State private var volumeThrottle = ControlLevelDragThrottle()
@@ -2547,6 +2643,10 @@ public struct IOSPersistentControlStripView: View {
 
             let isNextPressed = (pressedKey == "nextTrack")
             Button {
+                if suppressedRepeatStripKey == "nextTrack" {
+                    suppressedRepeatStripKey = nil
+                    return
+                }
                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
                 ChocPressFeedback.completeTap(key: "nextTrack", pressedKey: $pressedKey)
                 triggerStripQuickAction(.mediaNext)
@@ -2569,7 +2669,17 @@ public struct IOSPersistentControlStripView: View {
                     .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .scaleEffect(isNextPressed ? 0.92 : 1.0)
             }
-            .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: "nextTrack"))
+            .buttonStyle(
+                IOSRepeatableQuickActionButtonStyle(
+                    pressedKey: $pressedKey,
+                    key: "nextTrack",
+                    action: .mediaNext,
+                    suppressReleaseKey: $suppressedRepeatStripKey
+                ) {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    triggerStripQuickAction(.mediaNext)
+                }
+            )
             .accessibilityIdentifier("ios-strip-next-track")
             .accessibilityLabel(L10n.tr("下一曲", "Next Track", language: lang))
         }

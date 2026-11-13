@@ -251,6 +251,13 @@ public struct IOSCompactKeyAndRecentsBar: View {
                                 .font(.system(size: 11, weight: .bold, design: .rounded))
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
+
+                            if let ago = entry.formattedLastTriggered() {
+                                Text(ago)
+                                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                                    .monospacedDigit()
+                                    .foregroundStyle(palette.secondaryText)
+                            }
                         }
                         .padding(.horizontal, 9)
                         .frame(minHeight: 28)
@@ -403,6 +410,10 @@ public struct IOSRecentlyTriggeredSheet: View {
                         Text(L10n.tr("已从页面移除", "Removed from pages", language: lang))
                             .font(.caption2)
                             .foregroundStyle(palette.secondaryText)
+                    } else if let ago = entry.formattedLastTriggered() {
+                        Text(ago)
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(palette.secondaryText)
                     }
                 }
 
@@ -455,7 +466,7 @@ private enum RecentTileExecutionHelper {
         onPromptHUD: ((String) -> Void)?
     ) -> Bool {
         guard let located = client.profile.locateBarItem(withID: entry.id) else {
-            CompanionHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, type: .error)
+            CompanionHaptics.notify(enabled: client.shouldPlayOutcomeHaptics(), type: .error)
             client.lastFeedback = CompanionFeedbackToast(
                 success: false,
                 title: entry.title,
@@ -522,6 +533,7 @@ public struct IOSPinnedStripTilesRow: View {
 
     @State private var pressedKey: String?
     @State private var suppressedLongPressKey: String?
+    @State private var openFolderSelection: IOSTileFolderSelection?
     @State private var confirmGate = DestructiveActionConfirmGate()
 
     private var lang: AppLanguage { client.profile.settings.language }
@@ -554,6 +566,16 @@ public struct IOSPinnedStripTilesRow: View {
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ios-strip-pinned-row")
+            .sheet(item: $openFolderSelection) { selection in
+                IOSTileFolderSheet(
+                    client: client,
+                    pageIndex: selection.pageIndex,
+                    slotIndex: selection.slotIndex,
+                    onPromptHUD: onPromptHUD
+                ) { editTarget in
+                    onEditSlot?(editTarget)
+                }
+            }
         }
     }
 
@@ -604,6 +626,13 @@ public struct IOSPinnedStripTilesRow: View {
                     Image(systemName: outcome == .success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(outcome == .success ? palette.statusConnected : palette.statusFailure)
+                } else if !isAwaitingConfirm,
+                          let ago = client.lastTriggeredText(for: pinned.item, from: pinned.coordinate) {
+                    Spacer(minLength: 0)
+                    Text(ago)
+                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(palette.secondaryText)
                 }
             }
             .padding(.horizontal, 6)
@@ -628,6 +657,29 @@ public struct IOSPinnedStripTilesRow: View {
                 key: key,
                 isSuppressed: false,
                 holdDurationSeconds: CompanionInteractionPolicy.tileLongPressDurationSeconds,
+                repeatableAction: {
+                    guard case .systemAction(let action, _, _) = effectiveItem.kind,
+                          HoldToRepeatPolicy.supportsHoldToRepeat(action) else {
+                        return nil
+                    }
+                    return action
+                }(),
+                onRepeatBegan: {
+                    suppressedLongPressKey = key
+                    confirmGate.disarm()
+                },
+                onRepeatFire: {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    if client.connectionState.isConnected {
+                        client.triggerBarItem(pinned.item, from: pinned.coordinate)
+                    } else {
+                        client.recordOfflineTileFailure(
+                            slot: pinned.coordinate,
+                            title: title,
+                            detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                        )
+                    }
+                },
                 onTouchDown: {
                     suppressedLongPressKey = nil
                 },
@@ -672,6 +724,9 @@ public struct IOSPinnedStripTilesRow: View {
         case .soundboard(_, _, let emoji, _):
             Text(emoji.isEmpty ? "🔊" : emoji)
                 .font(.system(size: 13))
+        case .folder(let folder):
+            Text(folder.emoji)
+                .font(.system(size: 13))
         case .slotReference:
             Image(systemName: "arrow.turn.up.right")
                 .font(.system(size: 11, weight: .bold))
@@ -684,6 +739,12 @@ public struct IOSPinnedStripTilesRow: View {
         key: String,
         resolvedTitle: String
     ) {
+        if pinned.item.isFolder {
+            confirmGate.disarm()
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            openFolderSelection = IOSTileFolderSelection(pageIndex: pinned.pageIndex, slotIndex: pinned.slotIndex)
+            return
+        }
         if pinned.item.isSlotReference,
            client.profile.resolveBarItem(pinned.item, from: pinned.coordinate).isMissing {
             confirmGate.disarm()
