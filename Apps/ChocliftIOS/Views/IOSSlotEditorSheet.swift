@@ -90,6 +90,12 @@ public struct IOSSlotEditorSheet: View {
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                if let coord = currentSlotOrigin, let existing = existingItem {
+                    pinToStripCallout(coordinate: coord, item: existing)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 10)
+                }
+
                 if let existing = existingItem, existing.isSlotReference {
                     referenceOriginCallout(for: existing)
                         .padding(.horizontal, 14)
@@ -827,6 +833,104 @@ public struct IOSSlotEditorSheet: View {
         updated.pages[pageIndex].slots[slotIndex] = item
         client.pushUpdatedProfile(updated)
         dismiss()
+    }
+
+    @ViewBuilder
+    private func pinToStripCallout(coordinate: SlotCoordinate, item: BarItem) -> some View {
+        let isPinned = client.profile.isSlotPinnedToStrip(coordinate)
+        let pinCount = client.profile.activePinnedStripCount
+        let canPin = isPinned || client.profile.canPinMoreSlotsToStrip
+        let title = client.profile.displayTitle(for: item, from: coordinate, in: lang)
+
+        HStack(spacing: 10) {
+            Image(systemName: isPinned ? "pin.fill" : "pin")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(isPinned ? palette.accent : palette.secondaryText)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(
+                    isPinned
+                        ? L10n.tr("已固定到底部常驻栏 · \(title)", "Pinned to Persistent Strip · \(title)", language: lang)
+                        : L10n.tr(
+                            "底部常驻栏（\(pinCount)/\(PinnedStripSlots.maxPinnedCount)）",
+                            "Persistent Strip (\(pinCount)/\(PinnedStripSlots.maxPinnedCount))",
+                            language: lang
+                        )
+                )
+                .font(.caption.weight(.bold))
+                .foregroundStyle(palette.primaryText)
+                .lineLimit(1)
+
+                Text(
+                    isPinned
+                        ? L10n.tr("翻页时保持可见，点按直接运行，长按可再次编辑。", "Stays visible across page changes. Tap to run, hold to edit.", language: lang)
+                        : (canPin
+                            ? L10n.tr("固定后翻页仍保持可见（最多 4 个）。", "Keep this tile visible while changing pages (up to 4).", language: lang)
+                            : L10n.tr("常驻栏已满 4 个固定方块，请先取消固定其他方块。", "4 tiles already pinned. Unpin another slot first.", language: lang))
+                )
+                .font(.caption2)
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(2)
+            }
+
+            Spacer(minLength: 6)
+
+            if isPinned {
+                Button {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                    _ = client.unpinSlotFromStrip(coordinate)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "pin.slash.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(L10n.tr("取消固定", "Unpin", language: lang))
+                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(palette.emphasisForeground)
+                    .padding(.horizontal, 11)
+                    .frame(minHeight: 34)
+                    .background(palette.accentEmphasis, in: Capsule())
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ios-slot-editor-unpin-button")
+            } else {
+                Button {
+                    guard canPin else { return }
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                    _ = client.pinSlotToStrip(coordinate)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(
+                            canPin
+                                ? L10n.tr("固定", "Pin", language: lang)
+                                : L10n.tr("已满 4/4", "Full 4/4", language: lang)
+                        )
+                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(canPin ? palette.accentForeground : palette.secondaryText)
+                    .padding(.horizontal, 11)
+                    .frame(minHeight: 34)
+                    .background(canPin ? palette.accent : palette.tileFillBottom, in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(canPin ? .clear : palette.subtleCardStroke, lineWidth: 1)
+                    )
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canPin)
+                .accessibilityIdentifier("ios-slot-editor-pin-button")
+            }
+        }
+        .padding(12)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(isPinned ? palette.accent.opacity(0.6) : palette.subtleCardStroke, lineWidth: 1)
+        )
     }
 
     private func hydrateExisting() {

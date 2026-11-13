@@ -1003,7 +1003,11 @@ public struct MacSlotItemPickerSheet: View {
     }
 
     private var footerBar: some View {
-        HStack {
+        let isPinned = coordinator.profile.isSlotPinnedToStrip(pageIndex: pageIndex, slotIndex: slotIndex)
+        let pinCount = coordinator.profile.activePinnedStripCount
+        let canPin = isPinned || coordinator.profile.canPinMoreSlotsToStrip
+
+        return HStack(spacing: 12) {
             if existingItem != nil {
                 Button(role: .destructive) {
                     coordinator.setSlotItem(nil, pageIndex: pageIndex, slotIndex: slotIndex)
@@ -1012,6 +1016,24 @@ public struct MacSlotItemPickerSheet: View {
                     Label(L10n.tr("清空此槽位", "Clear Slot", language: lang), systemImage: "trash")
                         .foregroundStyle(palette.statusFailure)
                 }
+
+                Button {
+                    _ = coordinator.togglePinSlotToStrip(pageIndex: pageIndex, slotIndex: slotIndex)
+                } label: {
+                    Label(
+                        isPinned
+                            ? L10n.tr("取消固定到控制条", "Unpin from Strip", language: lang)
+                            : L10n.tr(
+                                "固定到控制条 (\(pinCount)/\(PinnedStripSlots.maxPinnedCount))",
+                                "Pin to Strip (\(pinCount)/\(PinnedStripSlots.maxPinnedCount))",
+                                language: lang
+                            ),
+                        systemImage: isPinned ? "pin.slash.fill" : "pin.fill"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .tint(isPinned ? palette.accentEmphasis : palette.accent)
+                .disabled(!canPin)
             }
 
             Spacer()

@@ -37,6 +37,8 @@ public struct IOSCompanionBarRibbon: View {
 
             IOSKeepMacAwakeTogglePill(client: client, compact: compact)
 
+            IOSSleepDisplayPillButton(client: client, compact: compact)
+
             IOSFrontmostWindowsRibbonButton(client: client, compact: compact)
 
             screenshotCaptureButton

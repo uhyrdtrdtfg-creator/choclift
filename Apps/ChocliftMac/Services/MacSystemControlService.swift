@@ -182,6 +182,51 @@ public final class MacSystemControlService {
         onStateChanged?(updated)
     }
 
+    /// Puts connected Mac displays to idle sleep immediately via public IOKit `IODisplayWrangler` (`IORequestIdle`).
+    /// Does not lock the Mac, does not sleep the system/network, and leaves any `PreventUserIdleSystemSleep`
+    /// keep-awake assertion untouched so the display stays asleep.
+    public func sleepDisplay(language: AppLanguage = .system) -> (success: Bool, title: String, detail: String) {
+        let title = L10n.tr("熄灭屏幕", "Sleep Display", language: language)
+        let wrangler = IORegistryEntryFromPath(
+            kIOMainPortDefault,
+            "IOService:/IOResources/IODisplayWrangler"
+        )
+        guard wrangler != IO_OBJECT_NULL else {
+            return (
+                false,
+                title,
+                L10n.tr(
+                    "macOS 未能访问显示器电源控制器（IODisplayWrangler）。",
+                    "macOS could not open IODisplayWrangler to sleep the display.",
+                    language: language
+                )
+            )
+        }
+        defer { IOObjectRelease(wrangler) }
+
+        let status = IORegistryEntrySetCFProperty(
+            wrangler,
+            "IORequestIdle" as CFString,
+            kCFBooleanTrue
+        )
+        guard status == kIOReturnSuccess else {
+            return (
+                false,
+                title,
+                L10n.tr(
+                    "显示器未能进入休眠（IOKit 状态码 \(status)）。",
+                    "macOS rejected display sleep request (IOKit code \(status)).",
+                    language: language
+                )
+            )
+        }
+        return (
+            true,
+            title,
+            L10n.tr("已熄灭屏幕（未锁定 Mac，防休眠开关保持不变）", "Display put to sleep (Mac unlocked; Keep Awake unchanged)", language: language)
+        )
+    }
+
     public func syncSoundboardVolume(_ volume: Double) {
         let clamped = ControlStripLevel.clamp(volume)
         guard abs(currentState.soundboardVolume - clamped) >= 0.001 else { return }

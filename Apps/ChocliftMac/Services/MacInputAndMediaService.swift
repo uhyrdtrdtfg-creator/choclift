@@ -294,6 +294,55 @@ public final class MacInputAndMediaService {
         }
     }
 
+    // MARK: - Compact Key Row (Arrows, Escape, Space — Existing Input Path)
+
+    public func sendCompactKey(
+        _ key: CompanionCompactKey,
+        preferredPID: pid_t? = nil,
+        language: AppLanguage = .system
+    ) -> (success: Bool, message: String) {
+        guard ensureAccessibilityOrPrompt() else {
+            return (
+                false,
+                L10n.tr(
+                    "需要辅助功能权限才能发送按键，请在系统设置中开启",
+                    "Accessibility permission is required to send keys",
+                    language: language
+                )
+            )
+        }
+        guard activateTargetForKeystroke(preferredPID, strict: false) else {
+            return missingStrictTargetResult()
+        }
+
+        let virtualKey: CGKeyCode
+        let flags: CGEventFlags
+        switch key {
+        case .escape:
+            virtualKey = CGKeyCode(kVK_Escape)
+            flags = []
+        case .leftArrow:
+            virtualKey = CGKeyCode(kVK_LeftArrow)
+            flags = [.maskSecondaryFn, .maskNumericPad]
+        case .upArrow:
+            virtualKey = CGKeyCode(kVK_UpArrow)
+            flags = [.maskSecondaryFn, .maskNumericPad]
+        case .downArrow:
+            virtualKey = CGKeyCode(kVK_DownArrow)
+            flags = [.maskSecondaryFn, .maskNumericPad]
+        case .rightArrow:
+            virtualKey = CGKeyCode(kVK_RightArrow)
+            flags = [.maskSecondaryFn, .maskNumericPad]
+        case .space:
+            virtualKey = CGKeyCode(kVK_Space)
+            flags = []
+        }
+
+        postKeyStroke(virtualKey: virtualKey, flags: flags)
+        let label = key.capLabel(in: language)
+        return (true, L10n.tr("已发送 \(label)", "Sent \(label)", language: language))
+    }
+
     // MARK: - Low-Level CGEvent & Pasteboard Helpers
 
     private func ensureAccessibilityOrPrompt() -> Bool {

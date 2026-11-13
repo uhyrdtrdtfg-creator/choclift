@@ -453,6 +453,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             )
         }
         merged.soundboardClips = SoundboardCatalogValidator.sanitizeBoard(reconciled)
+        merged.prunePinnedStripSlots()
         return merged
     }
 
@@ -642,7 +643,22 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
               profile.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
         mutateProfile { draft in
             draft.pages[pageIndex].slots[slotIndex] = item
+            draft.prunePinnedStripSlots()
         }
+    }
+
+    @discardableResult
+    public func togglePinSlotToStrip(pageIndex: Int, slotIndex: Int) -> Bool {
+        guard profile.pages.indices.contains(pageIndex),
+              profile.pages[pageIndex].slots.indices.contains(slotIndex) else {
+            return false
+        }
+        let coordinate = SlotCoordinate(pageID: profile.pages[pageIndex].id, slotIndex: slotIndex)
+        var didSucceed = false
+        mutateProfile { draft in
+            didSucceed = draft.togglePinSlotToStrip(coordinate)
+        }
+        return didSucceed
     }
 
     public func swapSlots(pageIndex: Int, fromSlot: Int, toSlot: Int) {
@@ -1288,6 +1304,22 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             server.broadcastFrontmostWindows(snapshot)
             reply(.frontmostWindowsUpdated(snapshot))
             reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
+
+        case .sleepMacDisplay:
+            // Sleep only the display via IODisplayWrangler without locking the Mac and without
+            // mutating or recreating `keepAwakeService`'s PreventUserIdleSystemSleep assertion.
+            let res = systemControlService.sleepDisplay(language: lang)
+            recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
+            reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
+
+        case .sendCompactKey(let key):
+            let res = inputService.sendCompactKey(
+                key,
+                preferredPID: timeTravel.lastExternalAppPID,
+                language: lang
+            )
+            recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
+            reply(.actionFeedback(success: res.success, title: key.title(in: lang), detail: res.message))
 
         case .updateProfile(let updatedProfile):
             let safeProfile = sanitizeCompanionProfileUpdate(updatedProfile)

@@ -308,9 +308,19 @@ public struct IOSRootTouchBarView: View {
                 activeMainContent(isLandscape: true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+                IOSCompactKeyAndRecentsBar(
+                    client: client,
+                    showInlineRecentChips: false,
+                    onPromptHUD: { flashHUD($0) }
+                )
+                .padding(.horizontal, 14)
+                .padding(.bottom, 5)
+
                 IOSPersistentControlStripView(
                     client: client,
-                    preferSingleRow: (totalWidth - 60) >= 580
+                    preferSingleRow: (totalWidth - 60) >= 580,
+                    onPromptHUD: { flashHUD($0) },
+                    onEditSlot: { editingSlot = $0 }
                 )
                 .padding(.horizontal, 14)
                 .padding(.bottom, 8)
@@ -431,9 +441,18 @@ public struct IOSRootTouchBarView: View {
             activeMainContent(isLandscape: false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            IOSCompactKeyAndRecentsBar(
+                client: client,
+                showInlineRecentChips: true,
+                onPromptHUD: { flashHUD($0) }
+            )
+            .padding(.horizontal, 16)
+
             IOSPersistentControlStripView(
                 client: client,
-                preferSingleRow: false
+                preferSingleRow: false,
+                onPromptHUD: { flashHUD($0) },
+                onEditSlot: { editingSlot = $0 }
             )
             .padding(.horizontal, 16)
 

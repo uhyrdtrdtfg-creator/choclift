@@ -959,6 +959,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     public var snippets: [TextSnippet]
     public var soundboardClips: [SoundboardClip]
     public var soundboardVolume: Double
+    public var pinnedStripSlots: [SlotCoordinate]
 
     private enum CodingKeys: String, CodingKey {
         case revision
@@ -973,6 +974,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         case snippets
         case soundboardClips
         case soundboardVolume
+        case pinnedStripSlots
     }
 
     public init(
@@ -987,7 +989,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         appDeckBindings: [String: UUID] = [:],
         snippets: [TextSnippet] = [],
         soundboardClips: [SoundboardClip] = [],
-        soundboardVolume: Double = SoundboardClip.defaultVolume
+        soundboardVolume: Double = SoundboardClip.defaultVolume,
+        pinnedStripSlots: [SlotCoordinate] = []
     ) {
         self.revision = revision
         self.updatedAt = updatedAt
@@ -1001,13 +1004,15 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.snippets = Array(snippets.prefix(TextSnippet.maxLibraryCount))
         self.soundboardClips = SoundboardCatalogValidator.sanitizeBoard(soundboardClips)
         self.soundboardVolume = ControlStripLevel.clamp(soundboardVolume)
+        self.pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.revision = try container.decodeIfPresent(Int.self, forKey: .revision) ?? 1
         self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
-        self.pages = try container.decodeIfPresent([BarPage].self, forKey: .pages) ?? ChocliftDefaults.makeDefaultPages()
+        let decodedPages = try container.decodeIfPresent([BarPage].self, forKey: .pages) ?? ChocliftDefaults.makeDefaultPages()
+        self.pages = decodedPages
         self.emojiSlides = try container.decodeIfPresent([EmojiSlide].self, forKey: .emojiSlides) ?? ChocliftDefaults.makeDefaultEmojiSlides()
         self.gestureConfig = try container.decodeIfPresent(GestureConfiguration.self, forKey: .gestureConfig) ?? ChocliftDefaults.makeDefaultGestureConfiguration()
         self.settings = try container.decodeIfPresent(CompanionSettings.self, forKey: .settings) ?? CompanionSettings()
@@ -1030,6 +1035,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.soundboardClips = SoundboardCatalogValidator.sanitizeBoard(decodedClips)
         let decodedSBVolume = try container.decodeIfPresent(Double.self, forKey: .soundboardVolume) ?? SoundboardClip.defaultVolume
         self.soundboardVolume = ControlStripLevel.clamp(decodedSBVolume)
+        let decodedPinnedSlots = try container.decodeIfPresent([SlotCoordinate].self, forKey: .pinnedStripSlots) ?? []
+        self.pinnedStripSlots = PinnedStripSlots.sanitize(decodedPinnedSlots, in: decodedPages)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -1046,6 +1053,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         try container.encode(Array(snippets.prefix(TextSnippet.maxLibraryCount)), forKey: .snippets)
         try container.encode(SoundboardCatalogValidator.sanitizeBoard(soundboardClips), forKey: .soundboardClips)
         try container.encode(ControlStripLevel.clamp(soundboardVolume), forKey: .soundboardVolume)
+        try container.encode(PinnedStripSlots.sanitize(pinnedStripSlots, in: pages), forKey: .pinnedStripSlots)
     }
 
     private static func sanitizeAppDeckBindings(_ bindings: [String: UUID]) -> [String: UUID] {
@@ -1303,6 +1311,9 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                 }
             }
         }
+        if removedFromSlot {
+            pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
+        }
         return flows.count != beforeCount || removedFromSlot
     }
 
@@ -1414,6 +1425,9 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                     removedFromSlot = true
                 }
             }
+        }
+        if removedFromSlot {
+            pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
         }
         return soundboardClips.count != beforeCount || removedFromSlot
     }
@@ -1584,6 +1598,88 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                 }
             }
         }
+
+        pinnedStripSlots = PinnedStripSlots.remapAfterSwap(
+            coordinates: pinnedStripSlots,
+            pageID: pageID,
+            fromSlot: fromSlot,
+            toSlot: toSlot,
+            in: pages
+        )
+    }
+
+    // MARK: - Persistent Strip Pinned Tiles & Tile Lookup Helpers (Round 5)
+
+    public var activePinnedStripSlots: [SlotCoordinate] {
+        PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
+    }
+
+    public var activePinnedStripCount: Int {
+        activePinnedStripSlots.count
+    }
+
+    public var canPinMoreSlotsToStrip: Bool {
+        activePinnedStripCount < PinnedStripSlots.maxPinnedCount
+    }
+
+    public func isSlotPinnedToStrip(_ coordinate: SlotCoordinate) -> Bool {
+        activePinnedStripSlots.contains(coordinate)
+    }
+
+    public func isSlotPinnedToStrip(pageIndex: Int, slotIndex: Int) -> Bool {
+        guard pages.indices.contains(pageIndex) else { return false }
+        return isSlotPinnedToStrip(SlotCoordinate(pageID: pages[pageIndex].id, slotIndex: slotIndex))
+    }
+
+    @discardableResult
+    public mutating func pinSlotToStrip(_ coordinate: SlotCoordinate) -> Bool {
+        let outcome = PinnedStripSlots.pin(coordinate, into: pinnedStripSlots, in: pages)
+        pinnedStripSlots = outcome.updated
+        return outcome.didPin
+    }
+
+    @discardableResult
+    public mutating func unpinSlotFromStrip(_ coordinate: SlotCoordinate) -> Bool {
+        let outcome = PinnedStripSlots.unpin(coordinate, from: pinnedStripSlots, in: pages)
+        pinnedStripSlots = outcome.updated
+        return outcome.didUnpin
+    }
+
+    @discardableResult
+    public mutating func togglePinSlotToStrip(_ coordinate: SlotCoordinate) -> Bool {
+        if isSlotPinnedToStrip(coordinate) {
+            return unpinSlotFromStrip(coordinate)
+        }
+        return pinSlotToStrip(coordinate)
+    }
+
+    public mutating func prunePinnedStripSlots() {
+        pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
+    }
+
+    public func resolvedPinnedStripSlots() -> [ResolvedPinnedStripSlot] {
+        PinnedStripSlots.resolve(pinnedStripSlots, in: pages)
+    }
+
+    public func barItem(at coordinate: SlotCoordinate) -> BarItem? {
+        guard let page = pages.first(where: { $0.id == coordinate.pageID }),
+              page.slots.indices.contains(coordinate.slotIndex) else {
+            return nil
+        }
+        return page.slots[coordinate.slotIndex]
+    }
+
+    public func locateBarItem(
+        withID tileID: UUID
+    ) -> (pageIndex: Int, slotIndex: Int, coordinate: SlotCoordinate, item: BarItem)? {
+        for (pIdx, page) in pages.enumerated() {
+            for (sIdx, maybeItem) in page.slots.enumerated() {
+                guard let item = maybeItem, item.id == tileID else { continue }
+                let coord = SlotCoordinate(pageID: page.id, slotIndex: sIdx)
+                return (pageIndex: pIdx, slotIndex: sIdx, coordinate: coord, item: item)
+            }
+        }
+        return nil
     }
 
     public var referencedAppBundleIdentifiers: Set<String> {

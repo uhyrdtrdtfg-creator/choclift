@@ -31,12 +31,15 @@
 		28AAE9E440B4B1A1D394BF4B /* OrcaTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */; };
 		2C8E4122BC0C618D66E952D8 /* ChocolateBarStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00E7551CE4795CA307064107 /* ChocolateBarStudioView.swift */; };
 		2E8768794A140A931D4159E5 /* Round04Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FF0695A991380B3FB28853 /* Round04Models.swift */; };
+		33878859FBF852A76234D4F2 /* Round05Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */; };
 		3398DF62B62B53105D05AD43 /* ActionFlowsStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A0A827A172B80AEAD41CB0 /* ActionFlowsStudioView.swift */; };
 		345F6C0A12D26C40FDB51738 /* IOSRootTouchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C6F35B1BB29CD96ADCDCAA /* IOSRootTouchBarView.swift */; };
 		3695A85ECA5D017250793BC3 /* notes.png in Resources */ = {isa = PBXBuildFile; fileRef = BE2646C17F6B581FF2D9A9FC /* notes.png */; };
 		397EC37A53C4C6D011658F1E /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
 		39B7BF35A2DCA3748B9CCD32 /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
+		39C7A34BF45F7854FE2A8AA4 /* Round05Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */; };
 		3C4C52891835C63359ED3EF3 /* IOSSlotEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 992E3238F727E1244DEB62AA /* IOSSlotEditorSheet.swift */; };
+		3C6CD3F09A85957E235FC292 /* IOSRound05CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9242FC5069DD70073C7079D2 /* IOSRound05CompanionFeatures.swift */; };
 		3C8A64C1EFB1AB65A7B34C35 /* ActionFlows.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */; };
 		3D297C87D7B93EB26438D46F /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
 		3EFE96C6529C29EEF363A9C4 /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8859A29A043A4B69F607B04C /* EmojiCatalog.swift */; };
@@ -121,6 +124,7 @@
 		D98C8883FC0A69798C9BE591 /* music.png in Resources */ = {isa = PBXBuildFile; fileRef = 8215F8844882FF09DD4D19AC /* music.png */; };
 		DAB4CBDFA2B7DA671F50C2C0 /* MacServerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3371CFFF20B9E1134EDB3E8 /* MacServerEngine.swift */; };
 		DE2BB25340B0E35ECACB71AF /* reminders.png in Resources */ = {isa = PBXBuildFile; fileRef = 213217E3E0ADB61F84B88238 /* reminders.png */; };
+		DF54945FD6A26594125CA46B /* Round05Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */; };
 		DF61BE35854C52722D2F20F5 /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
 		DFB1DDE64AE82710C328A49C /* IOSFlowEditorViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */; };
 		E85500D399E5CD039276A0C1 /* ControlStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB259C3541C52B0FDAF4888C /* ControlStrip.swift */; };
@@ -225,12 +229,14 @@
 		8BECCE6B737BB090769DC143 /* Round03Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round03Models.swift; sourceTree = "<group>"; };
 		8C7BD308B52CE99958DDECFA /* MacAppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppCoordinator.swift; sourceTree = "<group>"; };
 		90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionLink.swift; sourceTree = "<group>"; };
+		9242FC5069DD70073C7079D2 /* IOSRound05CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound05CompanionFeatures.swift; sourceTree = "<group>"; };
 		92C6F35B1BB29CD96ADCDCAA /* IOSRootTouchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRootTouchBarView.swift; sourceTree = "<group>"; };
 		986435E767EE4D1C6FA42738 /* ChocliftWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChocliftWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		992E3238F727E1244DEB62AA /* IOSSlotEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSlotEditorSheet.swift; sourceTree = "<group>"; };
 		9F4B0BF41FA187CA0429E197 /* MacOrcaStatusService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOrcaStatusService.swift; sourceTree = "<group>"; };
 		A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchPanelGeometry.swift; sourceTree = "<group>"; };
 		A7CB5368CF46C2C2213D8656 /* EmojiBarStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiBarStudioView.swift; sourceTree = "<group>"; };
+		A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round05Models.swift; sourceTree = "<group>"; };
 		AC01A4B0509B5E43B8CA5A46 /* MacSoundboardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSoundboardService.swift; sourceTree = "<group>"; };
 		AF86327935FFCF951774ACA4 /* libChocliftCoreIOS.a */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = archive.ar; path = libChocliftCoreIOS.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		B0100A476F462BB1702A464F /* CompanionInteractionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionInteractionPolicy.swift; sourceTree = "<group>"; };
@@ -396,6 +402,7 @@
 				07212AF17DB6353FA2039C3E /* IOSRound02CompanionControls.swift */,
 				47C1280B27AE8610D9B62192 /* IOSRound03CompanionFeatures.swift */,
 				D6FCAB30E95B2B4A3F12C937 /* IOSRound04CompanionFeatures.swift */,
+				9242FC5069DD70073C7079D2 /* IOSRound05CompanionFeatures.swift */,
 				992E3238F727E1244DEB62AA /* IOSSlotEditorSheet.swift */,
 			);
 			path = Views;
@@ -533,6 +540,7 @@
 				4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */,
 				8BECCE6B737BB090769DC143 /* Round03Models.swift */,
 				26FF0695A991380B3FB28853 /* Round04Models.swift */,
+				A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -852,6 +860,7 @@
 				82612B4144EDA160119CA96E /* PlatformCompanionSupport.swift in Sources */,
 				B94603986FDB8C63A5EFA896 /* Round03Models.swift in Sources */,
 				4EA5261FA6CE532A4BC78C1D /* Round04Models.swift in Sources */,
+				39C7A34BF45F7854FE2A8AA4 /* Round05Models.swift in Sources */,
 				A616F76D587F3D7430BCB29C /* WireProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -877,6 +886,7 @@
 				73A50ADF2E84DCAC91075CA4 /* PlatformCompanionSupport.swift in Sources */,
 				45FACC28CE3788D20748324C /* Round03Models.swift in Sources */,
 				B83501BAFE40DC2395AE3251 /* Round04Models.swift in Sources */,
+				33878859FBF852A76234D4F2 /* Round05Models.swift in Sources */,
 				1107BCC3808407CFEBB3335D /* WireProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -929,6 +939,7 @@
 				6C90D70E5CDF89187DB9B236 /* PlatformCompanionSupport.swift in Sources */,
 				04CC39CE219884E5399BC74D /* Round03Models.swift in Sources */,
 				2E8768794A140A931D4159E5 /* Round04Models.swift in Sources */,
+				DF54945FD6A26594125CA46B /* Round05Models.swift in Sources */,
 				F9A2071D485ADDE2BBE5E965 /* WireProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -946,6 +957,7 @@
 				97EA3064B9BBD1EA92A9788E /* IOSRound02CompanionControls.swift in Sources */,
 				0E82DA111317F42CBC158E07 /* IOSRound03CompanionFeatures.swift in Sources */,
 				96935FA7083065FD5D95091B /* IOSRound04CompanionFeatures.swift in Sources */,
+				3C6CD3F09A85957E235FC292 /* IOSRound05CompanionFeatures.swift in Sources */,
 				3C4C52891835C63359ED3EF3 /* IOSSlotEditorSheet.swift in Sources */,
 				7AB4E8F26192B87A6A53DD91 /* MultiTouchGestureOverlay.swift in Sources */,
 			);

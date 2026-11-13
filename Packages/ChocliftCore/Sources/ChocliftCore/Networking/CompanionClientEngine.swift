@@ -111,6 +111,7 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var isCapturingScreenshot: Bool = false
     @Published public private(set) var frontmostWindows: FrontmostAppWindowSnapshot = .empty
     @Published public private(set) var activeTileFeedback: TileActionFeedbackBanner?
+    @Published public private(set) var recentlyTriggeredTiles: [RecentlyTriggeredTileEntry] = []
     @Published public var lastFeedback: CompanionFeedbackToast?
 
     public let deviceID: String
@@ -138,6 +139,7 @@ public final class CompanionClientEngine: ObservableObject {
 
     private let storageDefaults: UserDefaults
     private let savedMacsKey: String
+    private let recentlyTriggeredTilesKey: String
     private let networkQueue = DispatchQueue(label: "com.choclift.client.network", qos: .userInteractive)
 
     private var browser: NWBrowser?
@@ -190,7 +192,9 @@ public final class CompanionClientEngine: ObservableObject {
         self.platform = platform
         self.storageDefaults = userDefaults
         self.savedMacsKey = "\(storageKeyPrefix).savedMacs"
+        self.recentlyTriggeredTilesKey = "\(storageKeyPrefix).recentlyTriggeredTiles"
         loadSavedCredentials()
+        loadRecentlyTriggeredTiles()
     }
 
     // MARK: - Discovery
@@ -1699,21 +1703,42 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     public func triggerBarItem(_ item: BarItem, from slotOrigin: SlotCoordinate? = nil) {
-        if let resolvedSlot = slotOrigin ?? locateSlot(for: item.id) {
+        let resolvedSlot = slotOrigin ?? locateSlot(for: item.id)
+        if let resolvedSlot {
             tileFeedbackTracker.recordTileTriggered(slot: resolvedSlot)
         } else {
             tileFeedbackTracker.clearPendingWithoutFeedback()
         }
+        recordRecentlyTriggeredTile(item, from: resolvedSlot)
         send(.triggerBarItem(item))
     }
 
     public func recordOfflineTileFailure(slot: SlotCoordinate?, title: String, detail: String) {
         if let slot {
             publishTileFeedback(tileFeedbackTracker.recordImmediateOutcome(slot: slot, outcome: .failure))
+            if let slotItem = profile.barItem(at: slot) {
+                recordRecentlyTriggeredTile(slotItem, from: slot)
+            }
         } else {
             tileFeedbackTracker.clearPendingWithoutFeedback()
         }
         lastFeedback = CompanionFeedbackToast(success: false, title: title, detail: detail)
+    }
+
+    public func recordRecentlyTriggeredTile(_ item: BarItem, from slotOrigin: SlotCoordinate? = nil) {
+        if item.isSlotReference, profile.resolveBarItem(item, from: slotOrigin).isMissing {
+            return
+        }
+        let resolvedTitle = profile.displayTitle(for: item, from: slotOrigin, in: profile.settings.language)
+        var list = RecentlyTriggeredTileList(entries: recentlyTriggeredTiles)
+        list.record(id: item.id, title: resolvedTitle)
+        recentlyTriggeredTiles = list.entries
+        persistRecentlyTriggeredTiles()
+    }
+
+    public func clearRecentlyTriggeredTiles() {
+        recentlyTriggeredTiles = []
+        persistRecentlyTriggeredTiles()
     }
 
     public func tileOutcome(for slot: SlotCoordinate?) -> TileActionOutcome? {
@@ -1928,8 +1953,63 @@ public final class CompanionClientEngine: ObservableObject {
         send(.raiseFrontmostWindow(windowID: trimmed))
     }
 
+    /// Puts the Mac display to sleep without locking the Mac or changing the Keep Mac Awake toggle.
+    public func sleepMacDisplay() {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("熄灭屏幕", "Sleep Display", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.sleepMacDisplay)
+    }
+
+    /// Sends Escape, Space, or an Arrow key to the frontmost Mac app through the existing input path.
+    public func sendCompactKey(_ key: CompanionCompactKey) {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: key.title(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.sendCompactKey(key))
+    }
+
+    @discardableResult
+    public func pinSlotToStrip(_ coordinate: SlotCoordinate) -> Bool {
+        var next = profile
+        guard next.pinSlotToStrip(coordinate) else { return false }
+        pushUpdatedProfile(next)
+        return true
+    }
+
+    @discardableResult
+    public func unpinSlotFromStrip(_ coordinate: SlotCoordinate) -> Bool {
+        var next = profile
+        guard next.unpinSlotFromStrip(coordinate) else { return false }
+        pushUpdatedProfile(next)
+        return true
+    }
+
+    @discardableResult
+    public func togglePinSlotToStrip(_ coordinate: SlotCoordinate) -> Bool {
+        if profile.isSlotPinnedToStrip(coordinate) {
+            return unpinSlotFromStrip(coordinate)
+        }
+        return pinSlotToStrip(coordinate)
+    }
+
     public func pushUpdatedProfile(_ updated: ChocliftWorkspaceProfile) {
         var next = updated
+        next.prunePinnedStripSlots()
         next.bumpRevision()
         self.profile = next
         send(.updateProfile(next))
@@ -2297,6 +2377,22 @@ public final class CompanionClientEngine: ObservableObject {
     private func persistSavedCredentials() {
         if let data = try? JSONEncoder().encode(savedMacs) {
             storageDefaults.set(data, forKey: savedMacsKey)
+        }
+    }
+
+    private func loadRecentlyTriggeredTiles() {
+        guard let data = storageDefaults.data(forKey: recentlyTriggeredTilesKey),
+              let decoded = try? JSONDecoder().decode(RecentlyTriggeredTileList.self, from: data) else {
+            recentlyTriggeredTiles = []
+            return
+        }
+        recentlyTriggeredTiles = decoded.entries
+    }
+
+    private func persistRecentlyTriggeredTiles() {
+        let list = RecentlyTriggeredTileList(entries: recentlyTriggeredTiles)
+        if let data = try? JSONEncoder().encode(list) {
+            storageDefaults.set(data, forKey: recentlyTriggeredTilesKey)
         }
     }
 }

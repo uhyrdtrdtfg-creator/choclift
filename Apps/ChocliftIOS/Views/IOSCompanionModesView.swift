@@ -12,7 +12,7 @@ public struct IOSEditSlotSelection: Identifiable {
     }
 }
 
-private struct TileHoldToEditButtonStyle: ButtonStyle {
+struct TileHoldToEditButtonStyle: ButtonStyle {
     @Binding var pressedKey: String?
     let key: String
     let isSuppressed: Bool
@@ -1931,6 +1931,14 @@ public struct IOSIPadChocolateBarDeckView: View {
                 onEditSlot: onEditSlot
             )
 
+            IOSCompactKeyAndRecentsBar(
+                client: client,
+                showInlineRecentChips: true,
+                onPromptHUD: onPromptHUD
+            )
+            .padding(.horizontal, 14)
+            .padding(.bottom, 8)
+
             Rectangle()
                 .fill(palette.subtleCardStroke)
                 .frame(height: 1)
@@ -1939,7 +1947,9 @@ public struct IOSIPadChocolateBarDeckView: View {
             IOSPersistentControlStripView(
                 client: client,
                 preferSingleRow: availableWidth >= 620,
-                embeddedInSurface: true
+                embeddedInSurface: true,
+                onPromptHUD: onPromptHUD,
+                onEditSlot: onEditSlot
             )
         }
         .background(palette.barSurface.opacity(0.65), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
@@ -1956,6 +1966,8 @@ public struct IOSPersistentControlStripView: View {
     @ObservedObject var client: CompanionClientEngine
     let preferSingleRow: Bool
     let embeddedInSurface: Bool
+    var onPromptHUD: ((String) -> Void)?
+    var onEditSlot: ((IOSEditSlotSelection) -> Void)?
 
     @State private var pressedKey: String?
     @State private var volumeDragLevel: Double?
@@ -1987,15 +1999,25 @@ public struct IOSPersistentControlStripView: View {
     public init(
         client: CompanionClientEngine,
         preferSingleRow: Bool,
-        embeddedInSurface: Bool = false
+        embeddedInSurface: Bool = false,
+        onPromptHUD: ((String) -> Void)? = nil,
+        onEditSlot: ((IOSEditSlotSelection) -> Void)? = nil
     ) {
         self.client = client
         self.preferSingleRow = preferSingleRow
         self.embeddedInSurface = embeddedInSurface
+        self.onPromptHUD = onPromptHUD
+        self.onEditSlot = onEditSlot
     }
 
     public var body: some View {
-        Group {
+        VStack(spacing: 8) {
+            IOSPinnedStripTilesRow(
+                client: client,
+                onPromptHUD: onPromptHUD,
+                onEditSlot: onEditSlot
+            )
+
             if preferSingleRow {
                 singleRowContent
             } else {

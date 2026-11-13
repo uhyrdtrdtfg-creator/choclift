@@ -45,6 +45,8 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case setAudioOutputDevice(deviceID: String)
     case requestFrontmostAppWindows
     case raiseFrontmostWindow(windowID: String)
+    case sleepMacDisplay
+    case sendCompactKey(CompanionCompactKey)
     case unknownClientMessage
 }
 
