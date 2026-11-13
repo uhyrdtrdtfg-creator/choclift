@@ -17,6 +17,8 @@ public struct IOSEditSlotSelection: Identifiable {
 public struct IOSChocolateBarSurfaceView: View {
     @ObservedObject var client: CompanionClientEngine
     @Binding var currentPageIndex: Int
+    var isFollowingFrontmostApp: Bool
+    var onFollowFrontmostApp: (() -> Void)?
     let isLandscape: Bool
     let onEditSlot: (IOSEditSlotSelection) -> Void
 
@@ -28,26 +30,113 @@ public struct IOSChocolateBarSurfaceView: View {
     public init(
         client: CompanionClientEngine,
         currentPageIndex: Binding<Int>,
+        isFollowingFrontmostApp: Bool = true,
+        onFollowFrontmostApp: (() -> Void)? = nil,
         isLandscape: Bool,
         onEditSlot: @escaping (IOSEditSlotSelection) -> Void
     ) {
         self.client = client
         self._currentPageIndex = currentPageIndex
+        self.isFollowingFrontmostApp = isFollowingFrontmostApp
+        self.onFollowFrontmostApp = onFollowFrontmostApp
         self.isLandscape = isLandscape
         self.onEditSlot = onEditSlot
     }
 
-    public var body: some View {
-        TabView(selection: $currentPageIndex) {
-            ForEach(client.profile.pages) { page in
-                pageGrid(for: page)
-                    .tag(page.index)
-            }
+    private var activeBoundFrontmostAppName: String? {
+        guard isFollowingFrontmostApp,
+              let frontBundleID = client.frontmostBundleID,
+              !client.profile.pages.isEmpty else {
+            return nil
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
+        let safeIdx = min(max(0, currentPageIndex), client.profile.pages.count - 1)
+        let activePage = client.profile.pages[safeIdx]
+        guard client.profile.boundPageID(forBundleIdentifier: frontBundleID) == activePage.id else {
+            return nil
+        }
+        return client.profile.resolvedAppDisplayName(
+            forBundleIdentifier: frontBundleID,
+            recentApps: client.recentApps,
+            catalogApps: client.macCatalogApps
+        )
     }
 
-    private func pageGrid(for page: BarPage) -> some View {
+    public var body: some View {
+        VStack(spacing: 0) {
+            if !isFollowingFrontmostApp, let onFollowFrontmostApp {
+                manualPinnedHeader(onFollow: onFollowFrontmostApp)
+            } else if let boundAppName = activeBoundFrontmostAppName {
+                followingAppHeader(appName: boundAppName)
+            }
+
+            TabView(selection: $currentPageIndex) {
+                ForEach(Array(client.profile.pages.enumerated()), id: \.element.id) { pageOffset, page in
+                    pageGrid(for: page, pageOffset: pageOffset)
+                        .tag(pageOffset)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+        }
+    }
+
+    private func manualPinnedHeader(onFollow: @escaping () -> Void) -> some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 5) {
+                Image(systemName: "pin.fill")
+                    .font(.caption2.bold())
+                Text(L10n.tr("已固定当前页", "Page Pinned", language: lang))
+                    .font(.caption2.bold())
+                    .lineLimit(1)
+            }
+            .foregroundStyle(palette.secondaryText)
+
+            Spacer(minLength: 6)
+
+            Button {
+                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                onFollow()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.caption2.bold())
+                    Text(L10n.tr("跟随前台应用", "Follow Frontmost App", language: lang))
+                        .font(.system(.caption, design: .rounded, weight: .bold))
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 12)
+                .frame(minHeight: 32)
+                .background(palette.accent, in: Capsule())
+                .foregroundStyle(palette.accentForeground)
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ios-follow-frontmost-app-button")
+        }
+        .padding(.horizontal, isLandscape ? 14 : 16)
+        .padding(.top, 8)
+    }
+
+    private func followingAppHeader(appName: String) -> some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 5) {
+                Image(systemName: "macwindow")
+                    .font(.caption2.bold())
+                Text(L10n.tr("正跟随 \(appName)", "Following \(appName)", language: lang))
+                    .font(.caption2.bold())
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(palette.accent.opacity(0.14), in: Capsule())
+            .foregroundStyle(palette.accent)
+
+            Spacer()
+        }
+        .padding(.horizontal, isLandscape ? 14 : 16)
+        .padding(.top, 8)
+    }
+
+    private func pageGrid(for page: BarPage, pageOffset: Int) -> some View {
         let colCount = isLandscape ? 4 : 2
         let rowCount = isLandscape ? 2 : 4
 
@@ -66,14 +155,14 @@ public struct IOSChocolateBarSurfaceView: View {
                         ForEach(0..<colCount, id: \.self) { col in
                             let slotIdx = row * colCount + col
                             let item = page.slots[slotIdx]
-                            let key = "\(page.index)-\(slotIdx)"
+                            let key = "\(pageOffset)-\(slotIdx)"
                             let iconData = item?.bundleIdentifier.flatMap {
                                 client.appIconsByBundleID[$0] ?? BundledAppIcons.pngData(for: $0)
                             }
                             let isFrontmost = (item?.bundleIdentifier != nil && item?.bundleIdentifier == client.frontmostBundleID)
 
                             tileButton(
-                                pageIndex: page.index,
+                                pageIndex: pageOffset,
                                 slotIndex: slotIdx,
                                 key: key,
                                 item: item,
@@ -152,6 +241,8 @@ public struct IOSChocolateBarSurfaceView: View {
 
                 Button(role: .destructive) {
                     var updated = client.profile
+                    guard updated.pages.indices.contains(pageIndex),
+                          updated.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
                     updated.pages[pageIndex].slots[slotIndex] = nil
                     client.pushUpdatedProfile(updated)
                 } label: {

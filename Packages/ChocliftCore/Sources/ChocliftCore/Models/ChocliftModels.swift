@@ -718,6 +718,9 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     public var settings: CompanionSettings
     public var pinnedTimeTravelBundleIDs: [String]
     public var flows: [ActionFlow]
+    /// Maps a Mac app bundle identifier to the `BarPage.id` shown when that app is frontmost.
+    /// At most one page is bound per bundle identifier; multiple bundle identifiers may map to one page.
+    public var appDeckBindings: [String: UUID]
 
     private enum CodingKeys: String, CodingKey {
         case revision
@@ -728,6 +731,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         case settings
         case pinnedTimeTravelBundleIDs
         case flows
+        case appDeckBindings
     }
 
     public init(
@@ -738,7 +742,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         gestureConfig: GestureConfiguration,
         settings: CompanionSettings = CompanionSettings(),
         pinnedTimeTravelBundleIDs: [String] = [],
-        flows: [ActionFlow] = []
+        flows: [ActionFlow] = [],
+        appDeckBindings: [String: UUID] = [:]
     ) {
         self.revision = revision
         self.updatedAt = updatedAt
@@ -748,6 +753,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.settings = settings
         self.pinnedTimeTravelBundleIDs = pinnedTimeTravelBundleIDs
         self.flows = flows
+        self.appDeckBindings = Self.sanitizeAppDeckBindings(appDeckBindings)
     }
 
     public init(from decoder: Decoder) throws {
@@ -760,6 +766,17 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.settings = try container.decodeIfPresent(CompanionSettings.self, forKey: .settings) ?? CompanionSettings()
         self.pinnedTimeTravelBundleIDs = try container.decodeIfPresent([String].self, forKey: .pinnedTimeTravelBundleIDs) ?? []
         self.flows = try container.decodeIfPresent([ActionFlow].self, forKey: .flows) ?? []
+        if let rawStrings = try? container.decodeIfPresent([String: String].self, forKey: .appDeckBindings) {
+            var parsed: [String: UUID] = [:]
+            for (rawKey, rawUUID) in rawStrings {
+                if let uuid = UUID(uuidString: rawUUID.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                    parsed[rawKey] = uuid
+                }
+            }
+            self.appDeckBindings = Self.sanitizeAppDeckBindings(parsed)
+        } else {
+            self.appDeckBindings = [:]
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -772,11 +789,162 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         try container.encode(settings, forKey: .settings)
         try container.encode(pinnedTimeTravelBundleIDs, forKey: .pinnedTimeTravelBundleIDs)
         try container.encode(flows, forKey: .flows)
+        try container.encode(appDeckBindings, forKey: .appDeckBindings)
+    }
+
+    private static func sanitizeAppDeckBindings(_ bindings: [String: UUID]) -> [String: UUID] {
+        var cleaned: [String: UUID] = [:]
+        for key in bindings.keys.sorted() {
+            guard let pageID = bindings[key] else { continue }
+            let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let duplicateKeys = cleaned.keys.filter { $0.caseInsensitiveCompare(trimmed) == .orderedSame }
+            for dup in duplicateKeys {
+                cleaned.removeValue(forKey: dup)
+            }
+            cleaned[trimmed] = pageID
+        }
+        return cleaned
     }
 
     public mutating func bumpRevision() {
         revision += 1
         updatedAt = Date()
+    }
+
+    // MARK: - App-Aware Deck Binding Helpers
+
+    public func page(withID id: UUID) -> BarPage? {
+        pages.first(where: { $0.id == id })
+    }
+
+    public func pageIndex(forID id: UUID) -> Int? {
+        pages.firstIndex(where: { $0.id == id })
+    }
+
+    /// Binds `bundleIdentifier` to `pageID` (at most one page per bundle identifier; replaces any previous binding).
+    /// Passing `nil` removes any binding for `bundleIdentifier`.
+    public mutating func setAppDeckBinding(bundleIdentifier: String, pageID: UUID?) {
+        let trimmed = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let matchingKeys = appDeckBindings.keys.filter {
+            $0.caseInsensitiveCompare(trimmed) == .orderedSame
+        }
+        for key in matchingKeys {
+            appDeckBindings.removeValue(forKey: key)
+        }
+        if let pageID, pages.contains(where: { $0.id == pageID }) {
+            appDeckBindings[trimmed] = pageID
+        }
+    }
+
+    public mutating func removeAppDeckBinding(bundleIdentifier: String) {
+        setAppDeckBinding(bundleIdentifier: bundleIdentifier, pageID: nil)
+    }
+
+    public mutating func clearAppDeckBindings(forPageID pageID: UUID) {
+        appDeckBindings = appDeckBindings.filter { $0.value != pageID }
+    }
+
+    /// Sorted bundle identifiers bound to `pageID`. Returns empty if `pageID` does not exist in `pages`.
+    public func boundBundleIdentifiers(forPageID pageID: UUID) -> [String] {
+        guard pages.contains(where: { $0.id == pageID }) else { return [] }
+        return appDeckBindings
+            .compactMap { key, val in val == pageID ? key : nil }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    /// Resolves the `BarPage` bound to `bundleIdentifier`, or `nil` if unbound or if the target page was deleted.
+    public func boundPage(forBundleIdentifier bundleIdentifier: String?) -> BarPage? {
+        guard let raw = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return nil
+        }
+        let matchedPageID: UUID? = {
+            if let exact = appDeckBindings[raw] {
+                return exact
+            }
+            return appDeckBindings
+                .sorted { $0.key < $1.key }
+                .first { $0.key.caseInsensitiveCompare(raw) == .orderedSame }?
+                .value
+        }()
+        guard let pageID = matchedPageID else {
+            return nil
+        }
+        return pages.first(where: { $0.id == pageID })
+    }
+
+    /// Resolves the bound page ID for `bundleIdentifier`, ignoring bindings to deleted pages.
+    public func boundPageID(forBundleIdentifier bundleIdentifier: String?) -> UUID? {
+        boundPage(forBundleIdentifier: bundleIdentifier)?.id
+    }
+
+    /// Resolves which page ID should be visible when `bundleIdentifier` becomes frontmost:
+    /// - Returns the bound page's `id` if `isFollowingFrontmostApp` is `true` and the bound page exists in `pages`.
+    /// - Keeps `currentPageID` if no binding exists, the bound page was deleted, or manual page pinning is active.
+    public func resolvePageID(
+        forFrontmostBundleIdentifier bundleIdentifier: String?,
+        currentPageID: UUID,
+        isFollowingFrontmostApp: Bool = true
+    ) -> UUID {
+        guard isFollowingFrontmostApp,
+              let page = boundPage(forBundleIdentifier: bundleIdentifier) else {
+            return currentPageID
+        }
+        return page.id
+    }
+
+    /// Best-effort display name for a bundle identifier on companion devices using synced metadata.
+    public func resolvedAppDisplayName(
+        forBundleIdentifier bundleIdentifier: String,
+        recentApps: [RecentAppEntry] = [],
+        catalogApps: [InstalledAppSummary] = []
+    ) -> String {
+        let trimmed = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let recent = recentApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(trimmed) == .orderedSame }),
+           !recent.appName.isEmpty {
+            return recent.appName
+        }
+        if let catalog = catalogApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(trimmed) == .orderedSame }),
+           !catalog.appName.isEmpty {
+            return catalog.appName
+        }
+        for page in pages {
+            for slot in page.slots.compactMap({ $0 }) {
+                if case .macApp(let bid, let appName, _, _) = slot.kind,
+                   bid.caseInsensitiveCompare(trimmed) == .orderedSame,
+                   !appName.isEmpty {
+                    return appName
+                }
+            }
+        }
+        for flow in flows {
+            for step in flow.steps {
+                switch step.kind {
+                case .launchOrActivateApp(let bid, let appName, _):
+                    if bid.caseInsensitiveCompare(trimmed) == .orderedSame, !appName.isEmpty {
+                        return appName
+                    }
+                case .waitForAppFrontmost(let bid, let appName, _):
+                    if bid.caseInsensitiveCompare(trimmed) == .orderedSame, let appName, !appName.isEmpty {
+                        return appName
+                    }
+                case .systemAction(_, let targetBid, let targetAppName):
+                    if let targetBid, targetBid.caseInsensitiveCompare(trimmed) == .orderedSame,
+                       let targetAppName, !targetAppName.isEmpty {
+                        return targetAppName
+                    }
+                case .delay, .unsupported:
+                    break
+                }
+            }
+        }
+        let tail = trimmed.split(separator: ".").last.map(String.init) ?? trimmed
+        if tail == tail.lowercased(), let first = tail.first {
+            return String(first).uppercased() + tail.dropFirst()
+        }
+        return tail
     }
 
     // MARK: - Action Flow Profile Helpers
@@ -864,7 +1032,115 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         for flow in flows {
             result.formUnion(flow.referencedBundleIdentifiers)
         }
+        for (bundleID, pageID) in appDeckBindings where pages.contains(where: { $0.id == pageID }) {
+            let trimmed = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                result.insert(trimmed)
+            }
+        }
         return result
+    }
+}
+
+// MARK: - Companion App-Aware Deck Follower State
+
+/// Tracks visible Chocolate Bar page selection and auto-follow vs. manual-pin mode across iPhone, iPad, and Watch.
+public struct AppDeckFollowerState: Equatable, Sendable {
+    public private(set) var currentPageIndex: Int
+    public private(set) var currentPageID: UUID?
+    public private(set) var isFollowingFrontmostApp: Bool
+
+    public init(
+        currentPageIndex: Int = 0,
+        currentPageID: UUID? = nil,
+        isFollowingFrontmostApp: Bool = true
+    ) {
+        self.currentPageIndex = max(0, currentPageIndex)
+        self.currentPageID = currentPageID
+        self.isFollowingFrontmostApp = isFollowingFrontmostApp
+    }
+
+    public mutating func syncCurrentPage(with profile: ChocliftWorkspaceProfile) {
+        guard !profile.pages.isEmpty else {
+            currentPageIndex = 0
+            currentPageID = nil
+            return
+        }
+        if let id = currentPageID,
+           let existingIdx = profile.pages.firstIndex(where: { $0.id == id }) {
+            currentPageIndex = existingIdx
+            return
+        }
+        let clamped = min(max(0, currentPageIndex), profile.pages.count - 1)
+        currentPageIndex = clamped
+        currentPageID = profile.pages[clamped].id
+    }
+
+    /// Updates the visible page when the frontmost Mac app changes.
+    /// Does not switch pages if manually pinned, if no deck is bound to `bundleIdentifier`, or if the bound page was deleted.
+    public mutating func handleFrontmostAppChanged(
+        _ bundleIdentifier: String?,
+        in profile: ChocliftWorkspaceProfile
+    ) {
+        syncCurrentPage(with: profile)
+        guard isFollowingFrontmostApp,
+              let bound = profile.boundPage(forBundleIdentifier: bundleIdentifier),
+              let idx = profile.pages.firstIndex(where: { $0.id == bound.id }) else {
+            return
+        }
+        currentPageIndex = idx
+        currentPageID = bound.id
+    }
+
+    /// Reconciles page state when the workspace profile updates (e.g. on initial connection or after Mac Studio edits).
+    public mutating func handleProfileUpdated(
+        _ profile: ChocliftWorkspaceProfile,
+        frontmostBundleIdentifier: String?
+    ) {
+        syncCurrentPage(with: profile)
+        guard isFollowingFrontmostApp,
+              let bound = profile.boundPage(forBundleIdentifier: frontmostBundleIdentifier),
+              let idx = profile.pages.firstIndex(where: { $0.id == bound.id }) else {
+            return
+        }
+        currentPageIndex = idx
+        currentPageID = bound.id
+    }
+
+    /// Pins the companion to a manually chosen page index until `followFrontmostApp` is invoked again.
+    public mutating func selectManualPage(index: Int, in profile: ChocliftWorkspaceProfile) {
+        isFollowingFrontmostApp = false
+        guard !profile.pages.isEmpty else {
+            currentPageIndex = 0
+            currentPageID = nil
+            return
+        }
+        let clamped = min(max(0, index), profile.pages.count - 1)
+        currentPageIndex = clamped
+        currentPageID = profile.pages[clamped].id
+    }
+
+    /// Steps backward/forward manually and pins to that page until `followFrontmostApp` is invoked again.
+    public mutating func stepManualPage(by delta: Int, in profile: ChocliftWorkspaceProfile) {
+        guard !profile.pages.isEmpty else {
+            isFollowingFrontmostApp = false
+            currentPageIndex = 0
+            currentPageID = nil
+            return
+        }
+        syncCurrentPage(with: profile)
+        let count = profile.pages.count
+        let next = (currentPageIndex + delta + count) % count
+        selectManualPage(index: next, in: profile)
+    }
+
+    /// Unpins manual page lock and resumes following the frontmost Mac app immediately.
+    public mutating func followFrontmostApp(
+        frontmostBundleIdentifier: String?,
+        in profile: ChocliftWorkspaceProfile
+    ) {
+        isFollowingFrontmostApp = true
+        handleFrontmostAppChanged(frontmostBundleIdentifier, in: profile)
     }
 }
 

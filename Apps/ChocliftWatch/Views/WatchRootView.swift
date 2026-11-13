@@ -34,7 +34,7 @@ public struct WatchRootView: View {
 
     @State private var activeMode: WatchSurfaceMode = .chocolateBar
     @State private var modeBeforeAutoEmoji: WatchSurfaceMode?
-    @State private var currentPageIndex: Int = 0
+    @State private var deckFollower = AppDeckFollowerState()
     @State private var currentEmojiSlideIndex: Int = 0
     @State private var showPairingSheet: Bool = false
     @State private var showModePickerSheet: Bool = false
@@ -61,7 +61,7 @@ public struct WatchRootView: View {
                 TabView(selection: $activeMode) {
                     WatchChocolateBarView(
                         client: client,
-                        currentPageIndex: $currentPageIndex,
+                        deckFollower: $deckFollower,
                         onRequestPairing: { showPairingSheet = true }
                     )
                     .tag(WatchSurfaceMode.chocolateBar)
@@ -118,9 +118,20 @@ public struct WatchRootView: View {
             modePickerSheet
         }
         .onAppear {
+            deckFollower.handleProfileUpdated(client.profile, frontmostBundleIdentifier: client.frontmostBundleID)
             client.startBrowsing()
             if !client.connectionState.isConnected && client.savedMacs.isEmpty {
                 showPairingSheet = true
+            }
+        }
+        .onChange(of: client.frontmostBundleID) { _, newBundleID in
+            withAnimation(.easeInOut(duration: 0.22)) {
+                deckFollower.handleFrontmostAppChanged(newBundleID, in: client.profile)
+            }
+        }
+        .onChange(of: client.profile) { _, newProfile in
+            withAnimation(.easeInOut(duration: 0.22)) {
+                deckFollower.handleProfileUpdated(newProfile, frontmostBundleIdentifier: client.frontmostBundleID)
             }
         }
         .onChange(of: scenePhase) { _, phase in

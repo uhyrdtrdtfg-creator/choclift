@@ -35,16 +35,34 @@ public struct IOSRootTouchBarView: View {
 
     @State private var activeMode: IOSActiveSurfaceMode = .chocolateBar
     @State private var modeBeforeAutoEmoji: IOSActiveSurfaceMode?
-    @State private var currentPageIndex: Int = 0
+    @State private var deckFollower = AppDeckFollowerState()
     @State private var currentEmojiSlideIndex: Int = 0
     @State private var showPairingSheet: Bool = false
     @State private var showFlowsManagerSheet: Bool = false
     @State private var editingSlot: IOSEditSlotSelection?
     @State private var gestureHUDText: String?
 
+    private var currentPageIndex: Int { deckFollower.currentPageIndex }
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
     private var visualState: ChocConnectionVisualState { ChocConnectionVisualState.resolve(from: client) }
+
+    private var manualPageSelectionBinding: Binding<Int> {
+        Binding(
+            get: {
+                guard !client.profile.pages.isEmpty else { return 0 }
+                return min(max(0, deckFollower.currentPageIndex), client.profile.pages.count - 1)
+            },
+            set: { newIndex in
+                guard client.profile.pages.indices.contains(deckFollower.currentPageIndex) else {
+                    deckFollower.syncCurrentPage(with: client.profile)
+                    return
+                }
+                guard newIndex != deckFollower.currentPageIndex else { return }
+                deckFollower.selectManualPage(index: newIndex, in: client.profile)
+            }
+        )
+    }
 
     public init(client: CompanionClientEngine) {
         self.client = client
@@ -122,10 +140,21 @@ public struct IOSRootTouchBarView: View {
             )
         }
         .onAppear {
+            deckFollower.handleProfileUpdated(client.profile, frontmostBundleIdentifier: client.frontmostBundleID)
             client.startBrowsing()
             updateIdleTimer()
             if !client.connectionState.isConnected && client.savedMacs.isEmpty {
                 showPairingSheet = true
+            }
+        }
+        .onChange(of: client.frontmostBundleID) { _, newBundleID in
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+                deckFollower.handleFrontmostAppChanged(newBundleID, in: client.profile)
+            }
+        }
+        .onChange(of: client.profile) { _, newProfile in
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+                deckFollower.handleProfileUpdated(newProfile, frontmostBundleIdentifier: client.frontmostBundleID)
             }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -325,16 +354,24 @@ public struct IOSRootTouchBarView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        ForEach(client.profile.pages) { page in
-                            let isSel = (currentPageIndex == page.index)
+                        ForEach(Array(client.profile.pages.enumerated()), id: \.element.id) { pageOffset, page in
+                            let isSel = (currentPageIndex == pageOffset)
+                            let hasBoundApp = !client.profile.boundBundleIdentifiers(forPageID: page.id).isEmpty
                             Button {
                                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                                currentPageIndex = page.index
+                                withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                                    deckFollower.selectManualPage(index: pageOffset, in: client.profile)
+                                }
                             } label: {
                                 HStack(spacing: 5) {
                                     Text(page.iconEmoji)
                                     Text(page.title)
                                         .font(.system(.caption, design: .rounded, weight: .bold))
+                                    if hasBoundApp {
+                                        Image(systemName: "macwindow")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .opacity(isSel ? 0.9 : 0.65)
+                                    }
                                 }
                                 .padding(.horizontal, 13)
                                 .frame(height: 38)
@@ -383,7 +420,9 @@ public struct IOSRootTouchBarView: View {
                 VStack(spacing: 12) {
                     IOSChocolateBarSurfaceView(
                         client: client,
-                        currentPageIndex: $currentPageIndex,
+                        currentPageIndex: manualPageSelectionBinding,
+                        isFollowingFrontmostApp: deckFollower.isFollowingFrontmostApp,
+                        onFollowFrontmostApp: resumeFollowingFrontmostApp,
                         isLandscape: true
                     ) { slot in
                         editingSlot = slot
@@ -511,7 +550,9 @@ public struct IOSRootTouchBarView: View {
         case .chocolateBar:
             IOSChocolateBarSurfaceView(
                 client: client,
-                currentPageIndex: $currentPageIndex,
+                currentPageIndex: manualPageSelectionBinding,
+                isFollowingFrontmostApp: deckFollower.isFollowingFrontmostApp,
+                onFollowFrontmostApp: resumeFollowingFrontmostApp,
                 isLandscape: isLandscape
             ) { slot in
                 editingSlot = slot
@@ -754,11 +795,12 @@ public struct IOSRootTouchBarView: View {
 
         return Button {
             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-            let next = (activeIdx + 1) % safeCount
             if activeMode == .emojiBar {
-                currentEmojiSlideIndex = next
+                currentEmojiSlideIndex = (activeIdx + 1) % safeCount
             } else {
-                currentPageIndex = next
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                    deckFollower.stepManualPage(by: 1, in: client.profile)
+                }
             }
         } label: {
             VStack(spacing: 3) {
@@ -853,13 +895,21 @@ public struct IOSRootTouchBarView: View {
     private func stepPortraitPage(by delta: Int, count: Int, isEmoji: Bool, current: Int) {
         guard count > 0 else { return }
         CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-        let next = (current + delta + count) % count
         withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
             if isEmoji {
-                currentEmojiSlideIndex = next
+                currentEmojiSlideIndex = (current + delta + count) % count
             } else {
-                currentPageIndex = next
+                deckFollower.stepManualPage(by: delta, in: client.profile)
             }
+        }
+    }
+
+    private func resumeFollowingFrontmostApp() {
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+            deckFollower.followFrontmostApp(
+                frontmostBundleIdentifier: client.frontmostBundleID,
+                in: client.profile
+            )
         }
     }
 

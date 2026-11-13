@@ -76,7 +76,7 @@ private struct WatchConnectionStateBanner: View {
 
 public struct WatchChocolateBarView: View {
     @ObservedObject var client: CompanionClientEngine
-    @Binding var currentPageIndex: Int
+    @Binding var deckFollower: AppDeckFollowerState
     let onRequestPairing: () -> Void
 
     @State private var showPagePickerSheet: Bool = false
@@ -88,7 +88,7 @@ public struct WatchChocolateBarView: View {
 
     private var safePageIndex: Int {
         guard !client.profile.pages.isEmpty else { return 0 }
-        return min(max(0, currentPageIndex), client.profile.pages.count - 1)
+        return min(max(0, deckFollower.currentPageIndex), client.profile.pages.count - 1)
     }
 
     private var activePage: BarPage {
@@ -96,6 +96,20 @@ public struct WatchChocolateBarView: View {
             return BarPage(index: 0, title: "Daily", iconEmoji: "🍫")
         }
         return client.profile.pages[safePageIndex]
+    }
+
+    private var activeBoundFrontmostAppName: String? {
+        guard deckFollower.isFollowingFrontmostApp,
+              let frontBundleID = client.frontmostBundleID,
+              !client.profile.pages.isEmpty,
+              client.profile.boundPageID(forBundleIdentifier: frontBundleID) == activePage.id else {
+            return nil
+        }
+        return client.profile.resolvedAppDisplayName(
+            forBundleIdentifier: frontBundleID,
+            recentApps: client.recentApps,
+            catalogApps: client.macCatalogApps
+        )
     }
 
     public var body: some View {
@@ -106,6 +120,12 @@ public struct WatchChocolateBarView: View {
                 }
 
                 pageSwitcherBar
+
+                if !deckFollower.isFollowingFrontmostApp {
+                    followFrontmostAppButton
+                } else if let boundAppName = activeBoundFrontmostAppName {
+                    followingAppBadge(appName: boundAppName)
+                }
 
                 let columns = [
                     GridItem(.flexible(), spacing: 8),
@@ -202,11 +222,54 @@ public struct WatchChocolateBarView: View {
         }
     }
 
+    private var followFrontmostAppButton: some View {
+        Button {
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            withAnimation(.easeInOut(duration: 0.22)) {
+                deckFollower.followFrontmostApp(
+                    frontmostBundleIdentifier: client.frontmostBundleID,
+                    in: client.profile
+                )
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 10.5, weight: .bold))
+                Text(L10n.tr("跟随前台应用", "Follow Frontmost App", language: lang))
+                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 32)
+            .padding(.horizontal, 8)
+            .background(palette.accent, in: Capsule())
+            .foregroundStyle(palette.accentForeground)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("watch-follow-frontmost-app-button")
+    }
+
+    private func followingAppBadge(appName: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "macwindow")
+                .font(.system(size: 9.5, weight: .bold))
+            Text(L10n.tr("跟随 \(appName)", "Following \(appName)", language: lang))
+                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(palette.accent.opacity(0.14), in: Capsule())
+        .foregroundStyle(palette.accent)
+    }
+
     private func stepPage(by delta: Int) {
-        let count = client.profile.pages.count
-        guard count > 0 else { return }
+        guard !client.profile.pages.isEmpty else { return }
         CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
-        currentPageIndex = (safePageIndex + delta + count) % count
+        withAnimation(.easeInOut(duration: 0.2)) {
+            deckFollower.stepManualPage(by: delta, in: client.profile)
+        }
     }
 
     private func watchSlotButton(
@@ -253,11 +316,38 @@ public struct WatchChocolateBarView: View {
 
     private var pagePickerSheet: some View {
         List {
-            ForEach(client.profile.pages) { page in
-                let isSelected = (page.index == safePageIndex)
+            Button {
+                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                deckFollower.followFrontmostApp(
+                    frontmostBundleIdentifier: client.frontmostBundleID,
+                    in: client.profile
+                )
+                showPagePickerSheet = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.accent)
+                    Text(L10n.tr("跟随前台应用", "Follow Frontmost App", language: lang))
+                        .font(.system(size: 13, weight: deckFollower.isFollowingFrontmostApp ? .bold : .medium, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(1)
+                    Spacer()
+                    if deckFollower.isFollowingFrontmostApp {
+                        Image(systemName: "checkmark")
+                            .font(.caption.bold())
+                            .foregroundStyle(palette.accent)
+                    }
+                }
+                .frame(minHeight: 38)
+            }
+            .listRowBackground(palette.barSurface)
+
+            ForEach(Array(client.profile.pages.enumerated()), id: \.element.id) { pageOffset, page in
+                let isSelected = (!deckFollower.isFollowingFrontmostApp && pageOffset == safePageIndex)
                 Button {
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
-                    currentPageIndex = page.index
+                    deckFollower.selectManualPage(index: pageOffset, in: client.profile)
                     showPagePickerSheet = false
                 } label: {
                     HStack(spacing: 8) {
@@ -268,8 +358,8 @@ public struct WatchChocolateBarView: View {
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                         Spacer()
-                        if isSelected {
-                            Image(systemName: "checkmark")
+                        if pageOffset == safePageIndex {
+                            Image(systemName: deckFollower.isFollowingFrontmostApp ? "macwindow" : "checkmark")
                                 .font(.caption.bold())
                                 .foregroundStyle(palette.accent)
                         }
