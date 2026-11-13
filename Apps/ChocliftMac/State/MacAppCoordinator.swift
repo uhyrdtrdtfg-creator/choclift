@@ -47,6 +47,9 @@ public struct MacActivityEvent: Identifiable, Equatable {
 
 @MainActor
 public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate {
+    private static let notchPanelEnabledKey = "com.choclift.mac.notchPanelEnabled"
+    private static let leftEdgePanelEnabledKey = "com.choclift.mac.leftEdgePanelEnabled"
+
     @Published public var selectedSection: MacStudioSection = .chocolateBar
     @Published public var selectedPageIndex: Int = 0
     @Published public var selectedEmojiSlideIndex: Int = 0
@@ -62,6 +65,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     @Published public private(set) var activityLog: [MacActivityEvent] = []
     @Published public private(set) var statusBannerMessage: String?
     @Published public private(set) var launchAtLoginEnabled: Bool = false
+    @Published public private(set) var notchPanelEnabled: Bool = true
+    @Published public private(set) var leftEdgePanelEnabled: Bool = false
     @Published public private(set) var runningFlowID: UUID?
 
     public let server: MacServerEngine
@@ -69,6 +74,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     public let windowService: MacAccessibilityAndWindowService
     public let inputService: MacInputAndMediaService
     public let catalogService: MacAppAndShortcutCatalogService
+    public private(set) var notchPanelController: MacNotchPanelController?
 
     private let appSupportDirectory: URL
     private let profileFileURL: URL
@@ -128,9 +134,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         )
         self.isAccessibilityGranted = winSvc.isAccessibilityTrusted()
         self.launchAtLoginEnabled = (SMAppService.mainApp.status == .enabled)
+        self.notchPanelEnabled = UserDefaults.standard.object(forKey: Self.notchPanelEnabledKey) as? Bool ?? true
+        self.leftEdgePanelEnabled = UserDefaults.standard.object(forKey: Self.leftEdgePanelEnabledKey) as? Bool ?? false
 
         self.server.delegate = self
+        let panelCtrl = MacNotchPanelController(coordinator: self)
+        self.notchPanelController = panelCtrl
         setupPipelines()
+        panelCtrl.start()
     }
 
     public var lang: AppLanguage {
@@ -338,9 +349,25 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         }
     }
 
+    public func setNotchPanelEnabled(_ enabled: Bool) {
+        guard notchPanelEnabled != enabled else { return }
+        notchPanelEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.notchPanelEnabledKey)
+        notchPanelController?.syncSettingsChanged()
+    }
+
+    public func setLeftEdgePanelEnabled(_ enabled: Bool) {
+        guard leftEdgePanelEnabled != enabled else { return }
+        leftEdgePanelEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.leftEdgePanelEnabledKey)
+        notchPanelController?.syncSettingsChanged()
+    }
+
     public func resetToFactoryDefaults() {
         let defaults = ChocliftDefaults.makeDefaultProfile()
         applyAndSaveProfile(defaults, broadcastOriginDeviceID: nil)
+        setNotchPanelEnabled(true)
+        setLeftEdgePanelEnabled(false)
         flashBanner(L10n.tr("已恢复默认巧克力栏布局", "Restored default Chocolate Bar layout", language: lang))
     }
 
@@ -354,30 +381,47 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
     public func executeBarItem(_ item: BarItem, triggeredBy deviceName: String) {
         Task { @MainActor in
-            switch item.kind {
-            case .macApp(let bundleID, _, let appPath, _):
-                let result = await catalogService.launchOrActivateApp(
-                    bundleIdentifier: bundleID,
-                    appPath: appPath,
-                    windowService: windowService
-                )
-                recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+            _ = await triggerBarItem(item, triggeredBy: deviceName)
+        }
+    }
 
-            case .shortcut(let shortcutName, _, _):
-                let result = await catalogService.runShortcut(named: shortcutName)
-                recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+    @discardableResult
+    public func triggerBarItem(
+        _ item: BarItem,
+        triggeredBy deviceName: String
+    ) async -> (success: Bool, title: String, detail: String) {
+        switch item.kind {
+        case .macApp(let bundleID, _, let appPath, _):
+            let result = await catalogService.launchOrActivateApp(
+                bundleIdentifier: bundleID,
+                appPath: appPath,
+                windowService: windowService
+            )
+            recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+            return (result.success, item.displayTitle(in: lang), result.message)
 
-            case .website(let url, _, _, _, let switchExistingTab):
-                let result = await catalogService.openWebsite(rawURL: url, switchExistingTab: switchExistingTab)
-                recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+        case .shortcut(let shortcutName, _, _):
+            let result = await catalogService.runShortcut(named: shortcutName)
+            recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+            return (result.success, item.displayTitle(in: lang), result.message)
 
-            case .systemAction(let action, _, _):
-                let result = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
-                recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+        case .website(let url, _, _, _, let switchExistingTab):
+            let result = await catalogService.openWebsite(rawURL: url, switchExistingTab: switchExistingTab)
+            recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+            return (result.success, item.displayTitle(in: lang), result.message)
 
-            case .flow(let flowID, let titleSnapshot, _, _, _):
-                _ = await runFlowByID(flowID, fallbackName: titleSnapshot, triggeredBy: deviceName)
-            }
+        case .systemAction(let action, _, _):
+            let result = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
+            recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+            return (result.success, item.displayTitle(in: lang), result.message)
+
+        case .flow(let flowID, let titleSnapshot, _, _, _):
+            let flowResult = await runFlowByID(
+                flowID,
+                fallbackName: titleSnapshot,
+                triggeredBy: deviceName
+            )
+            return (flowResult.success, flowResult.title, flowResult.detail)
         }
     }
 
@@ -516,39 +560,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         switch message {
         case .triggerBarItem(let item):
             Task { @MainActor in
-                switch item.kind {
-                case .macApp(let bundleID, _, let appPath, _):
-                    let result = await catalogService.launchOrActivateApp(
-                        bundleIdentifier: bundleID,
-                        appPath: appPath,
-                        windowService: windowService
-                    )
-                    recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
-                    reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
-
-                case .shortcut(let shortcutName, _, _):
-                    let result = await catalogService.runShortcut(named: shortcutName)
-                    recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
-                    reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
-
-                case .website(let url, _, _, _, let switchExistingTab):
-                    let result = await catalogService.openWebsite(rawURL: url, switchExistingTab: switchExistingTab)
-                    recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
-                    reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
-
-                case .systemAction(let action, _, _):
-                    let result = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
-                    recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
-                    reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
-
-                case .flow(let flowID, let titleSnapshot, _, _, _):
-                    let flowResult = await runFlowByID(
-                        flowID,
-                        fallbackName: titleSnapshot,
-                        triggeredBy: device.deviceName
-                    )
-                    reply(.actionFeedback(success: flowResult.success, title: flowResult.title, detail: flowResult.detail))
-                }
+                let feedback = await triggerBarItem(item, triggeredBy: device.deviceName)
+                reply(.actionFeedback(success: feedback.success, title: feedback.title, detail: feedback.detail))
             }
 
         case .triggerFlow(let flowID):
