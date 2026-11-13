@@ -67,7 +67,9 @@ public struct IOSChocolateBarSurfaceView: View {
                             let slotIdx = row * colCount + col
                             let item = page.slots[slotIdx]
                             let key = "\(page.index)-\(slotIdx)"
-                            let iconData = item?.bundleIdentifier.flatMap { client.appIconsByBundleID[$0] }
+                            let iconData = item?.bundleIdentifier.flatMap {
+                                client.appIconsByBundleID[$0] ?? BundledAppIcons.pngData(for: $0)
+                            }
                             let isFrontmost = (item?.bundleIdentifier != nil && item?.bundleIdentifier == client.frontmostBundleID)
 
                             tileButton(
@@ -260,7 +262,7 @@ public struct IOSTimeTravelSurfaceView: View {
     }
 
     private func recentAppCard(_ entry: RecentAppEntry) -> some View {
-        let icon = client.appIconsByBundleID[entry.bundleIdentifier]
+        let icon = client.appIconsByBundleID[entry.bundleIdentifier] ?? BundledAppIcons.pngData(for: entry.bundleIdentifier)
 
         return Button {
             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)

@@ -21,6 +21,8 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: Packages/ChocliftCore/Sources/ChocliftCore
+        excludes:
+          - "Resources/**"
     settings:
       base:
         PRODUCT_MODULE_NAME: ChocliftCore
@@ -34,6 +36,8 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Packages/ChocliftCore/Sources/ChocliftCore
+        excludes:
+          - "Resources/**"
     settings:
       base:
         PRODUCT_MODULE_NAME: ChocliftCore
@@ -47,6 +51,8 @@ targets:
     deploymentTarget: "10.0"
     sources:
       - path: Packages/ChocliftCore/Sources/ChocliftCore
+        excludes:
+          - "Resources/**"
     settings:
       base:
         PRODUCT_MODULE_NAME: ChocliftCore
@@ -63,6 +69,8 @@ targets:
         excludes:
           - "Info.plist"
           - "ChocliftMac.entitlements"
+      - path: Packages/ChocliftCore/Sources/ChocliftCore/Resources
+        buildPhase: resources
     dependencies:
       - target: ChocliftCoreMac
     info:
@@ -114,6 +122,8 @@ targets:
       - path: Apps/ChocliftIOS
         excludes:
           - "Info.plist"
+      - path: Packages/ChocliftCore/Sources/ChocliftCore/Resources
+        buildPhase: resources
     dependencies:
       - target: ChocliftCoreIOS
       - target: ChocliftWatch
@@ -165,6 +175,8 @@ targets:
       - path: Apps/ChocliftWatch
         excludes:
           - "Info.plist"
+      - path: Packages/ChocliftCore/Sources/ChocliftCore/Resources
+        buildPhase: resources
     dependencies:
       - target: ChocliftCoreWatch
     info:

@@ -575,7 +575,7 @@ public struct ChocBarTileCard: View {
 
                 VStack(spacing: isMicro ? 3 : (compact ? 4 : 6)) {
                     DataImageView(
-                        pngData: iconData,
+                        pngData: iconData ?? BundledAppIcons.pngData(for: item.bundleIdentifier ?? ""),
                         fallbackSymbol: fallbackSymbol,
                         tint: palette.secondaryText
                     )

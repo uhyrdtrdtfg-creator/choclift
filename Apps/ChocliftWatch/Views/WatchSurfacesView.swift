@@ -116,7 +116,9 @@ public struct WatchChocolateBarView: View {
                     ForEach(0..<BarPage.slotsPerPage, id: \.self) { slotIdx in
                         let item = activePage.slots[slotIdx]
                         let key = "\(safePageIndex)-\(slotIdx)"
-                        let iconData = item?.bundleIdentifier.flatMap { client.appIconsByBundleID[$0] }
+                        let iconData = item?.bundleIdentifier.flatMap {
+                            client.appIconsByBundleID[$0] ?? BundledAppIcons.pngData(for: $0)
+                        }
                         let isFrontmost = (item?.bundleIdentifier != nil && item?.bundleIdentifier == client.frontmostBundleID)
 
                         watchSlotButton(
@@ -339,7 +341,7 @@ private struct WatchSlotQuickAssignSheet: View {
                         } label: {
                             HStack(spacing: 8) {
                                 DataImageView(
-                                    pngData: client.appIconsByBundleID[entry.bundleIdentifier],
+                                    pngData: client.appIconsByBundleID[entry.bundleIdentifier] ?? BundledAppIcons.pngData(for: entry.bundleIdentifier),
                                     fallbackSymbol: "app.fill",
                                     tint: palette.secondaryText
                                 )
@@ -611,7 +613,7 @@ public struct WatchTimeTravelView: View {
     }
 
     private func recentAppRow(_ entry: RecentAppEntry) -> some View {
-        let icon = client.appIconsByBundleID[entry.bundleIdentifier]
+        let icon = client.appIconsByBundleID[entry.bundleIdentifier] ?? BundledAppIcons.pngData(for: entry.bundleIdentifier)
 
         return HStack(spacing: 6) {
             Button {

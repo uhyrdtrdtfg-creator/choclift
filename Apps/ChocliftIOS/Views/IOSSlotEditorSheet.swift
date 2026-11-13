@@ -210,7 +210,7 @@ public struct IOSSlotEditorSheet: View {
                     } label: {
                         HStack(spacing: 12) {
                             DataImageView(
-                                pngData: app.iconPNGData ?? client.appIconsByBundleID[app.bundleIdentifier],
+                                pngData: app.iconPNGData ?? client.appIconsByBundleID[app.bundleIdentifier] ?? BundledAppIcons.pngData(for: app.bundleIdentifier),
                                 fallbackSymbol: "app.fill",
                                 tint: palette.secondaryText
                             )

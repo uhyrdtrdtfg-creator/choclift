@@ -462,7 +462,7 @@ public struct IOSRootTouchBarView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(client.recentApps) { entry in
-                            let icon = client.appIconsByBundleID[entry.bundleIdentifier]
+                            let icon = client.appIconsByBundleID[entry.bundleIdentifier] ?? BundledAppIcons.pngData(for: entry.bundleIdentifier)
                             Button {
                                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
                                 client.activateRecentApp(entry)

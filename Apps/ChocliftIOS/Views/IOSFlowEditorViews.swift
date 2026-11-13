@@ -923,10 +923,10 @@ public struct IOSFlowStepEditorSheet: View {
         var rows: [(String, String, String?, Data?)] = []
 
         for app in client.macCatalogApps where seen.insert(app.bundleIdentifier).inserted {
-            rows.append((app.bundleIdentifier, app.appName, app.appPath, app.iconPNGData ?? client.appIconsByBundleID[app.bundleIdentifier]))
+            rows.append((app.bundleIdentifier, app.appName, app.appPath, app.iconPNGData ?? client.appIconsByBundleID[app.bundleIdentifier] ?? BundledAppIcons.pngData(for: app.bundleIdentifier)))
         }
         for recent in client.recentApps where seen.insert(recent.bundleIdentifier).inserted {
-            rows.append((recent.bundleIdentifier, recent.appName, recent.appPath, client.appIconsByBundleID[recent.bundleIdentifier]))
+            rows.append((recent.bundleIdentifier, recent.appName, recent.appPath, client.appIconsByBundleID[recent.bundleIdentifier] ?? BundledAppIcons.pngData(for: recent.bundleIdentifier)))
         }
 
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
