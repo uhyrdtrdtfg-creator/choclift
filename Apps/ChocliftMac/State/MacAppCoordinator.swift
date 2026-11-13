@@ -227,6 +227,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         timeTravel.onFrontmostChanged = { [weak self] bundleID, appName in
             guard let self else { return }
+            self.systemControlService.syncFrontmostAppName(appName)
             self.server.broadcast(.frontmostAppChanged(bundleIdentifier: bundleID, appName: appName))
             self.refreshAndBroadcastFrontmostWindowsIfNeeded(force: true)
         }
@@ -235,6 +236,10 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             pinned: profile.pinnedTimeTravelBundleIDs,
             excluded: profile.settings.excludedTimeTravelBundleIDs
         )
+
+        systemControlService.frontmostAppNameProvider = { [weak self] in
+            self?.timeTravel.frontmostAppName
+        }
 
         keepAwakeService.onAssertionStateChanged = { [weak self] isHolding in
             guard let self else { return }
@@ -494,6 +499,16 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         }
         merged.soundboardClips = SoundboardCatalogValidator.sanitizeBoard(reconciled)
         merged.prunePinnedStripSlots()
+
+        // Companions may only pin plain-text items (`<= 280` chars, max 8) that either were already pinned
+        // on this Mac or already appeared in the Mac clipboard preview.
+        clipboardService.pollIfNeeded()
+        var allowedPinTexts = Set(profile.pinnedClipboardItems.map(\.text))
+        allowedPinTexts.formUnion(clipboardService.observedSafePreviewTexts)
+        if let currentPreviewText = PinnedClipboardItem.sanitizedText(clipboardService.currentPreview.previewText) {
+            allowedPinTexts.insert(currentPreviewText)
+        }
+        merged.sanitizePinnedClipboardItems(allowedTexts: allowedPinTexts)
         return merged
     }
 
@@ -1424,6 +1439,33 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
 
+        case .lockMacScreen:
+            // Dedicated Lock Screen action (confirmed via 3s second-tap gate on companion), separate from sleepMacDisplay.
+            let res = systemControlService.lockScreen(language: lang) { [weak self] in
+                guard let self else {
+                    return (false, L10n.tr("无法锁定屏幕", "Unable to lock screen", language: lang))
+                }
+                return self.inputService.executeSystemAction(
+                    .lockScreen,
+                    preferredPID: self.timeTravel.lastExternalAppPID
+                )
+            }
+            recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
+            reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
+
+        case .hideOtherApplications:
+            // Hides every running regular app except the frontmost one without quitting them;
+            // leaves the one-level WindowMoveUndoBuffer untouched.
+            let res = windowService.hideOtherApplications(
+                preferredExternalPID: timeTravel.lastExternalAppPID,
+                language: lang
+            )
+            recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
+            let snapshot = refreshFrontmostWindowSnapshot()
+            server.broadcastFrontmostWindows(snapshot)
+            reply(.frontmostWindowsUpdated(snapshot))
+            reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
+
         case .setFinderDesktopIconsVisible(let visible):
             let res = systemControlService.setFinderDesktopIconsVisible(visible, language: lang)
             server.broadcastControlStripState(systemControlService.currentState)
@@ -1460,7 +1502,10 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .updateProfile(let updatedProfile):
             let safeProfile = sanitizeCompanionProfileUpdate(updatedProfile)
-            let originToExclude = (safeProfile.soundboardClips == updatedProfile.soundboardClips) ? device.deviceID : nil
+            let isUnchangedBySanitizer =
+                (safeProfile.soundboardClips == updatedProfile.soundboardClips) &&
+                (safeProfile.pinnedClipboardItems == updatedProfile.pinnedClipboardItems)
+            let originToExclude = isUnchangedBySanitizer ? device.deviceID : nil
             applyAndSaveProfile(safeProfile, broadcastOriginDeviceID: originToExclude)
             recordActivity(
                 deviceName: device.deviceName,

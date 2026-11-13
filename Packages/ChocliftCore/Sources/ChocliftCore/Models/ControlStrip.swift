@@ -82,24 +82,35 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
     public var artist: String?
     public var appName: String?
     public var isPlaying: Bool
+    /// System-reported playback elapsed time in seconds (`nil` when unavailable).
+    public var elapsedSeconds: Double?
+    /// System-reported track duration in seconds (`nil` when missing or non-positive).
+    public var durationSeconds: Double?
 
     private enum CodingKeys: String, CodingKey {
         case title
         case artist
         case appName
         case isPlaying
+        case elapsedSeconds
+        case durationSeconds
     }
 
     public init(
         title: String? = nil,
         artist: String? = nil,
         appName: String? = nil,
-        isPlaying: Bool = false
+        isPlaying: Bool = false,
+        elapsedSeconds: Double? = nil,
+        durationSeconds: Double? = nil
     ) {
         self.title = Self.clean(title)
         self.artist = Self.clean(artist)
         self.appName = Self.clean(appName)
         self.isPlaying = isPlaying
+        let validDuration = Self.cleanDuration(durationSeconds)
+        self.durationSeconds = validDuration
+        self.elapsedSeconds = Self.cleanElapsed(elapsedSeconds, cappedBy: validDuration)
     }
 
     public init(from decoder: Decoder) throws {
@@ -108,6 +119,11 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         self.artist = Self.clean(try container.decodeIfPresent(String.self, forKey: .artist))
         self.appName = Self.clean(try container.decodeIfPresent(String.self, forKey: .appName))
         self.isPlaying = try container.decodeIfPresent(Bool.self, forKey: .isPlaying) ?? false
+        let rawDuration = try container.decodeIfPresent(Double.self, forKey: .durationSeconds)
+        let rawElapsed = try container.decodeIfPresent(Double.self, forKey: .elapsedSeconds)
+        let validDuration = Self.cleanDuration(rawDuration)
+        self.durationSeconds = validDuration
+        self.elapsedSeconds = Self.cleanElapsed(rawElapsed, cappedBy: validDuration)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -116,6 +132,10 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         try container.encodeIfPresent(artist, forKey: .artist)
         try container.encodeIfPresent(appName, forKey: .appName)
         try container.encode(isPlaying, forKey: .isPlaying)
+        let validDuration = Self.cleanDuration(durationSeconds)
+        let validElapsed = Self.cleanElapsed(elapsedSeconds, cappedBy: validDuration)
+        try container.encodeIfPresent(validElapsed, forKey: .elapsedSeconds)
+        try container.encodeIfPresent(validDuration, forKey: .durationSeconds)
     }
 
     /// Track title if available, otherwise the active media app name.
@@ -141,6 +161,15 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         return nil
     }
 
+    /// Read-only `"elapsed / duration"` string when both `elapsedSeconds` and `durationSeconds` (`> 0`)
+    /// are provided by macOS; `nil` whenever duration is missing so the Now Playing row shows title only.
+    public var formattedProgressText: String? {
+        NowPlayingProgressFormatter.formattedProgress(
+            elapsedSeconds: elapsedSeconds,
+            durationSeconds: durationSeconds
+        )
+    }
+
     public var hasActiveMedia: Bool {
         primaryDisplayText != nil
     }
@@ -151,6 +180,24 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
             return nil
         }
         return trimmed
+    }
+
+    private static func cleanDuration(_ raw: Double?) -> Double? {
+        guard let raw, raw.isFinite, !raw.isNaN, raw > 0 else {
+            return nil
+        }
+        return raw
+    }
+
+    private static func cleanElapsed(_ raw: Double?, cappedBy duration: Double?) -> Double? {
+        guard let raw, raw.isFinite, !raw.isNaN else {
+            return nil
+        }
+        let nonNegative = max(0.0, raw)
+        if let duration {
+            return min(nonNegative, duration)
+        }
+        return nonNegative
     }
 }
 
@@ -184,6 +231,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
     public var wifiSSID: String?
     /// Count of mounted external volumes eligible for ejection (excludes startup and fixed internal volumes).
     public var ejectableExternalVolumeCount: Int
+    /// Read-only display name of the frontmost Mac app (`nil` before sync or when none).
+    public var frontmostAppName: String?
 
     private enum CodingKeys: String, CodingKey {
         case volume
@@ -205,6 +254,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         case privacyCapture
         case wifiSSID
         case ejectableExternalVolumeCount
+        case frontmostAppName
     }
 
     public init(
@@ -226,7 +276,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         areFinderDesktopIconsVisible: Bool = true,
         privacyCapture: MacPrivacyCaptureStatus = .inactive,
         wifiSSID: String? = nil,
-        ejectableExternalVolumeCount: Int = 0
+        ejectableExternalVolumeCount: Int = 0,
+        frontmostAppName: String? = nil
     ) {
         self.volume = ControlStripLevel.clamp(volume)
         self.isVolumeMuted = isVolumeMuted
@@ -250,6 +301,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.privacyCapture = privacyCapture
         self.wifiSSID = MacWiFiStatusFormatter.sanitizedSSID(wifiSSID)
         self.ejectableExternalVolumeCount = max(0, ejectableExternalVolumeCount)
+        self.frontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName)
     }
 
     public init(from decoder: Decoder) throws {
@@ -287,6 +339,9 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         )
         let rawEjectableCount = try container.decodeIfPresent(Int.self, forKey: .ejectableExternalVolumeCount) ?? 0
         self.ejectableExternalVolumeCount = max(0, rawEjectableCount)
+        self.frontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(
+            try container.decodeIfPresent(String.self, forKey: .frontmostAppName)
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -322,6 +377,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         if ejectableExternalVolumeCount > 0 {
             try container.encode(max(0, ejectableExternalVolumeCount), forKey: .ejectableExternalVolumeCount)
         }
+        try container.encodeIfPresent(FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName), forKey: .frontmostAppName)
     }
 
     /// Current Wi-Fi SSID string, or `"Wi-Fi"` with no network name when unavailable.
@@ -400,7 +456,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             areFinderDesktopIconsVisible != other.areFinderDesktopIconsVisible ||
             privacyCapture != other.privacyCapture ||
             MacWiFiStatusFormatter.sanitizedSSID(wifiSSID) != MacWiFiStatusFormatter.sanitizedSSID(other.wifiSSID) ||
-            max(0, ejectableExternalVolumeCount) != max(0, other.ejectableExternalVolumeCount) {
+            max(0, ejectableExternalVolumeCount) != max(0, other.ejectableExternalVolumeCount) ||
+            FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName) != FrontmostAppStripFormatter.sanitizedAppName(other.frontmostAppName) {
             return true
         }
         if (volume <= 0.001) != (other.volume <= 0.001) ||

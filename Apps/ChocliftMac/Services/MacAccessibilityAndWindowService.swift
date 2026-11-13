@@ -821,6 +821,58 @@ public final class MacAccessibilityAndWindowService {
         return nil
     }
 
+    /// Hides every running regular application except the frontmost one (`app.hide()`).
+    /// Never quits (`terminate()`) any application, and leaves the one-level `WindowMoveUndoBuffer`
+    /// untouched because AX Quartz frame undo cannot restore hidden application visibility.
+    public func hideOtherApplications(
+        preferredExternalPID: pid_t?,
+        selfPID: pid_t = ProcessInfo.processInfo.processIdentifier,
+        language: AppLanguage = .system
+    ) -> (success: Bool, title: String, detail: String) {
+        let title = HideOtherWindowsPolicy.buttonTitle(compact: false, in: language)
+        guard let frontApp = resolveFrontmostTargetApp(
+            preferredExternalPID: preferredExternalPID,
+            selfPID: selfPID
+        ), frontApp.bundleIdentifier != "com.apple.loginwindow" else {
+            return (
+                false,
+                title,
+                L10n.tr("当前没有可用的前台应用窗口", "No active frontmost app found", language: language)
+            )
+        }
+
+        let frontName = frontApp.localizedName ?? frontApp.bundleIdentifier ?? "App"
+        var hiddenCount = 0
+
+        for candidate in NSWorkspace.shared.runningApplications {
+            guard !candidate.isTerminated,
+                  candidate.activationPolicy == .regular,
+                  candidate.processIdentifier != frontApp.processIdentifier,
+                  candidate.bundleIdentifier != "com.apple.loginwindow" else {
+                continue
+            }
+            if !candidate.isHidden, candidate.hide() {
+                hiddenCount += 1
+            }
+        }
+
+        let detail: String
+        if hiddenCount > 0 {
+            detail = L10n.tr(
+                "已隐藏其他 \(hiddenCount) 个应用（仅保留 \(frontName)）",
+                "Hid \(hiddenCount) other app\(hiddenCount == 1 ? "" : "s") (kept \(frontName) visible)",
+                language: language
+            )
+        } else {
+            detail = L10n.tr(
+                "当前仅 \(frontName) 处于可见状态",
+                "Only \(frontName) is currently visible",
+                language: language
+            )
+        }
+        return (true, title, detail)
+    }
+
     // MARK: - AX Geometry Helpers
 
     private func resolveTargetWindow(for appElement: AXUIElement) -> AXUIElement? {

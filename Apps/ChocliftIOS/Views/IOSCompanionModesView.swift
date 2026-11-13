@@ -1079,10 +1079,18 @@ public struct IOSEmojiBarSurfaceView: View {
                     .foregroundStyle(palette.secondaryText)
             }
         case .clipboard:
-            if let text = client.clipboardPreview.previewText, client.connectionState.isConnected {
-                Text(client.clipboardPreview.isTruncated ? "280+" : "\(text.count)/280")
-                    .font(.caption2.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(palette.secondaryText)
+            let pinCount = client.profile.activePinnedClipboardItems.count
+            HStack(spacing: 6) {
+                if pinCount > 0 {
+                    Text("\(pinCount)/\(PinnedClipboardItem.maxPinnedCount)")
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(palette.secondaryText)
+                }
+                if let text = client.clipboardPreview.previewText, client.connectionState.isConnected {
+                    Text(client.clipboardPreview.isTruncated ? "280+" : "\(text.count)/280")
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(palette.secondaryText)
+                }
             }
         }
     }
@@ -2463,7 +2471,9 @@ public struct IOSPersistentControlStripView: View {
 
     private var nowPlayingCluster: some View {
         let activeMedia = state.nowPlaying
-        let primaryText = activeMedia?.primaryDisplayText
+        let rowContent = NowPlayingProgressFormatter.rowDisplayContent(for: activeMedia)
+        let primaryText = rowContent?.title
+        let progressText = rowContent?.progressText
         let isPlaying = activeMedia?.isPlaying ?? false
 
         return HStack(spacing: 6) {
@@ -2485,15 +2495,26 @@ public struct IOSPersistentControlStripView: View {
                         .lineLimit(1)
                 }
 
-                Spacer(minLength: 0)
+                Spacer(minLength: 4)
+
+                if primaryText != nil, let progressText {
+                    Text(progressText)
+                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .accessibilityIdentifier("ios-strip-now-playing-progress")
+                }
             }
-            .padding(.leading, 8)
+            .padding(.horizontal, 8)
             .frame(maxWidth: .infinity, minHeight: 34)
             .background(palette.tileFillBottom.opacity(0.75), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
             )
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ios-strip-now-playing-label")
 
             let isPlayPressed = (pressedKey == "playPause")

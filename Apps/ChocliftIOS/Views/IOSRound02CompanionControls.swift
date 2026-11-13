@@ -59,7 +59,11 @@ public struct IOSCompanionBarRibbon: View {
 
             IOSSleepDisplayPillButton(client: client, compact: compact)
 
+            IOSLockScreenPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+
             IOSShowDesktopPillButton(client: client, compact: compact)
+
+            IOSHideOtherWindowsPillButton(client: client, compact: compact)
 
             IOSFinderDesktopIconsPillButton(client: client, compact: compact)
 
@@ -99,12 +103,30 @@ public struct IOSCompanionBarRibbon: View {
                 IOSFrontmostWindowsRibbonButton(client: client, compact: compact)
             }
 
-            HStack(spacing: 6) {
-                IOSEmptyTrashPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                    IOSHideOtherWindowsPillButton(client: client, compact: compact)
 
-                IOSEjectExternalDisksPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+                    IOSLockScreenPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
 
-                Spacer(minLength: 0)
+                    IOSEmptyTrashPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+
+                    IOSEjectExternalDisksPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+
+                    Spacer(minLength: 0)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        IOSHideOtherWindowsPillButton(client: client, compact: compact)
+
+                        IOSLockScreenPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+
+                        IOSEmptyTrashPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+
+                        IOSEjectExternalDisksPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+                    }
+                }
             }
         }
     }
@@ -240,6 +262,10 @@ public struct IOSCompanionBarRibbon: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("ios-bar-clipboard-preview")
+
+            if preview.hasText {
+                IOSPinClipboardButton(client: client, compact: true)
+            }
 
             Button {
                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
@@ -380,6 +406,8 @@ public struct IOSClipboardPreviewCard: View {
 
                 Spacer(minLength: 6)
 
+                IOSPinClipboardButton(client: client, compact: !expanded)
+
                 Button {
                     CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
                     ChocPressFeedback.completeTap(key: pasteKey, pressedKey: $pressedKey)
@@ -433,7 +461,10 @@ public struct IOSClipboardPreviewCard: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .multilineTextAlignment(.leading)
                     }
-                    .frame(maxHeight: .infinity, alignment: .topLeading)
+                    .frame(
+                        maxHeight: client.profile.activePinnedClipboardItems.isEmpty ? 110 : 72,
+                        alignment: .topLeading
+                    )
                     .accessibilityIdentifier("ios-clipboard-preview-text")
                 } else if let onTapExpand {
                     Button {
@@ -467,9 +498,19 @@ public struct IOSClipboardPreviewCard: View {
                 )
                 .font(.system(size: 12, weight: .regular, design: .rounded))
                 .foregroundStyle(palette.secondaryText)
-                .lineLimit(expanded ? 3 : 1)
+                .lineLimit(expanded ? 2 : 1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("ios-clipboard-empty-state")
+            }
+
+            if expanded {
+                Rectangle()
+                    .fill(palette.subtleCardStroke)
+                    .frame(height: 1)
+
+                IOSPinnedClipboardShelfView(client: client)
+            } else if !client.profile.activePinnedClipboardItems.isEmpty {
+                IOSPinnedClipboardCompactStrip(client: client)
             }
         }
         .padding(.horizontal, 12)

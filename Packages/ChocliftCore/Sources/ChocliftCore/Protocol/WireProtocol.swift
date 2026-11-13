@@ -51,6 +51,8 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case setFinderDesktopIconsVisible(Bool)
     case emptyMacTrash
     case ejectExternalDisks
+    case lockMacScreen
+    case hideOtherApplications
     case unknownClientMessage
 }
 

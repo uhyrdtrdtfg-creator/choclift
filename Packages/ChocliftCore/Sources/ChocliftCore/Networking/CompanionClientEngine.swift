@@ -113,6 +113,8 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var activeTileFeedback: TileActionFeedbackBanner?
     @Published public private(set) var recentlyTriggeredTiles: [RecentlyTriggeredTileEntry] = []
     @Published public private(set) var maintenanceConfirmController = Round08MaintenanceConfirmController()
+    @Published public private(set) var lockScreenConfirmController = Round09LockScreenConfirmController()
+    @Published public private(set) var observedClipboardPreviewTexts: Set<String> = []
     @Published public var lastFeedback: CompanionFeedbackToast?
 
     public let deviceID: String
@@ -181,6 +183,8 @@ public final class CompanionClientEngine: ObservableObject {
     private var tileFeedbackTracker = TileActionFeedbackTracker()
     private var tileFeedbackExpiryTask: Task<Void, Never>?
     private var maintenanceConfirmExpiryTask: Task<Void, Never>?
+    private var lockScreenConfirmExpiryTask: Task<Void, Never>?
+    private var connectedClipboardMacID: String?
 
     public init(
         deviceID: String,
@@ -1405,8 +1409,10 @@ public final class CompanionClientEngine: ObservableObject {
         disconnectedStrip.privacyCapture = .inactive
         disconnectedStrip.wifiSSID = nil
         disconnectedStrip.ejectableExternalVolumeCount = 0
+        disconnectedStrip.frontmostAppName = nil
         controlStripState = disconnectedStrip
         disarmMaintenanceConfirmation()
+        disarmLockMacScreenConfirmation()
         tileFeedbackTracker.clearPendingWithoutFeedback()
         lastConnectionIssue = nil
         accumulator.reset()
@@ -1596,8 +1602,10 @@ public final class CompanionClientEngine: ObservableObject {
         disconnectedStrip.privacyCapture = .inactive
         disconnectedStrip.wifiSSID = nil
         disconnectedStrip.ejectableExternalVolumeCount = 0
+        disconnectedStrip.frontmostAppName = nil
         controlStripState = disconnectedStrip
         disarmMaintenanceConfirmation()
+        disarmLockMacScreenConfirmation()
         if let failedBanner = tileFeedbackTracker.failPendingOnDisconnect() {
             publishTileFeedback(failedBanner)
         }
@@ -2119,6 +2127,7 @@ public final class CompanionClientEngine: ObservableObject {
         _ action: Round08MaintenanceAction,
         at now: TimeInterval
     ) -> Round08MaintenanceTapOutcome {
+        disarmLockMacScreenConfirmation()
         maintenanceConfirmExpiryTask?.cancel()
         maintenanceConfirmExpiryTask = nil
 
@@ -2153,14 +2162,203 @@ public final class CompanionClientEngine: ObservableObject {
                 return .confirmedExecute
             }
             tileFeedbackTracker.clearPendingWithoutFeedback()
-            switch action {
-            case .emptyTrash:
-                send(.emptyMacTrash)
-            case .ejectExternalDisks:
-                send(.ejectExternalDisks)
+        switch action {
+        case .emptyTrash:
+            send(.emptyMacTrash)
+        case .ejectExternalDisks:
+            send(.ejectExternalDisks)
+        }
+        return .confirmedExecute
+        }
+    }
+
+    // MARK: - Round 9: Lock Screen (Two-Tap 3s Confirm), Hide Other Windows, Pinned Clipboard & Strip Frontmost App
+
+    public func isLockMacScreenArmed(
+        at now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Bool {
+        lockScreenConfirmController.isArmed(at: now)
+    }
+
+    public func disarmLockMacScreenConfirmation() {
+        lockScreenConfirmExpiryTask?.cancel()
+        lockScreenConfirmExpiryTask = nil
+        if lockScreenConfirmController.gate.armedTargetID != nil {
+            lockScreenConfirmController.disarm()
+        }
+    }
+
+    /// Registers a tap on the Lock Screen button using the 3-second second-tap confirm gate.
+    /// Never runs or sends `.lockMacScreen` on the first tap, and stays completely separate from `.sleepMacDisplay`.
+    @discardableResult
+    public func tapLockMacScreen(
+        at now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Round09LockScreenTapOutcome {
+        disarmMaintenanceConfirmation()
+        lockScreenConfirmExpiryTask?.cancel()
+        lockScreenConfirmExpiryTask = nil
+
+        let outcome = lockScreenConfirmController.registerTap(at: now)
+        switch outcome {
+        case .requireSecondTap(let expiresAt):
+            let delay = lockScreenConfirmController.confirmationWindowSeconds + 0.05
+            lockScreenConfirmExpiryTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard let self, !Task.isCancelled else { return }
+                self.lockScreenConfirmController.expireIfNeeded(at: expiresAt + 0.01)
             }
+            return .requireSecondTap(expiresAt: expiresAt)
+
+        case .confirmedExecute:
+            let lang = profile.settings.language
+            guard connectionState.isConnected else {
+                lastFeedback = CompanionFeedbackToast(
+                    success: false,
+                    title: Round09LockScreenConfirmController.title(compact: false, in: lang),
+                    detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                )
+                return .confirmedExecute
+            }
+            tileFeedbackTracker.clearPendingWithoutFeedback()
+            send(.lockMacScreen)
             return .confirmedExecute
         }
+    }
+
+    /// Hides every running Mac app except the frontmost one without quitting them.
+    /// Leaves the one-level window-move undo state untouched.
+    public func hideOtherWindows() {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: HideOtherWindowsPolicy.buttonTitle(compact: false, in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.hideOtherApplications)
+    }
+
+    /// Read-only frontmost Mac app name for the persistent strip badge (`nil` when disconnected).
+    public var resolvedStripFrontmostAppName: String? {
+        guard connectionState.isConnected else { return nil }
+        if let live = FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName) {
+            return live
+        }
+        if let stripName = FrontmostAppStripFormatter.sanitizedAppName(controlStripState.frontmostAppName) {
+            return stripName
+        }
+        if let bundleID = frontmostBundleID {
+            let resolved = profile.resolvedAppDisplayName(
+                forBundleIdentifier: bundleID,
+                preferredAppName: nil,
+                recentApps: recentApps,
+                catalogApps: macCatalogApps
+            )
+            return FrontmostAppStripFormatter.sanitizedAppName(resolved)
+        }
+        return nil
+    }
+
+    public var isCurrentClipboardPreviewPinned: Bool {
+        guard let text = clipboardPreview.previewText else { return false }
+        return profile.isClipboardTextPinned(text)
+    }
+
+    public var canPinCurrentClipboardPreview: Bool {
+        guard connectionState.isConnected,
+              let text = PinnedClipboardItem.sanitizedText(clipboardPreview.previewText) else {
+            return false
+        }
+        if profile.isClipboardTextPinned(text) {
+            return true
+        }
+        return profile.canPinMoreClipboardItems
+    }
+
+    /// Pins the text currently shown in the Mac clipboard preview (`<= 280` chars, max 8 pins)
+    /// and syncs through `ChocliftWorkspaceProfile`.
+    @discardableResult
+    public func pinCurrentClipboardPreview() -> Bool {
+        guard let safeText = PinnedClipboardItem.sanitizedText(clipboardPreview.previewText) else {
+            return false
+        }
+        recordObservedClipboardPreviewText(safeText)
+        return pinClipboardPreviewText(safeText)
+    }
+
+    /// Pins `text` ONLY if it already appeared in the Mac clipboard preview on this companion,
+    /// enforcing the 8-item cap and 280-character limit.
+    @discardableResult
+    public func pinClipboardPreviewText(_ text: String) -> Bool {
+        guard let safeText = PinnedClipboardItem.sanitizedText(text) else {
+            return false
+        }
+        var allowed = observedClipboardPreviewTexts
+        if let current = PinnedClipboardItem.sanitizedText(clipboardPreview.previewText) {
+            allowed.insert(current)
+        }
+        var next = profile
+        let wasAlreadyPinned = next.isClipboardTextPinned(safeText)
+        guard next.pinObservedClipboardText(safeText, observedPreviewTexts: allowed) else {
+            return false
+        }
+        if !wasAlreadyPinned {
+            pushUpdatedProfile(next)
+        }
+        return true
+    }
+
+    @discardableResult
+    public func unpinClipboardItem(id: UUID) -> Bool {
+        var next = profile
+        guard next.unpinClipboardItem(id: id) else { return false }
+        pushUpdatedProfile(next)
+        return true
+    }
+
+    @discardableResult
+    public func unpinClipboardItem(text: String) -> Bool {
+        var next = profile
+        guard next.unpinClipboardItem(text: text) else { return false }
+        pushUpdatedProfile(next)
+        return true
+    }
+
+    @discardableResult
+    public func togglePinCurrentClipboardPreview() -> Bool {
+        guard let text = PinnedClipboardItem.sanitizedText(clipboardPreview.previewText) else {
+            return false
+        }
+        if profile.isClipboardTextPinned(text) {
+            return unpinClipboardItem(text: text)
+        }
+        return pinCurrentClipboardPreview()
+    }
+
+    /// Inserts a pinned clipboard item on the Mac using the existing focused-field insertion path.
+    @discardableResult
+    public func insertPinnedClipboardItem(_ item: PinnedClipboardItem) -> Bool {
+        let lang = profile.settings.language
+        guard let safeText = PinnedClipboardItem.sanitizedText(item.text) else {
+            return false
+        }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("固定剪贴板", "Pinned Clipboard", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return false
+        }
+        return insertSnippet(safeText, mode: .focusedFieldInsert)
+    }
+
+    private func recordObservedClipboardPreviewText(_ text: String?) {
+        guard let safeText = PinnedClipboardItem.sanitizedText(text) else { return }
+        observedClipboardPreviewTexts.insert(safeText)
     }
 
     /// Sends Escape, Space, or an Arrow key to the frontmost Mac app through the existing input path.
@@ -2338,14 +2536,25 @@ public final class CompanionClientEngine: ObservableObject {
                     updatedAt: Date()
                 )
             )
+            if connectedClipboardMacID != macID {
+                observedClipboardPreviewTexts.removeAll()
+                connectedClipboardMacID = macID
+            }
             profile = serverProfile
             var initialStrip = controlStripState
             initialStrip.soundboardVolume = serverProfile.soundboardVolume
             controlStripState = initialStrip
             recentApps = serverRecents
             frontmostBundleID = frontmost
-            frontmostAppName = frontmost.flatMap { bid in
-                serverRecents.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame })?.appName
+            frontmostAppName = frontmost.map { bid in
+                serverProfile.resolvedAppDisplayName(
+                    forBundleIdentifier: bid,
+                    preferredAppName: serverRecents.first(where: {
+                        $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame
+                    })?.appName,
+                    recentApps: serverRecents,
+                    catalogApps: macCatalogApps
+                )
             }
             isEditingTextOnMac = editingText
             focusedMacAppName = focusedApp
@@ -2436,6 +2645,7 @@ public final class CompanionClientEngine: ObservableObject {
                 return
             }
             clipboardPreview = snapshot
+            recordObservedClipboardPreviewText(snapshot.previewText)
 
         case .screenshotCaptured(let result):
             isCapturingScreenshot = false

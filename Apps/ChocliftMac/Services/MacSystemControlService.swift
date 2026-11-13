@@ -18,6 +18,7 @@ public final class MacSystemControlService {
     public var displayTopologyProvider: (() -> (displays: [MacDisplayInfo], selectedDisplayID: UInt32?))?
     public var soundboardVolumeProvider: (() -> Double)?
     public var keepMacAwakeProvider: (() -> Bool)?
+    public var frontmostAppNameProvider: (() -> String?)?
     public private(set) var currentState: ControlStripState
 
     private struct RegisteredAudioListener {
@@ -172,6 +173,9 @@ public final class MacSystemControlService {
         let privacyCapture = Self.readPrivacyCaptureStatus(defaultInputDeviceID: inDevice)
         let currentWiFiSSID = Self.readCurrentWiFiSSID()
         let ejectableVolumeCount = Self.enumerateEjectableExternalVolumes().count
+        let resolvedFrontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(
+            frontmostAppNameProvider?() ?? NSWorkspace.shared.frontmostApplication?.localizedName
+        )
 
         return ControlStripState(
             volume: volume,
@@ -192,8 +196,18 @@ public final class MacSystemControlService {
             areFinderDesktopIconsVisible: finderIconsVisible,
             privacyCapture: privacyCapture,
             wifiSSID: currentWiFiSSID,
-            ejectableExternalVolumeCount: ejectableVolumeCount
+            ejectableExternalVolumeCount: ejectableVolumeCount,
+            frontmostAppName: resolvedFrontmostAppName
         )
+    }
+
+    public func syncFrontmostAppName(_ appName: String?) {
+        let sanitized = FrontmostAppStripFormatter.sanitizedAppName(appName)
+        guard currentState.frontmostAppName != sanitized else { return }
+        var updated = currentState
+        updated.frontmostAppName = sanitized
+        currentState = updated
+        onStateChanged?(updated)
     }
 
     public func syncKeepMacAwake(_ isEnabled: Bool) {
@@ -247,6 +261,29 @@ public final class MacSystemControlService {
             title,
             L10n.tr("已熄灭屏幕（未锁定 Mac，防休眠开关保持不变）", "Display put to sleep (Mac unlocked; Keep Awake unchanged)", language: language)
         )
+    }
+
+    /// Locks the Mac screen immediately (separate from `sleepDisplay`, which only idles the display).
+    /// Uses macOS `login.framework` `SACLockScreenImmediate` when available, falling back to `⌃⌘Q`.
+    public func lockScreen(
+        language: AppLanguage = .system,
+        fallbackKeystroke: () -> (success: Bool, message: String)
+    ) -> (success: Bool, title: String, detail: String) {
+        let title = L10n.tr("锁定屏幕", "Lock Screen", language: language)
+        if let loginHandle = dlopen("/System/Library/PrivateFrameworks/login.framework/Versions/Current/login", RTLD_LAZY),
+           let lockSym = dlsym(loginHandle, "SACLockScreenImmediate") {
+            typealias SACLockScreenImmediateFn = @convention(c) () -> Void
+            let lockFn = unsafeBitCast(lockSym, to: SACLockScreenImmediateFn.self)
+            lockFn()
+            return (
+                true,
+                title,
+                L10n.tr("已锁定 Mac 屏幕", "Locked Mac screen", language: language)
+            )
+        }
+
+        let fallback = fallbackKeystroke()
+        return (fallback.success, title, fallback.message)
     }
 
     // MARK: - Mac Battery & Finder Desktop Icons (Round 7)
@@ -1609,6 +1646,24 @@ public final class MacSystemControlService {
                 let state = (userInfo?["Player State"] as? String) ?? ""
                 let title = (userInfo?["Name"] as? String)
                 let artist = (userInfo?["Artist"] as? String)
+                let durationSeconds: Double? = {
+                    if let totalMs = (userInfo?["Total Time"] as? NSNumber)?.doubleValue, totalMs > 0, totalMs.isFinite {
+                        return (totalMs / 1000.0).rounded(.down)
+                    }
+                    if let dur = (userInfo?["Duration"] as? NSNumber)?.doubleValue, dur > 0, dur.isFinite {
+                        return (dur > 10_000 ? (dur / 1000.0) : dur).rounded(.down)
+                    }
+                    return nil
+                }()
+                let elapsedSeconds: Double? = {
+                    if let pos = (userInfo?["Player Position"] as? NSNumber)?.doubleValue, pos >= 0, pos.isFinite {
+                        return pos.rounded(.down)
+                    }
+                    if let pos = (userInfo?["Playback Position"] as? NSNumber)?.doubleValue, pos >= 0, pos.isFinite {
+                        return pos.rounded(.down)
+                    }
+                    return nil
+                }()
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.ingestDistributedPlayerUpdate(
@@ -1616,7 +1671,9 @@ public final class MacSystemControlService {
                         appName: source.appName,
                         playerState: state,
                         title: title,
-                        artist: artist
+                        artist: artist,
+                        elapsedSeconds: elapsedSeconds,
+                        durationSeconds: durationSeconds
                     )
                 }
             }
@@ -1643,7 +1700,9 @@ public final class MacSystemControlService {
         appName: String,
         playerState: String,
         title: String?,
-        artist: String?
+        artist: String?,
+        elapsedSeconds: Double? = nil,
+        durationSeconds: Double? = nil
     ) {
         let normalizedState = playerState.lowercased()
         if normalizedState == "stopped" || normalizedState.isEmpty {
@@ -1654,7 +1713,9 @@ public final class MacSystemControlService {
                 title: title,
                 artist: artist,
                 appName: appName,
-                isPlaying: playing
+                isPlaying: playing,
+                elapsedSeconds: elapsedSeconds,
+                durationSeconds: durationSeconds
             )
             if status.hasActiveMedia {
                 distributedTracks[bundleID] = CachedDistributedTrack(
@@ -1928,6 +1989,10 @@ private final class MediaRemoteBridge {
     private let getIsPlayingFn: GetIsPlayingFn?
     private let titleKey: String
     private let artistKey: String
+    private let durationKey: String
+    private let elapsedTimeKey: String
+    private let timestampKey: String
+    private let playbackRateKey: String
     let notificationNames: [Notification.Name]
     private var didRegister = false
 
@@ -1943,6 +2008,10 @@ private final class MediaRemoteBridge {
             self.getIsPlayingFn = nil
             self.titleKey = "kMRMediaRemoteNowPlayingInfoTitle"
             self.artistKey = "kMRMediaRemoteNowPlayingInfoArtist"
+            self.durationKey = "kMRMediaRemoteNowPlayingInfoDuration"
+            self.elapsedTimeKey = "kMRMediaRemoteNowPlayingInfoElapsedTime"
+            self.timestampKey = "kMRMediaRemoteNowPlayingInfoTimestamp"
+            self.playbackRateKey = "kMRMediaRemoteNowPlayingInfoPlaybackRate"
             self.notificationNames = []
             return
         }
@@ -1960,6 +2029,14 @@ private final class MediaRemoteBridge {
             ?? "kMRMediaRemoteNowPlayingInfoTitle"
         self.artistKey = Self.loadCFStringConstant(from: handle, symbol: "kMRMediaRemoteNowPlayingInfoArtist")
             ?? "kMRMediaRemoteNowPlayingInfoArtist"
+        self.durationKey = Self.loadCFStringConstant(from: handle, symbol: "kMRMediaRemoteNowPlayingInfoDuration")
+            ?? "kMRMediaRemoteNowPlayingInfoDuration"
+        self.elapsedTimeKey = Self.loadCFStringConstant(from: handle, symbol: "kMRMediaRemoteNowPlayingInfoElapsedTime")
+            ?? "kMRMediaRemoteNowPlayingInfoElapsedTime"
+        self.timestampKey = Self.loadCFStringConstant(from: handle, symbol: "kMRMediaRemoteNowPlayingInfoTimestamp")
+            ?? "kMRMediaRemoteNowPlayingInfoTimestamp"
+        self.playbackRateKey = Self.loadCFStringConstant(from: handle, symbol: "kMRMediaRemoteNowPlayingInfoPlaybackRate")
+            ?? "kMRMediaRemoteNowPlayingInfoPlaybackRate"
 
         let noteSymbols = [
             "kMRMediaRemoteNowPlayingInfoDidChangeNotification",
@@ -1983,11 +2060,23 @@ private final class MediaRemoteBridge {
             return
         }
 
-        getInfoFn(.main) { [titleKey, artistKey, getPIDFn] rawInfo in
+        getInfoFn(.main) { [titleKey, artistKey, durationKey, elapsedTimeKey, timestampKey, playbackRateKey, getPIDFn] rawInfo in
             let title = rawInfo?[titleKey] as? String
             let artist = rawInfo?[artistKey] as? String
+            let rawDuration = (rawInfo?[durationKey] as? NSNumber)?.doubleValue
+            let rawElapsed = (rawInfo?[elapsedTimeKey] as? NSNumber)?.doubleValue
+            let infoTimestamp = rawInfo?[timestampKey] as? Date
+            let rawRate = (rawInfo?[playbackRateKey] as? NSNumber)?.doubleValue
 
             getIsPlayingFn(.main) { isPlaying in
+                let timing = Self.resolveTiming(
+                    rawElapsed: rawElapsed,
+                    rawDuration: rawDuration,
+                    timestamp: infoTimestamp,
+                    rawPlaybackRate: rawRate,
+                    isPlaying: isPlaying,
+                    now: Date()
+                )
                 if let getPIDFn {
                     getPIDFn(.main) { pid in
                         let appName: String? = (pid > 0)
@@ -1997,7 +2086,9 @@ private final class MediaRemoteBridge {
                             title: title,
                             artist: artist,
                             appName: appName,
-                            isPlaying: isPlaying
+                            isPlaying: isPlaying,
+                            elapsedSeconds: timing.elapsedSeconds,
+                            durationSeconds: timing.durationSeconds
                         )
                         Task { @MainActor in
                             completion(status.hasActiveMedia ? status : nil)
@@ -2008,7 +2099,9 @@ private final class MediaRemoteBridge {
                         title: title,
                         artist: artist,
                         appName: nil,
-                        isPlaying: isPlaying
+                        isPlaying: isPlaying,
+                        elapsedSeconds: timing.elapsedSeconds,
+                        durationSeconds: timing.durationSeconds
                     )
                     Task { @MainActor in
                         completion(status.hasActiveMedia ? status : nil)
@@ -2016,6 +2109,43 @@ private final class MediaRemoteBridge {
                 }
             }
         }
+    }
+
+    private static func resolveTiming(
+        rawElapsed: Double?,
+        rawDuration: Double?,
+        timestamp: Date?,
+        rawPlaybackRate: Double?,
+        isPlaying: Bool,
+        now: Date
+    ) -> (elapsedSeconds: Double?, durationSeconds: Double?) {
+        guard let rawDuration,
+              rawDuration.isFinite,
+              !rawDuration.isNaN,
+              rawDuration > 0 else {
+            return (nil, nil)
+        }
+        let safeDuration = max(1.0, rawDuration.rounded(.down))
+        guard let rawElapsed,
+              rawElapsed.isFinite,
+              !rawElapsed.isNaN else {
+            return (nil, safeDuration)
+        }
+        let rate: Double = {
+            if let rawPlaybackRate, rawPlaybackRate.isFinite, !rawPlaybackRate.isNaN {
+                return max(0.0, rawPlaybackRate)
+            }
+            return isPlaying ? 1.0 : 0.0
+        }()
+        let advanced: Double
+        if isPlaying, rate > 0, let timestamp {
+            let delta = max(0.0, now.timeIntervalSince(timestamp)) * rate
+            advanced = rawElapsed + delta
+        } else {
+            advanced = rawElapsed
+        }
+        let clampedElapsed = min(safeDuration, max(0.0, advanced)).rounded(.down)
+        return (clampedElapsed, safeDuration)
     }
 
     private static func loadCFStringConstant(from handle: UnsafeMutableRawPointer, symbol: String) -> String? {

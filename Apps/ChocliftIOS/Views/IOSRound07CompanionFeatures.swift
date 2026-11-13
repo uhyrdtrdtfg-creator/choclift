@@ -177,6 +177,8 @@ public struct IOSCompanionStripStatusRow: View {
             HStack(spacing: 6) {
                 IOSMacBatteryStripBadge(client: client)
 
+                IOSFrontmostAppStripBadge(client: client)
+
                 IOSWiFiSSIDStripBadge(client: client)
 
                 IOSPrivacyCaptureStripBadge(client: client)
@@ -192,12 +194,14 @@ public struct IOSCompanionStripStatusRow: View {
                 HStack(spacing: 6) {
                     IOSMacBatteryStripBadge(client: client)
 
-                    IOSWiFiSSIDStripBadge(client: client)
+                    IOSFrontmostAppStripBadge(client: client)
 
                     Spacer(minLength: 0)
                 }
 
                 HStack(spacing: 6) {
+                    IOSWiFiSSIDStripBadge(client: client)
+
                     IOSPrivacyCaptureStripBadge(client: client)
 
                     Spacer(minLength: 0)

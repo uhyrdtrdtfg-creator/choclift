@@ -966,6 +966,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     public var soundboardClips: [SoundboardClip]
     public var soundboardVolume: Double
     public var pinnedStripSlots: [SlotCoordinate]
+    public var pinnedClipboardItems: [PinnedClipboardItem]
 
     private enum CodingKeys: String, CodingKey {
         case revision
@@ -981,6 +982,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         case soundboardClips
         case soundboardVolume
         case pinnedStripSlots
+        case pinnedClipboardItems
     }
 
     public init(
@@ -996,7 +998,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         snippets: [TextSnippet] = [],
         soundboardClips: [SoundboardClip] = [],
         soundboardVolume: Double = SoundboardClip.defaultVolume,
-        pinnedStripSlots: [SlotCoordinate] = []
+        pinnedStripSlots: [SlotCoordinate] = [],
+        pinnedClipboardItems: [PinnedClipboardItem] = []
     ) {
         self.revision = revision
         self.updatedAt = updatedAt
@@ -1011,6 +1014,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.soundboardClips = SoundboardCatalogValidator.sanitizeBoard(soundboardClips)
         self.soundboardVolume = ControlStripLevel.clamp(soundboardVolume)
         self.pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
+        self.pinnedClipboardItems = PinnedClipboardShelf.sanitize(pinnedClipboardItems)
     }
 
     public init(from decoder: Decoder) throws {
@@ -1043,7 +1047,22 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.soundboardVolume = ControlStripLevel.clamp(decodedSBVolume)
         let decodedPinnedSlots = try container.decodeIfPresent([SlotCoordinate].self, forKey: .pinnedStripSlots) ?? []
         self.pinnedStripSlots = PinnedStripSlots.sanitize(decodedPinnedSlots, in: decodedPages)
+        if var unkeyed = try? container.nestedUnkeyedContainer(forKey: .pinnedClipboardItems) {
+            var parsedPins: [PinnedClipboardItem] = []
+            while !unkeyed.isAtEnd {
+                if let item = try? unkeyed.decode(PinnedClipboardItem.self) {
+                    parsedPins.append(item)
+                } else {
+                    _ = try? unkeyed.decode(IgnoredJSONElement.self)
+                }
+            }
+            self.pinnedClipboardItems = PinnedClipboardShelf.sanitize(parsedPins)
+        } else {
+            self.pinnedClipboardItems = []
+        }
     }
+
+    private struct IgnoredJSONElement: Decodable {}
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -1060,6 +1079,10 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         try container.encode(SoundboardCatalogValidator.sanitizeBoard(soundboardClips), forKey: .soundboardClips)
         try container.encode(ControlStripLevel.clamp(soundboardVolume), forKey: .soundboardVolume)
         try container.encode(PinnedStripSlots.sanitize(pinnedStripSlots, in: pages), forKey: .pinnedStripSlots)
+        let sanitizedClipboardPins = PinnedClipboardShelf.sanitize(pinnedClipboardItems)
+        if !sanitizedClipboardPins.isEmpty {
+            try container.encode(sanitizedClipboardPins, forKey: .pinnedClipboardItems)
+        }
     }
 
     private static func sanitizeAppDeckBindings(_ bindings: [String: UUID]) -> [String: UUID] {
@@ -1676,6 +1699,76 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
 
     public func resolvedPinnedStripSlots() -> [ResolvedPinnedStripSlot] {
         PinnedStripSlots.resolve(pinnedStripSlots, in: pages)
+    }
+
+    // MARK: - Pinned Clipboard Items Helpers (Round 9 — Max 8 Items, <= 280 Chars)
+
+    public var activePinnedClipboardItems: [PinnedClipboardItem] {
+        PinnedClipboardShelf.sanitize(pinnedClipboardItems)
+    }
+
+    public var canPinMoreClipboardItems: Bool {
+        activePinnedClipboardItems.count < PinnedClipboardItem.maxPinnedCount
+    }
+
+    public func isClipboardTextPinned(_ text: String?) -> Bool {
+        guard let safe = PinnedClipboardItem.sanitizedText(text) else { return false }
+        return activePinnedClipboardItems.contains { $0.text == safe }
+    }
+
+    @discardableResult
+    public mutating func pinClipboardPreview(
+        _ snapshot: ClipboardPreviewSnapshot,
+        id: UUID = UUID(),
+        pinnedAt: Date = Date()
+    ) -> Bool {
+        let outcome = PinnedClipboardShelf.pin(
+            preview: snapshot,
+            into: pinnedClipboardItems,
+            id: id,
+            pinnedAt: pinnedAt
+        )
+        pinnedClipboardItems = outcome.updated
+        return outcome.didPin
+    }
+
+    @discardableResult
+    public mutating func pinObservedClipboardText(
+        _ text: String,
+        observedPreviewTexts: Set<String>,
+        id: UUID = UUID(),
+        pinnedAt: Date = Date()
+    ) -> Bool {
+        let outcome = PinnedClipboardShelf.pinObservedPreviewText(
+            text,
+            observedPreviewTexts: observedPreviewTexts,
+            into: pinnedClipboardItems,
+            id: id,
+            pinnedAt: pinnedAt
+        )
+        pinnedClipboardItems = outcome.updated
+        return outcome.didPin
+    }
+
+    @discardableResult
+    public mutating func unpinClipboardItem(id: UUID) -> Bool {
+        let outcome = PinnedClipboardShelf.unpin(id: id, from: pinnedClipboardItems)
+        pinnedClipboardItems = outcome.updated
+        return outcome.didUnpin
+    }
+
+    @discardableResult
+    public mutating func unpinClipboardItem(text: String) -> Bool {
+        let outcome = PinnedClipboardShelf.unpin(text: text, from: pinnedClipboardItems)
+        pinnedClipboardItems = outcome.updated
+        return outcome.didUnpin
+    }
+
+    public mutating func sanitizePinnedClipboardItems(allowedTexts: Set<String>? = nil) {
+        pinnedClipboardItems = PinnedClipboardShelf.sanitize(
+            pinnedClipboardItems,
+            allowedTexts: allowedTexts
+        )
     }
 
     public func barItem(at coordinate: SlotCoordinate) -> BarItem? {

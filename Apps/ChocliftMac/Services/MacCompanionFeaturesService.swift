@@ -10,10 +10,14 @@ import ScreenCaptureKit
 
 @MainActor
 public final class MacClipboardMonitorService {
+    private static let maxObservedPreviewHistoryCount = 128
+
     public var isTransientPasteInFlight: (() -> Bool)?
     public var onPreviewChanged: ((ClipboardPreviewSnapshot) -> Void)?
     public private(set) var currentPreview: ClipboardPreviewSnapshot = .empty
+    public private(set) var observedSafePreviewTexts: Set<String> = []
 
+    private var observedPreviewOrder: [String] = []
     private var lastObservedChangeCount: Int?
 
     public init() {
@@ -48,9 +52,31 @@ public final class MacClipboardMonitorService {
             pasteboardTypes: types,
             string: rawText
         )
+        if let safeText = PinnedClipboardItem.sanitizedText(evaluated.previewText) {
+            recordObservedSafePreviewText(safeText)
+        }
         if evaluated != currentPreview {
             currentPreview = evaluated
             onPreviewChanged?(evaluated)
+        }
+    }
+
+    public func hasObservedPreviewText(_ text: String) -> Bool {
+        guard let safe = PinnedClipboardItem.sanitizedText(text) else { return false }
+        return observedSafePreviewTexts.contains(safe)
+    }
+
+    private func recordObservedSafePreviewText(_ safeText: String) {
+        if observedSafePreviewTexts.contains(safeText) {
+            observedPreviewOrder.removeAll { $0 == safeText }
+            observedPreviewOrder.append(safeText)
+            return
+        }
+        observedSafePreviewTexts.insert(safeText)
+        observedPreviewOrder.append(safeText)
+        while observedPreviewOrder.count > Self.maxObservedPreviewHistoryCount {
+            let evicted = observedPreviewOrder.removeFirst()
+            observedSafePreviewTexts.remove(evicted)
         }
     }
 
