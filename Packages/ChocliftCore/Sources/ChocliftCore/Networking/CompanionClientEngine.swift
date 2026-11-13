@@ -1666,8 +1666,14 @@ public final class CompanionClientEngine: ObservableObject {
         send(.quitOrHideApp(bundleIdentifier: bundleIdentifier, shouldQuit: shouldQuit))
     }
 
+    public func insertText(_ text: String) {
+        let clamped = TextSnippet.clampBody(text)
+        guard !clamped.isEmpty else { return }
+        send(.insertEmoji(clamped))
+    }
+
     public func insertEmoji(_ emoji: String) {
-        send(.insertEmoji(emoji))
+        insertText(emoji)
     }
 
     public func performGesture(_ gesture: TouchGestureType) {

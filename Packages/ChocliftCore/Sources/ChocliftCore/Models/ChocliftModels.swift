@@ -543,6 +543,94 @@ public struct EmojiSlide: Codable, Equatable, Hashable, Identifiable, Sendable {
     }
 }
 
+// MARK: - One-Tap Text Snippets
+
+public struct TextSnippet: Codable, Equatable, Hashable, Identifiable, Sendable {
+    public static let maxTitleLength = 40
+    public static let maxBodyLength = 2000
+    public static let maxLibraryCount = 64
+
+    public var id: UUID
+    public var title: String
+    public var body: String
+    public var updatedAt: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case body
+        case updatedAt
+    }
+
+    public init(
+        id: UUID = UUID(),
+        title: String,
+        body: String,
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.title = Self.clampTitle(title)
+        self.body = Self.clampBody(body)
+        self.updatedAt = updatedAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        let rawTitle = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        let rawBody = try container.decode(String.self, forKey: .body)
+        self.title = Self.clampTitle(rawTitle)
+        self.body = Self.clampBody(rawBody)
+        self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(Self.clampTitle(title), forKey: .title)
+        try container.encode(Self.clampBody(body), forKey: .body)
+        try container.encode(updatedAt, forKey: .updatedAt)
+    }
+
+    public static func clampTitle(_ raw: String) -> String {
+        let singleLine = raw
+            .replacingOccurrences(of: "\r\n", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+        return String(singleLine.prefix(maxTitleLength))
+    }
+
+    public static func clampBody(_ raw: String) -> String {
+        String(raw.prefix(maxBodyLength))
+    }
+
+    public static func resolvedTitle(title: String, body: String, language: AppLanguage = .system) -> String {
+        let trimmedTitle = clampTitle(title).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedTitle.isEmpty {
+            return String(trimmedTitle.prefix(maxTitleLength))
+        }
+        let firstLine = body
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first(where: { !$0.isEmpty }) ?? ""
+        if !firstLine.isEmpty {
+            return String(firstLine.prefix(maxTitleLength))
+        }
+        return L10n.tr("未命名片段", "Untitled Snippet", language: language)
+    }
+
+    public func displayTitle(in language: AppLanguage = .system) -> String {
+        Self.resolvedTitle(title: title, body: body, language: language)
+    }
+
+    public var singleLinePreview: String {
+        body
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+}
+
 // MARK: - Finger Gestures
 
 public enum TouchGestureType: String, Codable, CaseIterable, Sendable, Identifiable {
@@ -718,6 +806,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     public var settings: CompanionSettings
     public var pinnedTimeTravelBundleIDs: [String]
     public var flows: [ActionFlow]
+    public var snippets: [TextSnippet]
 
     private enum CodingKeys: String, CodingKey {
         case revision
@@ -728,6 +817,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         case settings
         case pinnedTimeTravelBundleIDs
         case flows
+        case snippets
     }
 
     public init(
@@ -738,7 +828,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         gestureConfig: GestureConfiguration,
         settings: CompanionSettings = CompanionSettings(),
         pinnedTimeTravelBundleIDs: [String] = [],
-        flows: [ActionFlow] = []
+        flows: [ActionFlow] = [],
+        snippets: [TextSnippet] = []
     ) {
         self.revision = revision
         self.updatedAt = updatedAt
@@ -748,6 +839,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.settings = settings
         self.pinnedTimeTravelBundleIDs = pinnedTimeTravelBundleIDs
         self.flows = flows
+        self.snippets = Array(snippets.prefix(TextSnippet.maxLibraryCount))
     }
 
     public init(from decoder: Decoder) throws {
@@ -760,6 +852,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.settings = try container.decodeIfPresent(CompanionSettings.self, forKey: .settings) ?? CompanionSettings()
         self.pinnedTimeTravelBundleIDs = try container.decodeIfPresent([String].self, forKey: .pinnedTimeTravelBundleIDs) ?? []
         self.flows = try container.decodeIfPresent([ActionFlow].self, forKey: .flows) ?? []
+        let decodedSnippets = try container.decodeIfPresent([TextSnippet].self, forKey: .snippets) ?? []
+        self.snippets = Array(decodedSnippets.prefix(TextSnippet.maxLibraryCount))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -772,11 +866,66 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         try container.encode(settings, forKey: .settings)
         try container.encode(pinnedTimeTravelBundleIDs, forKey: .pinnedTimeTravelBundleIDs)
         try container.encode(flows, forKey: .flows)
+        try container.encode(Array(snippets.prefix(TextSnippet.maxLibraryCount)), forKey: .snippets)
     }
 
     public mutating func bumpRevision() {
         revision += 1
         updatedAt = Date()
+    }
+
+    // MARK: - Text Snippet Profile Helpers
+
+    public var canAddMoreSnippets: Bool {
+        snippets.count < TextSnippet.maxLibraryCount
+    }
+
+    public func snippet(withID id: UUID) -> TextSnippet? {
+        snippets.first(where: { $0.id == id })
+    }
+
+    @discardableResult
+    public mutating func upsertSnippet(_ snippet: TextSnippet) -> Bool {
+        let clampedBody = TextSnippet.clampBody(snippet.body)
+        guard !clampedBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        let normalized = TextSnippet(
+            id: snippet.id,
+            title: TextSnippet.resolvedTitle(title: snippet.title, body: clampedBody, language: settings.language),
+            body: clampedBody,
+            updatedAt: snippet.updatedAt
+        )
+        if let idx = snippets.firstIndex(where: { $0.id == normalized.id }) {
+            snippets[idx] = normalized
+            return true
+        }
+        guard snippets.count < TextSnippet.maxLibraryCount else {
+            return false
+        }
+        snippets.append(normalized)
+        return true
+    }
+
+    @discardableResult
+    public mutating func renameSnippet(id: UUID, title: String) -> Bool {
+        guard let idx = snippets.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        snippets[idx].title = TextSnippet.resolvedTitle(
+            title: title,
+            body: snippets[idx].body,
+            language: settings.language
+        )
+        snippets[idx].updatedAt = Date()
+        return true
+    }
+
+    @discardableResult
+    public mutating func deleteSnippet(id: UUID) -> Bool {
+        let before = snippets.count
+        snippets.removeAll { $0.id == id }
+        return snippets.count != before
     }
 
     // MARK: - Action Flow Profile Helpers

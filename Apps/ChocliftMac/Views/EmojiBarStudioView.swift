@@ -179,7 +179,7 @@ public struct EmojiBarStudioView: View {
                         .buttonStyle(.plain)
 
                         Button {
-                            _ = coordinator.executeEmojiInsertion(emoji, triggeredBy: "Mac Studio")
+                            _ = coordinator.insertText(emoji, triggeredBy: "Mac Studio")
                         } label: {
                             Image(systemName: "paperplane.fill")
                                 .font(.system(size: 9, weight: .bold))

@@ -25,18 +25,78 @@ public final class MacAccessibilityAndWindowService {
         return trusted
     }
 
-    // MARK: - Text Field Focus Detection (Auto Emoji Bar)
+    // MARK: - Text Field Focus Detection & AX Direct Text Insertion
 
-    public func inspectFocusedTextInput(excludingPID: pid_t? = nil) -> (isEditing: Bool, appName: String?) {
+    public struct FocusedTextInputTarget {
+        public let element: AXUIElement
+        public let appName: String?
+        public let processIdentifier: pid_t
+
+        public init(element: AXUIElement, appName: String?, processIdentifier: pid_t) {
+            self.element = element
+            self.appName = appName
+            self.processIdentifier = processIdentifier
+        }
+    }
+
+    public static let editableAXRoles: Set<String> = [
+        kAXTextFieldRole as String,
+        kAXTextAreaRole as String,
+        kAXComboBoxRole as String,
+        "AXSearchField"
+    ]
+
+    public func isEditableTextElement(_ axElement: AXUIElement) -> Bool {
+        var roleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(axElement, kAXRoleAttribute as CFString, &roleRef)
+        let role = roleRef as? String ?? ""
+
+        // Check AXEditable attribute for web/Electron inputs (Safari, Chrome, Arc, Electron)
+        var editableRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(axElement, "AXEditable" as CFString, &editableRef) == .success,
+           let isEditable = editableRef as? Bool {
+            if isEditable {
+                return true
+            }
+            var selectedSettable = DarwinBoolean(false)
+            if AXUIElementIsAttributeSettable(axElement, kAXSelectedTextAttribute as CFString, &selectedSettable) == .success,
+               selectedSettable.boolValue {
+                return true
+            }
+            return false
+        }
+
+        if Self.editableAXRoles.contains(role) {
+            var selectedSettable = DarwinBoolean(false)
+            if AXUIElementIsAttributeSettable(axElement, kAXSelectedTextAttribute as CFString, &selectedSettable) == .success,
+               selectedSettable.boolValue {
+                return true
+            }
+            var valueSettable = DarwinBoolean(false)
+            if AXUIElementIsAttributeSettable(axElement, kAXValueAttribute as CFString, &valueSettable) == .success,
+               valueSettable.boolValue {
+                return true
+            }
+            // Terminal emulators expose AXTextArea without settable AXSelectedText/AXValue.
+            if role == (kAXTextAreaRole as String) {
+                return true
+            }
+            return false
+        }
+
+        return false
+    }
+
+    public func focusedTextInput(excludingPID: pid_t? = nil) -> FocusedTextInputTarget? {
         guard AXIsProcessTrusted() else {
-            return (false, nil)
+            return nil
         }
 
         guard let frontApp = NSWorkspace.shared.frontmostApplication else {
-            return (false, nil)
+            return nil
         }
         if let excludingPID, frontApp.processIdentifier == excludingPID {
-            return (false, nil)
+            return nil
         }
 
         let systemWide = AXUIElementCreateSystemWide()
@@ -46,40 +106,75 @@ public final class MacAccessibilityAndWindowService {
             kAXFocusedUIElementAttribute as CFString,
             &focusedRef
         )
-        guard status == .success, let focusedElement = focusedRef else {
-            return (false, nil)
+        if status == .success,
+           let focusedElement = focusedRef,
+           CFGetTypeID(focusedElement) == AXUIElementGetTypeID() {
+            let axElement = focusedElement as! AXUIElement
+            guard isEditableTextElement(axElement) else {
+                return nil
+            }
+            return FocusedTextInputTarget(
+                element: axElement,
+                appName: frontApp.localizedName,
+                processIdentifier: frontApp.processIdentifier
+            )
         }
 
-        // Safe CoreFoundation type check: AXUIElementGetTypeID()
-        guard CFGetTypeID(focusedElement) == AXUIElementGetTypeID() else {
-            return (false, nil)
+        return focusedTextInput(inApplicationPID: frontApp.processIdentifier, appName: frontApp.localizedName)
+    }
+
+    public func focusedTextInput(inApplicationPID pid: pid_t, appName: String? = nil) -> FocusedTextInputTarget? {
+        guard AXIsProcessTrusted() else {
+            return nil
+        }
+        let appElement = AXUIElementCreateApplication(pid)
+        var focusedRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            appElement,
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedRef
+        ) == .success,
+              let focusedElement = focusedRef,
+              CFGetTypeID(focusedElement) == AXUIElementGetTypeID() else {
+            return nil
         }
         let axElement = focusedElement as! AXUIElement
-
-        var roleRef: CFTypeRef?
-        AXUIElementCopyAttributeValue(axElement, kAXRoleAttribute as CFString, &roleRef)
-        let role = roleRef as? String ?? ""
-
-        let editableRoles: Set<String> = [
-            kAXTextFieldRole as String,
-            kAXTextAreaRole as String,
-            kAXComboBoxRole as String,
-            "AXSearchField"
-        ]
-
-        if editableRoles.contains(role) {
-            return (true, frontApp.localizedName)
+        guard isEditableTextElement(axElement) else {
+            return nil
         }
+        let resolvedName = appName ?? NSRunningApplication(processIdentifier: pid)?.localizedName
+        return FocusedTextInputTarget(
+            element: axElement,
+            appName: resolvedName,
+            processIdentifier: pid
+        )
+    }
 
-        // Check AXEditable attribute for web inputs (Safari, Chrome, Arc, Electron)
-        var editableRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(axElement, "AXEditable" as CFString, &editableRef) == .success,
-           let isEditable = editableRef as? Bool,
-           isEditable {
-            return (true, frontApp.localizedName)
+    public func inspectFocusedTextInput(excludingPID: pid_t? = nil) -> (isEditing: Bool, appName: String?) {
+        guard let target = focusedTextInput(excludingPID: excludingPID) else {
+            return (false, nil)
         }
+        return (true, target.appName)
+    }
 
-        return (false, nil)
+    /// Inserts text directly at the caret (or replaces the current selection) of a focused AX text input
+    /// without touching `NSPasteboard`. Returns `false` if the element does not support `kAXSelectedTextAttribute`.
+    public func insertTextViaAX(_ text: String, into element: AXUIElement) -> Bool {
+        var isSettable = DarwinBoolean(false)
+        guard AXUIElementIsAttributeSettable(
+            element,
+            kAXSelectedTextAttribute as CFString,
+            &isSettable
+        ) == .success,
+              isSettable.boolValue else {
+            return false
+        }
+        let status = AXUIElementSetAttributeValue(
+            element,
+            kAXSelectedTextAttribute as CFString,
+            text as CFString
+        )
+        return status == .success
     }
 
     // MARK: - Window Actions
