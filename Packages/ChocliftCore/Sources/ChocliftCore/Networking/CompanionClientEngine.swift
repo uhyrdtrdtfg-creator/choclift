@@ -1773,6 +1773,26 @@ public final class CompanionClientEngine: ObservableObject {
         send(.insertEmoji(clamped))
     }
 
+    @discardableResult
+    public func insertSnippet(_ text: String, mode: SnippetInsertMode = .focusedFieldInsert) -> Bool {
+        let clamped = TextSnippet.clampBody(text)
+        guard !clamped.isEmpty else { return false }
+        // Typing mode is only available when a field is focused; if no field is focused, do nothing.
+        if mode == .typeKeys {
+            guard SnippetInsertPolicy.isModeAvailable(.typeKeys, isFieldFocused: isEditingTextOnMac) else {
+                return false
+            }
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.insertSnippet(text: clamped, mode: mode))
+        return true
+    }
+
+    @discardableResult
+    public func triggerSnippet(_ snippet: TextSnippet) -> Bool {
+        insertSnippet(snippet.body, mode: snippet.insertMode)
+    }
+
     public func insertEmoji(_ emoji: String) {
         insertText(emoji)
     }

@@ -50,6 +50,7 @@
 		4384AE4390A37012B4601BFA /* WatchRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8199ABF1806E897A7512A503 /* WatchRootView.swift */; };
 		43ADD17D4B76EB5F4AD6416C /* BluetoothCompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */; };
 		45FACC28CE3788D20748324C /* Round03Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BECCE6B737BB090769DC143 /* Round03Models.swift */; };
+		4946D8F47BBA0A5DCD8BC7FF /* Round06Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5516ABBE3BED08F5C3A200D3 /* Round06Models.swift */; };
 		4D9840876E5D692950FF865B /* finder.png in Resources */ = {isa = PBXBuildFile; fileRef = 289E4D12B0F6E3F188113079 /* finder.png */; };
 		4EA5261FA6CE532A4BC78C1D /* Round04Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FF0695A991380B3FB28853 /* Round04Models.swift */; };
 		4F3B6DEC8AF177C66489A9CF /* BluetoothCompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */; };
@@ -87,9 +88,11 @@
 		856C0A656C5370A2B44A5DE2 /* MacNotchPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116CCCD57CF0CF405584EA0E /* MacNotchPanelController.swift */; };
 		8CDA41C0F0FFD2D11986AFD0 /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
 		8DC9025CCB0479F66B909C6B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5803BC1A7998DE5911DF1E24 /* Assets.xcassets */; };
+		8F2FF2DBCAC5D196E694ADC3 /* Round06Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5516ABBE3BED08F5C3A200D3 /* Round06Models.swift */; };
 		91E26155F0C875E30B5515E6 /* notes.png in Resources */ = {isa = PBXBuildFile; fileRef = BE2646C17F6B581FF2D9A9FC /* notes.png */; };
 		94068E1F1827A415A1EBA1E1 /* MacAccessibilityAndWindowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8003AD2FBC8B7C7AD4459D47 /* MacAccessibilityAndWindowService.swift */; };
 		94A271287C3D5FB9DC454029 /* NotchPanelGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */; };
+		9671510D567E628E9D3373DA /* MacMenuBarStatusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54B9623F42577CE556571F6E /* MacMenuBarStatusController.swift */; };
 		96935FA7083065FD5D95091B /* IOSRound04CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6FCAB30E95B2B4A3F12C937 /* IOSRound04CompanionFeatures.swift */; };
 		97EA3064B9BBD1EA92A9788E /* IOSRound02CompanionControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07212AF17DB6353FA2039C3E /* IOSRound02CompanionControls.swift */; };
 		9B3B62752E758C58AB001C99 /* ChocDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */; };
@@ -115,6 +118,7 @@
 		C8D3D57C7B3C8E9637DB941D /* MacOrcaStatusService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F4B0BF41FA187CA0429E197 /* MacOrcaStatusService.swift */; };
 		C8FC5F6E229B84BD0B158814 /* OrcaTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */; };
 		CD2ABCE216981DECA9C23D63 /* NotchPanelGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */; };
+		D036B26D11015CC9DCBCCD5A /* Round06Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5516ABBE3BED08F5C3A200D3 /* Round06Models.swift */; };
 		D117BED0C6A4AC940F4AFA5A /* ChocDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */; };
 		D1416E3B8D4ECE187FBBCBFB /* mail.png in Resources */ = {isa = PBXBuildFile; fileRef = 2FE0A5E4654684D8D73CB0A6 /* mail.png */; };
 		D19ADC68FDF7AB4963E84CA3 /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8859A29A043A4B69F607B04C /* EmojiCatalog.swift */; };
@@ -207,6 +211,8 @@
 		378D57F87F9075FB787AF62B /* WireProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireProtocol.swift; sourceTree = "<group>"; };
 		4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrcaTaskStatus.swift; sourceTree = "<group>"; };
 		47C1280B27AE8610D9B62192 /* IOSRound03CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound03CompanionFeatures.swift; sourceTree = "<group>"; };
+		54B9623F42577CE556571F6E /* MacMenuBarStatusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMenuBarStatusController.swift; sourceTree = "<group>"; };
+		5516ABBE3BED08F5C3A200D3 /* Round06Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round06Models.swift; sourceTree = "<group>"; };
 		55531469D9255C9D44CE4F85 /* MultiTouchGestureOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiTouchGestureOverlay.swift; sourceTree = "<group>"; };
 		557EC516DCE93E05E1DA8805 /* MacKeepAwakeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacKeepAwakeService.swift; sourceTree = "<group>"; };
 		55A39DFD6BABFD8EDBD71C3E /* WatchPairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPairingView.swift; sourceTree = "<group>"; };
@@ -305,6 +311,7 @@
 				59B27570BCCEA27BF8A49A7D /* MacCompanionFeaturesService.swift */,
 				2610F6011A383F732C01DC10 /* MacInputAndMediaService.swift */,
 				557EC516DCE93E05E1DA8805 /* MacKeepAwakeService.swift */,
+				54B9623F42577CE556571F6E /* MacMenuBarStatusController.swift */,
 				116CCCD57CF0CF405584EA0E /* MacNotchPanelController.swift */,
 				9F4B0BF41FA187CA0429E197 /* MacOrcaStatusService.swift */,
 				AC01A4B0509B5E43B8CA5A46 /* MacSoundboardService.swift */,
@@ -541,6 +548,7 @@
 				8BECCE6B737BB090769DC143 /* Round03Models.swift */,
 				26FF0695A991380B3FB28853 /* Round04Models.swift */,
 				A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */,
+				5516ABBE3BED08F5C3A200D3 /* Round06Models.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -861,6 +869,7 @@
 				B94603986FDB8C63A5EFA896 /* Round03Models.swift in Sources */,
 				4EA5261FA6CE532A4BC78C1D /* Round04Models.swift in Sources */,
 				39C7A34BF45F7854FE2A8AA4 /* Round05Models.swift in Sources */,
+				8F2FF2DBCAC5D196E694ADC3 /* Round06Models.swift in Sources */,
 				A616F76D587F3D7430BCB29C /* WireProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -887,6 +896,7 @@
 				45FACC28CE3788D20748324C /* Round03Models.swift in Sources */,
 				B83501BAFE40DC2395AE3251 /* Round04Models.swift in Sources */,
 				33878859FBF852A76234D4F2 /* Round05Models.swift in Sources */,
+				4946D8F47BBA0A5DCD8BC7FF /* Round06Models.swift in Sources */,
 				1107BCC3808407CFEBB3335D /* WireProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -906,6 +916,7 @@
 				42844B96ABDB2F320FF2D4CB /* MacCompanionFeaturesService.swift in Sources */,
 				C735ED138475E8FF8564F1FD /* MacInputAndMediaService.swift in Sources */,
 				B3BA2F5E02B9B0FEC459BEF0 /* MacKeepAwakeService.swift in Sources */,
+				9671510D567E628E9D3373DA /* MacMenuBarStatusController.swift in Sources */,
 				856C0A656C5370A2B44A5DE2 /* MacNotchPanelController.swift in Sources */,
 				5BA1BD1B00D6643627022CBD /* MacNotchPanelView.swift in Sources */,
 				C8D3D57C7B3C8E9637DB941D /* MacOrcaStatusService.swift in Sources */,
@@ -940,6 +951,7 @@
 				04CC39CE219884E5399BC74D /* Round03Models.swift in Sources */,
 				2E8768794A140A931D4159E5 /* Round04Models.swift in Sources */,
 				DF54945FD6A26594125CA46B /* Round05Models.swift in Sources */,
+				D036B26D11015CC9DCBCCD5A /* Round06Models.swift in Sources */,
 				F9A2071D485ADDE2BBE5E965 /* WireProtocol.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

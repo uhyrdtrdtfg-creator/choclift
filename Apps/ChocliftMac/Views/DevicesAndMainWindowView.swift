@@ -763,14 +763,47 @@ public struct DevicesAndSettingsView: View {
             )
             .tint(palette.accent)
 
-            Toggle(
-                L10n.tr("登录 Mac 时自动启动 Choclift", "Launch Choclift at Login", language: lang),
-                isOn: Binding(
-                    get: { coordinator.launchAtLoginEnabled },
-                    set: { coordinator.setLaunchAtLogin($0) }
+            VStack(alignment: .leading, spacing: 5) {
+                Toggle(
+                    L10n.tr("登录 Mac 时自动启动 Choclift", "Launch Choclift at Login", language: lang),
+                    isOn: Binding(
+                        get: { coordinator.launchAtLoginEnabled },
+                        set: { coordinator.setLaunchAtLogin($0) }
+                    )
                 )
-            )
-            .tint(palette.accent)
+                .tint(palette.accent)
+                .accessibilityIdentifier("mac-launch-at-login-toggle")
+
+                if coordinator.launchAtLoginRequiresApproval {
+                    HStack(spacing: 8) {
+                        Text(
+                            L10n.tr(
+                                "需在系统设置 → 登录项中允许 Choclift 后台登录启动。",
+                                "Approval required in System Settings → Login Items.",
+                                language: lang
+                            )
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(palette.secondaryText)
+
+                        Button(L10n.tr("打开登录项设置…", "Open Login Items…", language: lang)) {
+                            coordinator.openLoginItemsSettings()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                } else {
+                    Text(
+                        L10n.tr(
+                            "使用 macOS 系统登录项添加或移除启动项（默认关闭，不安装额外后台守护进程）。",
+                            "Adds or removes Choclift in macOS Login Items (off by default; no separate launch daemon).",
+                            language: lang
+                        )
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(palette.secondaryText)
+                }
+            }
 
             Divider()
 
@@ -955,6 +988,7 @@ public struct DevicesAndSettingsView: View {
 public struct MacMainWindowView: View {
     @ObservedObject var coordinator: MacAppCoordinator
     @ObservedObject var server: MacServerEngine
+    @Environment(\.openWindow) private var openWindow
 
     private var lang: AppLanguage { coordinator.lang }
     private var palette: ChocPalette { coordinator.palette }
@@ -1022,6 +1056,9 @@ public struct MacMainWindowView: View {
         )
         .tint(palette.accent)
         .onAppear {
+            coordinator.openStudioWindowAction = { [openWindow] in
+                openWindow(id: "studio-main")
+            }
             coordinator.setMacSurfaceVisible(.studioWindow, isVisible: true)
         }
         .onDisappear {
@@ -1230,13 +1267,12 @@ public struct MacMenuBarPopoverView: View {
                         .font(.system(.headline, design: .rounded, weight: .black))
                         .foregroundStyle(palette.primaryText)
                     Text(
-                        server.connectedDeviceCount > 0
-                            ? L10n.tr("\(server.connectedDeviceCount) 台伴侣在线", "\(server.connectedDeviceCount) Companion(s) Live", language: lang)
-                            : (server.lastErrorMessage != nil
-                                ? L10n.tr("本地监听异常", "Listener Issue", language: lang)
-                                : L10n.tr("等待伴侣连接", "Ready to Pair", language: lang))
+                        MacMenuBarStatusSummary(
+                            connectedCompanionCount: coordinator.connectedCompanionCount,
+                            isKeepAwakeOn: coordinator.isKeepMacAwakeEnabled
+                        ).menuBarTitle(in: lang)
                     )
-                    .font(.caption2)
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(server.lastErrorMessage != nil ? palette.statusFailure : palette.secondaryText)
                 }
                 Spacer()

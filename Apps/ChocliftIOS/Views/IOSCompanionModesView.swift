@@ -437,8 +437,12 @@ public struct IOSChocolateBarSurfaceView: View {
         )
         .accessibilityIdentifier("ios-slot-\(pageIndex)-\(slotIndex)")
         .accessibilityLabel(
-            item.map { client.profile.displayTitle(for: $0, from: slotOrigin, in: lang) }
-                ?? L10n.tr("空槽位 \(slotIndex + 1)", "Empty Slot \(slotIndex + 1)", language: lang)
+            EmptySlotHintPolicy.accessibilityLabel(
+                for: item,
+                slotIndex: slotIndex,
+                resolvedFilledTitle: item.map { client.profile.displayTitle(for: $0, from: slotOrigin, in: lang) },
+                language: lang
+            )
         )
     }
 
@@ -1206,16 +1210,40 @@ public struct IOSEmojiBarSurfaceView: View {
 
     private func snippetTileCard(_ snippet: TextSnippet) -> some View {
         let isPressed = (pressedSnippetID == snippet.id)
+        let isTypingBlockedUnfocused = (snippet.insertMode == .typeKeys && !client.isEditingTextOnMac)
 
         return HStack(spacing: 6) {
             Button {
                 triggerSnippet(snippet)
             } label: {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(snippet.displayTitle(in: lang))
-                        .font(.system(size: 13.5, weight: .bold, design: .rounded))
-                        .foregroundStyle(palette.primaryText)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(snippet.displayTitle(in: lang))
+                            .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(isTypingBlockedUnfocused ? palette.secondaryText : palette.primaryText)
+                            .lineLimit(1)
+
+                        Spacer(minLength: 4)
+
+                        HStack(spacing: 3) {
+                            Image(systemName: snippet.insertMode.sfSymbol)
+                                .font(.system(size: 9.5, weight: .bold))
+                            Text(
+                                isTypingBlockedUnfocused
+                                    ? L10n.tr("需聚焦框", "Focus Field", language: lang)
+                                    : snippet.insertMode.badgeTitle(in: lang)
+                            )
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                        }
+                        .foregroundStyle(isTypingBlockedUnfocused ? palette.secondaryText : palette.accent)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2.5)
+                        .background(
+                            (isTypingBlockedUnfocused ? palette.tileFillBottom : palette.accent.opacity(0.14)),
+                            in: Capsule()
+                        )
+                    }
 
                     Text(snippet.singleLinePreview)
                         .font(.system(size: 12))
@@ -1225,6 +1253,7 @@ public struct IOSEmojiBarSurfaceView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, 14)
+                .padding(.trailing, 4)
                 .padding(.vertical, 11)
                 .contentShape(Rectangle())
             }
@@ -1246,6 +1275,7 @@ public struct IOSEmojiBarSurfaceView: View {
             .accessibilityLabel(L10n.tr("管理片段", "Manage Snippet", language: lang))
         }
         .frame(minHeight: 60)
+        .opacity(isTypingBlockedUnfocused ? 0.76 : 1.0)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(
@@ -1271,10 +1301,43 @@ public struct IOSEmojiBarSurfaceView: View {
 
     @ViewBuilder
     private func snippetActionsMenuContent(for snippet: TextSnippet) -> some View {
+        let canRunCurrentMode = SnippetInsertPolicy.isModeAvailable(
+            snippet.insertMode,
+            isFieldFocused: client.isEditingTextOnMac
+        )
+
         Button {
             triggerSnippet(snippet)
         } label: {
-            Label(L10n.tr("输入到 Mac 光标", "Insert at Mac Cursor", language: lang), systemImage: "character.cursor.ibeam")
+            Label(
+                snippet.insertMode.title(in: lang),
+                systemImage: snippet.insertMode.sfSymbol
+            )
+        }
+        .disabled(!canRunCurrentMode)
+
+        Menu {
+            ForEach(SnippetInsertMode.allCases) { candidate in
+                let isModeAvailable = SnippetInsertPolicy.isModeAvailable(
+                    candidate,
+                    isFieldFocused: client.isEditingTextOnMac
+                )
+                Button {
+                    updateSnippetInsertMode(snippet, mode: candidate)
+                } label: {
+                    if snippet.insertMode == candidate {
+                        Label(candidate.title(in: lang), systemImage: "checkmark")
+                    } else {
+                        Label(candidate.title(in: lang), systemImage: candidate.sfSymbol)
+                    }
+                }
+                .disabled(!isModeAvailable)
+            }
+        } label: {
+            Label(
+                L10n.tr("输入模式：\(snippet.insertMode.badgeTitle(in: lang))", "Insert Mode: \(snippet.insertMode.badgeTitle(in: lang))", language: lang),
+                systemImage: "slider.horizontal.3"
+            )
         }
 
         Button {
@@ -1298,11 +1361,25 @@ public struct IOSEmojiBarSurfaceView: View {
         }
     }
 
+    private func updateSnippetInsertMode(_ snippet: TextSnippet, mode: SnippetInsertMode) {
+        if mode == .typeKeys, !SnippetInsertPolicy.isModeAvailable(.typeKeys, isFieldFocused: client.isEditingTextOnMac) {
+            return
+        }
+        var updated = client.profile
+        guard updated.setSnippetInsertMode(id: snippet.id, mode: mode) else { return }
+        client.pushUpdatedProfile(updated)
+    }
+
     private func triggerSnippet(_ snippet: TextSnippet) {
+        // Typing mode is only available when a field is focused. If no field is focused, do nothing.
+        if snippet.insertMode == .typeKeys,
+           !SnippetInsertPolicy.isModeAvailable(.typeKeys, isFieldFocused: client.isEditingTextOnMac) {
+            return
+        }
         CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
         ChocPressFeedback.completeTap(key: snippet.id, pressedKey: $pressedSnippetID)
         if client.connectionState.isConnected {
-            client.insertText(snippet.body)
+            _ = client.triggerSnippet(snippet)
         } else {
             client.lastFeedback = CompanionFeedbackToast(
                 success: false,
@@ -1490,6 +1567,7 @@ private struct IOSSnippetEditorSheet: View {
 
     @State private var titleText: String = ""
     @State private var bodyText: String = ""
+    @State private var selectedInsertMode: SnippetInsertMode = .focusedFieldInsert
     @FocusState private var focusedField: FocusedField?
 
     private var lang: AppLanguage { client.profile.settings.language }
@@ -1594,14 +1672,61 @@ private struct IOSSnippetEditorSheet: View {
                                 .font(.caption2.monospacedDigit())
                         }
                     } footer: {
-                        Text(
-                            L10n.tr(
-                                "点按片段即可输入到当前聚焦的 Mac 文本输入框，并保留剪贴板内容。",
-                                "Tapping inserts into the focused Mac text field while preserving your clipboard.",
-                                language: lang
+                        Text(selectedInsertMode.subtitle(in: lang))
+                            .foregroundStyle(palette.secondaryText)
+                    }
+                    .listRowBackground(palette.barSurface)
+
+                    Section {
+                        ForEach(SnippetInsertMode.allCases) { candidate in
+                            let isModeAvailable = SnippetInsertPolicy.isModeAvailable(
+                                candidate,
+                                isFieldFocused: client.isEditingTextOnMac
                             )
-                        )
-                        .foregroundStyle(palette.secondaryText)
+                            let isSelected = (selectedInsertMode == candidate)
+
+                            Button {
+                                guard isModeAvailable else { return }
+                                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                selectedInsertMode = candidate
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: candidate.sfSymbol)
+                                        .font(.system(size: 13.5, weight: .bold))
+                                        .foregroundStyle(isSelected ? palette.accent : palette.secondaryText)
+                                        .frame(width: 24)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(candidate.title(in: lang))
+                                            .font(.system(.subheadline, design: .rounded, weight: isSelected ? .bold : .medium))
+                                            .foregroundStyle(isModeAvailable || isSelected ? palette.primaryText : palette.secondaryText)
+
+                                        if candidate == .typeKeys && !isModeAvailable {
+                                            Text(
+                                                L10n.tr(
+                                                    "需先在 Mac 中点击任意文本输入框后才可选择模拟按键模式",
+                                                    "Focus a text field on your Mac to select Typing mode",
+                                                    language: lang
+                                                )
+                                            )
+                                            .font(.caption2)
+                                            .foregroundStyle(palette.secondaryText)
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    if isSelected {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(palette.accent)
+                                    }
+                                }
+                            }
+                            .disabled(!isModeAvailable)
+                            .accessibilityIdentifier("ios-snippet-mode-\(candidate.rawValue)")
+                        }
+                    } header: {
+                        Text(L10n.tr("输入模式", "Insert Mode", language: lang))
                     }
                     .listRowBackground(palette.barSurface)
                 }
@@ -1659,6 +1784,9 @@ private struct IOSSnippetEditorSheet: View {
                 if let existing = existingSnippet {
                     titleText = existing.title
                     bodyText = existing.body
+                    selectedInsertMode = existing.insertMode
+                } else {
+                    selectedInsertMode = .focusedFieldInsert
                 }
                 switch session {
                 case .create:
@@ -1680,6 +1808,7 @@ private struct IOSSnippetEditorSheet: View {
             let created = TextSnippet(
                 title: TextSnippet.resolvedTitle(title: titleText, body: bodyText, language: lang),
                 body: bodyText,
+                insertMode: selectedInsertMode,
                 updatedAt: Date()
             )
             guard updated.upsertSnippet(created) else { return }
@@ -1690,6 +1819,7 @@ private struct IOSSnippetEditorSheet: View {
                 id: existing.id,
                 title: TextSnippet.resolvedTitle(title: titleText, body: bodyText, language: lang),
                 body: bodyText,
+                insertMode: selectedInsertMode,
                 updatedAt: Date()
             )
             guard updated.upsertSnippet(edited) else { return }
@@ -1816,6 +1946,7 @@ public struct IOSIPadChocolateBarDeckView: View {
     var isFollowingFrontmostApp: Bool
     var isDeckSwitchHighlighted: Bool
     var onFollowFrontmostApp: (() -> Void)?
+    var onSelectManualPage: ((Int) -> Void)?
     let availableWidth: CGFloat
     var isLandscape: Bool
     var onPromptHUD: ((String) -> Void)?
@@ -1830,6 +1961,7 @@ public struct IOSIPadChocolateBarDeckView: View {
         isFollowingFrontmostApp: Bool = true,
         isDeckSwitchHighlighted: Bool = false,
         onFollowFrontmostApp: (() -> Void)? = nil,
+        onSelectManualPage: ((Int) -> Void)? = nil,
         availableWidth: CGFloat,
         isLandscape: Bool = true,
         onPromptHUD: ((String) -> Void)? = nil,
@@ -1840,6 +1972,7 @@ public struct IOSIPadChocolateBarDeckView: View {
         self.isFollowingFrontmostApp = isFollowingFrontmostApp
         self.isDeckSwitchHighlighted = isDeckSwitchHighlighted
         self.onFollowFrontmostApp = onFollowFrontmostApp
+        self.onSelectManualPage = onSelectManualPage
         self.availableWidth = availableWidth
         self.isLandscape = isLandscape
         self.onPromptHUD = onPromptHUD
@@ -1851,30 +1984,129 @@ public struct IOSIPadChocolateBarDeckView: View {
         let activeIdx = min(max(0, currentPageIndex), pageCount - 1)
 
         return VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Button {
-                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                    withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
-                        currentPageIndex = (activeIdx - 1 + pageCount) % pageCount
+            VStack(spacing: 6) {
+                HStack(spacing: 8) {
+                    Button {
+                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                        let nextIdx = (activeIdx - 1 + pageCount) % pageCount
+                        if let onSelectManualPage {
+                            onSelectManualPage(nextIdx)
+                        } else {
+                            withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                                currentPageIndex = nextIdx
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(palette.primaryText)
+                            .frame(width: 34, height: 30)
+                            .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
+                            .contentShape(Capsule())
                     }
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(palette.primaryText)
-                        .frame(width: 34, height: 28)
-                        .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
-                        .contentShape(Capsule())
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("ios-page-prev-button")
+
+                    ScrollViewReader { scrollProxy in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 5) {
+                                ForEach(0..<pageCount, id: \.self) { pageIdx in
+                                    let isSelected = (pageIdx == activeIdx)
+                                    let icon = client.profile.pages.indices.contains(pageIdx)
+                                        ? client.profile.pages[pageIdx].iconEmoji
+                                        : "🍫"
+                                    let rawTitle = client.profile.pages.indices.contains(pageIdx)
+                                        ? client.profile.pages[pageIdx].title
+                                        : ""
+                                    let displayTitle = PageSwitcherTitleFormatter.displayTitle(
+                                        rawTitle: rawTitle,
+                                        pageIndex: pageIdx,
+                                        language: lang
+                                    )
+
+                                    Button {
+                                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                        if let onSelectManualPage {
+                                            onSelectManualPage(pageIdx)
+                                        } else {
+                                            withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                                                currentPageIndex = pageIdx
+                                            }
+                                        }
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Text(icon)
+                                                .font(.system(size: 11.5))
+                                            MaxWidthPillTitleLayout(maxWidth: 108) {
+                                                Text(displayTitle)
+                                                    .font(.system(size: 11.5, weight: isSelected ? .bold : .semibold, design: .rounded))
+                                                    .lineLimit(1)
+                                                    .truncationMode(.tail)
+                                            }
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .frame(height: 30)
+                                        .background(
+                                            isSelected ? palette.accent : palette.barSurface.opacity(0.9),
+                                            in: Capsule()
+                                        )
+                                        .foregroundStyle(isSelected ? palette.accentForeground : palette.primaryText)
+                                        .overlay(
+                                            Capsule()
+                                                .strokeBorder(isSelected ? .clear : palette.subtleCardStroke, lineWidth: 1)
+                                        )
+                                        .contentShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .id("ipad-deck-page-\(pageIdx)")
+                                    .accessibilityIdentifier("ios-ipad-deck-page-name-\(pageIdx)")
+                                    .accessibilityLabel(displayTitle)
+                                }
+                            }
+                            .padding(.horizontal, 2)
+                        }
+                        .onChange(of: activeIdx) { _, nextIdx in
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                scrollProxy.scrollTo("ipad-deck-page-\(nextIdx)", anchor: .center)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 30)
+
+                    Button {
+                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                        let nextIdx = (activeIdx + 1) % pageCount
+                        if let onSelectManualPage {
+                            onSelectManualPage(nextIdx)
+                        } else {
+                            withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                                currentPageIndex = nextIdx
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(palette.primaryText)
+                            .frame(width: 34, height: 30)
+                            .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("ios-page-next-button")
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("ios-page-prev-button")
 
                 HStack(spacing: 2) {
                     ForEach(0..<pageCount, id: \.self) { dotIdx in
                         let isSelected = (dotIdx == activeIdx)
                         Button {
                             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                            withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
-                                currentPageIndex = dotIdx
+                            if let onSelectManualPage {
+                                onSelectManualPage(dotIdx)
+                            } else {
+                                withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                                    currentPageIndex = dotIdx
+                                }
                             }
                         } label: {
                             ZStack {
@@ -1897,25 +2129,9 @@ public struct IOSIPadChocolateBarDeckView: View {
                 }
                 .padding(.horizontal, 6)
                 .frame(maxWidth: .infinity)
-                .frame(height: 28)
+                .frame(height: 24)
                 .background(palette.barSurface.opacity(0.88), in: Capsule())
                 .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-
-                Button {
-                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                    withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
-                        currentPageIndex = (activeIdx + 1) % pageCount
-                    }
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(palette.primaryText)
-                        .frame(width: 34, height: 28)
-                        .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("ios-page-next-button")
             }
             .padding(.horizontal, 14)
             .padding(.top, 10)

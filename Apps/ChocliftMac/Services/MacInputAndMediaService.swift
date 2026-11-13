@@ -98,6 +98,119 @@ public final class MacInputAndMediaService {
         return (true, L10n.tr("已输入 \(label)", "Inserted \(label)", language: language))
     }
 
+    public func executeSnippet(
+        _ text: String,
+        mode: SnippetInsertMode,
+        preferredPID: pid_t? = nil,
+        allowActivatingPreferredPID: Bool = false,
+        language: AppLanguage = .system
+    ) -> (success: Bool, didPerformAction: Bool, message: String) {
+        let clamped = TextSnippet.clampBody(text)
+        guard !clamped.isEmpty else {
+            return (false, false, L10n.tr("输入内容为空", "Text is empty", language: language))
+        }
+
+        let rawLabel = Self.previewLabel(for: clamped)
+        let label = rawLabel.isEmpty ? L10n.tr("文本片段", "snippet", language: language) : rawLabel
+        let myPID = ProcessInfo.processInfo.processIdentifier
+
+        switch mode {
+        case .focusedFieldInsert:
+            let res = insertText(
+                clamped,
+                preferredPID: preferredPID,
+                allowActivatingPreferredPID: allowActivatingPreferredPID,
+                language: language
+            )
+            return (res.success, true, res.message)
+
+        case .clipboardPaste:
+            guard ensureAccessibilityOrPrompt() else {
+                return (
+                    false,
+                    true,
+                    L10n.tr(
+                        "请在系统设置 → 辅助功能中授权 Choclift 后粘贴文本片段",
+                        "Grant Accessibility permission in System Settings to paste snippets",
+                        language: language
+                    )
+                )
+            }
+            guard activateTargetForKeystroke(preferredPID, strict: false) else {
+                let denied = missingStrictTargetResult()
+                return (denied.success, true, denied.message)
+            }
+            // Cancel any pending transient clipboard restore so explicit clipboard paste remains on NSPasteboard.
+            clipboardRestoreTask?.cancel()
+            clipboardRestoreTask = nil
+            pendingClipboardSnapshot = nil
+
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(clamped, forType: .string)
+            postKeyStroke(virtualKey: CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
+            return (
+                true,
+                true,
+                L10n.tr("已通过剪贴板粘贴 \(label)", "Pasted \(label) via clipboard", language: language)
+            )
+
+        case .typeKeys:
+            // Typing mode is only available when a field is focused. If no field is focused, do nothing.
+            guard windowService.isAccessibilityTrusted() else {
+                return (false, false, "")
+            }
+            let hasFocusedField = (windowService.focusedTextInput(excludingPID: myPID) != nil)
+            let plan = SnippetInsertPolicy.evaluate(
+                body: clamped,
+                mode: .typeKeys,
+                isFieldFocused: hasFocusedField
+            )
+            guard case .typeThroughKeyPath(let textToType) = plan else {
+                return (false, false, "")
+            }
+            typeStringThroughKeyPath(textToType)
+            return (
+                true,
+                true,
+                L10n.tr("已逐字键入 \(label)", "Typed \(label)", language: language)
+            )
+        }
+    }
+
+    private func typeStringThroughKeyPath(_ text: String) {
+        let normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        guard let source = CGEventSource(stateID: .combinedSessionState) else {
+            return
+        }
+
+        for ch in normalized {
+            if ch == "\n" {
+                postKeyStroke(virtualKey: CGKeyCode(kVK_Return), flags: [])
+                continue
+            }
+            if ch == "\t" {
+                postKeyStroke(virtualKey: CGKeyCode(kVK_Tab), flags: [])
+                continue
+            }
+            var utf16Units = Array(String(ch).utf16)
+            guard !utf16Units.isEmpty,
+                  let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                  let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
+                continue
+            }
+            keyDown.flags = []
+            keyUp.flags = []
+            keyDown.keyboardSetUnicodeString(stringLength: utf16Units.count, unicodeString: &utf16Units)
+            keyUp.keyboardSetUnicodeString(stringLength: utf16Units.count, unicodeString: &utf16Units)
+            keyDown.post(tap: .cghidEventTap)
+            keyUp.post(tap: .cghidEventTap)
+        }
+    }
+
     private func pastePreservingClipboard(_ text: String) {
         let pb = NSPasteboard.general
         if pendingClipboardSnapshot == nil {

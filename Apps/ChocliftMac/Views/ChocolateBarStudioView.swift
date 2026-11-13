@@ -62,71 +62,95 @@ public struct ChocolateBarStudioView: View {
                 }
             )
         }
+        .onAppear {
+            consumePendingSlotEditorTarget(coordinator.pendingSlotEditorTarget)
+        }
+        .onChange(of: coordinator.pendingSlotEditorTarget) { target in
+            consumePendingSlotEditorTarget(target)
+        }
+    }
+
+    private func consumePendingSlotEditorTarget(_ target: PendingMacSlotEditorTarget?) {
+        guard let target else { return }
+        coordinator.pendingSlotEditorTarget = nil
+        guard coordinator.profile.pages.indices.contains(target.pageIndex),
+              coordinator.profile.pages[target.pageIndex].slots.indices.contains(target.slotIndex) else {
+            return
+        }
+        coordinator.selectedPageIndex = target.pageIndex
+        editingSlot = EditingSlotTarget(pageIndex: target.pageIndex, slotIndex: target.slotIndex)
     }
 
     // MARK: - 8-Page Top Strip
 
     private var pageSelectorStrip: some View {
-        HStack(spacing: 7) {
-            ForEach(coordinator.profile.pages) { page in
-                let isSelected = (page.index == coordinator.selectedPageIndex)
-                let count = page.slots.compactMap { $0 }.count
-                let hasBoundApp = !coordinator.profile.boundBundleIdentifiers(forPageID: page.id).isEmpty
+        HStack(spacing: 8) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(coordinator.profile.pages) { page in
+                        let isSelected = (page.index == coordinator.selectedPageIndex)
+                        let count = page.slots.compactMap { $0 }.count
+                        let hasBoundApp = !coordinator.profile.boundBundleIdentifiers(forPageID: page.id).isEmpty
+                        let displayTitle = PageSwitcherTitleFormatter.displayTitle(
+                            rawTitle: page.title,
+                            pageIndex: page.index,
+                            language: lang
+                        )
 
-                Button {
-                    withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
-                        coordinator.selectedPageIndex = page.index
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(page.iconEmoji)
-                            .font(.system(size: 14))
-                        if isSelected {
-                            Text(page.title)
-                                .font(.system(.callout, design: .rounded, weight: .bold))
-                                .lineLimit(1)
-                            if hasBoundApp {
-                                Image(systemName: "macwindow")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(palette.accent)
+                        Button {
+                            withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                                coordinator.selectedPageIndex = page.index
                             }
-                            Text("\(count)/\(BarPage.slotsPerPage)")
-                                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                                .foregroundStyle(palette.secondaryText)
-                        } else {
-                            Text("\(page.index + 1)")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(palette.secondaryText)
-                            if hasBoundApp {
-                                Image(systemName: "macwindow")
-                                    .font(.system(size: 8.5, weight: .bold))
-                                    .foregroundStyle(palette.accent.opacity(0.85))
-                            } else if count > 0 {
-                                Circle()
-                                    .fill(palette.secondaryText.opacity(0.65))
-                                    .frame(width: 4.5, height: 4.5)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(page.iconEmoji)
+                                    .font(.system(size: 13.5))
+
+                                MaxWidthPillTitleLayout(maxWidth: 108) {
+                                    Text(displayTitle)
+                                        .font(.system(isSelected ? .callout : .caption, design: .rounded, weight: isSelected ? .bold : .semibold))
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
+
+                                if hasBoundApp {
+                                    Image(systemName: "macwindow")
+                                        .font(.system(size: isSelected ? 10 : 8.5, weight: .bold))
+                                        .foregroundStyle(isSelected ? palette.accent : palette.accent.opacity(0.85))
+                                } else if !isSelected && count > 0 {
+                                    Circle()
+                                        .fill(palette.secondaryText.opacity(0.65))
+                                        .frame(width: 4.5, height: 4.5)
+                                }
+
+                                if isSelected {
+                                    Text("\(count)/\(BarPage.slotsPerPage)")
+                                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(palette.secondaryText)
+                                }
                             }
-                        }
-                    }
-                    .padding(.horizontal, isSelected ? 13 : 10)
-                    .padding(.vertical, 7)
-                    .background(
-                        isSelected
-                            ? palette.tileFillTop.opacity(0.95)
-                            : palette.barSurface.opacity(0.75),
-                        in: Capsule()
-                    )
-                    .foregroundStyle(isSelected ? palette.primaryText : palette.secondaryText)
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(
-                                isSelected ? palette.accent.opacity(0.85) : palette.subtleCardStroke,
-                                lineWidth: 1
+                            .padding(.horizontal, isSelected ? 13 : 10)
+                            .padding(.vertical, 7)
+                            .background(
+                                isSelected
+                                    ? palette.tileFillTop.opacity(0.95)
+                                    : palette.barSurface.opacity(0.75),
+                                in: Capsule()
                             )
-                    )
-                    .contentShape(Capsule())
+                            .foregroundStyle(isSelected ? palette.primaryText : palette.secondaryText)
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(
+                                        isSelected ? palette.accent.opacity(0.85) : palette.subtleCardStroke,
+                                        lineWidth: 1
+                                    )
+                            )
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("mac-page-tab-\(page.index)")
+                    }
                 }
-                .buttonStyle(.plain)
             }
 
             Spacer(minLength: 4)

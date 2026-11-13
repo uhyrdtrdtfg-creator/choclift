@@ -700,12 +700,14 @@ public struct TextSnippet: Codable, Equatable, Hashable, Identifiable, Sendable 
     public var id: UUID
     public var title: String
     public var body: String
+    public var insertMode: SnippetInsertMode
     public var updatedAt: Date
 
     private enum CodingKeys: String, CodingKey {
         case id
         case title
         case body
+        case insertMode
         case updatedAt
     }
 
@@ -713,11 +715,13 @@ public struct TextSnippet: Codable, Equatable, Hashable, Identifiable, Sendable 
         id: UUID = UUID(),
         title: String,
         body: String,
+        insertMode: SnippetInsertMode = .focusedFieldInsert,
         updatedAt: Date = Date()
     ) {
         self.id = id
         self.title = Self.clampTitle(title)
         self.body = Self.clampBody(body)
+        self.insertMode = insertMode
         self.updatedAt = updatedAt
     }
 
@@ -728,6 +732,7 @@ public struct TextSnippet: Codable, Equatable, Hashable, Identifiable, Sendable 
         let rawBody = try container.decode(String.self, forKey: .body)
         self.title = Self.clampTitle(rawTitle)
         self.body = Self.clampBody(rawBody)
+        self.insertMode = try container.decodeIfPresent(SnippetInsertMode.self, forKey: .insertMode) ?? .focusedFieldInsert
         self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
     }
 
@@ -736,6 +741,7 @@ public struct TextSnippet: Codable, Equatable, Hashable, Identifiable, Sendable 
         try container.encode(id, forKey: .id)
         try container.encode(Self.clampTitle(title), forKey: .title)
         try container.encode(Self.clampBody(body), forKey: .body)
+        try container.encode(insertMode, forKey: .insertMode)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 
@@ -1236,6 +1242,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
             id: snippet.id,
             title: TextSnippet.resolvedTitle(title: snippet.title, body: clampedBody, language: settings.language),
             body: clampedBody,
+            insertMode: snippet.insertMode,
             updatedAt: snippet.updatedAt
         )
         if let idx = snippets.firstIndex(where: { $0.id == normalized.id }) {
@@ -1246,6 +1253,16 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
             return false
         }
         snippets.append(normalized)
+        return true
+    }
+
+    @discardableResult
+    public mutating func setSnippetInsertMode(id: UUID, mode: SnippetInsertMode) -> Bool {
+        guard let idx = snippets.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        snippets[idx].insertMode = mode
+        snippets[idx].updatedAt = Date()
         return true
     }
 

@@ -652,24 +652,17 @@ public final class MacNotchPanelController {
             if let item {
                 _ = await coordinator.triggerBarItem(item, triggeredBy: sourceName)
             } else {
-                self?.openStudioWindow()
+                let target = PendingMacSlotEditorTarget(
+                    pageIndex: coordinator.selectedPageIndex,
+                    slotIndex: slotIndex
+                )
+                coordinator.openMainStudioWindow(selectingSection: .chocolateBar, editingSlot: target)
             }
         }
     }
 
     private func openStudioWindow() {
-        guard let coordinator else { return }
-        dismissPanelImmediately()
-        coordinator.selectedSection = .chocolateBar
-        NSApp.activate(ignoringOtherApps: true)
-
-        if let studioWin = NSApp.windows.first(where: { win in
-            !(win is NSPanel) && (win.identifier?.rawValue.contains("studio-main") == true || win.title == "choclift")
-        }) {
-            studioWin.makeKeyAndOrderFront(nil)
-        } else {
-            NSWorkspace.shared.open(Bundle.main.bundleURL)
-        }
+        coordinator?.openMainStudioWindow(selectingSection: .chocolateBar)
     }
 
     // MARK: - Screen Metrics & Full-Screen Video / Space Detection

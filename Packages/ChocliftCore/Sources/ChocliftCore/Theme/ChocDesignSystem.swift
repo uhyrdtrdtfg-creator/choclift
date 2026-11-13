@@ -1014,9 +1014,10 @@ public struct ChocBarTileCard: View {
         let isMicro = side < 68
         let fillColors = isPressed
             ? [palette.tileFillBottom, palette.tileFillBottom]
-            : [palette.barSurface.opacity(0.82), palette.tileFillBottom.opacity(0.75)]
-        let strokeColor = isPressed ? palette.accent : palette.tileBorderHighlight
-        let strokeWidth: CGFloat = isPressed ? 2.0 : 1.25
+            : [palette.barSurface.opacity(0.76), palette.tileFillBottom.opacity(0.68)]
+        let strokeColor = isPressed ? palette.accent : palette.subtleCardStroke
+        let strokeWidth: CGFloat = isPressed ? 1.8 : 1.1
+        let addLabel = EmptySlotHintPolicy.hintLabel(for: nil, language: language)
 
         return ZStack {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
@@ -1035,17 +1036,26 @@ public struct ChocBarTileCard: View {
                         )
                 )
 
-            VStack(spacing: 4) {
-                Image(systemName: "plus")
-                    .font(.system(size: isMicro ? 15 : 17, weight: .bold, design: .rounded))
-                    .foregroundStyle(palette.accent)
-                    .frame(width: isMicro ? 26 : 32, height: isMicro ? 26 : 32)
-                    .background(palette.accent.opacity(isPressed ? 0.18 : 0.11), in: Circle())
+            VStack(spacing: isMicro ? 2.5 : 4) {
+                if let plusSymbol = EmptySlotHintPolicy.plusSymbolName(for: nil) {
+                    Image(systemName: plusSymbol)
+                        .font(.system(size: isMicro ? 12.5 : 14.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(isPressed ? palette.primaryText : palette.secondaryText.opacity(0.78))
+                        .frame(width: isMicro ? 22 : 26, height: isMicro ? 22 : 26)
+                        .background(
+                            palette.tileFillBottom.opacity(isPressed ? 0.95 : 0.72),
+                            in: Circle()
+                        )
+                        .overlay(
+                            Circle()
+                                .strokeBorder(palette.subtleCardStroke.opacity(0.85), lineWidth: 0.8)
+                        )
+                }
 
-                if side >= 78 {
-                    Text(L10n.tr("添加动作", "Assign", language: language))
-                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                        .foregroundStyle(palette.secondaryText)
+                if let addLabel, side >= 38 {
+                    Text(addLabel)
+                        .font(.system(size: isMicro ? 9.5 : 10.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(isPressed ? palette.primaryText : palette.secondaryText.opacity(0.82))
                         .lineLimit(1)
                 }
             }
@@ -1227,5 +1237,31 @@ public struct ChocPressedKeyButtonStyle<Key: Hashable>: ButtonStyle {
                 }
             }
         }
+    }
+}
+
+/// Bounds a single-line pill label's width inside horizontal `ScrollView`s so short page names size snugly
+/// while long page names truncate cleanly with an ellipsis (`…`).
+public struct MaxWidthPillTitleLayout: Layout {
+    public var maxWidth: CGFloat
+
+    public init(maxWidth: CGFloat) {
+        self.maxWidth = max(24, maxWidth)
+    }
+
+    public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let first = subviews.first else { return .zero }
+        let cappedWidth = min(proposal.width ?? maxWidth, maxWidth)
+        let measured = first.sizeThatFits(ProposedViewSize(width: cappedWidth, height: proposal.height))
+        return CGSize(width: min(measured.width, cappedWidth), height: measured.height)
+    }
+
+    public func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let first = subviews.first else { return }
+        first.place(
+            at: CGPoint(x: bounds.minX, y: bounds.midY),
+            anchor: .leading,
+            proposal: ProposedViewSize(width: bounds.width, height: bounds.height)
+        )
     }
 }

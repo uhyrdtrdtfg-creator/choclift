@@ -1682,10 +1682,14 @@ public struct WatchEmojiBarView: View {
                 let isPressed = (pressedSnippetID == snippet.id)
 
                 Button {
+                    if snippet.insertMode == .typeKeys,
+                       !SnippetInsertPolicy.isModeAvailable(.typeKeys, isFieldFocused: client.isEditingTextOnMac) {
+                        return
+                    }
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
                     ChocPressFeedback.completeTap(key: snippet.id, pressedKey: $pressedSnippetID)
                     if client.connectionState.isConnected {
-                        client.insertText(snippet.body)
+                        _ = client.triggerSnippet(snippet)
                     } else {
                         onRequestPairing()
                     }

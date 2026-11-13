@@ -47,6 +47,7 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case raiseFrontmostWindow(windowID: String)
     case sleepMacDisplay
     case sendCompactKey(CompanionCompactKey)
+    case insertSnippet(text: String, mode: SnippetInsertMode)
     case unknownClientMessage
 }
 

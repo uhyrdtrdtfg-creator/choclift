@@ -85,37 +85,41 @@ public struct EmojiBarStudioView: View {
     }
 
     private var slideSelectorStrip: some View {
-        HStack(spacing: 7) {
-            ForEach(coordinator.profile.emojiSlides) { slide in
-                let isSelected = (slide.index == coordinator.selectedEmojiSlideIndex)
-                Button {
-                    coordinator.selectedEmojiSlideIndex = slide.index
-                    selectedEmojiSlot = 0
-                } label: {
-                    HStack(spacing: 5) {
-                        Text(slide.iconEmoji)
-                        if isSelected {
-                            Text(slide.title)
-                                .font(.system(.caption, design: .rounded, weight: .bold))
-                        } else {
-                            Text("\(slide.index + 1)")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(palette.secondaryText)
-                        }
-                    }
-                    .padding(.horizontal, isSelected ? 13 : 10)
-                    .padding(.vertical, 6.5)
-                    .background(isSelected ? palette.tileFillTop : palette.barSurface.opacity(0.75), in: Capsule())
-                    .foregroundStyle(isSelected ? palette.primaryText : palette.secondaryText)
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(isSelected ? palette.accent.opacity(0.85) : palette.subtleCardStroke, lineWidth: 1)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
+                ForEach(coordinator.profile.emojiSlides) { slide in
+                    let isSelected = (slide.index == coordinator.selectedEmojiSlideIndex)
+                    let displayTitle = PageSwitcherTitleFormatter.displayTitle(
+                        rawTitle: slide.title,
+                        pageIndex: slide.index,
+                        language: lang
                     )
-                    .contentShape(Capsule())
+                    Button {
+                        coordinator.selectedEmojiSlideIndex = slide.index
+                        selectedEmojiSlot = 0
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(slide.iconEmoji)
+                            MaxWidthPillTitleLayout(maxWidth: 108) {
+                                Text(displayTitle)
+                                    .font(.system(.caption, design: .rounded, weight: isSelected ? .bold : .semibold))
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                        }
+                        .padding(.horizontal, isSelected ? 13 : 10)
+                        .padding(.vertical, 6.5)
+                        .background(isSelected ? palette.tileFillTop : palette.barSurface.opacity(0.75), in: Capsule())
+                        .foregroundStyle(isSelected ? palette.primaryText : palette.secondaryText)
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(isSelected ? palette.accent.opacity(0.85) : palette.subtleCardStroke, lineWidth: 1)
+                        )
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
-            Spacer()
         }
     }
 

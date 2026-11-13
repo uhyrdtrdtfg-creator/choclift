@@ -35,15 +35,5 @@ struct ChocliftMacApp: App {
                 Divider()
             }
         }
-
-        MenuBarExtra {
-            MacMenuBarPopoverView(coordinator: coordinator)
-                .preferredColorScheme(.light)
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: coordinator.server.connectedDeviceCount > 0 ? "rectangle.grid.2x2.fill" : "rectangle.grid.2x2")
-            }
-        }
-        .menuBarExtraStyle(.window)
     }
 }

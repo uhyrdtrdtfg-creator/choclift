@@ -48,6 +48,16 @@ public struct MacActivityEvent: Identifiable, Equatable {
     public let isSuccess: Bool
 }
 
+public struct PendingMacSlotEditorTarget: Equatable {
+    public let pageIndex: Int
+    public let slotIndex: Int
+
+    public init(pageIndex: Int, slotIndex: Int) {
+        self.pageIndex = pageIndex
+        self.slotIndex = slotIndex
+    }
+}
+
 @MainActor
 public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate {
     private static let notchPanelEnabledKey = "com.choclift.mac.notchPanelEnabled"
@@ -68,6 +78,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     @Published public private(set) var activityLog: [MacActivityEvent] = []
     @Published public private(set) var statusBannerMessage: String?
     @Published public private(set) var launchAtLoginEnabled: Bool = false
+    @Published public private(set) var launchAtLoginRequiresApproval: Bool = false
+    @Published public private(set) var connectedCompanionCount: Int = 0
+    @Published public var pendingSlotEditorTarget: PendingMacSlotEditorTarget?
     @Published public private(set) var notchPanelEnabled: Bool = true
     @Published public private(set) var leftEdgePanelEnabled: Bool = false
     @Published public private(set) var runningFlowID: UUID?
@@ -93,6 +106,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     public let inputService: MacInputAndMediaService
     public let catalogService: MacAppAndShortcutCatalogService
     public private(set) var notchPanelController: MacNotchPanelController?
+    public private(set) var menuBarStatusController: MacMenuBarStatusController?
+    public let launchAtLoginService: MacLaunchAtLoginService
+    public var openStudioWindowAction: (() -> Void)?
     public let orcaStatusService: MacOrcaStatusService
     public let systemControlService: MacSystemControlService
     public let clipboardService: MacClipboardMonitorService
@@ -104,6 +120,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     private let appSupportDirectory: URL
     private let profileFileURL: URL
     private let pairedDevicesFileURL: URL
+    private var launchAtLoginStateMachine = LaunchAtLoginStateMachine(initialStatus: .notRegistered)
+    private var appActiveObserver: NSObjectProtocol?
     private var monitorTimerTask: Task<Void, Never>?
     private var orcaPollTimerTask: Task<Void, Never>?
     private var pendingFlowQueueTask: Task<Void, Never>?
@@ -163,6 +181,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.calendarService = MacCalendarEventService()
         self.soundboardService = MacSoundboardService()
         self.keepAwakeService = MacKeepAwakeService()
+        let loginSvc = MacLaunchAtLoginService()
+        self.launchAtLoginService = loginSvc
         self.timeTravel = MacTimeTravelMonitor()
         self.server = MacServerEngine(
             macID: persistedMacID,
@@ -173,15 +193,20 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.connectedDisplays = winSvc.currentConnectedDisplays()
         self.selectedTargetDisplayID = winSvc.selectedTargetDisplayID
         self.clipboardPreview = self.clipboardService.currentPreview
-        self.launchAtLoginEnabled = (SMAppService.mainApp.status == .enabled)
+        self.launchAtLoginStateMachine.refresh(using: loginSvc)
+        self.launchAtLoginEnabled = self.launchAtLoginStateMachine.isEnabled
+        self.launchAtLoginRequiresApproval = self.launchAtLoginStateMachine.requiresApproval
         self.notchPanelEnabled = UserDefaults.standard.object(forKey: Self.notchPanelEnabledKey) as? Bool ?? true
         self.leftEdgePanelEnabled = UserDefaults.standard.object(forKey: Self.leftEdgePanelEnabledKey) as? Bool ?? false
 
         self.server.delegate = self
         let panelCtrl = MacNotchPanelController(coordinator: self)
         self.notchPanelController = panelCtrl
+        let statusCtrl = MacMenuBarStatusController(coordinator: self)
+        self.menuBarStatusController = statusCtrl
         setupPipelines()
         panelCtrl.start()
+        statusCtrl.start()
     }
 
     public var lang: AppLanguage {
@@ -215,6 +240,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             guard let self else { return }
             self.isKeepMacAwakeEnabled = isHolding
             self.systemControlService.syncKeepMacAwake(isHolding)
+            self.menuBarStatusController?.refresh()
         }
         systemControlService.keepMacAwakeProvider = { [weak self] in
             self?.keepAwakeService.isHoldingAssertion ?? false
@@ -272,6 +298,19 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         refreshCatalog()
         startAccessibilityAndTextFocusLoop()
         startOrcaStatusPollLoop()
+
+        if let appActiveObserver {
+            NotificationCenter.default.removeObserver(appActiveObserver)
+        }
+        appActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.refreshLaunchAtLoginStatus()
+            }
+        }
     }
 
     public func setMacSurfaceVisible(_ surface: MacVisibleSurface, isVisible: Bool) {
@@ -430,6 +469,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         server.broadcast(.profileUpdated(next), excludingDeviceID: broadcastOriginDeviceID)
         server.pushMissingIconsToAllSessions(bundleIDs: next.referencedAppBundleIdentifiers)
+        menuBarStatusController?.refresh()
     }
 
     private func sanitizeCompanionProfileUpdate(_ incoming: ChocliftWorkspaceProfile) -> ChocliftWorkspaceProfile {
@@ -728,16 +768,62 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         isAccessibilityGranted = windowService.promptForAccessibilityPermission()
     }
 
+    public func refreshLaunchAtLoginStatus() {
+        launchAtLoginStateMachine.refresh(using: launchAtLoginService)
+        launchAtLoginEnabled = launchAtLoginStateMachine.isEnabled
+        launchAtLoginRequiresApproval = launchAtLoginStateMachine.requiresApproval
+    }
+
+    public func openLoginItemsSettings() {
+        launchAtLoginService.openLoginItemsSystemSettings()
+    }
+
     public func setLaunchAtLogin(_ enabled: Bool) {
         do {
-            if enabled {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
+            try launchAtLoginStateMachine.setEnabled(enabled, using: launchAtLoginService)
+            launchAtLoginEnabled = launchAtLoginStateMachine.isEnabled
+            launchAtLoginRequiresApproval = launchAtLoginStateMachine.requiresApproval
+            if enabled && launchAtLoginRequiresApproval {
+                flashBanner(
+                    L10n.tr(
+                        "请在系统设置 → 登录项中允许 Choclift",
+                        "Allow Choclift in System Settings → Login Items to finish enabling",
+                        language: lang
+                    )
+                )
             }
-            launchAtLoginEnabled = (SMAppService.mainApp.status == .enabled)
         } catch {
+            refreshLaunchAtLoginStatus()
             flashBanner(error.localizedDescription)
+        }
+    }
+
+    public func openMainStudioWindow(
+        selectingSection section: MacStudioSection? = nil,
+        editingSlot: PendingMacSlotEditorTarget? = nil
+    ) {
+        notchPanelController?.dismissPanelImmediately()
+        if let section {
+            selectedSection = section
+        }
+        if let editingSlot {
+            selectedSection = .chocolateBar
+            selectedPageIndex = editingSlot.pageIndex
+            pendingSlotEditorTarget = editingSlot
+        }
+
+        NSApp.activate(ignoringOtherApps: true)
+        openStudioWindowAction?()
+
+        if let studioWin = NSApp.windows.first(where: { win in
+            !(win is NSPanel) && (win.identifier?.rawValue.contains("studio-main") == true || win.title == "choclift")
+        }) {
+            if studioWin.isMiniaturized {
+                studioWin.deminiaturize(nil)
+            }
+            studioWin.makeKeyAndOrderFront(nil)
+        } else if openStudioWindowAction == nil {
+            NSWorkspace.shared.open(Bundle.main.bundleURL)
         }
     }
 
@@ -760,6 +846,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         applyAndSaveProfile(defaults, broadcastOriginDeviceID: nil)
         setNotchPanelEnabled(true)
         setLeftEdgePanelEnabled(false)
+        if launchAtLoginEnabled || launchAtLoginRequiresApproval {
+            setLaunchAtLogin(false)
+        }
         flashBanner(L10n.tr("已恢复默认巧克力栏布局", "Restored default Chocolate Bar layout", language: lang))
     }
 
@@ -1009,8 +1098,12 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             try? data.write(to: pairedDevicesFileURL, options: .atomic)
         }
         let connectedIDs = Set(devices.filter(\.isCurrentlyConnected).map(\.deviceID))
+        connectedCompanionCount = connectedIDs.count
         let wasHoldingAwake = keepAwakeService.isHoldingAssertion
         keepAwakeService.updateConnectedCompanionDeviceIDs(connectedIDs)
+        isKeepMacAwakeEnabled = keepAwakeService.isHoldingAssertion
+        systemControlService.syncKeepMacAwake(keepAwakeService.isHoldingAssertion)
+        menuBarStatusController?.refresh()
         if wasHoldingAwake && !keepAwakeService.isHoldingAssertion {
             recordActivity(
                 deviceName: "Mac",
@@ -1083,6 +1176,24 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .insertEmoji(let text):
             let res = insertText(text, triggeredBy: device.deviceName)
+            let label = MacInputAndMediaService.previewLabel(for: text)
+            reply(.actionFeedback(
+                success: res.success,
+                title: label.isEmpty ? L10n.tr("文本片段", "Snippet", language: lang) : label,
+                detail: res.message
+            ))
+
+        case .insertSnippet(let text, let mode):
+            let res = inputService.executeSnippet(
+                text,
+                mode: mode,
+                preferredPID: timeTravel.lastExternalAppPID,
+                allowActivatingPreferredPID: false,
+                language: lang
+            )
+            // When typing mode is triggered with no focused field, do nothing quietly.
+            guard res.didPerformAction else { return }
+            recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
             let label = MacInputAndMediaService.previewLabel(for: text)
             reply(.actionFeedback(
                 success: res.success,
@@ -1253,6 +1364,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             let ok = keepAwakeService.setToggleEnabled(enabled)
             isKeepMacAwakeEnabled = keepAwakeService.isHoldingAssertion
             systemControlService.syncKeepMacAwake(keepAwakeService.isHoldingAssertion)
+            menuBarStatusController?.refresh()
             server.broadcastControlStripState(systemControlService.currentState)
             reply(.controlStripStateUpdated(systemControlService.currentState))
 

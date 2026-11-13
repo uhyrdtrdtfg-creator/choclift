@@ -928,8 +928,12 @@ public struct IOSWorkspaceSearchSheet: View {
         case .tile(let pageID, _, _, _, let slotIndex, let item, _, _):
             client.triggerBarItem(item, from: SlotCoordinate(pageID: pageID, slotIndex: slotIndex))
         case .snippet(let snippet):
-            client.insertText(snippet.body)
-            onPromptHUD?(L10n.tr("已插入：\(result.title)", "Inserted: \(result.title)", language: lang))
+            if client.triggerSnippet(snippet) {
+                onPromptHUD?(L10n.tr("已发送：\(result.title)", "Sent: \(result.title)", language: lang))
+            } else {
+                // Typing mode with no focused text field on Mac does nothing.
+                return
+            }
         case .flow(let flow):
             client.triggerFlow(id: flow.id)
             onPromptHUD?(L10n.tr("已运行：\(flow.name)", "Running: \(flow.name)", language: lang))

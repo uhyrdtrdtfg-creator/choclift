@@ -71,11 +71,10 @@ public struct IOSRootTouchBarView: View {
                 return min(max(0, deckFollower.currentPageIndex), client.profile.pages.count - 1)
             },
             set: { newIndex in
-                guard client.profile.pages.indices.contains(deckFollower.currentPageIndex) else {
+                guard !client.profile.pages.isEmpty else {
                     deckFollower.syncCurrentPage(with: client.profile)
                     return
                 }
-                guard newIndex != deckFollower.currentPageIndex else { return }
                 deckFollower.selectManualPage(index: newIndex, in: client.profile)
             }
         )
@@ -511,38 +510,57 @@ public struct IOSRootTouchBarView: View {
                         .foregroundStyle(palette.primaryText)
                 }
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(Array(client.profile.pages.enumerated()), id: \.element.id) { pageOffset, page in
-                            let isSel = (currentPageIndex == pageOffset)
-                            let hasBoundApp = !client.profile.boundBundleIdentifiers(forPageID: page.id).isEmpty
-                            Button {
-                                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                                withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
-                                    deckFollower.selectManualPage(index: pageOffset, in: client.profile)
-                                }
-                            } label: {
-                                HStack(spacing: 5) {
-                                    Text(page.iconEmoji)
-                                    Text(page.title)
-                                        .font(.system(.caption, design: .rounded, weight: .bold))
-                                    if hasBoundApp {
-                                        Image(systemName: "macwindow")
-                                            .font(.system(size: 9, weight: .bold))
-                                            .opacity(isSel ? 0.9 : 0.65)
-                                    }
-                                }
-                                .padding(.horizontal, 13)
-                                .frame(height: 38)
-                                .background(isSel ? palette.accent : palette.tileFillBottom, in: Capsule())
-                                .foregroundStyle(isSel ? palette.accentForeground : palette.primaryText)
-                                .overlay(
-                                    Capsule()
-                                        .strokeBorder(isSel ? .clear : palette.subtleCardStroke, lineWidth: 1)
+                ScrollViewReader { scrollProxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(Array(client.profile.pages.enumerated()), id: \.element.id) { pageOffset, page in
+                                let isSel = (currentPageIndex == pageOffset)
+                                let hasBoundApp = !client.profile.boundBundleIdentifiers(forPageID: page.id).isEmpty
+                                let displayTitle = PageSwitcherTitleFormatter.displayTitle(
+                                    rawTitle: page.title,
+                                    pageIndex: pageOffset,
+                                    language: lang
                                 )
-                                .contentShape(Capsule())
+                                Button {
+                                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                    withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                                        deckFollower.selectManualPage(index: pageOffset, in: client.profile)
+                                    }
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Text(page.iconEmoji)
+                                        MaxWidthPillTitleLayout(maxWidth: 120) {
+                                            Text(displayTitle)
+                                                .font(.system(.caption, design: .rounded, weight: .bold))
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
+                                        }
+                                        if hasBoundApp {
+                                            Image(systemName: "macwindow")
+                                                .font(.system(size: 9, weight: .bold))
+                                                .opacity(isSel ? 0.9 : 0.65)
+                                        }
+                                    }
+                                    .padding(.horizontal, 13)
+                                    .frame(height: 38)
+                                    .background(isSel ? palette.accent : palette.tileFillBottom, in: Capsule())
+                                    .foregroundStyle(isSel ? palette.accentForeground : palette.primaryText)
+                                    .overlay(
+                                        Capsule()
+                                            .strokeBorder(isSel ? .clear : palette.subtleCardStroke, lineWidth: 1)
+                                    )
+                                    .contentShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .id("ipad-header-page-\(pageOffset)")
+                                .accessibilityIdentifier("ios-page-name-\(pageOffset)")
+                                .accessibilityLabel(displayTitle)
                             }
-                            .buttonStyle(.plain)
+                        }
+                    }
+                    .onChange(of: currentPageIndex) { _, updatedIndex in
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            scrollProxy.scrollTo("ipad-header-page-\(updatedIndex)", anchor: .center)
                         }
                     }
                 }
@@ -628,6 +646,11 @@ public struct IOSRootTouchBarView: View {
                         isFollowingFrontmostApp: deckFollower.isFollowingFrontmostApp,
                         isDeckSwitchHighlighted: isDeckSwitchHighlighted,
                         onFollowFrontmostApp: resumeFollowingFrontmostApp,
+                        onSelectManualPage: { pageOffset in
+                            withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                                deckFollower.selectManualPage(index: pageOffset, in: client.profile)
+                            }
+                        },
                         availableWidth: leftColumnWidth,
                         isLandscape: true,
                         onPromptHUD: { message in
@@ -1065,13 +1088,30 @@ public struct IOSRootTouchBarView: View {
     }
 
     private var verticalPagePillButton: some View {
-        let count = (activeMode == .emojiBar) ? client.profile.emojiSlides.count : client.profile.pages.count
+        let isEmoji = (activeMode == .emojiBar)
+        let count = isEmoji ? client.profile.emojiSlides.count : client.profile.pages.count
         let safeCount = max(1, count)
-        let activeIdx = min(max(0, (activeMode == .emojiBar) ? currentEmojiSlideIndex : currentPageIndex), safeCount - 1)
+        let activeIdx = min(max(0, isEmoji ? currentEmojiSlideIndex : currentPageIndex), safeCount - 1)
+        let activeName: String = {
+            if isEmoji, client.profile.emojiSlides.indices.contains(activeIdx) {
+                return PageSwitcherTitleFormatter.displayTitle(
+                    rawTitle: client.profile.emojiSlides[activeIdx].title,
+                    pageIndex: activeIdx,
+                    language: lang
+                )
+            } else if !isEmoji, client.profile.pages.indices.contains(activeIdx) {
+                return PageSwitcherTitleFormatter.displayTitle(
+                    rawTitle: client.profile.pages[activeIdx].title,
+                    pageIndex: activeIdx,
+                    language: lang
+                )
+            }
+            return PageSwitcherTitleFormatter.displayTitle(rawTitle: "", pageIndex: activeIdx, language: lang)
+        }()
 
         return Button {
             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-            if activeMode == .emojiBar {
+            if isEmoji {
                 currentEmojiSlideIndex = (activeIdx + 1) % safeCount
             } else {
                 withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
@@ -1080,9 +1120,12 @@ public struct IOSRootTouchBarView: View {
             }
         } label: {
             VStack(spacing: 3) {
-                Text("\(activeIdx + 1)/\(safeCount)")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                Text(activeName)
+                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
                     .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.horizontal, 3)
                 HStack(spacing: 2.5) {
                     ForEach(0..<min(4, safeCount), id: \.self) { dot in
                         Circle()
@@ -1097,62 +1140,32 @@ public struct IOSRootTouchBarView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("ios-page-cycle-button")
+        .accessibilityLabel(activeName)
     }
 
     private var portraitPageStepperBar: some View {
         let isEmoji = (activeMode == .emojiBar)
         let count = max(1, isEmoji ? client.profile.emojiSlides.count : client.profile.pages.count)
         let activeIdx = min(max(0, isEmoji ? currentEmojiSlideIndex : currentPageIndex), count - 1)
-        let icon: String = {
-            if isEmoji, client.profile.emojiSlides.indices.contains(activeIdx) {
-                return client.profile.emojiSlides[activeIdx].iconEmoji
-            } else if !isEmoji, client.profile.pages.indices.contains(activeIdx) {
-                return client.profile.pages[activeIdx].iconEmoji
-            }
-            return "🍫"
-        }()
-        let title: String = {
-            if isEmoji, client.profile.emojiSlides.indices.contains(activeIdx) {
-                return client.profile.emojiSlides[activeIdx].title
-            } else if !isEmoji, client.profile.pages.indices.contains(activeIdx) {
-                return client.profile.pages[activeIdx].title
-            }
-            return "Daily"
-        }()
 
         return VStack(spacing: 6) {
-            HStack(spacing: 8) {
+            HStack(spacing: 7) {
                 Button {
                     stepPortraitPage(by: -1, count: count, isEmoji: isEmoji, current: activeIdx)
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(palette.primaryText)
-                        .frame(width: 40, height: 36)
+                        .frame(width: 38, height: 36)
                         .background(palette.tileFillBottom.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("ios-page-prev-button")
 
-                HStack(spacing: 6) {
-                    Text(icon)
-                        .font(.system(size: 14))
-                    Text(title)
-                        .font(.system(.subheadline, design: .rounded, weight: .bold))
-                        .foregroundStyle(palette.primaryText)
-                        .lineLimit(1)
-                    Text("\(activeIdx + 1)/\(count)")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(palette.secondaryText)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 36)
-                .background(palette.barSurface.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
-                )
+                reachablePageNamesRow(count: count, isEmoji: isEmoji, activeIdx: activeIdx, compact: false)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 36)
 
                 Button {
                     stepPortraitPage(by: 1, count: count, isEmoji: isEmoji, current: activeIdx)
@@ -1160,7 +1173,7 @@ public struct IOSRootTouchBarView: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(palette.primaryText)
-                        .frame(width: 40, height: 36)
+                        .frame(width: 38, height: 36)
                         .background(palette.tileFillBottom.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
@@ -1170,7 +1183,7 @@ public struct IOSRootTouchBarView: View {
 
             reachablePageDotsRow(count: count, isEmoji: isEmoji, activeIdx: activeIdx)
                 .padding(.horizontal, 4)
-                .frame(height: 28)
+                .frame(height: 26)
                 .background(palette.barSurface.opacity(0.82), in: Capsule())
                 .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
         }
@@ -1180,57 +1193,28 @@ public struct IOSRootTouchBarView: View {
         let isEmoji = (activeMode == .emojiBar)
         let count = max(1, isEmoji ? client.profile.emojiSlides.count : client.profile.pages.count)
         let activeIdx = min(max(0, isEmoji ? currentEmojiSlideIndex : currentPageIndex), count - 1)
-        let icon: String = {
-            if isEmoji, client.profile.emojiSlides.indices.contains(activeIdx) {
-                return client.profile.emojiSlides[activeIdx].iconEmoji
-            } else if !isEmoji, client.profile.pages.indices.contains(activeIdx) {
-                return client.profile.pages[activeIdx].iconEmoji
-            }
-            return "🍫"
-        }()
-        let title: String = {
-            if isEmoji, client.profile.emojiSlides.indices.contains(activeIdx) {
-                return client.profile.emojiSlides[activeIdx].title
-            } else if !isEmoji, client.profile.pages.indices.contains(activeIdx) {
-                return client.profile.pages[activeIdx].title
-            }
-            return "Daily"
-        }()
 
-        return HStack(spacing: 8) {
-            HStack(spacing: 5) {
-                Text(icon)
-                    .font(.system(size: 13))
-                Text(title)
-                    .font(.system(.caption, design: .rounded, weight: .bold))
-                    .foregroundStyle(palette.primaryText)
-                    .lineLimit(1)
-                Text("\(activeIdx + 1)/\(count)")
-                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(palette.secondaryText)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(palette.barSurface.opacity(0.88), in: Capsule())
-            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-
+        return HStack(spacing: 7) {
             Button {
                 stepPortraitPage(by: -1, count: count, isEmoji: isEmoji, current: activeIdx)
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.primaryText)
-                    .frame(width: 34, height: 30)
+                    .frame(width: 34, height: 32)
                     .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
                     .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("ios-page-prev-button")
 
+            reachablePageNamesRow(count: count, isEmoji: isEmoji, activeIdx: activeIdx, compact: true)
+                .frame(maxWidth: .infinity)
+                .frame(height: 32)
+
             reachablePageDotsRow(count: count, isEmoji: isEmoji, activeIdx: activeIdx)
                 .padding(.horizontal, 6)
-                .frame(maxWidth: .infinity)
-                .frame(height: 30)
+                .frame(width: min(140, CGFloat(count) * 16 + 12), height: 30)
                 .background(palette.barSurface.opacity(0.88), in: Capsule())
                 .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
@@ -1240,13 +1224,100 @@ public struct IOSRootTouchBarView: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.primaryText)
-                    .frame(width: 34, height: 30)
+                    .frame(width: 34, height: 32)
                     .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
                     .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("ios-page-next-button")
         }
+    }
+
+    private func reachablePageNamesRow(count: Int, isEmoji: Bool, activeIdx: Int, compact: Bool) -> some View {
+        ScrollViewReader { scrollProxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    ForEach(0..<count, id: \.self) { pageIdx in
+                        let isSelected = (pageIdx == activeIdx)
+                        let icon: String = {
+                            if isEmoji, client.profile.emojiSlides.indices.contains(pageIdx) {
+                                return client.profile.emojiSlides[pageIdx].iconEmoji
+                            } else if !isEmoji, client.profile.pages.indices.contains(pageIdx) {
+                                return client.profile.pages[pageIdx].iconEmoji
+                            }
+                            return "🍫"
+                        }()
+                        let rawTitle: String = {
+                            if isEmoji, client.profile.emojiSlides.indices.contains(pageIdx) {
+                                return client.profile.emojiSlides[pageIdx].title
+                            } else if !isEmoji, client.profile.pages.indices.contains(pageIdx) {
+                                return client.profile.pages[pageIdx].title
+                            }
+                            return ""
+                        }()
+                        let displayTitle = PageSwitcherTitleFormatter.displayTitle(
+                            rawTitle: rawTitle,
+                            pageIndex: pageIdx,
+                            language: lang
+                        )
+                        let hasBoundApp: Bool = {
+                            guard !isEmoji, client.profile.pages.indices.contains(pageIdx) else { return false }
+                            let pageID = client.profile.pages[pageIdx].id
+                            return !client.profile.boundBundleIdentifiers(forPageID: pageID).isEmpty
+                        }()
+
+                        Button {
+                            selectPageDot(index: pageIdx, count: count, isEmoji: isEmoji)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(icon)
+                                    .font(.system(size: compact ? 11.5 : 12.5))
+
+                                MaxWidthPillTitleLayout(maxWidth: compact ? 96 : 112) {
+                                    Text(displayTitle)
+                                        .font(.system(size: compact ? 11.5 : 12.5, weight: isSelected ? .bold : .semibold, design: .rounded))
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
+
+                                if hasBoundApp {
+                                    Image(systemName: "macwindow")
+                                        .font(.system(size: 8.5, weight: .bold))
+                                        .opacity(isSelected ? 0.92 : 0.68)
+                                }
+                            }
+                            .padding(.horizontal, compact ? 10 : 11)
+                            .frame(height: compact ? 30 : 34)
+                            .background(
+                                isSelected ? palette.accent : palette.barSurface.opacity(0.92),
+                                in: Capsule()
+                            )
+                            .foregroundStyle(isSelected ? palette.accentForeground : palette.primaryText)
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(isSelected ? .clear : palette.subtleCardStroke, lineWidth: 1)
+                            )
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .id("switcher-pill-\(isEmoji ? "emoji" : "page")-\(pageIdx)")
+                        .accessibilityIdentifier(isEmoji ? "ios-emoji-name-\(pageIdx)" : "ios-page-name-\(pageIdx)")
+                        .accessibilityLabel(displayTitle)
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .onAppear {
+                scrollProxy.scrollTo("switcher-pill-\(isEmoji ? "emoji" : "page")-\(activeIdx)", anchor: .center)
+            }
+            .onChange(of: activeIdx) { _, nextIdx in
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    scrollProxy.scrollTo("switcher-pill-\(isEmoji ? "emoji" : "page")-\(nextIdx)", anchor: .center)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("ios-page-name-switcher")
     }
 
     private func reachablePageDotsRow(count: Int, isEmoji: Bool, activeIdx: Int) -> some View {
