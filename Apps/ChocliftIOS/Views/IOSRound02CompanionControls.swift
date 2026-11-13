@@ -8,6 +8,7 @@ public struct IOSCompanionBarRibbon: View {
     @ObservedObject var client: CompanionClientEngine
     let compact: Bool
     let includeInlineClipboard: Bool
+    let allowMultiRow: Bool
     var onOpenClipboardSegment: (() -> Void)?
 
     @State private var pressedKey: String?
@@ -19,15 +20,31 @@ public struct IOSCompanionBarRibbon: View {
         client: CompanionClientEngine,
         compact: Bool,
         includeInlineClipboard: Bool = false,
+        allowMultiRow: Bool = true,
         onOpenClipboardSegment: (() -> Void)? = nil
     ) {
         self.client = client
         self.compact = compact
         self.includeInlineClipboard = includeInlineClipboard
+        self.allowMultiRow = allowMultiRow
         self.onOpenClipboardSegment = onOpenClipboardSegment
     }
 
     public var body: some View {
+        ViewThatFits(in: .horizontal) {
+            singleRowRibbon
+
+            if allowMultiRow {
+                twoRowPortraitRibbon
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    singleRowRibbon
+                }
+            }
+        }
+    }
+
+    private var singleRowRibbon: some View {
         HStack(spacing: 6) {
             calendarEventButton
 
@@ -39,9 +56,41 @@ public struct IOSCompanionBarRibbon: View {
 
             IOSSleepDisplayPillButton(client: client, compact: compact)
 
+            IOSShowDesktopPillButton(client: client, compact: compact)
+
+            IOSFinderDesktopIconsPillButton(client: client, compact: compact)
+
             IOSFrontmostWindowsRibbonButton(client: client, compact: compact)
 
             screenshotCaptureButton
+        }
+    }
+
+    private var twoRowPortraitRibbon: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                calendarEventButton
+
+                if includeInlineClipboard && client.connectionState.isConnected {
+                    inlineClipboardCluster
+                }
+
+                IOSKeepMacAwakeTogglePill(client: client, compact: compact)
+
+                screenshotCaptureButton
+            }
+
+            HStack(spacing: 6) {
+                IOSShowDesktopPillButton(client: client, compact: compact)
+
+                IOSFinderDesktopIconsPillButton(client: client, compact: compact)
+
+                Spacer(minLength: 0)
+
+                IOSSleepDisplayPillButton(client: client, compact: compact)
+
+                IOSFrontmostWindowsRibbonButton(client: client, compact: compact)
+            }
         }
     }
 

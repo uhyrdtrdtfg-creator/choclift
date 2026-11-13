@@ -287,6 +287,7 @@ public struct IOSRootTouchBarView: View {
                     client: client,
                     compact: true,
                     includeInlineClipboard: !(activeMode == .emojiBar && currentEmojiSegment == .clipboard),
+                    allowMultiRow: false,
                     onOpenClipboardSegment: {
                         modeBeforeAutoEmoji = nil
                         withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
@@ -1018,12 +1019,18 @@ public struct IOSRootTouchBarView: View {
 
     /// Contextual status banner shown ONLY when not connected so Empty, Connecting, Failed, and Standby
     /// states are unmistakable (and failures are never hidden behind a spinner).
+    /// When the phone has a saved Mac and is disconnected, tapping the banner reconnects directly with the saved token.
     private func nonConnectedStatusBanner(compact: Bool) -> some View {
         let tint = visualState.tintColor(in: palette)
+        let canOneTapReconnect = client.canOneTapReconnectFromBanner
 
         return Button {
             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-            showPairingSheet = true
+            if canOneTapReconnect {
+                _ = client.reconnectFromDisconnectedBanner()
+            } else {
+                showPairingSheet = true
+            }
         } label: {
             HStack(spacing: 10) {
                 if visualState.showsProgressSpinner {
@@ -1059,11 +1066,13 @@ public struct IOSRootTouchBarView: View {
                 Spacer(minLength: 6)
 
                 Text(
-                    visualState.isFailure
-                        ? L10n.tr("查看", "Fix", language: lang)
-                        : (visualState.showsProgressSpinner
-                            ? L10n.tr("详情", "Status", language: lang)
-                            : L10n.tr("连接", "Pair", language: lang))
+                    canOneTapReconnect
+                        ? L10n.tr("重连", "Reconnect", language: lang)
+                        : (visualState.isFailure
+                            ? L10n.tr("查看", "Fix", language: lang)
+                            : (visualState.showsProgressSpinner
+                                ? L10n.tr("详情", "Status", language: lang)
+                                : L10n.tr("连接", "Pair", language: lang)))
                 )
                 .font(.system(size: 11, weight: .bold, design: .rounded))
                 .foregroundStyle(palette.emphasisForeground)

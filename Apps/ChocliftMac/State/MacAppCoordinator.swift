@@ -1424,6 +1424,13 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
 
+        case .setFinderDesktopIconsVisible(let visible):
+            let res = systemControlService.setFinderDesktopIconsVisible(visible, language: lang)
+            server.broadcastControlStripState(systemControlService.currentState)
+            reply(.controlStripStateUpdated(systemControlService.currentState))
+            recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
+            reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
+
         case .sendCompactKey(let key):
             let res = inputService.sendCompactKey(
                 key,

@@ -174,6 +174,10 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
     public var selectedAudioOutputDeviceID: String?
     /// True when CoreAudio reports `kAudioHardwarePropertyDefaultOutputDevice` as settable on this Mac.
     public var canSwitchAudioOutput: Bool
+    /// Read-only Mac battery percentage/charging state or AC power-adapter state (`nil` before first Mac sync).
+    public var macBattery: MacBatteryStatus?
+    /// True when Finder's `CreateDesktop` preference is enabled so desktop icons are shown on the Mac.
+    public var areFinderDesktopIconsVisible: Bool
 
     private enum CodingKeys: String, CodingKey {
         case volume
@@ -190,6 +194,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         case audioOutputDevices
         case selectedAudioOutputDeviceID
         case canSwitchAudioOutput
+        case macBattery
+        case areFinderDesktopIconsVisible
     }
 
     public init(
@@ -206,7 +212,9 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         isKeepMacAwakeEnabled: Bool = false,
         audioOutputDevices: [MacAudioOutputDevice] = [],
         selectedAudioOutputDeviceID: String? = nil,
-        canSwitchAudioOutput: Bool = true
+        canSwitchAudioOutput: Bool = true,
+        macBattery: MacBatteryStatus? = nil,
+        areFinderDesktopIconsVisible: Bool = true
     ) {
         self.volume = ControlStripLevel.clamp(volume)
         self.isVolumeMuted = isVolumeMuted
@@ -225,6 +233,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.audioOutputDevices = audioOutputDevices
         self.selectedAudioOutputDeviceID = Self.cleanAudioID(selectedAudioOutputDeviceID)
         self.canSwitchAudioOutput = canSwitchAudioOutput
+        self.macBattery = macBattery
+        self.areFinderDesktopIconsVisible = areFinderDesktopIconsVisible
     }
 
     public init(from decoder: Decoder) throws {
@@ -254,6 +264,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             try container.decodeIfPresent(String.self, forKey: .selectedAudioOutputDeviceID)
         )
         self.canSwitchAudioOutput = try container.decodeIfPresent(Bool.self, forKey: .canSwitchAudioOutput) ?? true
+        self.macBattery = try container.decodeIfPresent(MacBatteryStatus.self, forKey: .macBattery)
+        self.areFinderDesktopIconsVisible = try container.decodeIfPresent(Bool.self, forKey: .areFinderDesktopIconsVisible) ?? true
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -280,6 +292,16 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         }
         try container.encodeIfPresent(Self.cleanAudioID(selectedAudioOutputDeviceID), forKey: .selectedAudioOutputDeviceID)
         try container.encode(canSwitchAudioOutput, forKey: .canSwitchAudioOutput)
+        try container.encodeIfPresent(macBattery, forKey: .macBattery)
+        try container.encode(areFinderDesktopIconsVisible, forKey: .areFinderDesktopIconsVisible)
+    }
+
+    /// Explicit reason line shown on the companion strip ONLY while Choclift's keep-awake assertion is on (`nil` when off).
+    public func awakeReasonLine(in language: AppLanguage = .system) -> String? {
+        MacAwakeReasonFormatter.reasonLine(
+            isAssertionActive: isKeepMacAwakeEnabled,
+            language: language
+        )
     }
 
     public var currentAudioOutputDevice: MacAudioOutputDevice? {
@@ -335,7 +357,9 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             isKeepMacAwakeEnabled != other.isKeepMacAwakeEnabled ||
             audioOutputDevices != other.audioOutputDevices ||
             Self.cleanAudioID(selectedAudioOutputDeviceID) != Self.cleanAudioID(other.selectedAudioOutputDeviceID) ||
-            canSwitchAudioOutput != other.canSwitchAudioOutput {
+            canSwitchAudioOutput != other.canSwitchAudioOutput ||
+            macBattery != other.macBattery ||
+            areFinderDesktopIconsVisible != other.areFinderDesktopIconsVisible {
             return true
         }
         if (volume <= 0.001) != (other.volume <= 0.001) ||

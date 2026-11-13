@@ -48,6 +48,7 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case sleepMacDisplay
     case sendCompactKey(CompanionCompactKey)
     case insertSnippet(text: String, mode: SnippetInsertMode)
+    case setFinderDesktopIconsVisible(Bool)
     case unknownClientMessage
 }
 

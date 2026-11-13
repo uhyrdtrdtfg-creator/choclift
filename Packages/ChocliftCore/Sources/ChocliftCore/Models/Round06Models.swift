@@ -247,8 +247,36 @@ public struct MacMenuBarStatusSummary: Equatable, Sendable {
         }
     }
 
+    /// Explicit reason line shown ONLY while Choclift's keep-awake assertion is active (`nil` when off).
+    public func awakeReasonLine(in language: AppLanguage = .system) -> String? {
+        MacAwakeReasonFormatter.reasonLine(
+            isAssertionActive: isKeepAwakeOn,
+            language: language
+        )
+    }
+
+    /// Read-only status lines rendered in the Mac menu-bar item's menu; includes the awake reason
+    /// strictly when `isKeepAwakeOn == true`.
+    public func menuStatusLines(in language: AppLanguage = .system) -> [String] {
+        var lines = [
+            companionDetailText(in: language),
+            keepAwakeDetailText(in: language)
+        ]
+        if let reason = awakeReasonLine(in: language) {
+            lines.append(reason)
+        }
+        return lines
+    }
+
     public func tooltipText(in language: AppLanguage = .system) -> String {
-        L10n.tr(
+        if let reason = awakeReasonLine(in: language) {
+            return L10n.tr(
+                "Choclift — \(companionDetailText(in: language)) · \(keepAwakeDetailText(in: language)) · \(reason)（点击打开窗口）",
+                "Choclift — \(companionDetailText(in: language)) · \(keepAwakeDetailText(in: language)) · \(reason) (Click to open window)",
+                language: language
+            )
+        }
+        return L10n.tr(
             "Choclift — \(companionDetailText(in: language)) · \(keepAwakeDetailText(in: language))（点击打开窗口）",
             "Choclift — \(companionDetailText(in: language)) · \(keepAwakeDetailText(in: language)) (Click to open window)",
             language: language

@@ -1266,14 +1266,20 @@ public struct MacMenuBarPopoverView: View {
                     Text("choclift")
                         .font(.system(.headline, design: .rounded, weight: .black))
                         .foregroundStyle(palette.primaryText)
-                    Text(
-                        MacMenuBarStatusSummary(
-                            connectedCompanionCount: coordinator.connectedCompanionCount,
-                            isKeepAwakeOn: coordinator.isKeepMacAwakeEnabled
-                        ).menuBarTitle(in: lang)
+                    let menuSummary = MacMenuBarStatusSummary(
+                        connectedCompanionCount: coordinator.connectedCompanionCount,
+                        isKeepAwakeOn: coordinator.isKeepMacAwakeEnabled
                     )
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(server.lastErrorMessage != nil ? palette.statusFailure : palette.secondaryText)
+                    Text(menuSummary.menuBarTitle(in: lang))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(server.lastErrorMessage != nil ? palette.statusFailure : palette.secondaryText)
+                    if let awakeReason = menuSummary.awakeReasonLine(in: lang) {
+                        Text(awakeReason)
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(palette.accentEmphasis)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("mac-menubar-awake-reason")
+                    }
                 }
                 Spacer()
                 Circle()

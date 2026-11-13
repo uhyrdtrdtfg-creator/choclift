@@ -2239,6 +2239,8 @@ public struct IOSPersistentControlStripView: View {
             } else {
                 twoRowContent
             }
+
+            IOSCompanionStripStatusRow(client: client)
         }
         .padding(.horizontal, embeddedInSurface ? 14 : 12)
         .padding(.vertical, preferSingleRow ? 7 : 9)

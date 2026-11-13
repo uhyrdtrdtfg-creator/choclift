@@ -879,7 +879,8 @@ public final class MacServerEngine: ObservableObject {
                  .setSoundboardVolume,
                  .setKeepMacAwake,
                  .setAudioOutputDevice,
-                 .sleepMacDisplay:
+                 .sleepMacDisplay,
+                 .setFinderDesktopIconsVisible:
                 session.supportsControlStrip = true
             case .requestCompanionDashboard, .pasteMacClipboard, .captureMainDisplayScreenshot, .openCalendarApp:
                 session.supportsCompanionDashboard = true

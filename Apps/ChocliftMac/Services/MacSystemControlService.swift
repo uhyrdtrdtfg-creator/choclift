@@ -7,6 +7,7 @@ import Darwin
 import Foundation
 import IOKit
 import IOKit.graphics
+import IOKit.ps
 
 @MainActor
 public final class MacSystemControlService {
@@ -155,6 +156,8 @@ public final class MacSystemControlService {
         let sbVolume = ControlStripLevel.clamp(soundboardVolumeProvider?() ?? currentState.soundboardVolume)
         let keepAwake = keepMacAwakeProvider?() ?? currentState.isKeepMacAwakeEnabled
         let audioSnapshot = Self.enumerateAudioOutputDevices(defaultOutputID: outDevice)
+        let batteryStatus = Self.readMacBatteryStatus()
+        let finderIconsVisible = Self.readFinderDesktopIconsVisible()
 
         return ControlStripState(
             volume: volume,
@@ -170,7 +173,9 @@ public final class MacSystemControlService {
             isKeepMacAwakeEnabled: keepAwake,
             audioOutputDevices: audioSnapshot.devices,
             selectedAudioOutputDeviceID: audioSnapshot.selectedID,
-            canSwitchAudioOutput: audioSnapshot.canSwitch
+            canSwitchAudioOutput: audioSnapshot.canSwitch,
+            macBattery: batteryStatus,
+            areFinderDesktopIconsVisible: finderIconsVisible
         )
     }
 
@@ -225,6 +230,97 @@ public final class MacSystemControlService {
             title,
             L10n.tr("已熄灭屏幕（未锁定 Mac，防休眠开关保持不变）", "Display put to sleep (Mac unlocked; Keep Awake unchanged)", language: language)
         )
+    }
+
+    // MARK: - Mac Battery & Finder Desktop Icons (Round 7)
+
+    public static func readMacBatteryStatus() -> MacBatteryStatus {
+        guard let blob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue() as? [CFTypeRef] else {
+            return .powerAdapter
+        }
+        var descriptions: [[String: Any]] = []
+        descriptions.reserveCapacity(sources.count)
+        for source in sources {
+            if let desc = IOPSGetPowerSourceDescription(blob, source)?.takeUnretainedValue() as? [String: Any] {
+                descriptions.append(desc)
+            }
+        }
+        return MacBatteryStatus.fromPowerSourceDescriptions(descriptions)
+    }
+
+    public static func readFinderDesktopIconsVisible() -> Bool {
+        let raw = CFPreferencesCopyAppValue(
+            "CreateDesktop" as CFString,
+            "com.apple.finder" as CFString
+        )
+        return FinderDesktopIconsToggleCopy.parseCreateDesktopValue(raw)
+    }
+
+    /// Toggles Finder desktop icons (`com.apple.finder CreateDesktop`) and restarts Finder.
+    /// Does not hide the whole screen, lock the Mac, or enable remote-desktop curtain mode.
+    public func setFinderDesktopIconsVisible(
+        _ visible: Bool,
+        language: AppLanguage = .system
+    ) -> (success: Bool, title: String, detail: String) {
+        let title = visible
+            ? L10n.tr("显示桌面图标", "Show Desktop Icons", language: language)
+            : L10n.tr("隐藏桌面图标", "Hide Desktop Icons", language: language)
+
+        let defaultsProcess = Process()
+        defaultsProcess.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+        defaultsProcess.arguments = [
+            "write",
+            "com.apple.finder",
+            "CreateDesktop",
+            "-bool",
+            visible ? "true" : "false"
+        ]
+        do {
+            try defaultsProcess.run()
+            defaultsProcess.waitUntilExit()
+        } catch {
+            return (
+                false,
+                title,
+                L10n.tr(
+                    "无法更新 Finder 桌面图标设置：\(error.localizedDescription)",
+                    "Could not update Finder desktop icons preference: \(error.localizedDescription)",
+                    language: language
+                )
+            )
+        }
+
+        guard defaultsProcess.terminationStatus == 0 else {
+            return (
+                false,
+                title,
+                L10n.tr(
+                    "Finder 偏好设置写入失败（状态码 \(defaultsProcess.terminationStatus)）。",
+                    "defaults write exited with code \(defaultsProcess.terminationStatus).",
+                    language: language
+                )
+            )
+        }
+
+        _ = CFPreferencesAppSynchronize("com.apple.finder" as CFString)
+
+        let killProcess = Process()
+        killProcess.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+        killProcess.arguments = ["Finder"]
+        try? killProcess.run()
+        killProcess.waitUntilExit()
+
+        var updated = currentState
+        updated.areFinderDesktopIconsVisible = visible
+        currentState = updated
+        onStateChanged?(updated)
+        schedulePostActionRefresh()
+
+        let detail = visible
+            ? L10n.tr("已显示桌面图标并重启 Finder", "Desktop icons shown (Finder restarted)", language: language)
+            : L10n.tr("已隐藏桌面图标并重启 Finder", "Desktop icons hidden (Finder restarted)", language: language)
+        return (true, title, detail)
     }
 
     public func syncSoundboardVolume(_ volume: Double) {

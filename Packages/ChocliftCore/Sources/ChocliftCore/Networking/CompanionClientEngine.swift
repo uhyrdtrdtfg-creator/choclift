@@ -504,7 +504,53 @@ public final class CompanionClientEngine: ObservableObject {
         if saved.lastBluetoothPeripheralID != nil && isBluetoothPoweredOn {
             return true
         }
+        if candidateMacID == saved.macID && activeEndpoint != nil {
+            return true
+        }
         return false
+    }
+
+    public var preferredSavedMacForReconnect: SavedMacCredential? {
+        guard !savedMacs.isEmpty else { return nil }
+        if let candidateMacID,
+           let current = savedMacs.first(where: { $0.macID == candidateMacID }),
+           canReconnectSavedMac(current) {
+            return current
+        }
+        if let reachable = savedMacs.first(where: { canReconnectSavedMac($0) }) {
+            return reachable
+        }
+        return savedMacs.first
+    }
+
+    /// True when the companion is disconnected and has a saved Mac credential so tapping the status banner
+    /// reconnects directly with the saved auth token instead of prompting for pairing/PIN.
+    public var canOneTapReconnectFromBanner: Bool {
+        guard connectionState == .disconnected else { return false }
+        return preferredSavedMacForReconnect != nil
+    }
+
+    /// Reconnects to the saved Mac using the stored auth token (never re-asking for a PIN when still paired).
+    @discardableResult
+    public func reconnectFromDisconnectedBanner() -> Bool {
+        guard connectionState == .disconnected,
+              let saved = preferredSavedMacForReconnect else {
+            return false
+        }
+        intentionalDisconnect = false
+        consecutiveReconnectFailures = 0
+        lastConnectionIssue = nil
+        rejectedAutoProbePeripheralIDs.removeAll()
+        if !isBrowsingActive {
+            startBrowsing()
+        }
+        if canReconnectSavedMac(saved) {
+            reconnectSavedMac(saved)
+            return true
+        }
+        candidateMacID = saved.macID
+        autoConnectIfAppropriate()
+        return true
     }
 
     public func reconnectSavedMac(_ saved: SavedMacCredential) {
@@ -533,12 +579,22 @@ public final class CompanionClientEngine: ObservableObject {
             connectToHost(host: host, port: port, targetName: saved.macName)
             return
         }
-        if let peripheralID = saved.lastBluetoothPeripheralID {
-            _ = connectKnownBluetoothPeripheral(
-                id: peripheralID,
-                targetName: saved.macName,
-                macID: saved.macID
-            )
+        if let peripheralID = saved.lastBluetoothPeripheralID,
+           connectKnownBluetoothPeripheral(
+               id: peripheralID,
+               targetName: saved.macName,
+               macID: saved.macID
+           ) {
+            return
+        }
+        if candidateMacID == saved.macID, let endpoint = activeEndpoint {
+            intentionalDisconnect = false
+            isSavedMacProbeConnect = false
+            probeTargetMacID = nil
+            clearPINGlitchState()
+            wifiPreferenceTask?.cancel()
+            reconnectTask?.cancel()
+            openConnection(to: endpoint, targetName: saved.macName, preservePINState: false)
         }
     }
 
@@ -1343,6 +1399,7 @@ public final class CompanionClientEngine: ObservableObject {
         isCapturingScreenshot = false
         var disconnectedStrip = controlStripState
         disconnectedStrip.isKeepMacAwakeEnabled = false
+        disconnectedStrip.macBattery = nil
         controlStripState = disconnectedStrip
         tileFeedbackTracker.clearPendingWithoutFeedback()
         lastConnectionIssue = nil
@@ -1462,6 +1519,7 @@ public final class CompanionClientEngine: ObservableObject {
             isCapturingScreenshot = false
             var disconnectedStrip = controlStripState
             disconnectedStrip.isKeepMacAwakeEnabled = false
+            disconnectedStrip.macBattery = nil
             controlStripState = disconnectedStrip
             tileFeedbackTracker.clearPendingWithoutFeedback()
             connectionState = .disconnected
@@ -1524,6 +1582,7 @@ public final class CompanionClientEngine: ObservableObject {
         isCapturingScreenshot = false
         var disconnectedStrip = controlStripState
         disconnectedStrip.isKeepMacAwakeEnabled = false
+        disconnectedStrip.macBattery = nil
         controlStripState = disconnectedStrip
         if let failedBanner = tileFeedbackTracker.failPendingOnDisconnect() {
             publishTileFeedback(failedBanner)
@@ -1986,6 +2045,25 @@ public final class CompanionClientEngine: ObservableObject {
         }
         tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.sleepMacDisplay)
+    }
+
+    /// Shows or hides Finder desktop icons on the Mac (`com.apple.finder CreateDesktop`) and restarts Finder.
+    public func setFinderDesktopIconsVisible(_ visible: Bool) {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: FinderDesktopIconsToggleCopy.actionTitle(areIconsVisible: controlStripState.areFinderDesktopIconsVisible, language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.setFinderDesktopIconsVisible(visible))
+    }
+
+    public func toggleFinderDesktopIcons() {
+        setFinderDesktopIconsVisible(!controlStripState.areFinderDesktopIconsVisible)
     }
 
     /// Sends Escape, Space, or an Arrow key to the frontmost Mac app through the existing input path.

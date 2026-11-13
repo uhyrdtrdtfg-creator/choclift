@@ -126,13 +126,11 @@ public final class MacMenuBarStatusController: NSObject {
         let summary = currentSummary
 
         let menu = NSMenu()
-        let companionItem = NSMenuItem(title: summary.companionDetailText(in: lang), action: nil, keyEquivalent: "")
-        companionItem.isEnabled = false
-        menu.addItem(companionItem)
-
-        let awakeItem = NSMenuItem(title: summary.keepAwakeDetailText(in: lang), action: nil, keyEquivalent: "")
-        awakeItem.isEnabled = false
-        menu.addItem(awakeItem)
+        for line in summary.menuStatusLines(in: lang) {
+            let statusLineItem = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            statusLineItem.isEnabled = false
+            menu.addItem(statusLineItem)
+        }
 
         menu.addItem(.separator())
 
