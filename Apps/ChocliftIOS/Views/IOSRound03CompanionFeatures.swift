@@ -907,19 +907,26 @@ public struct IOSWorkspaceSearchSheet: View {
 
         CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
         guard client.connectionState.isConnected else {
-            client.lastFeedback = CompanionFeedbackToast(
-                success: false,
-                title: result.title,
-                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
-            )
+            if case .tile(let pageID, _, _, _, let slotIndex, _, _, _) = result.payload {
+                client.recordOfflineTileFailure(
+                    slot: SlotCoordinate(pageID: pageID, slotIndex: slotIndex),
+                    title: result.title,
+                    detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                )
+            } else {
+                client.lastFeedback = CompanionFeedbackToast(
+                    success: false,
+                    title: result.title,
+                    detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                )
+            }
             dismiss()
             return
         }
 
         switch result.payload {
-        case .tile(_, _, _, _, _, let item, _, _):
-            client.triggerBarItem(item)
-            onPromptHUD?(result.title)
+        case .tile(let pageID, _, _, _, let slotIndex, let item, _, _):
+            client.triggerBarItem(item, from: SlotCoordinate(pageID: pageID, slotIndex: slotIndex))
         case .snippet(let snippet):
             client.insertText(snippet.body)
             onPromptHUD?(L10n.tr("已插入：\(result.title)", "Inserted: \(result.title)", language: lang))

@@ -77,6 +77,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     @Published public private(set) var selectedTargetDisplayID: UInt32?
     @Published public private(set) var clipboardPreview: ClipboardPreviewSnapshot = .empty
     @Published public private(set) var calendarSnapshot: NextCalendarEventSnapshot = .initial
+    @Published public private(set) var isKeepMacAwakeEnabled: Bool = false
+    @Published public private(set) var frontmostWindowSnapshot: FrontmostAppWindowSnapshot = .empty
 
     public enum MacVisibleSurface: Hashable {
         case studioWindow
@@ -97,6 +99,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     public let screenshotService: MacMainDisplayScreenshotService
     public let calendarService: MacCalendarEventService
     public let soundboardService: MacSoundboardService
+    public let keepAwakeService: MacKeepAwakeService
 
     private let appSupportDirectory: URL
     private let profileFileURL: URL
@@ -107,6 +110,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     private var visibleMacSurfaces: Set<MacVisibleSurface> = []
     private var lastOrcaPollStartedAt: Date = .distantPast
     private var isPollingOrcaStatus: Bool = false
+    private var frontmostWindowPollTick: Int = 0
 
     public init() {
         let fm = FileManager.default
@@ -158,6 +162,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.screenshotService = MacMainDisplayScreenshotService()
         self.calendarService = MacCalendarEventService()
         self.soundboardService = MacSoundboardService()
+        self.keepAwakeService = MacKeepAwakeService()
         self.timeTravel = MacTimeTravelMonitor()
         self.server = MacServerEngine(
             macID: persistedMacID,
@@ -198,6 +203,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         timeTravel.onFrontmostChanged = { [weak self] bundleID, appName in
             guard let self else { return }
             self.server.broadcast(.frontmostAppChanged(bundleIdentifier: bundleID, appName: appName))
+            self.refreshAndBroadcastFrontmostWindowsIfNeeded(force: true)
         }
 
         timeTravel.start(
@@ -205,6 +211,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             excluded: profile.settings.excludedTimeTravelBundleIDs
         )
 
+        keepAwakeService.onAssertionStateChanged = { [weak self] isHolding in
+            guard let self else { return }
+            self.isKeepMacAwakeEnabled = isHolding
+            self.systemControlService.syncKeepMacAwake(isHolding)
+        }
+        systemControlService.keepMacAwakeProvider = { [weak self] in
+            self?.keepAwakeService.isHoldingAssertion ?? false
+        }
         systemControlService.canUndoWindowMoveProvider = { [weak self] in
             self?.windowService.canUndoLastWindowMove ?? false
         }
@@ -361,7 +375,33 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 }
 
                 self.clipboardService.pollIfNeeded()
+
+                if self.server.hasFrontmostWindowSubscribers {
+                    self.frontmostWindowPollTick &+= 1
+                    if self.frontmostWindowPollTick % 3 == 0 {
+                        self.refreshAndBroadcastFrontmostWindowsIfNeeded(force: false)
+                    }
+                }
             }
+        }
+    }
+
+    @discardableResult
+    public func refreshFrontmostWindowSnapshot() -> FrontmostAppWindowSnapshot {
+        let snapshot = windowService.inspectFrontmostAppWindows(
+            preferredExternalPID: timeTravel.lastExternalAppPID,
+            language: lang
+        )
+        frontmostWindowSnapshot = snapshot
+        return snapshot
+    }
+
+    private func refreshAndBroadcastFrontmostWindowsIfNeeded(force: Bool) {
+        guard server.hasFrontmostWindowSubscribers else { return }
+        let previous = frontmostWindowSnapshot
+        let current = refreshFrontmostWindowSnapshot()
+        if force || current != previous {
+            server.broadcastFrontmostWindows(current)
         }
     }
 
@@ -952,7 +992,21 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         if let data = try? JSONEncoder().encode(devices) {
             try? data.write(to: pairedDevicesFileURL, options: .atomic)
         }
-        if devices.contains(where: \.isCurrentlyConnected) {
+        let connectedIDs = Set(devices.filter(\.isCurrentlyConnected).map(\.deviceID))
+        let wasHoldingAwake = keepAwakeService.isHoldingAssertion
+        keepAwakeService.updateConnectedCompanionDeviceIDs(connectedIDs)
+        if wasHoldingAwake && !keepAwakeService.isHoldingAssertion {
+            recordActivity(
+                deviceName: "Mac",
+                summary: L10n.tr(
+                    "最后一台伴侣设备已断开，已自动结束防休眠",
+                    "Last companion disconnected; ended Keep Mac Awake assertion",
+                    language: lang
+                ),
+                isSuccess: true
+            )
+        }
+        if !connectedIDs.isEmpty {
             pollOrcaStatusIfEligible()
         }
     }
@@ -1175,6 +1229,65 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .setSoundboardVolume(let level):
             setSoundboardVolume(level, broadcastExcludingDeviceID: device.deviceID)
+
+        case .setKeepMacAwake(let enabled):
+            let connectedIDs = Set(server.pairedDevices.filter(\.isCurrentlyConnected).map(\.deviceID))
+                .union([device.deviceID])
+            keepAwakeService.updateConnectedCompanionDeviceIDs(connectedIDs)
+            let ok = keepAwakeService.setToggleEnabled(enabled)
+            isKeepMacAwakeEnabled = keepAwakeService.isHoldingAssertion
+            systemControlService.syncKeepMacAwake(keepAwakeService.isHoldingAssertion)
+            server.broadcastControlStripState(systemControlService.currentState)
+            reply(.controlStripStateUpdated(systemControlService.currentState))
+
+            let title = L10n.tr("保持 Mac 唤醒", "Keep Mac Awake", language: lang)
+            let detail: String = {
+                if !ok {
+                    return L10n.tr(
+                        "macOS 无法创建防休眠断言。",
+                        "macOS could not acquire an idle-sleep prevention assertion.",
+                        language: lang
+                    )
+                }
+                if keepAwakeService.isHoldingAssertion {
+                    return L10n.tr(
+                        "已防止系统空闲休眠（屏幕仍可自动熄灭，断开连接后自动恢复）",
+                        "Preventing idle system sleep while connected (display may still sleep)",
+                        language: lang
+                    )
+                } else {
+                    return L10n.tr(
+                        "已恢复系统默认空闲休眠策略",
+                        "Idle system sleep prevention turned off",
+                        language: lang
+                    )
+                }
+            }()
+            recordActivity(deviceName: device.deviceName, summary: detail, isSuccess: ok)
+            reply(.actionFeedback(success: ok, title: title, detail: detail))
+
+        case .setAudioOutputDevice(let deviceID):
+            let res = systemControlService.setDefaultAudioOutputDevice(id: deviceID, language: lang)
+            server.broadcastControlStripState(systemControlService.currentState)
+            reply(.controlStripStateUpdated(systemControlService.currentState))
+            recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
+            reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
+
+        case .requestFrontmostAppWindows:
+            let snapshot = refreshFrontmostWindowSnapshot()
+            reply(.frontmostWindowsUpdated(snapshot))
+
+        case .raiseFrontmostWindow(let windowID):
+            let res = windowService.raiseFrontmostAppWindow(
+                windowID: windowID,
+                preferredExternalPID: timeTravel.lastExternalAppPID,
+                language: lang
+            )
+            recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
+            let snapshot = refreshFrontmostWindowSnapshot()
+            server.broadcastFrontmostWindows(snapshot)
+            reply(.frontmostWindowsUpdated(snapshot))
+            reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
 
         case .updateProfile(let updatedProfile):
             let safeProfile = sanitizeCompanionProfileUpdate(updatedProfile)

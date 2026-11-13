@@ -381,6 +381,7 @@ public struct IOSChocolateBarSurfaceView: View {
             targetID: key,
             at: ProcessInfo.processInfo.systemUptime
         )
+        let lastRunOutcome = client.tileOutcome(for: slotOrigin)
 
         return Button {
             handleTileShortTap(
@@ -397,6 +398,7 @@ public struct IOSChocolateBarSurfaceView: View {
                 isFrontmostApp: isFrontmost,
                 isPressed: isPressed,
                 isAwaitingConfirmation: isAwaitingConfirm,
+                lastRunOutcome: lastRunOutcome,
                 palette: palette,
                 language: lang,
                 compact: true,
@@ -502,10 +504,10 @@ public struct IOSChocolateBarSurfaceView: View {
         case .runImmediately, .confirmedRun:
             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
             if client.connectionState.isConnected {
-                client.triggerBarItem(item)
+                client.triggerBarItem(item, from: slotOrigin)
             } else {
-                client.lastFeedback = CompanionFeedbackToast(
-                    success: false,
+                client.recordOfflineTileFailure(
+                    slot: slotOrigin,
                     title: resolvedTitle,
                     detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
                 )
@@ -606,9 +608,13 @@ public struct IOSTimeTravelSurfaceView: View {
             } else {
                 let cols = Array(repeating: GridItem(.flexible(), spacing: 12), count: isLandscape ? 4 : 2)
                 ScrollView {
-                    LazyVGrid(columns: cols, spacing: 12) {
-                        ForEach(client.recentApps) { entry in
-                            recentAppCard(entry)
+                    VStack(spacing: 12) {
+                        IOSFrontmostWindowsInlineCard(client: client)
+
+                        LazyVGrid(columns: cols, spacing: 12) {
+                            ForEach(client.recentApps) { entry in
+                                recentAppCard(entry)
+                            }
                         }
                     }
                     .padding(.horizontal, 16)
@@ -2031,6 +2037,8 @@ public struct IOSPersistentControlStripView: View {
 
             stripDivider
 
+            IOSAudioOutputPickerButton(client: client, compact: true)
+
             IOSDisplayTargetPickerMenu(client: client, compact: true)
 
             undoWindowMoveButton
@@ -2056,6 +2064,8 @@ public struct IOSPersistentControlStripView: View {
             HStack(spacing: 8) {
                 nowPlayingCluster
                     .frame(maxWidth: .infinity)
+
+                IOSAudioOutputPickerButton(client: client, compact: true)
 
                 IOSDisplayTargetPickerMenu(client: client, compact: true)
 

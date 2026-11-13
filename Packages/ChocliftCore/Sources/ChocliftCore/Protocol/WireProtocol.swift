@@ -41,6 +41,10 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case triggerSoundboardClip(soundID: UUID)
     case stopSoundboardPlayback
     case setSoundboardVolume(level: Double)
+    case setKeepMacAwake(Bool)
+    case setAudioOutputDevice(deviceID: String)
+    case requestFrontmostAppWindows
+    case raiseFrontmostWindow(windowID: String)
     case unknownClientMessage
 }
 
@@ -84,6 +88,7 @@ public enum ServerMessage: Codable, Equatable, Sendable {
     case clipboardPreviewUpdated(ClipboardPreviewSnapshot)
     case screenshotCaptured(ScreenshotCaptureResult)
     case calendarStatusUpdated(NextCalendarEventSnapshot)
+    case frontmostWindowsUpdated(FrontmostAppWindowSnapshot)
     case unknownServerMessage
 }
 

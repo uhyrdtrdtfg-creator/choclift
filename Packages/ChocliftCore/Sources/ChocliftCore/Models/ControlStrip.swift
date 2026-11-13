@@ -166,6 +166,14 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
     public var selectedTargetDisplayID: UInt32?
     /// Soundboard-only playback level on Mac speakers (`0.0 ... 1.0`), independent of system hardware volume.
     public var soundboardVolume: Double
+    /// True while the Mac is holding an active `IOPMAssertion` preventing idle system sleep for connected companions.
+    public var isKeepMacAwakeEnabled: Bool
+    /// Current Mac audio output devices enumerated via public CoreAudio APIs.
+    public var audioOutputDevices: [MacAudioOutputDevice]
+    /// UID of the Mac's current default audio output device, if reported by CoreAudio.
+    public var selectedAudioOutputDeviceID: String?
+    /// True when CoreAudio reports `kAudioHardwarePropertyDefaultOutputDevice` as settable on this Mac.
+    public var canSwitchAudioOutput: Bool
 
     private enum CodingKeys: String, CodingKey {
         case volume
@@ -178,6 +186,10 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         case connectedDisplays
         case selectedTargetDisplayID
         case soundboardVolume
+        case isKeepMacAwakeEnabled
+        case audioOutputDevices
+        case selectedAudioOutputDeviceID
+        case canSwitchAudioOutput
     }
 
     public init(
@@ -190,7 +202,11 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         canUndoWindowMove: Bool = false,
         connectedDisplays: [MacDisplayInfo] = [],
         selectedTargetDisplayID: UInt32? = nil,
-        soundboardVolume: Double = SoundboardClip.defaultVolume
+        soundboardVolume: Double = SoundboardClip.defaultVolume,
+        isKeepMacAwakeEnabled: Bool = false,
+        audioOutputDevices: [MacAudioOutputDevice] = [],
+        selectedAudioOutputDeviceID: String? = nil,
+        canSwitchAudioOutput: Bool = true
     ) {
         self.volume = ControlStripLevel.clamp(volume)
         self.isVolumeMuted = isVolumeMuted
@@ -205,6 +221,10 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             connectedDisplays: connectedDisplays
         )
         self.soundboardVolume = ControlStripLevel.clamp(soundboardVolume)
+        self.isKeepMacAwakeEnabled = isKeepMacAwakeEnabled
+        self.audioOutputDevices = audioOutputDevices
+        self.selectedAudioOutputDeviceID = Self.cleanAudioID(selectedAudioOutputDeviceID)
+        self.canSwitchAudioOutput = canSwitchAudioOutput
     }
 
     public init(from decoder: Decoder) throws {
@@ -228,6 +248,12 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             connectedDisplays: displays
         )
         self.soundboardVolume = ControlStripLevel.clamp(decodedSBVolume)
+        self.isKeepMacAwakeEnabled = try container.decodeIfPresent(Bool.self, forKey: .isKeepMacAwakeEnabled) ?? false
+        self.audioOutputDevices = try container.decodeIfPresent([MacAudioOutputDevice].self, forKey: .audioOutputDevices) ?? []
+        self.selectedAudioOutputDeviceID = Self.cleanAudioID(
+            try container.decodeIfPresent(String.self, forKey: .selectedAudioOutputDeviceID)
+        )
+        self.canSwitchAudioOutput = try container.decodeIfPresent(Bool.self, forKey: .canSwitchAudioOutput) ?? true
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -248,6 +274,35 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         )
         try container.encodeIfPresent(resolvedSelected, forKey: .selectedTargetDisplayID)
         try container.encode(ControlStripLevel.clamp(soundboardVolume), forKey: .soundboardVolume)
+        try container.encode(isKeepMacAwakeEnabled, forKey: .isKeepMacAwakeEnabled)
+        if !audioOutputDevices.isEmpty {
+            try container.encode(audioOutputDevices, forKey: .audioOutputDevices)
+        }
+        try container.encodeIfPresent(Self.cleanAudioID(selectedAudioOutputDeviceID), forKey: .selectedAudioOutputDeviceID)
+        try container.encode(canSwitchAudioOutput, forKey: .canSwitchAudioOutput)
+    }
+
+    public var currentAudioOutputDevice: MacAudioOutputDevice? {
+        if let selectedID = Self.cleanAudioID(selectedAudioOutputDeviceID),
+           let matched = audioOutputDevices.first(where: { $0.id == selectedID }) {
+            return matched
+        }
+        return audioOutputDevices.first
+    }
+
+    public func currentAudioOutputLabel(in language: AppLanguage = .system) -> String {
+        if let device = currentAudioOutputDevice {
+            return device.name
+        }
+        return L10n.tr("系统音频输出", "System Output", language: language)
+    }
+
+    private static func cleanAudioID(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
     }
 
     public var shouldShowDisplayPicker: Bool {
@@ -276,7 +331,11 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             nowPlaying != other.nowPlaying ||
             canUndoWindowMove != other.canUndoWindowMove ||
             connectedDisplays != other.connectedDisplays ||
-            effectiveTargetDisplayID != other.effectiveTargetDisplayID {
+            effectiveTargetDisplayID != other.effectiveTargetDisplayID ||
+            isKeepMacAwakeEnabled != other.isKeepMacAwakeEnabled ||
+            audioOutputDevices != other.audioOutputDevices ||
+            Self.cleanAudioID(selectedAudioOutputDeviceID) != Self.cleanAudioID(other.selectedAudioOutputDeviceID) ||
+            canSwitchAudioOutput != other.canSwitchAudioOutput {
             return true
         }
         if (volume <= 0.001) != (other.volume <= 0.001) ||

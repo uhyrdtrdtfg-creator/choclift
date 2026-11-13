@@ -718,10 +718,10 @@ public struct WatchChocolateBarView: View {
                 case .runImmediately, .confirmedRun:
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
                     if client.connectionState.isConnected {
-                        client.triggerBarItem(item)
+                        client.triggerBarItem(item, from: slotOrigin)
                     } else {
-                        client.lastFeedback = CompanionFeedbackToast(
-                            success: false,
+                        client.recordOfflineTileFailure(
+                            slot: slotOrigin,
                             title: client.profile.displayTitle(for: item, from: slotOrigin, in: lang),
                             detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
                         )
@@ -742,6 +742,7 @@ public struct WatchChocolateBarView: View {
                 isFrontmostApp: isFrontmost,
                 isPressed: isPressed,
                 isAwaitingConfirmation: isAwaitingConfirm,
+                lastRunOutcome: client.tileOutcome(for: slotOrigin),
                 palette: palette,
                 language: lang,
                 compact: true,

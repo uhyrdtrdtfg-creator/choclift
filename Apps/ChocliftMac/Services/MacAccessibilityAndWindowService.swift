@@ -16,6 +16,14 @@ public final class MacAccessibilityAndWindowService {
         let appName: String
     }
 
+    private struct CachedFrontmostWindowTarget {
+        let pid: pid_t
+        let appName: String
+        let title: String
+        let index: Int
+        let element: AXUIElement
+    }
+
     public var onUndoAvailabilityChanged: (() -> Void)?
     public var onDisplayConfigurationChanged: (() -> Void)?
     public private(set) var selectedTargetDisplayID: CGDirectDisplayID?
@@ -23,6 +31,7 @@ public final class MacAccessibilityAndWindowService {
     private var previousWindowFrames: [String: CGRect] = [:]
     private var undoBuffer = WindowMoveUndoBuffer<String>()
     private var retainedUndoTargets: [String: RetainedWindowUndoTarget] = [:]
+    private var cachedFrontmostWindowTargets: [String: CachedFrontmostWindowTarget] = [:]
     private var screenObserverToken: NSObjectProtocol?
 
     public init() {
@@ -576,6 +585,240 @@ public final class MacAccessibilityAndWindowService {
         _ = AXUIElementSetAttributeValue(targetWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
         _ = AXUIElementSetAttributeValue(targetWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
         _ = AXUIElementPerformAction(targetWindow, kAXRaiseAction as CFString)
+    }
+
+    // MARK: - Frontmost App Window List & Raise (Round 4 — Metadata Only, Capped at 12)
+
+    public func inspectFrontmostAppWindows(
+        preferredExternalPID: pid_t?,
+        selfPID: pid_t = ProcessInfo.processInfo.processIdentifier,
+        language: AppLanguage = .system
+    ) -> FrontmostAppWindowSnapshot {
+        let targetApp = resolveFrontmostTargetApp(preferredExternalPID: preferredExternalPID, selfPID: selfPID)
+        let bundleID = targetApp?.bundleIdentifier
+        let resolvedAppName = targetApp?.localizedName ?? bundleID
+
+        guard AXIsProcessTrusted() else {
+            cachedFrontmostWindowTargets.removeAll()
+            return FrontmostAppWindowSnapshot(
+                bundleIdentifier: bundleID,
+                appName: resolvedAppName,
+                windows: [],
+                totalWindowCount: 0,
+                isAccessibilityTrusted: false
+            )
+        }
+
+        guard let app = targetApp else {
+            cachedFrontmostWindowTargets.removeAll()
+            return FrontmostAppWindowSnapshot(
+                bundleIdentifier: nil,
+                appName: nil,
+                windows: [],
+                totalWindowCount: 0,
+                isAccessibilityTrusted: true
+            )
+        }
+
+        let appTitleFallback = resolvedAppName ?? "App"
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+
+        var focusedRef: CFTypeRef?
+        let focusedElement: AXUIElement? = {
+            guard AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedRef) == .success,
+                  let fw = focusedRef,
+                  CFGetTypeID(fw) == AXUIElementGetTypeID() else {
+                return nil
+            }
+            return (fw as! AXUIElement)
+        }()
+
+        var mainRef: CFTypeRef?
+        let mainElement: AXUIElement? = {
+            guard AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainRef) == .success,
+                  let mw = mainRef,
+                  CFGetTypeID(mw) == AXUIElementGetTypeID() else {
+                return nil
+            }
+            return (mw as! AXUIElement)
+        }()
+
+        var listRef: CFTypeRef?
+        let rawWindows: [AXUIElement] = {
+            guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &listRef) == .success,
+                  let list = listRef as? [AXUIElement] else {
+                return []
+            }
+            return list
+        }()
+
+        let validWindows = rawWindows.filter { win in
+            var roleRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(win, kAXRoleAttribute as CFString, &roleRef) == .success,
+               let role = roleRef as? String {
+                return role == (kAXWindowRole as String)
+            }
+            return true
+        }
+
+        let totalCount = validWindows.count
+        var items: [MacFrontmostWindowItem] = []
+        var updatedCache: [String: CachedFrontmostWindowTarget] = [:]
+
+        for (idx, win) in validWindows.prefix(FrontmostAppWindowSnapshot.maxWindows).enumerated() {
+            var titleRef: CFTypeRef?
+            let rawTitle: String = {
+                if AXUIElementCopyAttributeValue(win, kAXTitleAttribute as CFString, &titleRef) == .success,
+                   let str = titleRef as? String {
+                    return str.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+                return ""
+            }()
+            let displayTitle = rawTitle.isEmpty
+                ? "\(appTitleFallback) — \(L10n.tr("窗口", "Window", language: language)) \(idx + 1)"
+                : rawTitle
+
+            var minRef: CFTypeRef?
+            let isMinimized: Bool = {
+                if AXUIElementCopyAttributeValue(win, kAXMinimizedAttribute as CFString, &minRef) == .success,
+                   let flag = minRef as? Bool {
+                    return flag
+                }
+                return false
+            }()
+
+            let isMainOrFocused: Bool = {
+                if let focusedElement, CFEqual(win, focusedElement) {
+                    return true
+                }
+                if let mainElement, CFEqual(win, mainElement) {
+                    return true
+                }
+                var mainAttrRef: CFTypeRef?
+                if AXUIElementCopyAttributeValue(win, kAXMainAttribute as CFString, &mainAttrRef) == .success,
+                   let isMain = mainAttrRef as? Bool, isMain {
+                    return true
+                }
+                return false
+            }()
+
+            let windowID = "win-\(app.processIdentifier)-\(idx)-\(CFHash(win))"
+            items.append(
+                MacFrontmostWindowItem(
+                    id: windowID,
+                    title: displayTitle,
+                    index: idx,
+                    isMainOrFocused: isMainOrFocused,
+                    isMinimized: isMinimized
+                )
+            )
+            updatedCache[windowID] = CachedFrontmostWindowTarget(
+                pid: app.processIdentifier,
+                appName: appTitleFallback,
+                title: displayTitle,
+                index: idx,
+                element: win
+            )
+        }
+
+        cachedFrontmostWindowTargets = updatedCache
+        return FrontmostAppWindowSnapshot(
+            bundleIdentifier: bundleID,
+            appName: appTitleFallback,
+            windows: items,
+            totalWindowCount: totalCount,
+            isAccessibilityTrusted: true
+        )
+    }
+
+    public func raiseFrontmostAppWindow(
+        windowID: String,
+        preferredExternalPID: pid_t?,
+        selfPID: pid_t = ProcessInfo.processInfo.processIdentifier,
+        language: AppLanguage = .system
+    ) -> (success: Bool, title: String, detail: String) {
+        let trimmed = windowID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackTitle = L10n.tr("应用窗口", "App Window", language: language)
+
+        guard AXIsProcessTrusted() else {
+            _ = promptForAccessibilityPermission()
+            return (
+                false,
+                fallbackTitle,
+                L10n.tr(
+                    "请在系统设置 → 辅助功能中授权 Choclift 以置顶窗口",
+                    "Grant Accessibility permission in System Settings to raise windows",
+                    language: language
+                )
+            )
+        }
+
+        if cachedFrontmostWindowTargets[trimmed] == nil {
+            _ = inspectFrontmostAppWindows(
+                preferredExternalPID: preferredExternalPID,
+                selfPID: selfPID,
+                language: language
+            )
+        }
+
+        guard let target = cachedFrontmostWindowTargets[trimmed],
+              let runningApp = NSRunningApplication(processIdentifier: target.pid),
+              !runningApp.isTerminated else {
+            return (
+                false,
+                fallbackTitle,
+                L10n.tr("该窗口已关闭或不可用", "That window was closed or is no longer available", language: language)
+            )
+        }
+
+        _ = AXUIElementSetAttributeValue(target.element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        _ = runningApp.activate(options: [.activateIgnoringOtherApps])
+        _ = AXUIElementSetAttributeValue(target.element, kAXMainAttribute as CFString, kCFBooleanTrue)
+        _ = AXUIElementSetAttributeValue(target.element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        let raiseErr = AXUIElementPerformAction(target.element, kAXRaiseAction as CFString)
+
+        if raiseErr == .success || runningApp.isActive {
+            return (
+                true,
+                target.title,
+                L10n.tr(
+                    "已置顶 \(target.appName) 窗口：\(target.title)",
+                    "Raised \(target.appName): \(target.title)",
+                    language: language
+                )
+            )
+        } else {
+            return (
+                false,
+                target.title,
+                L10n.tr(
+                    "无法置顶窗口：\(target.title)",
+                    "Unable to raise window: \(target.title)",
+                    language: language
+                )
+            )
+        }
+    }
+
+    private func resolveFrontmostTargetApp(
+        preferredExternalPID: pid_t?,
+        selfPID: pid_t
+    ) -> NSRunningApplication? {
+        if let front = NSWorkspace.shared.frontmostApplication,
+           !front.isTerminated,
+           front.processIdentifier != selfPID {
+            return front
+        }
+        if let preferredExternalPID,
+           let ext = NSRunningApplication(processIdentifier: preferredExternalPID),
+           !ext.isTerminated {
+            return ext
+        }
+        if let front = NSWorkspace.shared.frontmostApplication,
+           !front.isTerminated {
+            return front
+        }
+        return nil
     }
 
     // MARK: - AX Geometry Helpers

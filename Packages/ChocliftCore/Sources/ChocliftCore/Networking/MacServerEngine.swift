@@ -83,6 +83,7 @@ public final class MacServerEngine: ObservableObject {
         var isAuthenticated = false
         var supportsControlStrip = false
         var supportsCompanionDashboard = false
+        var supportsFrontmostWindowList = false
         var sentIconBundleIDs: Set<String> = []
         var lastActivityAt = Date()
 
@@ -335,6 +336,16 @@ public final class MacServerEngine: ObservableObject {
     public func broadcastCalendarStatus(_ snapshot: NextCalendarEventSnapshot) {
         for session in sessions.values where session.isAuthenticated && session.supportsCompanionDashboard {
             send(.calendarStatusUpdated(snapshot), to: session)
+        }
+    }
+
+    public var hasFrontmostWindowSubscribers: Bool {
+        sessions.values.contains { $0.isAuthenticated && $0.supportsFrontmostWindowList }
+    }
+
+    public func broadcastFrontmostWindows(_ snapshot: FrontmostAppWindowSnapshot) {
+        for session in sessions.values where session.isAuthenticated && session.supportsFrontmostWindowList {
+            send(.frontmostWindowsUpdated(snapshot), to: session)
         }
     }
 
@@ -758,6 +769,7 @@ public final class MacServerEngine: ObservableObject {
         do {
             let payloads = try activeSession.accumulator.appendAndExtractPayloads(data)
             for payload in payloads {
+                guard sessions[sessionID] != nil else { return }
                 do {
                     let clientMsg = try WireFrameCodec.decodePayload(ClientMessage.self, from: payload)
                     handleIncomingMessage(clientMsg, session: activeSession)
@@ -837,7 +849,18 @@ public final class MacServerEngine: ObservableObject {
             send(.pong(timestamp: timestamp), to: session)
 
         case .unknownClientMessage:
-            break
+            if !session.isAuthenticated {
+                send(
+                    .authFailed(
+                        reason: L10n.tr(
+                            "未完成配对前收到未知指令，连接已断开。",
+                            "Unknown pre-authentication frame received; disconnecting."
+                        )
+                    ),
+                    to: session
+                )
+                cleanupSession(sessionID: session.id)
+            }
 
         default:
             guard session.isAuthenticated,
@@ -848,10 +871,19 @@ public final class MacServerEngine: ObservableObject {
             }
 
             switch message {
-            case .requestControlStripState, .setControlLevel, .setMicMuted, .undoLastWindowMove, .setTargetDisplay, .setSoundboardVolume:
+            case .requestControlStripState,
+                 .setControlLevel,
+                 .setMicMuted,
+                 .undoLastWindowMove,
+                 .setTargetDisplay,
+                 .setSoundboardVolume,
+                 .setKeepMacAwake,
+                 .setAudioOutputDevice:
                 session.supportsControlStrip = true
             case .requestCompanionDashboard, .pasteMacClipboard, .captureMainDisplayScreenshot, .openCalendarApp:
                 session.supportsCompanionDashboard = true
+            case .requestFrontmostAppWindows, .raiseFrontmostWindow:
+                session.supportsFrontmostWindowList = true
             default:
                 break
             }

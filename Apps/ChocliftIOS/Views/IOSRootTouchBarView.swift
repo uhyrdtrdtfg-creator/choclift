@@ -403,7 +403,7 @@ public struct IOSRootTouchBarView: View {
 
             IOSCompanionBarRibbon(
                 client: client,
-                compact: false,
+                compact: true,
                 includeInlineClipboard: false
             )
             .padding(.horizontal, 16)

@@ -28,12 +28,16 @@ public struct IOSCompanionBarRibbon: View {
     }
 
     public var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             calendarEventButton
 
             if includeInlineClipboard && client.connectionState.isConnected {
                 inlineClipboardCluster
             }
+
+            IOSKeepMacAwakeTogglePill(client: client, compact: compact)
+
+            IOSFrontmostWindowsRibbonButton(client: client, compact: compact)
 
             screenshotCaptureButton
         }

@@ -522,6 +522,7 @@ public struct ChocBarTileCard: View {
     public let isFrontmostApp: Bool
     public let isPressed: Bool
     public let isAwaitingConfirmation: Bool
+    public let lastRunOutcome: TileActionOutcome?
     public let palette: ChocPalette
     public let language: AppLanguage
     public let compact: Bool
@@ -535,6 +536,7 @@ public struct ChocBarTileCard: View {
         isFrontmostApp: Bool = false,
         isPressed: Bool = false,
         isAwaitingConfirmation: Bool = false,
+        lastRunOutcome: TileActionOutcome? = nil,
         palette: ChocPalette,
         language: AppLanguage = .system,
         compact: Bool = false,
@@ -547,6 +549,7 @@ public struct ChocBarTileCard: View {
         self.isFrontmostApp = isFrontmostApp
         self.isPressed = isPressed
         self.isAwaitingConfirmation = isAwaitingConfirmation
+        self.lastRunOutcome = lastRunOutcome
         self.palette = palette
         self.language = language
         self.compact = compact
@@ -588,10 +591,42 @@ public struct ChocBarTileCard: View {
                         .background(palette.statusFailure, in: Capsule())
                         .padding(.bottom, isMicro ? 4 : 6)
                     }
+                } else if let lastRunOutcome, item != nil {
+                    let outcomeTint = (lastRunOutcome == .success) ? palette.statusConnected : palette.statusFailure
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .fill(outcomeTint.opacity(0.11))
+                        .allowsHitTesting(false)
+
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .strokeBorder(outcomeTint, lineWidth: 2.0)
+                        .allowsHitTesting(false)
+
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 3) {
+                            Image(systemName: lastRunOutcome == .success ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                                .font(.system(size: max(8.5, side * 0.095), weight: .bold))
+                            Text(
+                                lastRunOutcome == .success
+                                    ? L10n.tr("已执行", "Done", language: language)
+                                    : L10n.tr("失败", "Failed", language: language)
+                            )
+                            .font(.system(size: max(9.5, side * 0.105), weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                        }
+                        .foregroundStyle(palette.emphasisForeground)
+                        .padding(.horizontal, isMicro ? 6 : 8)
+                        .padding(.vertical, isMicro ? 2.5 : 3.5)
+                        .background(outcomeTint, in: Capsule())
+                        .padding(.bottom, isMicro ? 4 : 6)
+                    }
+                    .allowsHitTesting(false)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            .animation(.easeInOut(duration: 0.18), value: lastRunOutcome)
         }
     }
 

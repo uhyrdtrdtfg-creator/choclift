@@ -109,6 +109,8 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var calendarSnapshot: NextCalendarEventSnapshot = .initial
     @Published public private(set) var latestScreenshotPreview: ScreenshotCaptureResult?
     @Published public private(set) var isCapturingScreenshot: Bool = false
+    @Published public private(set) var frontmostWindows: FrontmostAppWindowSnapshot = .empty
+    @Published public private(set) var activeTileFeedback: TileActionFeedbackBanner?
     @Published public var lastFeedback: CompanionFeedbackToast?
 
     public let deviceID: String
@@ -127,6 +129,7 @@ public final class CompanionClientEngine: ObservableObject {
     public var heartbeatTimeoutSeconds: TimeInterval = 15.0
     public var maxAutoReconnectAttempts: Int = 3
     public var pinGlitchRecoveryWindowSeconds: TimeInterval = 6.0
+    public var tileFeedbackDurationSeconds: TimeInterval = TileActionFeedbackBanner.defaultDisplayDurationSeconds
 
     /// True if the user tapped Disconnect/Cancel during the current app launch; never persisted across launches.
     public var isAutoConnectSuppressedForCurrentLaunch: Bool {
@@ -172,6 +175,8 @@ public final class CompanionClientEngine: ObservableObject {
     private var heartbeatTask: Task<Void, Never>?
     private var pinGlitchExpiryTask: Task<Void, Never>?
     private var pinSubmissionWatchdogTask: Task<Void, Never>?
+    private var tileFeedbackTracker = TileActionFeedbackTracker()
+    private var tileFeedbackExpiryTask: Task<Void, Never>?
 
     public init(
         deviceID: String,
@@ -1329,8 +1334,13 @@ public final class CompanionClientEngine: ObservableObject {
         orcaStatus = nil
         clipboardPreview = .empty
         calendarSnapshot = .initial
+        frontmostWindows = .empty
         latestScreenshotPreview = nil
         isCapturingScreenshot = false
+        var disconnectedStrip = controlStripState
+        disconnectedStrip.isKeepMacAwakeEnabled = false
+        controlStripState = disconnectedStrip
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         lastConnectionIssue = nil
         accumulator.reset()
         retriedTokenMacIDs.removeAll()
@@ -1443,8 +1453,13 @@ public final class CompanionClientEngine: ObservableObject {
             orcaStatus = nil
             clipboardPreview = .empty
             calendarSnapshot = .initial
+            frontmostWindows = .empty
             latestScreenshotPreview = nil
             isCapturingScreenshot = false
+            var disconnectedStrip = controlStripState
+            disconnectedStrip.isKeepMacAwakeEnabled = false
+            controlStripState = disconnectedStrip
+            tileFeedbackTracker.clearPendingWithoutFeedback()
             connectionState = .disconnected
             return
         }
@@ -1501,7 +1516,14 @@ public final class CompanionClientEngine: ObservableObject {
         orcaStatus = nil
         clipboardPreview = .empty
         calendarSnapshot = .initial
+        frontmostWindows = .empty
         isCapturingScreenshot = false
+        var disconnectedStrip = controlStripState
+        disconnectedStrip.isKeepMacAwakeEnabled = false
+        controlStripState = disconnectedStrip
+        if let failedBanner = tileFeedbackTracker.failPendingOnDisconnect() {
+            publishTileFeedback(failedBanner)
+        }
         connectionState = .disconnected
         if wasConnectedOrConnecting {
             lastConnectionIssue = L10n.tr(
@@ -1676,29 +1698,53 @@ public final class CompanionClientEngine: ObservableObject {
         }
     }
 
-    public func triggerBarItem(_ item: BarItem) {
+    public func triggerBarItem(_ item: BarItem, from slotOrigin: SlotCoordinate? = nil) {
+        if let resolvedSlot = slotOrigin ?? locateSlot(for: item.id) {
+            tileFeedbackTracker.recordTileTriggered(slot: resolvedSlot)
+        } else {
+            tileFeedbackTracker.clearPendingWithoutFeedback()
+        }
         send(.triggerBarItem(item))
     }
 
+    public func recordOfflineTileFailure(slot: SlotCoordinate?, title: String, detail: String) {
+        if let slot {
+            publishTileFeedback(tileFeedbackTracker.recordImmediateOutcome(slot: slot, outcome: .failure))
+        } else {
+            tileFeedbackTracker.clearPendingWithoutFeedback()
+        }
+        lastFeedback = CompanionFeedbackToast(success: false, title: title, detail: detail)
+    }
+
+    public func tileOutcome(for slot: SlotCoordinate?) -> TileActionOutcome? {
+        guard let slot else { return nil }
+        return tileFeedbackTracker.outcome(for: slot)
+    }
+
     public func triggerFlow(id: UUID) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.triggerFlow(flowID: id))
     }
 
     public func activateRecentApp(_ entry: RecentAppEntry) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.activateRecentApp(bundleIdentifier: entry.bundleIdentifier, appPath: entry.appPath))
     }
 
     public func togglePinRecentApp(_ entry: RecentAppEntry) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.setRecentAppPinned(bundleIdentifier: entry.bundleIdentifier, isPinned: !entry.isPinned))
     }
 
     public func quitOrHideApp(bundleIdentifier: String, shouldQuit: Bool) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.quitOrHideApp(bundleIdentifier: bundleIdentifier, shouldQuit: shouldQuit))
     }
 
     public func insertText(_ text: String) {
         let clamped = TextSnippet.clampBody(text)
         guard !clamped.isEmpty else { return }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.insertEmoji(clamped))
     }
 
@@ -1707,10 +1753,12 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     public func performGesture(_ gesture: TouchGestureType) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.performGesture(gesture))
     }
 
     public func performQuickAction(_ action: SystemQuickAction) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.performQuickAction(action))
     }
 
@@ -1758,10 +1806,12 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     public func pasteMacClipboard() {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.pasteMacClipboard)
     }
 
     public func captureMainDisplayScreenshot() {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         isCapturingScreenshot = true
         send(.captureMainDisplayScreenshot)
     }
@@ -1781,14 +1831,17 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     public func openCalendarOnMac() {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.openCalendarApp)
     }
 
     public func triggerSoundboardClip(id: UUID) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.triggerSoundboardClip(soundID: id))
     }
 
     public func stopSoundboardPlayback() {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.stopSoundboardPlayback)
     }
 
@@ -1799,6 +1852,80 @@ public final class CompanionClientEngine: ObservableObject {
         controlStripState = nextStrip
         profile.soundboardVolume = clamped
         send(.setSoundboardVolume(level: clamped))
+    }
+
+    public func setKeepMacAwake(_ isEnabled: Bool) {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            var next = controlStripState
+            next.isKeepMacAwakeEnabled = false
+            controlStripState = next
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("保持 Mac 唤醒", "Keep Mac Awake", language: lang),
+                detail: L10n.tr("需连接 Mac 后才能开启防休眠", "Connect to your Mac to prevent idle sleep", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        var next = controlStripState
+        next.isKeepMacAwakeEnabled = isEnabled
+        controlStripState = next
+        send(.setKeepMacAwake(isEnabled))
+    }
+
+    public func toggleKeepMacAwake() {
+        setKeepMacAwake(!controlStripState.isKeepMacAwakeEnabled)
+    }
+
+    /// Requests switching the Mac's default CoreAudio output device without optimistically faking a switch locally.
+    public func selectAudioOutputDevice(id: String) {
+        let lang = profile.settings.language
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("音频输出", "Audio Output", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        guard controlStripState.canSwitchAudioOutput else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("音频输出只读", "Audio Output Read-Only", language: lang),
+                detail: L10n.tr(
+                    "当前 macOS 音频硬件不支持通过公开 API 切换默认输出设备。",
+                    "macOS reported the default audio output as read-only via public CoreAudio API.",
+                    language: lang
+                )
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.setAudioOutputDevice(deviceID: trimmed))
+    }
+
+    public func requestFrontmostAppWindows() {
+        guard connectionState.isConnected else { return }
+        send(.requestFrontmostAppWindows)
+    }
+
+    public func raiseFrontmostWindow(id: String) {
+        let lang = profile.settings.language
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("置顶窗口", "Raise Window", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.raiseFrontmostWindow(windowID: trimmed))
     }
 
     public func pushUpdatedProfile(_ updated: ChocliftWorkspaceProfile) {
@@ -1950,12 +2077,16 @@ public final class CompanionClientEngine: ObservableObject {
             isMacAccessibilityGranted = axTrusted
             orcaStatus = nil
             clipboardPreview = .empty
+            frontmostWindows = .empty
             isCapturingScreenshot = false
             connectionState = .connected(macID: macID, macName: macName)
             startHeartbeat(sessionID: currentSessionID)
             requestMissingIconsIfNeeded()
             send(.requestControlStripState)
             send(.requestCompanionDashboard)
+            if platform != .appleWatch {
+                send(.requestFrontmostAppWindows)
+            }
 
         case .authFailed(let reason):
             connectWatchdogTask?.cancel()
@@ -2005,6 +2136,9 @@ public final class CompanionClientEngine: ObservableObject {
             }
 
         case .actionFeedback(let success, let title, let detail):
+            if let resolvedTileBanner = tileFeedbackTracker.resolvePending(success: success) {
+                publishTileFeedback(resolvedTileBanner)
+            }
             lastFeedback = CompanionFeedbackToast(success: success, title: title, detail: detail)
 
         case .orcaStatusUpdated(let snapshot):
@@ -2048,9 +2182,37 @@ public final class CompanionClientEngine: ObservableObject {
         case .calendarStatusUpdated(let snapshot):
             calendarSnapshot = snapshot
 
+        case .frontmostWindowsUpdated(let snapshot):
+            frontmostWindows = snapshot
+
         case .unknownServerMessage:
             if !connectionState.isConnected {
                 handleConnectionDropped(failedLink: activeLink ?? .wifi)
+            }
+        }
+    }
+
+    private func locateSlot(for itemID: UUID) -> SlotCoordinate? {
+        for page in profile.pages {
+            for (slotIndex, candidate) in page.slots.enumerated() where candidate?.id == itemID {
+                return SlotCoordinate(pageID: page.id, slotIndex: slotIndex)
+            }
+        }
+        return nil
+    }
+
+    private func publishTileFeedback(_ banner: TileActionFeedbackBanner?) {
+        activeTileFeedback = banner
+        tileFeedbackExpiryTask?.cancel()
+        tileFeedbackExpiryTask = nil
+        guard let banner else { return }
+        let token = banner.token
+        let duration = max(0.05, tileFeedbackDurationSeconds)
+        tileFeedbackExpiryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(duration))
+            guard let self, !Task.isCancelled else { return }
+            if self.tileFeedbackTracker.expireFeedback(matchingToken: token) {
+                self.activeTileFeedback = nil
             }
         }
     }
