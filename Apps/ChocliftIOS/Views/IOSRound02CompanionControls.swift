@@ -34,100 +34,18 @@ public struct IOSCompanionBarRibbon: View {
     }
 
     public var body: some View {
-        ViewThatFits(in: .horizontal) {
-            singleRowRibbon
-
-            if allowMultiRow {
-                twoRowPortraitRibbon
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    singleRowRibbon
-                }
-            }
-        }
-    }
-
-    private var singleRowRibbon: some View {
-        HStack(spacing: 6) {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
             calendarEventButton
-
-            if includeInlineClipboard && client.connectionState.isConnected {
-                inlineClipboardCluster
-            }
-
-            IOSKeepMacAwakeTogglePill(client: client, compact: compact)
-
-            IOSSleepDisplayPillButton(client: client, compact: compact)
-
-            IOSLockScreenPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
-
-            IOSShowDesktopPillButton(client: client, compact: compact)
-
-            IOSHideOtherWindowsPillButton(client: client, compact: compact)
-
-            IOSFinderDesktopIconsPillButton(client: client, compact: compact)
-
-            IOSEmptyTrashPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
-
-            IOSEjectExternalDisksPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
-
-            IOSFrontmostWindowsRibbonButton(client: client, compact: compact)
-
             screenshotCaptureButton
-        }
-    }
-
-    private var twoRowPortraitRibbon: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 6) {
-                calendarEventButton
-
-                if includeInlineClipboard && client.connectionState.isConnected {
-                    inlineClipboardCluster
-                }
-
-                IOSKeepMacAwakeTogglePill(client: client, compact: compact)
-
-                screenshotCaptureButton
-            }
-
-            HStack(spacing: 6) {
-                IOSShowDesktopPillButton(client: client, compact: compact)
-
-                IOSFinderDesktopIconsPillButton(client: client, compact: compact)
-
-                Spacer(minLength: 0)
-
-                IOSSleepDisplayPillButton(client: client, compact: compact)
-
-                IOSFrontmostWindowsRibbonButton(client: client, compact: compact)
-            }
-
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 6) {
-                    IOSHideOtherWindowsPillButton(client: client, compact: compact)
-
-                    IOSLockScreenPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
-
-                    IOSEmptyTrashPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
-
-                    IOSEjectExternalDisksPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
-
-                    Spacer(minLength: 0)
-                }
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        IOSHideOtherWindowsPillButton(client: client, compact: compact)
-
-                        IOSLockScreenPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
-
-                        IOSEmptyTrashPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
-
-                        IOSEjectExternalDisksPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
-                    }
-                }
-            }
+            IOSKeepMacAwakeTogglePill(client: client, compact: compact)
+            IOSSleepDisplayPillButton(client: client, compact: compact)
+            IOSLockScreenPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+            IOSShowDesktopPillButton(client: client, compact: compact)
+            IOSHideOtherWindowsPillButton(client: client, compact: compact)
+            IOSFinderDesktopIconsPillButton(client: client, compact: compact)
+            IOSEmptyTrashPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+            IOSEjectExternalDisksPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+            IOSFrontmostWindowsRibbonButton(client: client, compact: compact)
         }
     }
 

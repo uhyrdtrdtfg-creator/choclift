@@ -301,22 +301,11 @@ public struct WatchChocolateBarView: View {
             VStack(spacing: 8) {
                 if !client.connectionState.isConnected {
                     WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
-                } else {
-                    if let orcaStatus = client.orcaStatus {
-                        WatchOrcaComplicationLine(client: client, status: orcaStatus)
-                    }
-                    WatchCalendarComplicationLine(client: client)
+                } else if let orcaStatus = client.orcaStatus {
+                    WatchOrcaComplicationLine(client: client, status: orcaStatus)
                 }
 
                 pageSwitcherBar
-
-                pageDotsBar
-
-                if !deckFollower.isFollowingFrontmostApp {
-                    followFrontmostAppButton
-                } else if let bound = activeBoundDeckContext {
-                    followingAppBadge(appName: bound.appName, page: bound.page)
-                }
 
                 let columns = [
                     GridItem(.flexible(), spacing: 8),
@@ -1008,6 +997,8 @@ public struct WatchQuickActionsView: View {
                 if !client.connectionState.isConnected {
                     WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
                 }
+
+                WatchCalendarComplicationLine(client: client)
 
                 // Media & Volume Strip (Clean iconic transport buttons >= 46pt)
                 sectionHeader(L10n.tr("媒体与音量", "Media & Volume", language: lang), symbol: "speaker.wave.2.fill")

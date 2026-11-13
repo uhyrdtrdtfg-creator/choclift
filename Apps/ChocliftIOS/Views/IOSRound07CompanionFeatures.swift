@@ -173,46 +173,16 @@ public struct IOSCompanionStripStatusRow: View {
     }
 
     public var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) {
-                IOSMacBatteryStripBadge(client: client)
-
-                IOSFrontmostAppStripBadge(client: client)
-
-                IOSWiFiSSIDStripBadge(client: client)
-
-                IOSPrivacyCaptureStripBadge(client: client)
-
-                Spacer(minLength: 4)
-
-                if let reason = activeAwakeReason {
-                    IOSAwakeReasonStripLabel(reason: reason, palette: palette)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 6) {
-                    IOSMacBatteryStripBadge(client: client)
-
-                    IOSFrontmostAppStripBadge(client: client)
-
-                    Spacer(minLength: 0)
-                }
-
-                HStack(spacing: 6) {
-                    IOSWiFiSSIDStripBadge(client: client)
-
-                    IOSPrivacyCaptureStripBadge(client: client)
-
-                    Spacer(minLength: 0)
-
-                    if let reason = activeAwakeReason {
-                        IOSAwakeReasonStripLabel(reason: reason, palette: palette)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: 12) {
+            Label(state.macBattery?.displayText(in: lang) ?? "Mac —", systemImage: state.macBattery?.sfSymbol ?? "battery.100")
+            Spacer(minLength: 0)
+            Label(state.wifiDisplayLabel, systemImage: "wifi")
+            if state.isKeepMacAwakeEnabled { Image(systemName: "cup.and.saucer") }
         }
+        .font(.caption2)
+        .foregroundStyle(palette.secondaryText)
+        .lineLimit(1)
+
     }
 }
 

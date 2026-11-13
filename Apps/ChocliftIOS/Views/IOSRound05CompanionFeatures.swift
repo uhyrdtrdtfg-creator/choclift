@@ -95,13 +95,9 @@ public struct IOSCompactKeyAndRecentsBar: View {
                     compactKeyCapButton(for: compactKey)
                 }
 
-                Rectangle()
-                    .fill(palette.subtleCardStroke)
-                    .frame(width: 1, height: 20)
-                    .padding(.horizontal, 1)
-
-                recentTilesButton
             }
+
+            recentTilesButton
 
             if showInlineRecentChips && !client.recentlyTriggeredTiles.isEmpty {
                 inlineRecentChipsStrip

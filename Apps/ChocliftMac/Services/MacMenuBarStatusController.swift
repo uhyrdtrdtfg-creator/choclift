@@ -2,6 +2,7 @@ import AppKit
 import ChocliftCore
 import Foundation
 import ServiceManagement
+import SwiftUI
 
 // MARK: - 1. macOS 13 Public ServiceManagement Login Item Adapter
 
@@ -42,6 +43,7 @@ public struct MacLaunchAtLoginService: LaunchAtLoginServing {
 public final class MacMenuBarStatusController: NSObject {
     private weak var coordinator: MacAppCoordinator?
     private var statusItem: NSStatusItem?
+    private var popover: NSPopover?
 
     public private(set) var currentSummary = MacMenuBarStatusSummary(
         connectedCompanionCount: 0,
@@ -72,6 +74,8 @@ public final class MacMenuBarStatusController: NSObject {
     }
 
     public func stop() {
+        popover?.performClose(nil)
+        popover = nil
         if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)
             statusItem = nil
@@ -116,14 +120,23 @@ public final class MacMenuBarStatusController: NSObject {
             return
         }
 
-        // Primary click directly opens and focuses the existing Choclift Mac window.
-        coordinator.openMainStudioWindow()
+        guard let button = statusItem?.button else { return }
+        if let popover, popover.isShown {
+            popover.performClose(nil)
+            return
+        }
+        let panel = NSPopover()
+        panel.behavior = .transient
+        panel.contentViewController = NSHostingController(rootView: MacMenuBarPopoverView(coordinator: coordinator))
+        popover = panel
+        panel.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
     private func presentSecondaryContextMenu() {
         guard let coordinator, let statusItem, let button = statusItem.button else { return }
         let lang = coordinator.lang
         let summary = currentSummary
+        popover?.performClose(nil)
 
         let menu = NSMenu()
         for line in summary.menuStatusLines(in: lang) {
