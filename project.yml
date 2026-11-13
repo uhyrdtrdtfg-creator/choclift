@@ -2,7 +2,7 @@ name: Choclift
 options:
   bundleIdPrefix: com.choclift
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "13.0"
     iOS: "17.0"
     watchOS: "10.0"
   xcodeVersion: "16.0"
@@ -18,7 +18,7 @@ targets:
   ChocliftCoreMac:
     type: library.static
     platform: macOS
-    deploymentTarget: "14.0"
+    deploymentTarget: "13.0"
     sources:
       - path: Packages/ChocliftCore/Sources/ChocliftCore
         excludes:
@@ -63,7 +63,7 @@ targets:
   ChocliftMac:
     type: application
     platform: macOS
-    deploymentTarget: "14.0"
+    deploymentTarget: "13.0"
     sources:
       - path: Apps/ChocliftMac
         excludes:

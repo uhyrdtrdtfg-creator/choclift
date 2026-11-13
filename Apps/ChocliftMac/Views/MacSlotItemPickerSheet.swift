@@ -245,7 +245,7 @@ public struct MacSlotItemPickerSheet: View {
                     text: $appSearchText
                 )
                 .textFieldStyle(.plain)
-                .onChange(of: appSearchText) { _, _ in
+                .onChange(of: appSearchText) { _ in
                     highlightedAppIndex = 0
                 }
                 .onSubmit {
@@ -376,27 +376,29 @@ public struct MacSlotItemPickerSheet: View {
                     }
                     .listStyle(.inset)
                     .scrollContentBackground(.hidden)
-                    .onKeyPress(.downArrow) {
-                        if highlightedAppIndex + 1 < filteredApps.count {
-                            highlightedAppIndex += 1
-                            proxy.scrollTo(highlightedAppIndex, anchor: .center)
-                        }
-                        return .handled
-                    }
-                    .onKeyPress(.upArrow) {
-                        if highlightedAppIndex > 0 {
-                            highlightedAppIndex -= 1
-                            proxy.scrollTo(highlightedAppIndex, anchor: .center)
-                        }
-                        return .handled
-                    }
-                    .onKeyPress(.return) {
-                        if filteredApps.indices.contains(highlightedAppIndex) {
-                            selectApp(filteredApps[highlightedAppIndex])
-                            return .handled
-                        }
-                        return .ignored
-                    }
+                    .background(
+                        AppPickerKeyMonitor(
+                            onUp: {
+                                if highlightedAppIndex > 0 {
+                                    highlightedAppIndex -= 1
+                                    proxy.scrollTo(highlightedAppIndex, anchor: .center)
+                                }
+                            },
+                            onDown: {
+                                if highlightedAppIndex + 1 < filteredApps.count {
+                                    highlightedAppIndex += 1
+                                    proxy.scrollTo(highlightedAppIndex, anchor: .center)
+                                }
+                            },
+                            onReturn: {
+                                guard filteredApps.indices.contains(highlightedAppIndex) else {
+                                    return false
+                                }
+                                selectApp(filteredApps[highlightedAppIndex])
+                                return true
+                            }
+                        )
+                    )
                 }
             }
         }
@@ -1090,4 +1092,83 @@ private struct SlotFlowEditorSession: Identifiable {
     let id = UUID()
     let flow: ActionFlow
     let isNew: Bool
+}
+
+private struct AppPickerKeyMonitor: NSViewRepresentable {
+    let onUp: () -> Void
+    let onDown: () -> Void
+    let onReturn: () -> Bool
+
+    func makeNSView(context: Context) -> KeyMonitorView {
+        let view = KeyMonitorView()
+        view.onUp = onUp
+        view.onDown = onDown
+        view.onReturn = onReturn
+        return view
+    }
+
+    func updateNSView(_ view: KeyMonitorView, context: Context) {
+        view.onUp = onUp
+        view.onDown = onDown
+        view.onReturn = onReturn
+    }
+}
+
+private final class KeyMonitorView: NSView {
+    var onUp: () -> Void = {}
+    var onDown: () -> Void = {}
+    var onReturn: () -> Bool = { false }
+    private var monitor: Any?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        removeMonitor()
+        guard window != nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self,
+                  let window = self.window,
+                  window.isKeyWindow,
+                  event.window === window else {
+                return event
+            }
+            let disallowed: NSEvent.ModifierFlags = [.command, .option, .control]
+            guard event.modifierFlags.intersection(disallowed).isEmpty else {
+                return event
+            }
+            if let textInput = window.firstResponder as? NSTextInputClient,
+               textInput.hasMarkedText() {
+                return event
+            }
+            switch event.keyCode {
+            case 126: // Up arrow
+                self.onUp()
+                return nil
+            case 125: // Down arrow
+                self.onDown()
+                return nil
+            case 36, 76: // Return / Keypad Enter
+                return self.onReturn() ? nil : event
+            default:
+                return event
+            }
+        }
+    }
+
+    override func removeFromSuperview() {
+        removeMonitor()
+        super.removeFromSuperview()
+    }
+
+    deinit {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
+
+    private func removeMonitor() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
 }
