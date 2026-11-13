@@ -144,6 +144,10 @@ public struct MacNotchPanelView: View {
 
             pageSwitcherControl
 
+            if DisplaySnapTargetResolver.shouldShowPicker(for: coordinator.connectedDisplays) {
+                displayPickerControl
+            }
+
             undoWindowMoveControl
 
             Button {
@@ -257,6 +261,64 @@ public struct MacNotchPanelView: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("mac-notch-undo-window-move")
         .help(L10n.tr("撤销上次窗口移动", "Undo Last Window Move", language: lang))
+    }
+
+    private var displayPickerControl: some View {
+        let selectedID = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: coordinator.selectedTargetDisplayID,
+            connectedDisplays: coordinator.connectedDisplays
+        )
+        let isCustomDisplay = (selectedID != nil)
+
+        return Menu {
+            Button {
+                coordinator.setTargetDisplay(displayID: nil)
+            } label: {
+                HStack {
+                    Text(L10n.tr("当前窗口所在屏幕（默认）", "Frontmost Window Display (Default)", language: lang))
+                    if selectedID == nil {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+
+            Divider()
+
+            ForEach(coordinator.connectedDisplays) { display in
+                Button {
+                    coordinator.setTargetDisplay(displayID: display.displayID)
+                } label: {
+                    HStack {
+                        Text(display.name)
+                        if selectedID == display.displayID {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "display.2")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(isCustomDisplay ? palette.accent : palette.secondaryText)
+                .frame(width: 24, height: 22)
+                .background(
+                    (isCustomDisplay ? palette.accent.opacity(0.14) : palette.barSurface.opacity(0.88)),
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(
+                            isCustomDisplay ? palette.accent.opacity(0.55) : palette.subtleCardStroke,
+                            lineWidth: 0.8
+                        )
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityIdentifier("mac-notch-display-picker")
+        .help(L10n.tr("选择窗口贴靠目标显示器", "Choose target display for window snap", language: lang))
     }
 
     private var tileGrid: some View {

@@ -12,6 +12,7 @@ import IOKit.graphics
 public final class MacSystemControlService {
     public var onStateChanged: ((ControlStripState) -> Void)?
     public var canUndoWindowMoveProvider: (() -> Bool)?
+    public var displayTopologyProvider: (() -> (displays: [MacDisplayInfo], selectedDisplayID: UInt32?))?
     public private(set) var currentState: ControlStripState
 
     private struct RegisteredAudioListener {
@@ -144,6 +145,10 @@ public final class MacSystemControlService {
         let isMicMuted = readInputMicMuted(deviceID: inDevice)
         let brightnessReading = displayBridge.readMainDisplayBrightness()
         let canUndoWindow = canUndoWindowMoveProvider?() ?? currentState.canUndoWindowMove
+        let topology = displayTopologyProvider?() ?? (
+            displays: currentState.connectedDisplays,
+            selectedDisplayID: currentState.selectedTargetDisplayID
+        )
 
         return ControlStripState(
             volume: volume,
@@ -152,7 +157,9 @@ public final class MacSystemControlService {
             isBrightnessAvailable: brightnessReading != nil,
             isMicMuted: isMicMuted,
             nowPlaying: nowPlaying,
-            canUndoWindowMove: canUndoWindow
+            canUndoWindowMove: canUndoWindow,
+            connectedDisplays: topology.displays,
+            selectedTargetDisplayID: topology.selectedDisplayID
         )
     }
 
@@ -161,6 +168,23 @@ public final class MacSystemControlService {
         guard currentState.canUndoWindowMove != canUndo else { return }
         var updated = currentState
         updated.canUndoWindowMove = canUndo
+        currentState = updated
+        onStateChanged?(updated)
+    }
+
+    public func syncDisplayTopology() {
+        guard let topology = displayTopologyProvider?() else { return }
+        let resolvedSelected = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: topology.selectedDisplayID,
+            connectedDisplays: topology.displays
+        )
+        guard currentState.connectedDisplays != topology.displays ||
+              currentState.effectiveTargetDisplayID != resolvedSelected else {
+            return
+        }
+        var updated = currentState
+        updated.connectedDisplays = topology.displays
+        updated.selectedTargetDisplayID = resolvedSelected
         currentState = updated
         onStateChanged?(updated)
     }

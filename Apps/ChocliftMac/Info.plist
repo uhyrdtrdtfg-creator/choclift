@@ -24,6 +24,10 @@
 	<string>public.app-category.productivity</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>choclift 使用自动化脚本在点击网页书签时切换到已打开的浏览器标签页。</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>choclift 以只读方式显示你的下一条日历日程标题与开始时间，不会新建或修改任何日程。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>choclift 以只读方式显示你的下一条日历日程标题与开始时间，不会新建或修改任何日程。</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>choclift 在不处于同一 Wi-Fi 时通过蓝牙低功耗 (BLE) 广播配对服务，接收来自 iPhone、iPad 或 Apple Watch 的触控栏指令。</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>

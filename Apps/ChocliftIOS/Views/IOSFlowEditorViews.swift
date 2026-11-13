@@ -23,19 +23,33 @@ public struct IOSFlowsManagerSheet: View {
 
     public var body: some View {
         NavigationStack {
-            IOSFlowsListContent(
-                client: client,
-                targetSlot: nil,
-                onSelectForSlot: nil,
-                onRequestEdit: { session in
-                    editingSession = session
-                },
-                onRequestPlaceInSlot: { flow in
-                    selectedPageIndex = min(max(0, defaultPageIndex), max(0, client.profile.pages.count - 1))
-                    selectedSlotIndex = firstEmptySlot(in: selectedPageIndex) ?? 0
-                    placingFlow = flow
+            VStack(spacing: 0) {
+                if client.controlStripState.shouldShowDisplayPicker {
+                    HStack(spacing: 8) {
+                        Text(L10n.tr("贴靠与分屏目标屏幕", "Target Display for Snap & Split", language: lang))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(palette.secondaryText)
+                        Spacer()
+                        IOSDisplayTargetPickerMenu(client: client, compact: false)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
                 }
-            )
+
+                IOSFlowsListContent(
+                    client: client,
+                    targetSlot: nil,
+                    onSelectForSlot: nil,
+                    onRequestEdit: { session in
+                        editingSession = session
+                    },
+                    onRequestPlaceInSlot: { flow in
+                        selectedPageIndex = min(max(0, defaultPageIndex), max(0, client.profile.pages.count - 1))
+                        selectedSlotIndex = firstEmptySlot(in: selectedPageIndex) ?? 0
+                        placingFlow = flow
+                    }
+                )
+            }
             .background(
                 LinearGradient(
                     colors: [palette.backgroundTop, palette.backgroundBottom],
@@ -306,6 +320,18 @@ public struct IOSFlowsSlotTabView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
+
+            if client.controlStripState.shouldShowDisplayPicker {
+                HStack(spacing: 8) {
+                    Text(L10n.tr("目标屏幕", "Target Display", language: lang))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.secondaryText)
+                    Spacer()
+                    IOSDisplayTargetPickerMenu(client: client, compact: false)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+            }
 
             IOSFlowsListContent(
                 client: client,

@@ -17,12 +17,76 @@ public final class MacAccessibilityAndWindowService {
     }
 
     public var onUndoAvailabilityChanged: (() -> Void)?
+    public var onDisplayConfigurationChanged: (() -> Void)?
+    public private(set) var selectedTargetDisplayID: CGDirectDisplayID?
 
     private var previousWindowFrames: [String: CGRect] = [:]
     private var undoBuffer = WindowMoveUndoBuffer<String>()
     private var retainedUndoTargets: [String: RetainedWindowUndoTarget] = [:]
+    private var screenObserverToken: NSObjectProtocol?
 
-    public init() {}
+    public init() {
+        screenObserverToken = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.reconcileSelectedTargetDisplay()
+                self.onDisplayConfigurationChanged?()
+            }
+        }
+    }
+
+    deinit {
+        if let screenObserverToken {
+            NotificationCenter.default.removeObserver(screenObserverToken)
+        }
+    }
+
+    public func currentConnectedDisplays() -> [MacDisplayInfo] {
+        let mainID = CGMainDisplayID()
+        return NSScreen.screens.compactMap { screen in
+            guard let id = Self.displayID(for: screen) else { return nil }
+            return MacDisplayInfo(
+                displayID: id,
+                name: screen.localizedName,
+                isMain: id == mainID
+            )
+        }
+    }
+
+    public func setTargetDisplayID(_ displayID: UInt32?) {
+        let resolved = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: displayID,
+            connectedDisplays: currentConnectedDisplays()
+        )
+        guard selectedTargetDisplayID != resolved else { return }
+        selectedTargetDisplayID = resolved
+        onDisplayConfigurationChanged?()
+    }
+
+    private func reconcileSelectedTargetDisplay() {
+        let resolved = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: selectedTargetDisplayID,
+            connectedDisplays: currentConnectedDisplays()
+        )
+        if selectedTargetDisplayID != resolved {
+            selectedTargetDisplayID = resolved
+        }
+    }
+
+    private static func displayID(for screen: NSScreen) -> CGDirectDisplayID? {
+        if let num = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber {
+            return CGDirectDisplayID(num.uint32Value)
+        }
+        return screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    }
+
+    private func screen(forDisplayID targetID: CGDirectDisplayID) -> NSScreen? {
+        NSScreen.screens.first { Self.displayID(for: $0) == targetID }
+    }
 
     public var canUndoLastWindowMove: Bool {
         undoBuffer.canUndo
@@ -385,7 +449,14 @@ public final class MacAccessibilityAndWindowService {
 
         case .maximizeOrRestore, .snapLeft, .snapRight, .center:
             let currentFrame = readWindowQuartzFrame(windowElement)
-            let targetScreen = screenContainingQuartzRect(currentFrame) ?? NSScreen.main ?? NSScreen.screens.first
+            let targetScreen: NSScreen? = {
+                if NSScreen.screens.count > 1,
+                   let chosenID = selectedTargetDisplayID,
+                   let chosenScreen = screen(forDisplayID: chosenID) {
+                    return chosenScreen
+                }
+                return screenContainingQuartzRect(currentFrame) ?? NSScreen.main ?? NSScreen.screens.first
+            }()
             guard let screen = targetScreen else {
                 return (false, "No screen available")
             }

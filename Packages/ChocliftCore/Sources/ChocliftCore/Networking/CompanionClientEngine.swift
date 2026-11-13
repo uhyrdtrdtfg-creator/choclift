@@ -105,6 +105,10 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var macCatalogShortcuts: [InstalledShortcutSummary] = []
     @Published public private(set) var orcaStatus: OrcaTaskStatusSnapshot?
     @Published public private(set) var controlStripState: ControlStripState = ControlStripState()
+    @Published public private(set) var clipboardPreview: ClipboardPreviewSnapshot = .empty
+    @Published public private(set) var calendarSnapshot: NextCalendarEventSnapshot = .initial
+    @Published public private(set) var latestScreenshotPreview: ScreenshotCaptureResult?
+    @Published public private(set) var isCapturingScreenshot: Bool = false
     @Published public var lastFeedback: CompanionFeedbackToast?
 
     public let deviceID: String
@@ -1323,6 +1327,10 @@ public final class CompanionClientEngine: ObservableObject {
 
         activeLink = nil
         orcaStatus = nil
+        clipboardPreview = .empty
+        calendarSnapshot = .initial
+        latestScreenshotPreview = nil
+        isCapturingScreenshot = false
         lastConnectionIssue = nil
         accumulator.reset()
         retriedTokenMacIDs.removeAll()
@@ -1433,6 +1441,10 @@ public final class CompanionClientEngine: ObservableObject {
             clearPINGlitchState()
             activeLink = nil
             orcaStatus = nil
+            clipboardPreview = .empty
+            calendarSnapshot = .initial
+            latestScreenshotPreview = nil
+            isCapturingScreenshot = false
             connectionState = .disconnected
             return
         }
@@ -1487,6 +1499,9 @@ public final class CompanionClientEngine: ObservableObject {
         let target = activeTargetName
         activeLink = nil
         orcaStatus = nil
+        clipboardPreview = .empty
+        calendarSnapshot = .initial
+        isCapturingScreenshot = false
         connectionState = .disconnected
         if wasConnectedOrConnecting {
             lastConnectionIssue = L10n.tr(
@@ -1738,6 +1753,37 @@ public final class CompanionClientEngine: ObservableObject {
         send(.undoLastWindowMove)
     }
 
+    public func requestCompanionDashboard() {
+        send(.requestCompanionDashboard)
+    }
+
+    public func pasteMacClipboard() {
+        send(.pasteMacClipboard)
+    }
+
+    public func captureMainDisplayScreenshot() {
+        isCapturingScreenshot = true
+        send(.captureMainDisplayScreenshot)
+    }
+
+    public func dismissScreenshotPreview() {
+        latestScreenshotPreview = nil
+    }
+
+    public func setTargetDisplay(displayID: UInt32?) {
+        var next = controlStripState
+        next.selectedTargetDisplayID = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: displayID,
+            connectedDisplays: next.connectedDisplays
+        )
+        controlStripState = next
+        send(.setTargetDisplay(displayID: next.effectiveTargetDisplayID))
+    }
+
+    public func openCalendarOnMac() {
+        send(.openCalendarApp)
+    }
+
     public func pushUpdatedProfile(_ updated: ChocliftWorkspaceProfile) {
         var next = updated
         next.bumpRevision()
@@ -1883,10 +1929,13 @@ public final class CompanionClientEngine: ObservableObject {
             focusedMacAppName = focusedApp
             isMacAccessibilityGranted = axTrusted
             orcaStatus = nil
+            clipboardPreview = .empty
+            isCapturingScreenshot = false
             connectionState = .connected(macID: macID, macName: macName)
             startHeartbeat(sessionID: currentSessionID)
             requestMissingIconsIfNeeded()
             send(.requestControlStripState)
+            send(.requestCompanionDashboard)
 
         case .authFailed(let reason):
             connectWatchdogTask?.cancel()
@@ -1944,8 +1993,41 @@ public final class CompanionClientEngine: ObservableObject {
         case .controlStripStateUpdated(let state):
             controlStripState = state
 
+        case .clipboardPreviewUpdated(let snapshot):
+            guard platform != .appleWatch else {
+                clipboardPreview = .empty
+                return
+            }
+            clipboardPreview = snapshot
+
+        case .screenshotCaptured(let result):
+            isCapturingScreenshot = false
+            let shotTitle = L10n.tr("主屏幕截图", "Main Display Screenshot", language: profile.settings.language)
+            if result.success {
+                if result.previewJPEGData != nil {
+                    latestScreenshotPreview = result
+                }
+                let savedDetail = result.fileName.map {
+                    L10n.tr("已保存到 Mac 桌面：\($0)", "Saved to Mac Desktop: \($0)", language: profile.settings.language)
+                } ?? L10n.tr("已保存到 Mac 桌面", "Saved to Mac Desktop", language: profile.settings.language)
+                lastFeedback = CompanionFeedbackToast(success: true, title: shotTitle, detail: savedDetail)
+            } else {
+                latestScreenshotPreview = nil
+                let errDetail = result.errorMessage ?? L10n.tr(
+                    "需要屏幕录制权限：请在系统设置 → 隐私与安全性 → 屏幕录制中开启 Choclift",
+                    "Screen Recording permission required — enable Choclift in System Settings → Privacy & Security → Screen Recording",
+                    language: profile.settings.language
+                )
+                lastFeedback = CompanionFeedbackToast(success: false, title: shotTitle, detail: errDetail)
+            }
+
+        case .calendarStatusUpdated(let snapshot):
+            calendarSnapshot = snapshot
+
         case .unknownServerMessage:
-            break
+            if !connectionState.isConnected {
+                handleConnectionDropped(failedLink: activeLink ?? .wifi)
+            }
         }
     }
 

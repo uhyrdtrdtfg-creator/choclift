@@ -162,6 +162,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
     public var isMicMuted: Bool
     public var nowPlaying: NowPlayingStatus?
     public var canUndoWindowMove: Bool
+    public var connectedDisplays: [MacDisplayInfo]
+    public var selectedTargetDisplayID: UInt32?
 
     private enum CodingKeys: String, CodingKey {
         case volume
@@ -171,6 +173,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         case isMicMuted
         case nowPlaying
         case canUndoWindowMove
+        case connectedDisplays
+        case selectedTargetDisplayID
     }
 
     public init(
@@ -180,7 +184,9 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         isBrightnessAvailable: Bool = true,
         isMicMuted: Bool = false,
         nowPlaying: NowPlayingStatus? = nil,
-        canUndoWindowMove: Bool = false
+        canUndoWindowMove: Bool = false,
+        connectedDisplays: [MacDisplayInfo] = [],
+        selectedTargetDisplayID: UInt32? = nil
     ) {
         self.volume = ControlStripLevel.clamp(volume)
         self.isVolumeMuted = isVolumeMuted
@@ -189,6 +195,11 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.isMicMuted = isMicMuted
         self.nowPlaying = (nowPlaying?.hasActiveMedia == true) ? nowPlaying : nil
         self.canUndoWindowMove = canUndoWindowMove
+        self.connectedDisplays = connectedDisplays
+        self.selectedTargetDisplayID = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: selectedTargetDisplayID,
+            connectedDisplays: connectedDisplays
+        )
     }
 
     public init(from decoder: Decoder) throws {
@@ -203,6 +214,13 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         let decodedNP = try container.decodeIfPresent(NowPlayingStatus.self, forKey: .nowPlaying)
         self.nowPlaying = (decodedNP?.hasActiveMedia == true) ? decodedNP : nil
         self.canUndoWindowMove = try container.decodeIfPresent(Bool.self, forKey: .canUndoWindowMove) ?? false
+        let displays = try container.decodeIfPresent([MacDisplayInfo].self, forKey: .connectedDisplays) ?? []
+        let rawSelectedID = try container.decodeIfPresent(UInt32.self, forKey: .selectedTargetDisplayID)
+        self.connectedDisplays = displays
+        self.selectedTargetDisplayID = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: rawSelectedID,
+            connectedDisplays: displays
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -214,6 +232,33 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         try container.encode(isMicMuted, forKey: .isMicMuted)
         try container.encodeIfPresent(nowPlaying, forKey: .nowPlaying)
         try container.encode(canUndoWindowMove, forKey: .canUndoWindowMove)
+        if !connectedDisplays.isEmpty {
+            try container.encode(connectedDisplays, forKey: .connectedDisplays)
+        }
+        let resolvedSelected = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: selectedTargetDisplayID,
+            connectedDisplays: connectedDisplays
+        )
+        try container.encodeIfPresent(resolvedSelected, forKey: .selectedTargetDisplayID)
+    }
+
+    public var shouldShowDisplayPicker: Bool {
+        DisplaySnapTargetResolver.shouldShowPicker(for: connectedDisplays)
+    }
+
+    public var effectiveTargetDisplayID: UInt32? {
+        DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: selectedTargetDisplayID,
+            connectedDisplays: connectedDisplays
+        )
+    }
+
+    public func selectedDisplayLabel(in language: AppLanguage = .system) -> String {
+        if let targetID = effectiveTargetDisplayID,
+           let matched = connectedDisplays.first(where: { $0.displayID == targetID }) {
+            return matched.name
+        }
+        return L10n.tr("当前窗口屏幕", "Active Window Display", language: language)
     }
 
     public func hasMeaningfulDifference(from other: ControlStripState, tolerance: Double = 0.004) -> Bool {
@@ -221,7 +266,9 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             isBrightnessAvailable != other.isBrightnessAvailable ||
             isMicMuted != other.isMicMuted ||
             nowPlaying != other.nowPlaying ||
-            canUndoWindowMove != other.canUndoWindowMove {
+            canUndoWindowMove != other.canUndoWindowMove ||
+            connectedDisplays != other.connectedDisplays ||
+            effectiveTargetDisplayID != other.effectiveTargetDisplayID {
             return true
         }
         if (volume <= 0.001) != (other.volume <= 0.001) ||

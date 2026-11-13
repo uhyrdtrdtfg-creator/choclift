@@ -70,6 +70,10 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     @Published public private(set) var runningFlowID: UUID?
     @Published public private(set) var orcaStatus: OrcaTaskStatusSnapshot?
     @Published public private(set) var canUndoWindowMove: Bool = false
+    @Published public private(set) var connectedDisplays: [MacDisplayInfo] = []
+    @Published public private(set) var selectedTargetDisplayID: UInt32?
+    @Published public private(set) var clipboardPreview: ClipboardPreviewSnapshot = .empty
+    @Published public private(set) var calendarSnapshot: NextCalendarEventSnapshot = .initial
 
     public enum MacVisibleSurface: Hashable {
         case studioWindow
@@ -86,6 +90,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     public private(set) var notchPanelController: MacNotchPanelController?
     public let orcaStatusService: MacOrcaStatusService
     public let systemControlService: MacSystemControlService
+    public let clipboardService: MacClipboardMonitorService
+    public let screenshotService: MacMainDisplayScreenshotService
+    public let calendarService: MacCalendarEventService
 
     private let appSupportDirectory: URL
     private let profileFileURL: URL
@@ -143,6 +150,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.catalogService = MacAppAndShortcutCatalogService()
         self.orcaStatusService = MacOrcaStatusService()
         self.systemControlService = MacSystemControlService()
+        self.clipboardService = MacClipboardMonitorService()
+        self.screenshotService = MacMainDisplayScreenshotService()
+        self.calendarService = MacCalendarEventService()
         self.timeTravel = MacTimeTravelMonitor()
         self.server = MacServerEngine(
             macID: persistedMacID,
@@ -150,6 +160,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             initialPairedDevices: loadedDevices
         )
         self.isAccessibilityGranted = winSvc.isAccessibilityTrusted()
+        self.connectedDisplays = winSvc.currentConnectedDisplays()
+        self.selectedTargetDisplayID = winSvc.selectedTargetDisplayID
+        self.clipboardPreview = self.clipboardService.currentPreview
         self.launchAtLoginEnabled = (SMAppService.mainApp.status == .enabled)
         self.notchPanelEnabled = UserDefaults.standard.object(forKey: Self.notchPanelEnabledKey) as? Bool ?? true
         self.leftEdgePanelEnabled = UserDefaults.standard.object(forKey: Self.leftEdgePanelEnabledKey) as? Bool ?? false
@@ -190,15 +203,47 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         systemControlService.canUndoWindowMoveProvider = { [weak self] in
             self?.windowService.canUndoLastWindowMove ?? false
         }
+        systemControlService.displayTopologyProvider = { [weak self] in
+            guard let self else { return (displays: [], selectedDisplayID: nil) }
+            return (
+                displays: self.windowService.currentConnectedDisplays(),
+                selectedDisplayID: self.windowService.selectedTargetDisplayID
+            )
+        }
         windowService.onUndoAvailabilityChanged = { [weak self] in
             guard let self else { return }
             self.canUndoWindowMove = self.windowService.canUndoLastWindowMove
             self.systemControlService.syncWindowUndoAvailability()
         }
+        windowService.onDisplayConfigurationChanged = { [weak self] in
+            guard let self else { return }
+            self.connectedDisplays = self.windowService.currentConnectedDisplays()
+            self.selectedTargetDisplayID = self.windowService.selectedTargetDisplayID
+            self.systemControlService.syncDisplayTopology()
+        }
         systemControlService.onStateChanged = { [weak self] state in
             self?.server.broadcastControlStripState(state)
         }
         systemControlService.start()
+
+        clipboardService.isTransientPasteInFlight = { [weak self] in
+            self?.inputService.isStagingTransientPasteboard ?? false
+        }
+        clipboardService.onPreviewChanged = { [weak self] snapshot in
+            guard let self else { return }
+            self.clipboardPreview = snapshot
+            self.server.broadcastClipboardPreview(snapshot)
+        }
+        clipboardService.refreshImmediately()
+        self.clipboardPreview = clipboardService.currentPreview
+
+        calendarService.onSnapshotChanged = { [weak self] snapshot in
+            guard let self else { return }
+            self.calendarSnapshot = snapshot
+            self.server.broadcastCalendarStatus(snapshot)
+        }
+        calendarService.start()
+        self.calendarSnapshot = calendarService.currentSnapshot
 
         server.start(preferredPort: ChocliftDefaults.defaultTCPPort, advertiseBonjour: true)
 
@@ -306,6 +351,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                         self.server.broadcast(.textFieldFocusChanged(isEditingText: focus.isEditing, appName: focus.appName))
                     }
                 }
+
+                self.clipboardService.pollIfNeeded()
             }
         }
     }
@@ -615,6 +662,23 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         return outcome
     }
 
+    public func setTargetDisplay(displayID: UInt32?) {
+        windowService.setTargetDisplayID(displayID)
+        connectedDisplays = windowService.currentConnectedDisplays()
+        selectedTargetDisplayID = windowService.selectedTargetDisplayID
+        systemControlService.syncDisplayTopology()
+    }
+
+    public func openCalendarApp(triggeredBy deviceName: String) async -> (success: Bool, message: String) {
+        let result = await catalogService.launchOrActivateApp(
+            bundleIdentifier: "com.apple.iCal",
+            appPath: "/System/Applications/Calendar.app",
+            windowService: windowService
+        )
+        recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+        return result
+    }
+
     private func scheduleControlStripRefreshIfRelevant(for action: SystemQuickAction) {
         switch action {
         case .volumeUp, .volumeDown, .volumeMute, .mediaPlayPause, .mediaNext, .mediaPrevious:
@@ -811,6 +875,74 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 ))
             case .nothingToUndo:
                 reply(.controlStripStateUpdated(systemControlService.currentState))
+            }
+
+        case .requestCompanionDashboard:
+            clipboardService.pollIfNeeded()
+            if device.platform != .appleWatch {
+                reply(.clipboardPreviewUpdated(clipboardService.currentPreview))
+            }
+            calendarService.refreshSnapshot(requestAccessIfUndetermined: true)
+            reply(.calendarStatusUpdated(calendarService.currentSnapshot))
+
+        case .pasteMacClipboard:
+            clipboardService.pollIfNeeded()
+            guard let clipboardText = clipboardService.currentInsertablePlainText() else {
+                let emptyDetail = L10n.tr(
+                    "Mac 剪贴板当前没有可粘贴的纯文本",
+                    "Mac clipboard has no plain text to paste",
+                    language: lang
+                )
+                recordActivity(deviceName: device.deviceName, summary: emptyDetail, isSuccess: false)
+                reply(.actionFeedback(
+                    success: false,
+                    title: L10n.tr("剪贴板", "Clipboard", language: lang),
+                    detail: emptyDetail
+                ))
+                return
+            }
+            let res = insertText(clipboardText, triggeredBy: device.deviceName)
+            if device.platform == .appleWatch {
+                let watchTitle = res.success
+                    ? L10n.tr("已粘贴剪贴板", "Pasted Clipboard", language: lang)
+                    : L10n.tr("剪贴板", "Clipboard", language: lang)
+                reply(.actionFeedback(
+                    success: res.success,
+                    title: watchTitle,
+                    detail: res.success ? nil : res.message
+                ))
+            } else {
+                let label = MacInputAndMediaService.previewLabel(for: clipboardText)
+                reply(.actionFeedback(
+                    success: res.success,
+                    title: label.isEmpty ? L10n.tr("剪贴板", "Clipboard", language: lang) : label,
+                    detail: res.message
+                ))
+            }
+
+        case .captureMainDisplayScreenshot:
+            Task { @MainActor in
+                let outcome = await screenshotService.captureMainDisplayToDesktop(language: lang)
+                recordActivity(
+                    deviceName: device.deviceName,
+                    summary: outcome.feedbackDetail,
+                    isSuccess: outcome.wireResult.success
+                )
+                reply(.screenshotCaptured(outcome.wireResult))
+            }
+
+        case .setTargetDisplay(let displayID):
+            setTargetDisplay(displayID: displayID)
+            reply(.controlStripStateUpdated(systemControlService.currentState))
+
+        case .openCalendarApp:
+            Task { @MainActor in
+                let result = await openCalendarApp(triggeredBy: device.deviceName)
+                reply(.actionFeedback(
+                    success: result.success,
+                    title: L10n.tr("日历", "Calendar", language: lang),
+                    detail: result.message
+                ))
             }
 
         case .updateProfile(let updatedProfile):

@@ -767,6 +767,7 @@ public struct IOSTimeTravelSurfaceView: View {
 public enum IOSEmojiBarSegment: String, CaseIterable, Identifiable, Sendable {
     case emoji
     case snippets
+    case clipboard
 
     public var id: String { rawValue }
 
@@ -774,6 +775,7 @@ public enum IOSEmojiBarSegment: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .emoji: return "face.smiling.fill"
         case .snippets: return "text.quote"
+        case .clipboard: return "doc.on.clipboard"
         }
     }
 
@@ -781,6 +783,7 @@ public enum IOSEmojiBarSegment: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .emoji: return L10n.tr("表情", "Emoji", language: lang)
         case .snippets: return L10n.tr("片段", "Snippets", language: lang)
+        case .clipboard: return L10n.tr("剪贴板", "Clipboard", language: lang)
         }
     }
 }
@@ -843,6 +846,13 @@ public struct IOSEmojiBarSurfaceView: View {
 
             case .snippets:
                 snippetsSurfaceContent
+
+            case .clipboard:
+                IOSClipboardPreviewCard(client: client, expanded: true)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 4)
+                    .padding(.bottom, 10)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
         }
         .onChange(of: activeEmojiDragTranslation == .zero) { _, isIdle in
@@ -973,7 +983,7 @@ public struct IOSEmojiBarSurfaceView: View {
                             .lineLimit(1)
                     }
                     .foregroundStyle(isSelected ? palette.accentForeground : palette.secondaryText)
-                    .padding(.horizontal, 11)
+                    .padding(.horizontal, 9)
                     .frame(height: 30)
                     .background(
                         isSelected ? palette.accent : Color.clear,
@@ -1040,6 +1050,12 @@ public struct IOSEmojiBarSurfaceView: View {
                     .font(.caption2.monospacedDigit().weight(.semibold))
                     .foregroundStyle(palette.secondaryText)
             }
+        case .clipboard:
+            if let text = client.clipboardPreview.previewText, client.connectionState.isConnected {
+                Text(client.clipboardPreview.isTruncated ? "280+" : "\(text.count)/280")
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(palette.secondaryText)
+            }
         }
     }
 
@@ -1092,6 +1108,9 @@ public struct IOSEmojiBarSurfaceView: View {
             .buttonStyle(.plain)
             .disabled(!canAdd)
             .accessibilityIdentifier("ios-snippets-new-button")
+
+        case .clipboard:
+            EmptyView()
         }
     }
 
@@ -1994,6 +2013,8 @@ public struct IOSPersistentControlStripView: View {
 
             stripDivider
 
+            IOSDisplayTargetPickerMenu(client: client, compact: true)
+
             undoWindowMoveButton
 
             micMuteButton(compactLabel: true)
@@ -2017,6 +2038,8 @@ public struct IOSPersistentControlStripView: View {
             HStack(spacing: 8) {
                 nowPlayingCluster
                     .frame(maxWidth: .infinity)
+
+                IOSDisplayTargetPickerMenu(client: client, compact: true)
 
                 undoWindowMoveButton
 

@@ -157,7 +157,14 @@ public struct IOSRootTouchBarView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                IOSScreenshotPreviewOverlayCard(client: client)
+                    .padding(.top, isIPadWide ? 60 : (isLandscape ? 48 : 56))
+                    .padding(.trailing, (isLandscape && !isIPadWide) ? 68 : 18)
+                    .transition(.scale(scale: 0.94).combined(with: .opacity))
+            }
             .animation(.easeInOut(duration: 0.2), value: hudToast)
+            .animation(.easeInOut(duration: 0.2), value: client.latestScreenshotPreview)
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
@@ -255,6 +262,21 @@ public struct IOSRootTouchBarView: View {
                         .padding(.top, 6)
                 }
 
+                IOSCompanionBarRibbon(
+                    client: client,
+                    compact: true,
+                    includeInlineClipboard: !(activeMode == .emojiBar && currentEmojiSegment == .clipboard),
+                    onOpenClipboardSegment: {
+                        modeBeforeAutoEmoji = nil
+                        withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
+                            activeMode = .emojiBar
+                            currentEmojiSegment = .clipboard
+                        }
+                    }
+                )
+                .padding(.horizontal, 14)
+                .padding(.top, 6)
+
                 if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
                     landscapePageDotsStepperBar
                         .padding(.horizontal, 14)
@@ -351,6 +373,28 @@ public struct IOSRootTouchBarView: View {
             } else if client.orcaStatus != nil {
                 IOSOrcaTaskStatusBar(client: client, compact: false)
                     .padding(.horizontal, 16)
+            }
+
+            IOSCompanionBarRibbon(
+                client: client,
+                compact: false,
+                includeInlineClipboard: false
+            )
+            .padding(.horizontal, 16)
+
+            if client.connectionState.isConnected && !(activeMode == .emojiBar && currentEmojiSegment == .clipboard) {
+                IOSClipboardPreviewCard(
+                    client: client,
+                    expanded: false,
+                    onTapExpand: {
+                        modeBeforeAutoEmoji = nil
+                        withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
+                            activeMode = .emojiBar
+                            currentEmojiSegment = .clipboard
+                        }
+                    }
+                )
+                .padding(.horizontal, 16)
             }
 
             if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
@@ -488,7 +532,14 @@ public struct IOSRootTouchBarView: View {
                     .padding(.horizontal, 18)
             }
 
-            // Main Split: Left = Chocolate Bar + Control Strip + Time Travel Strip | Right = Emoji Bar + Gestures
+            IOSCompanionBarRibbon(
+                client: client,
+                compact: false,
+                includeInlineClipboard: false
+            )
+            .padding(.horizontal, 18)
+
+            // Main Split: Left = Chocolate Bar + Control Strip + Time Travel Strip | Right = Clipboard + Emoji Bar + Gestures
             let rightPanelWidth = min(368, size.width * 0.36)
             let leftColumnWidth = max(320, size.width - 36 - 14 - rightPanelWidth)
 
@@ -514,6 +565,18 @@ public struct IOSRootTouchBarView: View {
                 .frame(maxWidth: .infinity)
 
                 VStack(spacing: 12) {
+                    if client.connectionState.isConnected && currentEmojiSegment != .clipboard {
+                        IOSClipboardPreviewCard(
+                            client: client,
+                            expanded: false,
+                            onTapExpand: {
+                                withAnimation(.spring(response: 0.22, dampingFraction: 0.84)) {
+                                    currentEmojiSegment = .clipboard
+                                }
+                            }
+                        )
+                    }
+
                     IOSEmojiBarSurfaceView(
                         client: client,
                         currentSlideIndex: $currentEmojiSlideIndex,

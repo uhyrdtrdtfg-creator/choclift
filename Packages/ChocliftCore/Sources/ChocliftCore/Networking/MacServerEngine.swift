@@ -82,6 +82,7 @@ public final class MacServerEngine: ObservableObject {
         var platform: DevicePlatform = .iPhone
         var isAuthenticated = false
         var supportsControlStrip = false
+        var supportsCompanionDashboard = false
         var sentIconBundleIDs: Set<String> = []
         var lastActivityAt = Date()
 
@@ -320,6 +321,20 @@ public final class MacServerEngine: ObservableObject {
                 continue
             }
             send(.controlStripStateUpdated(state), to: session)
+        }
+    }
+
+    /// Broadcasts safe truncated clipboard preview ONLY to paired phone/iPad sessions (never Apple Watch).
+    public func broadcastClipboardPreview(_ snapshot: ClipboardPreviewSnapshot) {
+        for session in sessions.values where session.isAuthenticated && session.supportsCompanionDashboard {
+            guard session.platform != .appleWatch else { continue }
+            send(.clipboardPreviewUpdated(snapshot), to: session)
+        }
+    }
+
+    public func broadcastCalendarStatus(_ snapshot: NextCalendarEventSnapshot) {
+        for session in sessions.values where session.isAuthenticated && session.supportsCompanionDashboard {
+            send(.calendarStatusUpdated(snapshot), to: session)
         }
     }
 
@@ -833,8 +848,10 @@ public final class MacServerEngine: ObservableObject {
             }
 
             switch message {
-            case .requestControlStripState, .setControlLevel, .setMicMuted, .undoLastWindowMove:
+            case .requestControlStripState, .setControlLevel, .setMicMuted, .undoLastWindowMove, .setTargetDisplay:
                 session.supportsControlStrip = true
+            case .requestCompanionDashboard, .pasteMacClipboard, .captureMainDisplayScreenshot, .openCalendarApp:
+                session.supportsCompanionDashboard = true
             default:
                 break
             }
@@ -852,6 +869,9 @@ public final class MacServerEngine: ObservableObject {
 
             delegate?.serverDidReceiveAuthenticatedMessage(message, from: record) { [weak self, weak session] replyMsg in
                 guard let self, let session else { return }
+                if case .clipboardPreviewUpdated = replyMsg, session.platform == .appleWatch {
+                    return
+                }
                 self.send(replyMsg, to: session)
             }
         }

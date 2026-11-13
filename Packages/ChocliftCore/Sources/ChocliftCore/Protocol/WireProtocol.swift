@@ -33,6 +33,11 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case setMicMuted(Bool)
     case requestControlStripState
     case undoLastWindowMove
+    case requestCompanionDashboard
+    case pasteMacClipboard
+    case captureMainDisplayScreenshot
+    case setTargetDisplay(displayID: UInt32?)
+    case openCalendarApp
     case unknownClientMessage
 }
 
@@ -73,6 +78,9 @@ public enum ServerMessage: Codable, Equatable, Sendable {
     case orcaStatusUpdated(OrcaTaskStatusSnapshot)
     case pong(timestamp: TimeInterval)
     case controlStripStateUpdated(ControlStripState)
+    case clipboardPreviewUpdated(ClipboardPreviewSnapshot)
+    case screenshotCaptured(ScreenshotCaptureResult)
+    case calendarStatusUpdated(NextCalendarEventSnapshot)
     case unknownServerMessage
 }
 

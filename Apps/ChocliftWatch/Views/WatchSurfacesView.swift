@@ -165,6 +165,84 @@ private struct WatchOrcaComplicationLine: View {
     }
 }
 
+private struct WatchCalendarComplicationLine: View {
+    @ObservedObject var client: CompanionClientEngine
+    @State private var pressedKey: String?
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
+    var body: some View {
+        let snapshot = client.calendarSnapshot
+        if let event = snapshot.nextEvent {
+            let key = "watch-calendar-next"
+            let isPressed = (pressedKey == key)
+            TimelineView(.periodic(from: .now, by: 30.0)) { context in
+                Button {
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    ChocPressFeedback.completeTap(key: key, pressedKey: $pressedKey)
+                    client.openCalendarOnMac()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(palette.accent)
+                        Text(event.title)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(palette.primaryText)
+                            .lineLimit(1)
+                        Spacer(minLength: 2)
+                        Text(
+                            NextCalendarEventSnapshot.formattedStartTime(
+                                for: event,
+                                referenceDate: context.date,
+                                language: lang
+                            )
+                        )
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(minHeight: 32)
+                    .background(isPressed ? palette.tileFillBottom : palette.barSurface, in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(isPressed ? palette.accent : palette.subtleCardStroke, lineWidth: isPressed ? 1.5 : 1)
+                    )
+                    .contentShape(Capsule())
+                    .scaleEffect(isPressed ? 0.96 : 1.0)
+                }
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: key))
+                .accessibilityIdentifier("watch-calendar-event-button")
+            }
+        } else if snapshot.permission == .denied {
+            Button {
+                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                client.openCalendarOnMac()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "calendar.badge.exclamationmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(palette.secondaryText)
+                    Text(L10n.tr("日历权限未开启", "Calendar access off", language: lang))
+                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8)
+                .frame(minHeight: 28)
+                .background(palette.barSurface.opacity(0.85), in: Capsule())
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("watch-calendar-denied-line")
+        }
+    }
+}
+
 // MARK: - 1. Watch Chocolate Bar Surface (8 Synced Pages x 8 Slots)
 
 public struct WatchChocolateBarView: View {
@@ -222,8 +300,11 @@ public struct WatchChocolateBarView: View {
             VStack(spacing: 8) {
                 if !client.connectionState.isConnected {
                     WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
-                } else if let orcaStatus = client.orcaStatus {
-                    WatchOrcaComplicationLine(client: client, status: orcaStatus)
+                } else {
+                    if let orcaStatus = client.orcaStatus {
+                        WatchOrcaComplicationLine(client: client, status: orcaStatus)
+                    }
+                    WatchCalendarComplicationLine(client: client)
                 }
 
                 pageSwitcherBar
@@ -838,6 +919,7 @@ public struct WatchQuickActionsView: View {
 
     @State private var pressedAction: SystemQuickAction?
     @State private var confirmGate = DestructiveActionConfirmGate()
+    @State private var showDisplayPickerSheet: Bool = false
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -872,6 +954,10 @@ public struct WatchQuickActionsView: View {
                 // Window Snap & Sizing
                 sectionHeader(L10n.tr("窗口布局", "Window Layout", language: lang), symbol: "macwindow")
 
+                if client.controlStripState.shouldShowDisplayPicker {
+                    watchDisplayPickerButton
+                }
+
                 actionTwoColumnGrid(windowActions)
                 undoWindowMoveButton
 
@@ -883,6 +969,103 @@ public struct WatchQuickActionsView: View {
             .padding(.horizontal, 6)
             .padding(.bottom, 12)
         }
+        .sheet(isPresented: $showDisplayPickerSheet) {
+            watchDisplayPickerSheet
+        }
+    }
+
+    private var watchDisplayPickerButton: some View {
+        let state = client.controlStripState
+        let hasOverride = state.effectiveTargetDisplayID != nil
+
+        return Button {
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            showDisplayPickerSheet = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "display.2")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(hasOverride ? palette.accent : palette.secondaryText)
+                Text(state.selectedDisplayLabel(in: lang))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(palette.secondaryText)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 40)
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(hasOverride ? palette.accent.opacity(0.6) : palette.subtleCardStroke, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("watch-display-picker-button")
+    }
+
+    private var watchDisplayPickerSheet: some View {
+        let state = client.controlStripState
+        let selectedID = state.effectiveTargetDisplayID
+
+        return List {
+            Button {
+                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                client.setTargetDisplay(displayID: nil)
+                showDisplayPickerSheet = false
+            } label: {
+                HStack(spacing: 8) {
+                    Text(L10n.tr("当前窗口屏幕", "Frontmost Window", language: lang))
+                        .font(.system(size: 13, weight: selectedID == nil ? .bold : .medium, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                    Spacer()
+                    if selectedID == nil {
+                        Image(systemName: "checkmark")
+                            .font(.caption.bold())
+                            .foregroundStyle(palette.accent)
+                    }
+                }
+                .frame(minHeight: 38)
+            }
+            .listRowBackground(palette.barSurface)
+
+            ForEach(state.connectedDisplays) { display in
+                let isSelected = (selectedID == display.displayID)
+                Button {
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    client.setTargetDisplay(displayID: display.displayID)
+                    showDisplayPickerSheet = false
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(display.name)
+                            .font(.system(size: 13, weight: isSelected ? .bold : .medium, design: .rounded))
+                            .foregroundStyle(palette.primaryText)
+                            .lineLimit(1)
+                        Spacer()
+                        if isSelected {
+                            Image(systemName: "checkmark")
+                                .font(.caption.bold())
+                                .foregroundStyle(palette.accent)
+                        }
+                    }
+                    .frame(minHeight: 38)
+                }
+                .listRowBackground(palette.barSurface)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
     }
 
     private var undoWindowMoveButton: some View {
@@ -1189,6 +1372,7 @@ public struct WatchEmojiBarView: View {
     @State private var mode: WatchTextMode = .emoji
     @State private var pressedEmojiIndex: Int?
     @State private var pressedSnippetID: UUID?
+    @State private var pressedPasteKey: String?
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -1236,6 +1420,8 @@ public struct WatchEmojiBarView: View {
                     .foregroundStyle(palette.secondaryText)
                 }
 
+                watchPasteClipboardButton
+
                 modeSegmentBar
 
                 switch mode {
@@ -1248,6 +1434,50 @@ public struct WatchEmojiBarView: View {
             .padding(.horizontal, 6)
             .padding(.bottom, 12)
         }
+    }
+
+    private var watchPasteClipboardButton: some View {
+        let key = "watch-paste-clipboard"
+        let isPressed = (pressedPasteKey == key)
+
+        return Button {
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+            ChocPressFeedback.completeTap(key: key, pressedKey: $pressedPasteKey)
+            if client.connectionState.isConnected {
+                client.pasteMacClipboard()
+            } else {
+                onRequestPairing()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.on.clipboard")
+                    .font(.system(size: 12.5, weight: .bold))
+                    .foregroundStyle(palette.accent)
+                Text(L10n.tr("粘贴剪贴板", "Paste Clipboard", language: lang))
+                    .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 11)
+            .frame(maxWidth: .infinity, minHeight: 42)
+            .background(
+                LinearGradient(
+                    colors: [isPressed ? palette.tileFillBottom : palette.tileFillTop, palette.tileFillBottom],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(isPressed ? palette.accent : palette.subtleCardStroke, lineWidth: isPressed ? 1.8 : 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .scaleEffect(isPressed ? 0.94 : 1.0)
+        }
+        .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedPasteKey, key: key))
+        .accessibilityIdentifier("watch-paste-clipboard-button")
     }
 
     private var modeSegmentBar: some View {

@@ -14,6 +14,10 @@ public final class MacInputAndMediaService {
         self.windowService = windowService
     }
 
+    public var isStagingTransientPasteboard: Bool {
+        pendingClipboardSnapshot != nil
+    }
+
     // MARK: - Cursor-Aware Text & Emoji Insertion
 
     public static func previewLabel(for text: String, maxCharacters: Int = 24) -> String {
