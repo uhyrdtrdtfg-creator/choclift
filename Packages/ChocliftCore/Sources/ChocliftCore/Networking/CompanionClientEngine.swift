@@ -103,6 +103,7 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var macCatalogApps: [InstalledAppSummary] = []
     @Published public private(set) var macCatalogShortcuts: [InstalledShortcutSummary] = []
     @Published public private(set) var orcaStatus: OrcaTaskStatusSnapshot?
+    @Published public private(set) var controlStripState: ControlStripState = ControlStripState()
     @Published public var lastFeedback: CompanionFeedbackToast?
 
     public let deviceID: String
@@ -1697,6 +1698,37 @@ public final class CompanionClientEngine: ObservableObject {
         send(.performQuickAction(action))
     }
 
+    public func requestControlStripState() {
+        send(.requestControlStripState)
+    }
+
+    public func setControlLevel(kind: ControlLevelKind, level: Double) {
+        let clamped = ControlStripLevel.clamp(level)
+        var next = controlStripState
+        switch kind {
+        case .volume:
+            next.volume = clamped
+            if clamped > 0.001 {
+                next.isVolumeMuted = false
+            }
+        case .brightness:
+            next.brightness = clamped
+        }
+        controlStripState = next
+        send(.setControlLevel(kind: kind, level: clamped))
+    }
+
+    public func setMicMuted(_ isMuted: Bool) {
+        var next = controlStripState
+        next.isMicMuted = isMuted
+        controlStripState = next
+        send(.setMicMuted(isMuted))
+    }
+
+    public func toggleMicMute() {
+        setMicMuted(!controlStripState.isMicMuted)
+    }
+
     public func pushUpdatedProfile(_ updated: ChocliftWorkspaceProfile) {
         var next = updated
         next.bumpRevision()
@@ -1842,6 +1874,7 @@ public final class CompanionClientEngine: ObservableObject {
             connectionState = .connected(macID: macID, macName: macName)
             startHeartbeat(sessionID: currentSessionID)
             requestMissingIconsIfNeeded()
+            send(.requestControlStripState)
 
         case .authFailed(let reason):
             connectWatchdogTask?.cancel()
@@ -1893,6 +1926,12 @@ public final class CompanionClientEngine: ObservableObject {
             orcaStatus = snapshot
 
         case .pong:
+            break
+
+        case .controlStripStateUpdated(let state):
+            controlStripState = state
+
+        case .unknownServerMessage:
             break
         }
     }

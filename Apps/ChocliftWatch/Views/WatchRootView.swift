@@ -62,6 +62,7 @@ public struct WatchRootView: View {
                     WatchChocolateBarView(
                         client: client,
                         deckFollower: $deckFollower,
+                        isBarVisible: activeMode == .chocolateBar && !showPairingSheet && !showModePickerSheet,
                         onRequestPairing: { showPairingSheet = true }
                     )
                     .tag(WatchSurfaceMode.chocolateBar)

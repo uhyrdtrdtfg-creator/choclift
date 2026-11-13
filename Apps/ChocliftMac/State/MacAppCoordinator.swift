@@ -84,6 +84,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     public let catalogService: MacAppAndShortcutCatalogService
     public private(set) var notchPanelController: MacNotchPanelController?
     public let orcaStatusService: MacOrcaStatusService
+    public let systemControlService: MacSystemControlService
 
     private let appSupportDirectory: URL
     private let profileFileURL: URL
@@ -140,6 +141,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.inputService = MacInputAndMediaService(windowService: winSvc)
         self.catalogService = MacAppAndShortcutCatalogService()
         self.orcaStatusService = MacOrcaStatusService()
+        self.systemControlService = MacSystemControlService()
         self.timeTravel = MacTimeTravelMonitor()
         self.server = MacServerEngine(
             macID: persistedMacID,
@@ -183,6 +185,11 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             pinned: profile.pinnedTimeTravelBundleIDs,
             excluded: profile.settings.excludedTimeTravelBundleIDs
         )
+
+        systemControlService.onStateChanged = { [weak self] state in
+            self?.server.broadcastControlStripState(state)
+        }
+        systemControlService.start()
 
         server.start(preferredPort: ChocliftDefaults.defaultTCPPort, advertiseBonjour: true)
 
@@ -491,6 +498,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .systemAction(let action, _, _):
             let result = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
+            scheduleControlStripRefreshIfRelevant(for: action)
             recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
             return (result.success, item.displayTitle(in: lang), result.message)
 
@@ -577,9 +585,19 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             return (false, L10n.tr("该手势当前已停用", "Gesture is currently disabled", language: lang))
         }
         let result = inputService.executeSystemAction(mappedAction, preferredPID: timeTravel.lastExternalAppPID)
+        scheduleControlStripRefreshIfRelevant(for: mappedAction)
         let summary = "\(gesture.title(in: lang)) → \(result.message)"
         recordActivity(deviceName: deviceName, summary: summary, isSuccess: result.success)
         return result
+    }
+
+    private func scheduleControlStripRefreshIfRelevant(for action: SystemQuickAction) {
+        switch action {
+        case .volumeUp, .volumeDown, .volumeMute, .mediaPlayPause, .mediaNext, .mediaPrevious:
+            systemControlService.schedulePostActionRefresh()
+        default:
+            break
+        }
     }
 
     private func recordActivity(deviceName: String, summary: String, isSuccess: Bool) {
@@ -708,8 +726,43 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .performQuickAction(let action):
             let res = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
+            scheduleControlStripRefreshIfRelevant(for: action)
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: action.title(in: lang), detail: res.message))
+
+        case .requestControlStripState:
+            let immediate = systemControlService.currentState
+            reply(.controlStripStateUpdated(immediate))
+            systemControlService.refreshNow { refreshed in
+                if refreshed.hasMeaningfulDifference(from: immediate) {
+                    reply(.controlStripStateUpdated(refreshed))
+                }
+            }
+
+        case .setControlLevel(let kind, let level):
+            let didApply: Bool
+            switch kind {
+            case .volume:
+                didApply = systemControlService.setVolume(level: level)
+            case .brightness:
+                didApply = systemControlService.setBrightness(level: level)
+            }
+            if didApply {
+                server.broadcastControlStripState(
+                    systemControlService.currentState,
+                    excludingDeviceID: device.deviceID
+                )
+            } else {
+                reply(.controlStripStateUpdated(systemControlService.currentState))
+            }
+
+        case .setMicMuted(let isMuted):
+            let ok = systemControlService.setMicMuted(isMuted)
+            server.broadcastControlStripState(systemControlService.currentState)
+            let summary = isMuted
+                ? L10n.tr("已将麦克风静音", "Microphone Muted", language: lang)
+                : L10n.tr("已取消麦克风静音", "Microphone Unmuted", language: lang)
+            recordActivity(deviceName: device.deviceName, summary: summary, isSuccess: ok)
 
         case .updateProfile(let updatedProfile):
             applyAndSaveProfile(updatedProfile, broadcastOriginDeviceID: device.deviceID)

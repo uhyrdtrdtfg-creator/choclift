@@ -165,14 +165,23 @@ private struct WatchOrcaComplicationLine: View {
 public struct WatchChocolateBarView: View {
     @ObservedObject var client: CompanionClientEngine
     @Binding var deckFollower: AppDeckFollowerState
+    var isBarVisible: Bool = true
     let onRequestPairing: () -> Void
 
     @State private var showPagePickerSheet: Bool = false
     @State private var assigningSlot: WatchSlotCoordinate?
     @State private var pressedSlotKey: String?
+    @State private var crownVolume: Double = 0.5
+    @State private var isCrownRotating: Bool = false
+    @State private var crownThrottle = ControlLevelDragThrottle()
+    @FocusState private var isVolumeCrownFocused: Bool
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
+    private var isCrownActiveForBar: Bool {
+        isBarVisible && !showPagePickerSheet && assigningSlot == nil
+    }
 
     private var safePageIndex: Int {
         guard !client.profile.pages.isEmpty else { return 0 }
@@ -244,7 +253,40 @@ public struct WatchChocolateBarView: View {
                 }
             }
             .padding(.horizontal, 6)
-            .padding(.bottom, 12)
+            .padding(.bottom, 8)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 4) {
+            watchCrownVolumeBar
+                .padding(.horizontal, 6)
+                .padding(.bottom, 2)
+        }
+        .onAppear {
+            crownVolume = ControlStripLevel.clamp(client.controlStripState.volume)
+            if isCrownActiveForBar {
+                isVolumeCrownFocused = true
+            }
+        }
+        .onReceive(client.$controlStripState) { updated in
+            guard !isCrownRotating else { return }
+            let clamped = ControlStripLevel.clamp(updated.volume)
+            if abs(crownVolume - clamped) > 0.004 {
+                crownVolume = clamped
+            }
+        }
+        .task(id: isCrownActiveForBar) {
+            if isCrownActiveForBar {
+                try? await Task.sleep(for: .milliseconds(60))
+                guard !Task.isCancelled, isCrownActiveForBar else { return }
+                isVolumeCrownFocused = true
+            } else {
+                isVolumeCrownFocused = false
+            }
+        }
+        .task(id: isVolumeCrownFocused) {
+            guard isCrownActiveForBar, !isVolumeCrownFocused else { return }
+            try? await Task.sleep(for: .milliseconds(220))
+            guard !Task.isCancelled, isCrownActiveForBar else { return }
+            isVolumeCrownFocused = true
         }
         .sheet(isPresented: $showPagePickerSheet) {
             pagePickerSheet
@@ -256,6 +298,110 @@ public struct WatchChocolateBarView: View {
                 slotIndex: coord.slotIndex
             )
         }
+    }
+
+    private var watchCrownVolumeBar: some View {
+        let isMuted = client.controlStripState.isVolumeMuted && !isCrownRotating
+        let displayedLevel = ControlStripLevel.clamp(isCrownRotating ? crownVolume : client.controlStripState.volume)
+        let pct = ControlStripLevel.percentage(for: displayedLevel)
+
+        return HStack(spacing: 7) {
+            Button {
+                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                client.performQuickAction(.volumeMute)
+                isVolumeCrownFocused = true
+            } label: {
+                Image(systemName: (isMuted || displayedLevel <= 0.001) ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 12.5, weight: .bold))
+                    .foregroundStyle(isMuted ? palette.emphasisForeground : palette.accent)
+                    .frame(width: 32, height: 30)
+                    .background(
+                        isMuted ? palette.statusFailure : palette.tileFillBottom,
+                        in: Capsule()
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(
+                                isMuted ? palette.statusFailure : palette.subtleCardStroke,
+                                lineWidth: 1
+                            )
+                    )
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("watch-bar-volume-mute")
+            .accessibilityLabel(
+                isMuted
+                    ? L10n.tr("取消静音", "Unmute", language: lang)
+                    : L10n.tr("静音", "Mute", language: lang)
+            )
+
+            GeometryReader { geo in
+                let width = max(1, geo.size.width)
+                let fillWidth = max(6, width * CGFloat(displayedLevel))
+
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(palette.tileFillBottom)
+                        .frame(height: 6)
+
+                    if displayedLevel > 0.005 {
+                        Capsule()
+                            .fill(isMuted ? palette.secondaryText.opacity(0.45) : palette.accent)
+                            .frame(width: min(width, fillWidth), height: 6)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }
+            .frame(height: 16)
+
+            Text("\(pct)%")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(isMuted ? palette.secondaryText : palette.primaryText)
+                .frame(minWidth: 31, alignment: .trailing)
+        }
+        .padding(.leading, 4)
+        .padding(.trailing, 8)
+        .padding(.vertical, 3)
+        .background(palette.barSurface.opacity(0.95), in: Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(
+                    isCrownRotating ? palette.accent : palette.subtleCardStroke,
+                    lineWidth: isCrownRotating ? 1.4 : 1
+                )
+        )
+        .focusable(isCrownActiveForBar)
+        .focused($isVolumeCrownFocused)
+        .focusEffectDisabled()
+        .digitalCrownRotation(
+            detent: $crownVolume,
+            from: 0.0,
+            through: 1.0,
+            by: 0.02,
+            sensitivity: .medium,
+            isContinuous: false,
+            isHapticFeedbackEnabled: true,
+            onChange: { _ in
+                guard isCrownActiveForBar else { return }
+                isCrownRotating = true
+                let clamped = ControlStripLevel.clamp(crownVolume)
+                let now = ProcessInfo.processInfo.systemUptime
+                if let throttled = crownThrottle.updateDrag(to: clamped, at: now) {
+                    client.setControlLevel(kind: .volume, level: throttled)
+                }
+            },
+            onIdle: {
+                guard isCrownRotating else { return }
+                isCrownRotating = false
+                let clamped = ControlStripLevel.clamp(crownVolume)
+                let now = ProcessInfo.processInfo.systemUptime
+                let committed = crownThrottle.endDrag(at: clamped, at: now)
+                client.setControlLevel(kind: .volume, level: committed)
+            }
+        )
+        .accessibilityIdentifier("watch-bar-crown-volume")
     }
 
     private var pageSwitcherBar: some View {

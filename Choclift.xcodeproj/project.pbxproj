@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0151A116C09C4D23AB6EE9F7 /* ControlStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB259C3541C52B0FDAF4888C /* ControlStrip.swift */; };
 		0902B8781D8ACED446E80F86 /* terminal.png in Resources */ = {isa = PBXBuildFile; fileRef = 6CB4B777F556BB9F5483D0A8 /* terminal.png */; };
 		0F434D4989EDE569D36B3391 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 66E4E8891AFD6F4FABAFF271 /* Assets.xcassets */; };
 		0F582E8E29BA059DE8155ACC /* safari.png in Resources */ = {isa = PBXBuildFile; fileRef = D6A84CEE75CB8D687A708F81 /* safari.png */; };
@@ -64,6 +65,7 @@
 		7A194DD828D7FC40AD07184A /* WatchSurfacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9FE4714CD1037D2AFD3E731 /* WatchSurfacesView.swift */; };
 		7A433E0B51F8B9F8A1950AD7 /* xcode.png in Resources */ = {isa = PBXBuildFile; fileRef = 0381A811167B0BA8047F75B9 /* xcode.png */; };
 		7AB4E8F26192B87A6A53DD91 /* MultiTouchGestureOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55531469D9255C9D44CE4F85 /* MultiTouchGestureOverlay.swift */; };
+		7EC084F765694562A6489EC6 /* ControlStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB259C3541C52B0FDAF4888C /* ControlStrip.swift */; };
 		7FD37A2F0B77A1D3EA6DBFC0 /* finder.png in Resources */ = {isa = PBXBuildFile; fileRef = 289E4D12B0F6E3F188113079 /* finder.png */; };
 		82612B4144EDA160119CA96E /* PlatformCompanionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */; };
 		83A2B79E6AA4B0064DCB8D8B /* messages.png in Resources */ = {isa = PBXBuildFile; fileRef = D2F04CF28043E06EA8DB3BE5 /* messages.png */; };
@@ -103,10 +105,12 @@
 		DE2BB25340B0E35ECACB71AF /* reminders.png in Resources */ = {isa = PBXBuildFile; fileRef = 213217E3E0ADB61F84B88238 /* reminders.png */; };
 		DF61BE35854C52722D2F20F5 /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
 		DFB1DDE64AE82710C328A49C /* IOSFlowEditorViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */; };
+		E85500D399E5CD039276A0C1 /* ControlStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB259C3541C52B0FDAF4888C /* ControlStrip.swift */; };
 		E8750C18F4A9A27AA2A9EF3E /* ChocliftMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3DBA1BF1036F57F143E4AAA /* ChocliftMacApp.swift */; };
 		EB47886475B3208848D9B611 /* BundledAppIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */; };
 		F179169D873243EE590DC3CC /* TimeTravelAndGestureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9A7BFF5A52FBC825E5EC0A6 /* TimeTravelAndGestureViews.swift */; };
 		F67EF010677977FC8A1792D1 /* finder.png in Resources */ = {isa = PBXBuildFile; fileRef = 289E4D12B0F6E3F188113079 /* finder.png */; };
+		F8688F658607938931989B76 /* MacSystemControlService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A4EBD8AF7B0252DB6BBA48 /* MacSystemControlService.swift */; };
 		F9A2071D485ADDE2BBE5E965 /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378D57F87F9075FB787AF62B /* WireProtocol.swift */; };
 		F9FC4D6C32DF2E52155D2376 /* ChocliftWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 226A03B84444E14186ACF945 /* ChocliftWatchApp.swift */; };
 		FA6D9491F0BDCC9A6FB30C27 /* terminal.png in Resources */ = {isa = PBXBuildFile; fileRef = 6CB4B777F556BB9F5483D0A8 /* terminal.png */; };
@@ -208,6 +212,7 @@
 		B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompanionSupport.swift; sourceTree = "<group>"; };
 		B9A7BFF5A52FBC825E5EC0A6 /* TimeTravelAndGestureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeTravelAndGestureViews.swift; sourceTree = "<group>"; };
 		BE2646C17F6B581FF2D9A9FC /* notes.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = notes.png; sourceTree = "<group>"; };
+		C2A4EBD8AF7B0252DB6BBA48 /* MacSystemControlService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSystemControlService.swift; sourceTree = "<group>"; };
 		C5756FAFC7277A62567E747E /* ChocliftModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftModels.swift; sourceTree = "<group>"; };
 		D2F04CF28043E06EA8DB3BE5 /* messages.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = messages.png; sourceTree = "<group>"; };
 		D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSFlowEditorViews.swift; sourceTree = "<group>"; };
@@ -217,6 +222,7 @@
 		E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocDesignSystem.swift; sourceTree = "<group>"; };
 		E9FE4714CD1037D2AFD3E731 /* WatchSurfacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSurfacesView.swift; sourceTree = "<group>"; };
 		EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionFlows.swift; sourceTree = "<group>"; };
+		FB259C3541C52B0FDAF4888C /* ControlStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlStrip.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -263,6 +269,7 @@
 				2610F6011A383F732C01DC10 /* MacInputAndMediaService.swift */,
 				116CCCD57CF0CF405584EA0E /* MacNotchPanelController.swift */,
 				9F4B0BF41FA187CA0429E197 /* MacOrcaStatusService.swift */,
+				C2A4EBD8AF7B0252DB6BBA48 /* MacSystemControlService.swift */,
 				813CADCB2CE124AC898446DE /* MacTimeTravelMonitor.swift */,
 			);
 			path = Services;
@@ -481,6 +488,7 @@
 				EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */,
 				15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */,
 				C5756FAFC7277A62567E747E /* ChocliftModels.swift */,
+				FB259C3541C52B0FDAF4888C /* ControlStrip.swift */,
 				8859A29A043A4B69F607B04C /* EmojiCatalog.swift */,
 				A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */,
 				4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */,
@@ -793,6 +801,7 @@
 				52082CB82A2482B4051813B6 /* ChocliftModels.swift in Sources */,
 				C55F470AACCF7B28E03A49EF /* CompanionClientEngine.swift in Sources */,
 				8CDA41C0F0FFD2D11986AFD0 /* CompanionLink.swift in Sources */,
+				7EC084F765694562A6489EC6 /* ControlStrip.swift in Sources */,
 				3EFE96C6529C29EEF363A9C4 /* EmojiCatalog.swift in Sources */,
 				75412A9C9B26A552680AFD2D /* MacServerEngine.swift in Sources */,
 				94A271287C3D5FB9DC454029 /* NotchPanelGeometry.swift in Sources */,
@@ -813,6 +822,7 @@
 				39B7BF35A2DCA3748B9CCD32 /* ChocliftModels.swift in Sources */,
 				397EC37A53C4C6D011658F1E /* CompanionClientEngine.swift in Sources */,
 				DF61BE35854C52722D2F20F5 /* CompanionLink.swift in Sources */,
+				E85500D399E5CD039276A0C1 /* ControlStrip.swift in Sources */,
 				D19ADC68FDF7AB4963E84CA3 /* EmojiCatalog.swift in Sources */,
 				DAB4CBDFA2B7DA671F50C2C0 /* MacServerEngine.swift in Sources */,
 				7873292E1BA2830A6AC412E9 /* NotchPanelGeometry.swift in Sources */,
@@ -839,6 +849,7 @@
 				5BA1BD1B00D6643627022CBD /* MacNotchPanelView.swift in Sources */,
 				C8D3D57C7B3C8E9637DB941D /* MacOrcaStatusService.swift in Sources */,
 				11514719064CA3F4324F0633 /* MacSlotItemPickerSheet.swift in Sources */,
+				F8688F658607938931989B76 /* MacSystemControlService.swift in Sources */,
 				C0DE9291FA2C4F6F27838894 /* MacTimeTravelMonitor.swift in Sources */,
 				F179169D873243EE590DC3CC /* TimeTravelAndGestureViews.swift in Sources */,
 			);
@@ -855,6 +866,7 @@
 				D7FCC2E5110CA56C5725F6DA /* ChocliftModels.swift in Sources */,
 				1EAB438701E11328B296FF8B /* CompanionClientEngine.swift in Sources */,
 				3D297C87D7B93EB26438D46F /* CompanionLink.swift in Sources */,
+				0151A116C09C4D23AB6EE9F7 /* ControlStrip.swift in Sources */,
 				9CCC043223B77D2383E1CA84 /* EmojiCatalog.swift in Sources */,
 				7581CD6E2F0929431A33F49F /* MacServerEngine.swift in Sources */,
 				CD2ABCE216981DECA9C23D63 /* NotchPanelGeometry.swift in Sources */,

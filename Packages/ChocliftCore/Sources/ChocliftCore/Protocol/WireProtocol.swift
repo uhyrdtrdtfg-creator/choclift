@@ -29,6 +29,10 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case requestIcons(bundleIdentifiers: [String])
     case focusOrcaTask(dispatchID: String)
     case ping(timestamp: TimeInterval)
+    case setControlLevel(kind: ControlLevelKind, level: Double)
+    case setMicMuted(Bool)
+    case requestControlStripState
+    case unknownClientMessage
 }
 
 // MARK: - Server -> Client Messages (Mac -> iOS/iPadOS)
@@ -67,6 +71,8 @@ public enum ServerMessage: Codable, Equatable, Sendable {
     )
     case orcaStatusUpdated(OrcaTaskStatusSnapshot)
     case pong(timestamp: TimeInterval)
+    case controlStripStateUpdated(ControlStripState)
+    case unknownServerMessage
 }
 
 // MARK: - Length-Prefixed TCP Frame Codec
@@ -114,8 +120,33 @@ public enum WireFrameCodec {
         do {
             return try makeDecoder().decode(type, from: data)
         } catch {
+            if let key = singleObjectKey(in: data) {
+                if type == ClientMessage.self,
+                   key != "hello",
+                   key != "submitPIN",
+                   let fallback = ClientMessage.unknownClientMessage as? T {
+                    return fallback
+                }
+                if type == ServerMessage.self,
+                   key != "pairingRequired",
+                   key != "authSucceeded",
+                   key != "authFailed",
+                   let fallback = ServerMessage.unknownServerMessage as? T {
+                    return fallback
+                }
+            }
             throw WireFrameError.invalidPayload
         }
+    }
+
+    private static func singleObjectKey(in data: Data) -> String? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              obj.count == 1,
+              let key = obj.keys.first,
+              !key.isEmpty else {
+            return nil
+        }
+        return key
     }
 }
 

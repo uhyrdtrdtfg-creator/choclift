@@ -1350,3 +1350,536 @@ public struct IOSGesturePadSurfaceView: View {
         .padding(14)
     }
 }
+
+// MARK: - 5. iPad Chocolate Bar Deck with Pinned Control Strip
+
+public struct IOSIPadChocolateBarDeckView: View {
+    @ObservedObject var client: CompanionClientEngine
+    @Binding var currentPageIndex: Int
+    var isFollowingFrontmostApp: Bool
+    var onFollowFrontmostApp: (() -> Void)?
+    let availableWidth: CGFloat
+    var isLandscape: Bool
+    let onEditSlot: (IOSEditSlotSelection) -> Void
+
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
+    public init(
+        client: CompanionClientEngine,
+        currentPageIndex: Binding<Int>,
+        isFollowingFrontmostApp: Bool = true,
+        onFollowFrontmostApp: (() -> Void)? = nil,
+        availableWidth: CGFloat,
+        isLandscape: Bool = true,
+        onEditSlot: @escaping (IOSEditSlotSelection) -> Void
+    ) {
+        self.client = client
+        self._currentPageIndex = currentPageIndex
+        self.isFollowingFrontmostApp = isFollowingFrontmostApp
+        self.onFollowFrontmostApp = onFollowFrontmostApp
+        self.availableWidth = availableWidth
+        self.isLandscape = isLandscape
+        self.onEditSlot = onEditSlot
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            IOSChocolateBarSurfaceView(
+                client: client,
+                currentPageIndex: $currentPageIndex,
+                isFollowingFrontmostApp: isFollowingFrontmostApp,
+                onFollowFrontmostApp: onFollowFrontmostApp,
+                isLandscape: isLandscape,
+                onEditSlot: onEditSlot
+            )
+
+            Rectangle()
+                .fill(palette.subtleCardStroke)
+                .frame(height: 1)
+                .padding(.horizontal, 14)
+
+            IOSPersistentControlStripView(
+                client: client,
+                preferSingleRow: availableWidth >= 620,
+                embeddedInSurface: true
+            )
+        }
+        .background(palette.barSurface.opacity(0.65), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
+    }
+}
+
+// MARK: - 6. Persistent Control Strip (Volume, Brightness, Now Playing, Mic Mute, Clock)
+
+public struct IOSPersistentControlStripView: View {
+    @ObservedObject var client: CompanionClientEngine
+    let preferSingleRow: Bool
+    let embeddedInSurface: Bool
+
+    @State private var volumeDragLevel: Double?
+    @State private var brightnessDragLevel: Double?
+    @State private var volumeThrottle = ControlLevelDragThrottle()
+    @State private var brightnessThrottle = ControlLevelDragThrottle()
+
+    private static let localClockFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.timeZone = .autoupdatingCurrent
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+    private var state: ControlStripState { client.controlStripState }
+
+    private var effectiveVolume: Double {
+        ControlStripLevel.clamp(volumeDragLevel ?? state.volume)
+    }
+
+    private var effectiveBrightness: Double {
+        ControlStripLevel.clamp(brightnessDragLevel ?? state.brightness)
+    }
+
+    public init(
+        client: CompanionClientEngine,
+        preferSingleRow: Bool,
+        embeddedInSurface: Bool = false
+    ) {
+        self.client = client
+        self.preferSingleRow = preferSingleRow
+        self.embeddedInSurface = embeddedInSurface
+    }
+
+    public var body: some View {
+        Group {
+            if preferSingleRow {
+                singleRowContent
+            } else {
+                twoRowContent
+            }
+        }
+        .padding(.horizontal, embeddedInSurface ? 14 : 12)
+        .padding(.vertical, preferSingleRow ? 7 : 9)
+        .background {
+            if !embeddedInSurface {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(palette.barSurface.opacity(0.94))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                    )
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("ios-persistent-control-strip")
+    }
+
+    // MARK: - Responsive Strip Layouts
+
+    private var singleRowContent: some View {
+        HStack(spacing: 10) {
+            volumeControlCluster
+                .frame(minWidth: 150, idealWidth: 188, maxWidth: 230)
+
+            stripDivider
+
+            brightnessControlCluster
+                .frame(minWidth: 120, idealWidth: 154, maxWidth: 196)
+
+            stripDivider
+
+            nowPlayingCluster
+                .frame(maxWidth: .infinity)
+
+            stripDivider
+
+            micMuteButton(compactLabel: true)
+
+            clockTextView
+        }
+    }
+
+    private var twoRowContent: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                volumeControlCluster
+                    .frame(maxWidth: .infinity)
+
+                stripDivider
+
+                brightnessControlCluster
+                    .frame(maxWidth: .infinity)
+            }
+
+            HStack(spacing: 8) {
+                nowPlayingCluster
+                    .frame(maxWidth: .infinity)
+
+                micMuteButton(compactLabel: false)
+
+                clockTextView
+            }
+        }
+    }
+
+    private var stripDivider: some View {
+        Rectangle()
+            .fill(palette.subtleCardStroke)
+            .frame(width: 1, height: 22)
+    }
+
+    // MARK: - Volume (Drag to Set, Tap Speaker to Mute, Current Level)
+
+    private var volumeControlCluster: some View {
+        let isMuted = state.isVolumeMuted && volumeDragLevel == nil
+        let pct = ControlStripLevel.percentage(for: effectiveVolume)
+
+        return HStack(spacing: 6) {
+            Button {
+                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                client.performQuickAction(.volumeMute)
+            } label: {
+                Image(systemName: speakerSymbol(level: effectiveVolume, isMuted: isMuted))
+                    .font(.system(size: 13.5, weight: .bold))
+                    .foregroundStyle(isMuted ? palette.statusFailure : palette.accent)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        (isMuted ? palette.statusFailure.opacity(0.14) : palette.tileFillBottom),
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(
+                                isMuted ? palette.statusFailure.opacity(0.45) : palette.subtleCardStroke,
+                                lineWidth: 1
+                            )
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ios-strip-volume-mute")
+            .accessibilityLabel(
+                isMuted
+                    ? L10n.tr("取消静音", "Unmute Volume", language: lang)
+                    : L10n.tr("静音", "Mute Volume", language: lang)
+            )
+
+            ControlStripDragSlider(
+                level: effectiveVolume,
+                fillColor: isMuted ? palette.secondaryText.opacity(0.45) : palette.accent,
+                palette: palette,
+                accessibilityLabel: L10n.tr("音量", "Volume", language: lang),
+                accessibilityIdentifier: "ios-strip-volume-slider",
+                onDragChanged: { newLevel in
+                    volumeDragLevel = newLevel
+                    let now = ProcessInfo.processInfo.systemUptime
+                    if let throttled = volumeThrottle.updateDrag(to: newLevel, at: now) {
+                        client.setControlLevel(kind: .volume, level: throttled)
+                    }
+                },
+                onDragEnded: { finalLevel in
+                    let now = ProcessInfo.processInfo.systemUptime
+                    let committed = volumeThrottle.endDrag(at: finalLevel, at: now)
+                    client.setControlLevel(kind: .volume, level: committed)
+                    volumeDragLevel = nil
+                },
+                onAccessibilityStep: { stepped in
+                    client.setControlLevel(kind: .volume, level: stepped)
+                }
+            )
+
+            Text("\(pct)%")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(isMuted ? palette.secondaryText : palette.primaryText)
+                .frame(minWidth: 32, alignment: .trailing)
+                .accessibilityIdentifier("ios-strip-volume-level")
+        }
+    }
+
+    private func speakerSymbol(level: Double, isMuted: Bool) -> String {
+        if isMuted || level <= 0.001 {
+            return "speaker.slash.fill"
+        } else if level < 0.34 {
+            return "speaker.wave.1.fill"
+        } else if level < 0.67 {
+            return "speaker.wave.2.fill"
+        } else {
+            return "speaker.wave.3.fill"
+        }
+    }
+
+    // MARK: - Brightness (Drag to Set Main Display Brightness)
+
+    private var brightnessControlCluster: some View {
+        let available = state.isBrightnessAvailable || !client.connectionState.isConnected
+        let pct = ControlStripLevel.percentage(for: effectiveBrightness)
+
+        return HStack(spacing: 6) {
+            Image(systemName: effectiveBrightness < 0.45 ? "sun.min.fill" : "sun.max.fill")
+                .font(.system(size: 13.5, weight: .bold))
+                .foregroundStyle(available ? palette.accentEmphasis : palette.secondaryText)
+                .frame(width: 22, height: 34)
+
+            ControlStripDragSlider(
+                level: effectiveBrightness,
+                fillColor: available ? palette.accentEmphasis : palette.secondaryText.opacity(0.4),
+                palette: palette,
+                accessibilityLabel: L10n.tr("主显示器亮度", "Main Display Brightness", language: lang),
+                accessibilityIdentifier: "ios-strip-brightness-slider",
+                onDragChanged: { newLevel in
+                    brightnessDragLevel = newLevel
+                    let now = ProcessInfo.processInfo.systemUptime
+                    if let throttled = brightnessThrottle.updateDrag(to: newLevel, at: now) {
+                        client.setControlLevel(kind: .brightness, level: throttled)
+                    }
+                },
+                onDragEnded: { finalLevel in
+                    let now = ProcessInfo.processInfo.systemUptime
+                    let committed = brightnessThrottle.endDrag(at: finalLevel, at: now)
+                    client.setControlLevel(kind: .brightness, level: committed)
+                    brightnessDragLevel = nil
+                },
+                onAccessibilityStep: { stepped in
+                    client.setControlLevel(kind: .brightness, level: stepped)
+                }
+            )
+
+            if preferSingleRow {
+                Text("\(pct)%")
+                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(minWidth: 30, alignment: .trailing)
+            }
+        }
+        .opacity(available ? 1.0 : 0.6)
+    }
+
+    // MARK: - Now Playing (Title or App Name, Play/Pause, Next, Quiet Empty State)
+
+    private var nowPlayingCluster: some View {
+        let activeMedia = state.nowPlaying
+        let primaryText = activeMedia?.primaryDisplayText
+        let isPlaying = activeMedia?.isPlaying ?? false
+
+        return HStack(spacing: 6) {
+            HStack(spacing: 5) {
+                Image(systemName: primaryText != nil ? "music.note" : "waveform")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(primaryText != nil ? palette.accent : palette.secondaryText.opacity(0.65))
+
+                if let primaryText {
+                    Text(primaryText)
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                } else {
+                    Text(L10n.tr("未在播放", "Not Playing", language: lang))
+                        .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(palette.secondaryText.opacity(0.8))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, 8)
+            .frame(maxWidth: .infinity, minHeight: 34)
+            .background(palette.tileFillBottom.opacity(0.75), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+            )
+            .accessibilityIdentifier("ios-strip-now-playing-label")
+
+            Button {
+                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                client.performQuickAction(.mediaPlayPause)
+            } label: {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+                    .frame(width: 34, height: 34)
+                    .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ios-strip-play-pause")
+            .accessibilityLabel(L10n.tr("播放或暂停", "Play or Pause", language: lang))
+
+            Button {
+                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                client.performQuickAction(.mediaNext)
+            } label: {
+                Image(systemName: "forward.fill")
+                    .font(.system(size: 12.5, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+                    .frame(width: 34, height: 34)
+                    .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ios-strip-next-track")
+            .accessibilityLabel(L10n.tr("下一曲", "Next Track", language: lang))
+        }
+    }
+
+    // MARK: - Mic Mute (One Tap, Visible On/Off State)
+
+    private func micMuteButton(compactLabel: Bool) -> some View {
+        let isMuted = state.isMicMuted
+
+        return Button {
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+            client.toggleMicMute()
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
+                    .font(.system(size: 12.5, weight: .bold))
+
+                if !isMuted {
+                    Circle()
+                        .fill(palette.statusConnected)
+                        .frame(width: 5.5, height: 5.5)
+                }
+
+                Text(
+                    isMuted
+                        ? L10n.tr("闭麦", "Muted", language: lang)
+                        : (compactLabel ? L10n.tr("麦克", "Mic", language: lang) : L10n.tr("麦克风", "Mic On", language: lang))
+                )
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+            }
+            .foregroundStyle(isMuted ? palette.emphasisForeground : palette.primaryText)
+            .padding(.horizontal, 9)
+            .frame(height: 34)
+            .background(
+                isMuted ? palette.statusFailure : palette.tileFillBottom,
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(
+                        isMuted ? palette.statusFailure : palette.statusConnected.opacity(0.5),
+                        lineWidth: 1
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("ios-strip-mic-mute")
+        .accessibilityLabel(L10n.tr("麦克风静音开关", "Microphone Mute", language: lang))
+        .accessibilityValue(isMuted ? L10n.tr("已静音", "Muted", language: lang) : L10n.tr("开启中", "On", language: lang))
+    }
+
+    // MARK: - Clock (Local Time, Text Only)
+
+    private var clockTextView: some View {
+        TimelineView(.periodic(from: .now, by: 10.0)) { context in
+            Text(Self.localClockFormatter.string(from: context.date))
+                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(palette.primaryText)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 4)
+                .accessibilityIdentifier("ios-strip-clock")
+        }
+    }
+}
+
+// MARK: - Tactile Throttled Drag Slider
+
+private struct ControlStripDragSlider: View {
+    let level: Double
+    let fillColor: Color
+    let palette: ChocPalette
+    let accessibilityLabel: String
+    let accessibilityIdentifier: String
+    let onDragChanged: (Double) -> Void
+    let onDragEnded: (Double) -> Void
+    let onAccessibilityStep: (Double) -> Void
+
+    private let trackHeight: CGFloat = 10
+    private let thumbSize: CGFloat = 18
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = max(1, geo.size.width)
+            let clamped = ControlStripLevel.clamp(level)
+            let usableSpan = max(0, width - thumbSize)
+            let thumbX = usableSpan * CGFloat(clamped)
+            let fillWidth = min(width, max(trackHeight, thumbX + thumbSize * 0.5))
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(palette.tileFillBottom)
+                    .frame(height: trackHeight)
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                    )
+
+                if clamped > 0.005 {
+                    Capsule()
+                        .fill(fillColor)
+                        .frame(width: fillWidth, height: trackHeight)
+                }
+
+                Circle()
+                    .fill(palette.barSurface)
+                    .frame(width: thumbSize, height: thumbSize)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(fillColor, lineWidth: 2)
+                    )
+                    .shadow(color: palette.primaryText.opacity(0.12), radius: 2, x: 0, y: 1)
+                    .offset(x: thumbX)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .onChanged { value in
+                        let normalized = ControlStripLevel.clamp(Double(value.location.x / width))
+                        onDragChanged(normalized)
+                    }
+                    .onEnded { value in
+                        let normalized = ControlStripLevel.clamp(Double(value.location.x / width))
+                        onDragEnded(normalized)
+                    }
+            )
+        }
+        .frame(height: 34)
+        .accessibilityElement(children: .ignore)
+        .accessibilityIdentifier(accessibilityIdentifier)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue("\(ControlStripLevel.percentage(for: level))%")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                onAccessibilityStep(ControlStripLevel.clamp(level + 0.05))
+            case .decrement:
+                onAccessibilityStep(ControlStripLevel.clamp(level - 0.05))
+            @unknown default:
+                break
+            }
+        }
+    }
+}
