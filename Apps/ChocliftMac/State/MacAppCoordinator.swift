@@ -479,14 +479,16 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         return ActionFlowRunResult(success: false, title: fallbackMsg, detail: fallbackMsg, executedStepCount: 0)
     }
 
-    public func executeEmojiInsertion(_ emoji: String, triggeredBy deviceName: String) -> (success: Bool, message: String) {
-        if let pid = timeTravel.lastExternalAppPID,
-           let front = NSWorkspace.shared.frontmostApplication,
-           front.processIdentifier == ProcessInfo.processInfo.processIdentifier,
-           let target = NSRunningApplication(processIdentifier: pid) {
-            target.activate()
-        }
-        let result = inputService.insertEmojiAtCursor(emoji)
+    @discardableResult
+    public func insertText(_ text: String, triggeredBy deviceName: String = "Mac Studio") -> (success: Bool, message: String) {
+        let allowActivatePreferred = (deviceName == "Mac Studio") &&
+            (NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier)
+        let result = inputService.insertText(
+            text,
+            preferredPID: timeTravel.lastExternalAppPID,
+            allowActivatingPreferredPID: allowActivatePreferred,
+            language: lang
+        )
         recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
         return result
     }
@@ -605,9 +607,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: res.message, detail: nil))
 
-        case .insertEmoji(let emoji):
-            let res = executeEmojiInsertion(emoji, triggeredBy: device.deviceName)
-            reply(.actionFeedback(success: res.success, title: emoji, detail: res.message))
+        case .insertEmoji(let text):
+            let res = insertText(text, triggeredBy: device.deviceName)
+            let label = MacInputAndMediaService.previewLabel(for: text)
+            reply(.actionFeedback(
+                success: res.success,
+                title: label.isEmpty ? L10n.tr("文本片段", "Snippet", language: lang) : label,
+                detail: res.message
+            ))
 
         case .performGesture(let gesture):
             let res = executeGesture(gesture, triggeredBy: device.deviceName)

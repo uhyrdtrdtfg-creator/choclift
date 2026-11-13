@@ -759,14 +759,22 @@ public struct WatchTimeTravelView: View {
     }
 }
 
-// MARK: - 4. Watch Emoji Bar Surface (8 Synced Slides)
+// MARK: - 4. Watch Emoji & Snippets Bar Surface (8 Synced Slides + Saved Snippet Slots)
 
 public struct WatchEmojiBarView: View {
+    private enum WatchTextMode: String, CaseIterable, Identifiable {
+        case emoji
+        case snippets
+        var id: String { rawValue }
+    }
+
     @ObservedObject var client: CompanionClientEngine
     @Binding var currentSlideIndex: Int
     let onRequestPairing: () -> Void
 
+    @State private var mode: WatchTextMode = .emoji
     @State private var pressedEmojiIndex: Int?
+    @State private var pressedSnippetID: UUID?
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -800,102 +808,242 @@ public struct WatchEmojiBarView: View {
                     .padding(.vertical, 4)
                     .background(palette.statusConnected.opacity(0.22), in: Capsule())
                     .foregroundStyle(palette.statusConnected)
-                }
-
-                HStack(spacing: 6) {
-                    Button {
-                        stepSlide(by: -1)
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(palette.primaryText)
-                            .frame(width: 36, height: 36)
-                            .background(palette.tileFillBottom, in: Circle())
-                            .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-
-                    HStack(spacing: 5) {
-                        Text(activeSlide.iconEmoji)
-                            .font(.system(size: 13))
-                        Text(activeSlide.title)
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                            .foregroundStyle(palette.primaryText)
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: "character.cursor.ibeam")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(L10n.tr("请先在 Mac 点击输入框", "Focus a Mac text field", language: lang))
+                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                             .lineLimit(1)
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 36)
-                    .padding(.horizontal, 6)
-                    .background(palette.barSurface, in: Capsule())
-                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-
-                    Button {
-                        stepSlide(by: 1)
-                    } label: {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(palette.primaryText)
-                            .frame(width: 36, height: 36)
-                            .background(palette.tileFillBottom, in: Circle())
-                            .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3.5)
+                    .background(palette.tileFillBottom, in: Capsule())
+                    .foregroundStyle(palette.secondaryText)
                 }
 
-                let cols = [
-                    GridItem(.flexible(), spacing: 7),
-                    GridItem(.flexible(), spacing: 7)
-                ]
+                modeSegmentBar
 
-                LazyVGrid(columns: cols, spacing: 7) {
-                    ForEach(Array(activeSlide.emojis.enumerated()), id: \.offset) { idx, emoji in
-                        let isPressed = (pressedEmojiIndex == idx)
-
-                        Button {
-                            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
-                            withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
-                                pressedEmojiIndex = idx
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-                                if pressedEmojiIndex == idx {
-                                    withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                                        pressedEmojiIndex = nil
-                                    }
-                                }
-                            }
-                            if client.connectionState.isConnected {
-                                client.insertEmoji(emoji)
-                            } else {
-                                onRequestPairing()
-                            }
-                        } label: {
-                            Text(emoji)
-                                .font(.system(size: 26))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 50)
-                                .background(
-                                    LinearGradient(
-                                        colors: [palette.tileFillTop, palette.tileFillBottom],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    in: RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                        .strokeBorder(palette.tileBorderHighlight.opacity(0.48), lineWidth: 1)
-                                )
-                                .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-                                .scaleEffect(isPressed ? 0.93 : 1.0)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                switch mode {
+                case .emoji:
+                    emojiSlideControlsAndGrid
+                case .snippets:
+                    savedSnippetsSlotsList
                 }
             }
             .padding(.horizontal, 6)
             .padding(.bottom, 12)
+        }
+    }
+
+    private var modeSegmentBar: some View {
+        HStack(spacing: 4) {
+            segmentPill(
+                target: .emoji,
+                symbol: "face.smiling.fill",
+                label: L10n.tr("表情", "Emoji", language: lang)
+            )
+            segmentPill(
+                target: .snippets,
+                symbol: "text.quote",
+                label: L10n.tr("片段", "Snippets", language: lang)
+            )
+        }
+        .padding(3)
+        .background(palette.tileFillBottom, in: Capsule())
+        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+    }
+
+    private func segmentPill(target: WatchTextMode, symbol: String, label: String) -> some View {
+        let selected = (mode == target)
+        return Button {
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            mode = target
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: symbol)
+                    .font(.system(size: 10.5, weight: .bold))
+                Text(label)
+                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
+            .frame(maxWidth: .infinity)
+            .frame(height: 30)
+            .background(selected ? palette.accent : Color.clear, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var emojiSlideControlsAndGrid: some View {
+        HStack(spacing: 6) {
+            Button {
+                stepSlide(by: -1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+                    .frame(width: 36, height: 36)
+                    .background(palette.tileFillBottom, in: Circle())
+                    .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 5) {
+                Text(activeSlide.iconEmoji)
+                    .font(.system(size: 13))
+                Text(activeSlide.title)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+            .padding(.horizontal, 6)
+            .background(palette.barSurface, in: Capsule())
+            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+
+            Button {
+                stepSlide(by: 1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+                    .frame(width: 36, height: 36)
+                    .background(palette.tileFillBottom, in: Circle())
+                    .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+
+        let cols = [
+            GridItem(.flexible(), spacing: 7),
+            GridItem(.flexible(), spacing: 7)
+        ]
+
+        LazyVGrid(columns: cols, spacing: 7) {
+            ForEach(Array(activeSlide.emojis.enumerated()), id: \.offset) { idx, emoji in
+                let isPressed = (pressedEmojiIndex == idx)
+
+                Button {
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
+                        pressedEmojiIndex = idx
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                        if pressedEmojiIndex == idx {
+                            withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
+                                pressedEmojiIndex = nil
+                            }
+                        }
+                    }
+                    if client.connectionState.isConnected {
+                        client.insertEmoji(emoji)
+                    } else {
+                        onRequestPairing()
+                    }
+                } label: {
+                    Text(emoji)
+                        .font(.system(size: 26))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(
+                            LinearGradient(
+                                colors: [palette.tileFillTop, palette.tileFillBottom],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .strokeBorder(palette.tileBorderHighlight.opacity(0.48), lineWidth: 1)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .scaleEffect(isPressed ? 0.93 : 1.0)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var savedSnippetsSlotsList: some View {
+        if client.profile.snippets.isEmpty {
+            VStack(spacing: 6) {
+                Image(systemName: "text.quote")
+                    .font(.title3)
+                    .foregroundStyle(palette.secondaryText)
+                Text(
+                    L10n.tr(
+                        "在 iPhone 或 iPad 上新建片段后即可在腕上一键输入",
+                        "Create snippets on iPhone or iPad to trigger them here",
+                        language: lang
+                    )
+                )
+                .font(.system(size: 11.5, design: .rounded))
+                .foregroundStyle(palette.secondaryText)
+                .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+        } else {
+            ForEach(client.profile.snippets) { snippet in
+                let isPressed = (pressedSnippetID == snippet.id)
+
+                Button {
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                    withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
+                        pressedSnippetID = snippet.id
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                        if pressedSnippetID == snippet.id {
+                            withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
+                                pressedSnippetID = nil
+                            }
+                        }
+                    }
+                    if client.connectionState.isConnected {
+                        client.insertText(snippet.body)
+                    } else {
+                        onRequestPairing()
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(snippet.displayTitle(in: lang))
+                            .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(palette.primaryText)
+                            .lineLimit(1)
+
+                        Text(snippet.singleLinePreview)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(palette.secondaryText)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 46)
+                    .background(
+                        LinearGradient(
+                            colors: [palette.tileFillTop, palette.tileFillBottom],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .strokeBorder(palette.tileBorderHighlight.opacity(0.55), lineWidth: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .scaleEffect(isPressed ? 0.94 : 1.0)
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 

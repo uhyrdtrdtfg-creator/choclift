@@ -37,6 +37,7 @@ public struct IOSRootTouchBarView: View {
     @State private var modeBeforeAutoEmoji: IOSActiveSurfaceMode?
     @State private var deckFollower = AppDeckFollowerState()
     @State private var currentEmojiSlideIndex: Int = 0
+    @State private var currentEmojiSegment: IOSEmojiBarSegment = .emoji
     @State private var showPairingSheet: Bool = false
     @State private var showFlowsManagerSheet: Bool = false
     @State private var editingSlot: IOSEditSlotSelection?
@@ -217,7 +218,7 @@ public struct IOSRootTouchBarView: View {
 
                 railFlowsManagerButton
 
-                if activeMode == .chocolateBar || activeMode == .emojiBar {
+                if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
                     verticalPagePillButton
                 }
 
@@ -289,7 +290,7 @@ public struct IOSRootTouchBarView: View {
                     .padding(.horizontal, 16)
             }
 
-            if activeMode == .chocolateBar || activeMode == .emojiBar {
+            if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
                 portraitPageStepperBar
                     .padding(.horizontal, 16)
             }
@@ -441,6 +442,7 @@ public struct IOSRootTouchBarView: View {
                     IOSEmojiBarSurfaceView(
                         client: client,
                         currentSlideIndex: $currentEmojiSlideIndex,
+                        activeSegment: $currentEmojiSegment,
                         isLandscape: true
                     )
                     .background(palette.barSurface.opacity(0.65), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -568,6 +570,7 @@ public struct IOSRootTouchBarView: View {
             IOSEmojiBarSurfaceView(
                 client: client,
                 currentSlideIndex: $currentEmojiSlideIndex,
+                activeSegment: $currentEmojiSegment,
                 isLandscape: isLandscape
             )
         case .gesturePad:

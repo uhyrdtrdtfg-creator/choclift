@@ -452,15 +452,56 @@ public struct IOSTimeTravelSurfaceView: View {
     }
 }
 
-// MARK: - 3. Emoji Bar Surface (8 Slides + Quick Catalog)
+// MARK: - 3. Emoji Bar & Snippets Surface (8 Slides + Quick Catalog + One-Tap Snippets)
+
+public enum IOSEmojiBarSegment: String, CaseIterable, Identifiable, Sendable {
+    case emoji
+    case snippets
+
+    public var id: String { rawValue }
+
+    public var sfSymbol: String {
+        switch self {
+        case .emoji: return "face.smiling.fill"
+        case .snippets: return "text.quote"
+        }
+    }
+
+    public func title(in lang: AppLanguage) -> String {
+        switch self {
+        case .emoji: return L10n.tr("表情", "Emoji", language: lang)
+        case .snippets: return L10n.tr("片段", "Snippets", language: lang)
+        }
+    }
+}
+
+private enum IOSSnippetEditorSession: Identifiable {
+    case create
+    case rename(TextSnippet)
+    case edit(TextSnippet)
+
+    var id: String {
+        switch self {
+        case .create:
+            return "create"
+        case .rename(let snippet):
+            return "rename-\(snippet.id.uuidString)"
+        case .edit(let snippet):
+            return "edit-\(snippet.id.uuidString)"
+        }
+    }
+}
 
 public struct IOSEmojiBarSurfaceView: View {
     @ObservedObject var client: CompanionClientEngine
     @Binding var currentSlideIndex: Int
+    @Binding var activeSegment: IOSEmojiBarSegment
     let isLandscape: Bool
 
     @State private var showAllCatalogSheet = false
     @State private var customizingSlotIndex: Int?
+    @State private var snippetEditorSession: IOSSnippetEditorSession?
+    @State private var pressedSnippetID: UUID?
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -468,69 +509,392 @@ public struct IOSEmojiBarSurfaceView: View {
     public init(
         client: CompanionClientEngine,
         currentSlideIndex: Binding<Int>,
+        activeSegment: Binding<IOSEmojiBarSegment> = .constant(.emoji),
         isLandscape: Bool
     ) {
         self.client = client
         self._currentSlideIndex = currentSlideIndex
+        self._activeSegment = activeSegment
         self.isLandscape = isLandscape
     }
 
     public var body: some View {
         VStack(spacing: 6) {
-            HStack(spacing: 8) {
-                if client.isEditingTextOnMac {
-                    HStack(spacing: 5) {
-                        Image(systemName: "character.cursor.ibeam")
-                            .font(.caption2.bold())
-                        Text(L10n.tr("正在 \(client.focusedMacAppName ?? "Mac") 输入", "Typing in \(client.focusedMacAppName ?? "Mac")", language: lang))
-                            .font(.caption2.bold())
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(palette.statusConnected.opacity(0.20), in: Capsule())
-                    .foregroundStyle(palette.statusConnected)
-                } else if !client.profile.emojiSlides.isEmpty {
-                    let safeIdx = min(max(0, currentSlideIndex), client.profile.emojiSlides.count - 1)
-                    HStack(spacing: 5) {
-                        Text(client.profile.emojiSlides[safeIdx].iconEmoji)
-                        Text(client.profile.emojiSlides[safeIdx].title)
-                            .font(.system(.caption, design: .rounded, weight: .bold))
-                            .foregroundStyle(palette.secondaryText)
+            emojiAndSnippetsHeader
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+
+            switch activeSegment {
+            case .emoji:
+                TabView(selection: $currentSlideIndex) {
+                    ForEach(client.profile.emojiSlides) { slide in
+                        emojiSlideGrid(slide)
+                            .tag(slide.index)
                     }
                 }
+                .tabViewStyle(.page(indexDisplayMode: .never))
 
-                Spacer()
-
-                Button {
-                    customizingSlotIndex = nil
-                    showAllCatalogSheet = true
-                } label: {
-                    Label(L10n.tr("全部分类", "All Emojis", language: lang), systemImage: "magnifyingglass")
-                        .font(.caption.bold())
-                        .padding(.horizontal, 12)
-                        .frame(minHeight: 34)
-                        .background(palette.tileFillTop, in: Capsule())
-                        .foregroundStyle(palette.primaryText)
-                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
+            case .snippets:
+                snippetsSurfaceContent
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-
-            TabView(selection: $currentSlideIndex) {
-                ForEach(client.profile.emojiSlides) { slide in
-                    emojiSlideGrid(slide)
-                        .tag(slide.index)
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
         }
         .sheet(isPresented: $showAllCatalogSheet) {
             emojiBrowserSheet
         }
+        .sheet(item: $snippetEditorSession) { session in
+            IOSSnippetEditorSheet(client: client, session: session)
+        }
+    }
+
+    private var emojiAndSnippetsHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                segmentSwitcher
+                macCursorFocusHintPill
+                Spacer(minLength: 4)
+                trailingHeaderControl
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    segmentSwitcher
+                    Spacer(minLength: 6)
+                    trailingHeaderControl
+                }
+
+                HStack(spacing: 8) {
+                    macCursorFocusHintPill
+                    Spacer(minLength: 0)
+                    secondaryMetadataLabel
+                }
+            }
+        }
+    }
+
+    private var segmentSwitcher: some View {
+        HStack(spacing: 3) {
+            ForEach(IOSEmojiBarSegment.allCases) { segment in
+                let isSelected = (activeSegment == segment)
+                Button {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    withAnimation(.spring(response: 0.22, dampingFraction: 0.84)) {
+                        activeSegment = segment
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: segment.sfSymbol)
+                            .font(.system(size: 11.5, weight: .bold))
+                        Text(segment.title(in: lang))
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(isSelected ? palette.accentForeground : palette.secondaryText)
+                    .padding(.horizontal, 11)
+                    .frame(height: 30)
+                    .background(
+                        isSelected ? palette.accent : Color.clear,
+                        in: Capsule()
+                    )
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ios-emoji-segment-\(segment.rawValue)")
+            }
+        }
+        .padding(3)
+        .background(palette.tileFillBottom, in: Capsule())
+        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+    }
+
+    @ViewBuilder
+    private var macCursorFocusHintPill: some View {
+        if client.isEditingTextOnMac {
+            HStack(spacing: 5) {
+                Image(systemName: "character.cursor.ibeam")
+                    .font(.caption2.bold())
+                Text(L10n.tr("正在 \(client.focusedMacAppName ?? "Mac") 输入", "Typing in \(client.focusedMacAppName ?? "Mac")", language: lang))
+                    .font(.caption2.bold())
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(palette.statusConnected.opacity(0.20), in: Capsule())
+            .foregroundStyle(palette.statusConnected)
+        } else {
+            HStack(spacing: 5) {
+                Image(systemName: "character.cursor.ibeam")
+                    .font(.caption2.bold())
+                Text(L10n.tr("请先在 Mac 点击输入框", "Focus a Mac text field", language: lang))
+                    .font(.caption2.weight(.semibold))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(palette.tileFillBottom, in: Capsule())
+            .foregroundStyle(palette.secondaryText)
+        }
+    }
+
+    @ViewBuilder
+    private var secondaryMetadataLabel: some View {
+        switch activeSegment {
+        case .emoji:
+            if !client.profile.emojiSlides.isEmpty {
+                let safeIdx = min(max(0, currentSlideIndex), client.profile.emojiSlides.count - 1)
+                HStack(spacing: 4) {
+                    Text(client.profile.emojiSlides[safeIdx].iconEmoji)
+                        .font(.caption2)
+                    Text(client.profile.emojiSlides[safeIdx].title)
+                        .font(.system(.caption2, design: .rounded, weight: .bold))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                }
+            }
+        case .snippets:
+            if !client.profile.snippets.isEmpty {
+                Text("\(client.profile.snippets.count)/\(TextSnippet.maxLibraryCount)")
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(palette.secondaryText)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var trailingHeaderControl: some View {
+        switch activeSegment {
+        case .emoji:
+            Button {
+                customizingSlotIndex = nil
+                showAllCatalogSheet = true
+            } label: {
+                Label(L10n.tr("全部分类", "All Emojis", language: lang), systemImage: "magnifyingglass")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 34)
+                    .background(palette.tileFillTop, in: Capsule())
+                    .foregroundStyle(palette.primaryText)
+                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+
+        case .snippets:
+            let canAdd = client.profile.canAddMoreSnippets
+            Button {
+                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                snippetEditorSession = .create
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "plus")
+                        .font(.caption.bold())
+                    Text(
+                        canAdd
+                            ? L10n.tr("新建", "New", language: lang)
+                            : "\(TextSnippet.maxLibraryCount)/\(TextSnippet.maxLibraryCount)"
+                    )
+                    .font(.caption.bold())
+                    .lineLimit(1)
+                }
+                .padding(.horizontal, 12)
+                .frame(minHeight: 34)
+                .background(canAdd ? palette.accent : palette.tileFillBottom, in: Capsule())
+                .foregroundStyle(canAdd ? palette.accentForeground : palette.secondaryText)
+                .overlay(
+                    Capsule()
+                        .strokeBorder(canAdd ? .clear : palette.subtleCardStroke, lineWidth: 1)
+                )
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canAdd)
+            .accessibilityIdentifier("ios-snippets-new-button")
+        }
+    }
+
+    // MARK: - Snippets Segment Content
+
+    @ViewBuilder
+    private var snippetsSurfaceContent: some View {
+        if client.profile.snippets.isEmpty {
+            VStack(spacing: 10) {
+                Spacer(minLength: 6)
+
+                Image(systemName: "text.quote")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(palette.accent)
+
+                Text(L10n.tr("暂无常用文本片段", "No Saved Snippets Yet", language: lang))
+                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+
+                Text(
+                    L10n.tr(
+                        "保存常用回复、链接、邮箱签名或终端命令，在 Mac 聚焦文本框时一键输入。",
+                        "Save frequent replies, links, signatures, or shell commands for one-tap typing at your Mac cursor.",
+                        language: lang
+                    )
+                )
+                .font(.caption)
+                .foregroundStyle(palette.secondaryText)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 320)
+
+                Button {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    snippetEditorSession = .create
+                } label: {
+                    Label(L10n.tr("新建文本片段", "New Snippet", language: lang), systemImage: "plus")
+                        .font(.system(.caption, design: .rounded, weight: .bold))
+                        .foregroundStyle(palette.accentForeground)
+                        .padding(.horizontal, 16)
+                        .frame(height: 38)
+                        .background(palette.accent, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 2)
+
+                Spacer(minLength: 6)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.horizontal, 20)
+        } else {
+            GeometryReader { geo in
+                let columnsCount = geo.size.width >= 500 ? 2 : 1
+                let cols = Array(repeating: GridItem(.flexible(), spacing: 10), count: columnsCount)
+
+                ScrollView {
+                    LazyVGrid(columns: cols, spacing: 10) {
+                        ForEach(client.profile.snippets) { snippet in
+                            snippetTileCard(snippet)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.top, 4)
+                    .padding(.bottom, 12)
+                }
+            }
+        }
+    }
+
+    private func snippetTileCard(_ snippet: TextSnippet) -> some View {
+        let isPressed = (pressedSnippetID == snippet.id)
+
+        return HStack(spacing: 6) {
+            Button {
+                triggerSnippet(snippet)
+            } label: {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(snippet.displayTitle(in: lang))
+                        .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(1)
+
+                    Text(snippet.singleLinePreview)
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 14)
+                .padding(.vertical, 11)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("ios-snippet-card-\(snippet.id.uuidString)")
+
+            Menu {
+                snippetActionsMenuContent(for: snippet)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(width: 38, height: 38)
+                    .background(palette.tileFillBottom.opacity(0.75), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 8)
+            .accessibilityLabel(L10n.tr("管理片段", "Manage Snippet", language: lang))
+        }
+        .frame(minHeight: 60)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [palette.tileFillTop, palette.tileFillBottom],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(palette.tileBorderHighlight.opacity(0.65), lineWidth: 1.1)
+                )
+        )
+        .scaleEffect(isPressed ? 0.96 : 1.0)
+        .contextMenu {
+            snippetActionsMenuContent(for: snippet)
+        }
+    }
+
+    @ViewBuilder
+    private func snippetActionsMenuContent(for snippet: TextSnippet) -> some View {
+        Button {
+            triggerSnippet(snippet)
+        } label: {
+            Label(L10n.tr("输入到 Mac 光标", "Insert at Mac Cursor", language: lang), systemImage: "character.cursor.ibeam")
+        }
+
+        Button {
+            snippetEditorSession = .rename(snippet)
+        } label: {
+            Label(L10n.tr("重命名…", "Rename…", language: lang), systemImage: "pencil.line")
+        }
+
+        Button {
+            snippetEditorSession = .edit(snippet)
+        } label: {
+            Label(L10n.tr("编辑内容…", "Edit Snippet…", language: lang), systemImage: "square.and.pencil")
+        }
+
+        Divider()
+
+        Button(role: .destructive) {
+            deleteSnippet(snippet)
+        } label: {
+            Label(L10n.tr("删除", "Delete", language: lang), systemImage: "trash")
+        }
+    }
+
+    private func triggerSnippet(_ snippet: TextSnippet) {
+        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+        withAnimation(.spring(response: 0.16, dampingFraction: 0.65)) {
+            pressedSnippetID = snippet.id
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+            if pressedSnippetID == snippet.id {
+                withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
+                    pressedSnippetID = nil
+                }
+            }
+        }
+        if client.connectionState.isConnected {
+            client.insertText(snippet.body)
+        } else {
+            client.lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang),
+                detail: L10n.tr("请先连接 Mac 后再输入文本片段", "Connect to your Mac to insert snippets", language: lang)
+            )
+        }
+    }
+
+    private func deleteSnippet(_ snippet: TextSnippet) {
+        var updated = client.profile
+        guard updated.deleteSnippet(id: snippet.id) else { return }
+        client.pushUpdatedProfile(updated)
     }
 
     private func emojiSlideGrid(_ slide: EmojiSlide) -> some View {
@@ -652,6 +1016,229 @@ public struct IOSEmojiBarSurfaceView: View {
             }
         }
         .preferredColorScheme(.light)
+    }
+}
+
+// MARK: - Snippet Create / Rename / Edit Sheet
+
+private struct IOSSnippetEditorSheet: View {
+    private enum FocusedField: Hashable {
+        case title
+        case body
+    }
+
+    @ObservedObject var client: CompanionClientEngine
+    let session: IOSSnippetEditorSession
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var titleText: String = ""
+    @State private var bodyText: String = ""
+    @FocusState private var focusedField: FocusedField?
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
+    private var existingSnippet: TextSnippet? {
+        switch session {
+        case .create:
+            return nil
+        case .rename(let snippet), .edit(let snippet):
+            return snippet
+        }
+    }
+
+    private var isRenameOnly: Bool {
+        if case .rename = session { return true }
+        return false
+    }
+
+    private var canSave: Bool {
+        if existingSnippet == nil && !client.profile.canAddMoreSnippets {
+            return false
+        }
+        return !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var sheetTitle: String {
+        switch session {
+        case .create:
+            return L10n.tr("新建文本片段", "New Snippet", language: lang)
+        case .rename:
+            return L10n.tr("重命名文本片段", "Rename Snippet", language: lang)
+        case .edit:
+            return L10n.tr("编辑文本片段", "Edit Snippet", language: lang)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField(
+                        L10n.tr("标题（可选，最多 40 字）", "Title (optional, max 40 chars)", language: lang),
+                        text: Binding(
+                            get: { titleText },
+                            set: { titleText = TextSnippet.clampTitle($0) }
+                        )
+                    )
+                    .focused($focusedField, equals: .title)
+                    .submitLabel(isRenameOnly ? .done : .next)
+                    .onSubmit {
+                        if isRenameOnly {
+                            saveAndDismiss()
+                        } else {
+                            focusedField = .body
+                        }
+                    }
+                } header: {
+                    HStack {
+                        Text(L10n.tr("名称", "Title", language: lang))
+                        Spacer()
+                        Text("\(titleText.count)/\(TextSnippet.maxTitleLength)")
+                            .font(.caption2.monospacedDigit())
+                    }
+                }
+                .listRowBackground(palette.barSurface)
+
+                if !isRenameOnly {
+                    Section {
+                        ZStack(alignment: .topLeading) {
+                            if bodyText.isEmpty {
+                                Text(
+                                    L10n.tr(
+                                        "输入回复、网址链接、签名或终端命令…",
+                                        "Enter a reply, link, signature, or shell command…",
+                                        language: lang
+                                    )
+                                )
+                                .font(.body)
+                                .foregroundStyle(palette.secondaryText.opacity(0.65))
+                                .padding(.top, 8)
+                                .padding(.leading, 5)
+                                .allowsHitTesting(false)
+                            }
+
+                            TextEditor(
+                                text: Binding(
+                                    get: { bodyText },
+                                    set: { bodyText = TextSnippet.clampBody($0) }
+                                )
+                            )
+                            .focused($focusedField, equals: .body)
+                            .scrollContentBackground(.hidden)
+                            .foregroundStyle(palette.primaryText)
+                            .frame(minHeight: 150)
+                        }
+                    } header: {
+                        HStack {
+                            Text(L10n.tr("片段内容", "Snippet Body", language: lang))
+                            Spacer()
+                            Text("\(bodyText.count)/\(TextSnippet.maxBodyLength)")
+                                .font(.caption2.monospacedDigit())
+                        }
+                    } footer: {
+                        Text(
+                            L10n.tr(
+                                "点按片段即可输入到当前聚焦的 Mac 文本输入框，并保留剪贴板内容。",
+                                "Tapping inserts into the focused Mac text field while preserving your clipboard.",
+                                language: lang
+                            )
+                        )
+                        .foregroundStyle(palette.secondaryText)
+                    }
+                    .listRowBackground(palette.barSurface)
+                }
+
+                if let existing = existingSnippet {
+                    Section {
+                        Button(role: .destructive) {
+                            var updated = client.profile
+                            _ = updated.deleteSnippet(id: existing.id)
+                            client.pushUpdatedProfile(updated)
+                            dismiss()
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Label(L10n.tr("删除此片段", "Delete Snippet", language: lang), systemImage: "trash")
+                                    .font(.body.weight(.semibold))
+                                Spacer()
+                            }
+                        }
+                        .foregroundStyle(palette.statusFailure)
+                    }
+                    .listRowBackground(palette.barSurface)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(
+                LinearGradient(
+                    colors: [palette.backgroundTop, palette.backgroundBottom],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+            )
+            .navigationTitle(sheetTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.light, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.tr("取消", "Cancel", language: lang)) {
+                        dismiss()
+                    }
+                    .foregroundStyle(palette.secondaryText)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.tr("保存", "Save", language: lang)) {
+                        saveAndDismiss()
+                    }
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(canSave ? palette.accent : palette.secondaryText)
+                    .disabled(!canSave)
+                    .accessibilityIdentifier("ios-snippet-save-button")
+                }
+            }
+            .onAppear {
+                if let existing = existingSnippet {
+                    titleText = existing.title
+                    bodyText = existing.body
+                }
+                switch session {
+                case .create:
+                    focusedField = .body
+                case .rename, .edit:
+                    focusedField = .title
+                }
+            }
+        }
+        .tint(palette.accent)
+        .preferredColorScheme(.light)
+    }
+
+    private func saveAndDismiss() {
+        guard canSave else { return }
+        var updated = client.profile
+        switch session {
+        case .create:
+            let created = TextSnippet(
+                title: TextSnippet.resolvedTitle(title: titleText, body: bodyText, language: lang),
+                body: bodyText,
+                updatedAt: Date()
+            )
+            guard updated.upsertSnippet(created) else { return }
+        case .rename(let existing):
+            guard updated.renameSnippet(id: existing.id, title: titleText) else { return }
+        case .edit(let existing):
+            let edited = TextSnippet(
+                id: existing.id,
+                title: TextSnippet.resolvedTitle(title: titleText, body: bodyText, language: lang),
+                body: bodyText,
+                updatedAt: Date()
+            )
+            guard updated.upsertSnippet(edited) else { return }
+        }
+        client.pushUpdatedProfile(updated)
+        dismiss()
     }
 }
 

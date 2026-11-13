@@ -743,4 +743,257 @@ final class ChocliftCoreTests: XCTestCase {
             XCTAssertEqual(ChocConnectionVisualState.pairedStandby(macName: "Mac", isPausedForLaunch: false).tintColor(in: palette), palette.secondaryText)
         }
     }
+
+    // MARK: - Snippets Profile Persistence, Legacy Decode, Clamping & Sync Tests
+
+    func testLegacyWorkspaceProfileWithoutSnippetsKeyDecodesCleanly() throws {
+        let defaultProfile = ChocliftDefaults.makeDefaultProfile()
+        let encoded = try JSONEncoder().encode(defaultProfile)
+
+        // Strip "snippets" key to simulate an existing workspace_profile.json saved before Snippets existed
+        var jsonObject = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        jsonObject.removeValue(forKey: "snippets")
+        let legacyData = try JSONSerialization.data(withJSONObject: jsonObject)
+
+        let decoded = try JSONDecoder().decode(ChocliftWorkspaceProfile.self, from: legacyData)
+        XCTAssertTrue(decoded.snippets.isEmpty)
+        XCTAssertEqual(decoded.pages.count, BarPage.maxPages)
+        XCTAssertEqual(decoded.pages[0].slots[0]?.bundleIdentifier, "com.apple.finder")
+        XCTAssertEqual(decoded.emojiSlides.count, EmojiSlide.maxSlides)
+        XCTAssertEqual(decoded.settings, defaultProfile.settings)
+        XCTAssertEqual(decoded.gestureConfig, defaultProfile.gestureConfig)
+    }
+
+    func testWorkspaceProfileSnippetEncodeDecodeClampingRenameDeleteAnd64LibraryCap() throws {
+        var profile = ChocliftDefaults.makeDefaultProfile()
+        XCTAssertTrue(profile.snippets.isEmpty)
+        XCTAssertTrue(profile.canAddMoreSnippets)
+
+        let reply = TextSnippet(title: "Quick reply", body: "Sounds good — I'll review this shortly.")
+        let link = TextSnippet(title: "Docs URL", body: "https://developer.apple.com/documentation")
+        let signature = TextSnippet(title: "Email signature", body: "Best regards,\nChoclift Team\nsupport@example.com")
+        let shellCmd = TextSnippet(title: "Run tests", body: "swift test --package-path Packages/ChocliftCore")
+
+        XCTAssertTrue(profile.upsertSnippet(reply))
+        XCTAssertTrue(profile.upsertSnippet(link))
+        XCTAssertTrue(profile.upsertSnippet(signature))
+        XCTAssertTrue(profile.upsertSnippet(shellCmd))
+        XCTAssertEqual(profile.snippets.count, 4)
+
+        // Encode & decode round-trip preserves order, IDs, titles, and multi-line bodies
+        let encoded = try JSONEncoder().encode(profile)
+        let decoded = try JSONDecoder().decode(ChocliftWorkspaceProfile.self, from: encoded)
+        XCTAssertEqual(decoded.snippets, [reply, link, signature, shellCmd])
+        XCTAssertEqual(decoded.snippet(withID: signature.id)?.body, "Best regards,\nChoclift Team\nsupport@example.com")
+
+        // Rename & delete helpers
+        var mutable = decoded
+        XCTAssertTrue(mutable.renameSnippet(id: reply.id, title: "Approved reply"))
+        XCTAssertEqual(mutable.snippet(withID: reply.id)?.title, "Approved reply")
+        XCTAssertFalse(mutable.renameSnippet(id: UUID(), title: "Missing"))
+        mutable.deleteSnippet(id: link.id)
+        XCTAssertEqual(mutable.snippets.map(\.id), [reply.id, signature.id, shellCmd.id])
+
+        // Title clamping (max 40 chars, single-line) & body clamping (max 2000 chars, multi-line preserved)
+        let oversizedTitle = "Line1\n" + String(repeating: "T", count: 60)
+        let oversizedBody = "Header\n" + String(repeating: "B", count: 2100)
+        let clampedSnippet = TextSnippet(title: oversizedTitle, body: oversizedBody)
+        XCTAssertEqual(clampedSnippet.title.count, TextSnippet.maxTitleLength)
+        XCTAssertFalse(clampedSnippet.title.contains("\n"))
+        XCTAssertEqual(clampedSnippet.body.count, TextSnippet.maxBodyLength)
+        XCTAssertTrue(clampedSnippet.body.hasPrefix("Header\n"))
+
+        // Decode also enforces title (40) & body (2000) limits against raw JSON
+        let rawSnippetJSON = """
+        {
+          "id": "\(UUID().uuidString)",
+          "title": "\(String(repeating: "X", count: 80))",
+          "body": "\(String(repeating: "Y", count: 2400))"
+        }
+        """.data(using: .utf8)!
+        let decodedClampedSnippet = try JSONDecoder().decode(TextSnippet.self, from: rawSnippetJSON)
+        XCTAssertEqual(decodedClampedSnippet.title.count, TextSnippet.maxTitleLength)
+        XCTAssertEqual(decodedClampedSnippet.body.count, TextSnippet.maxBodyLength)
+
+        // Empty title falls back cleanly to first line of body
+        let untitled = TextSnippet(title: "   ", body: "git status --short\ngit diff")
+        XCTAssertEqual(untitled.displayTitle(in: .english), "git status --short")
+
+        // Library cap at 64 snippets on both upsert and decode
+        var cappedProfile = ChocliftDefaults.makeDefaultProfile()
+        for index in 1...TextSnippet.maxLibraryCount {
+            XCTAssertTrue(cappedProfile.upsertSnippet(TextSnippet(title: "S\(index)", body: "Body \(index)")))
+        }
+        XCTAssertEqual(cappedProfile.snippets.count, TextSnippet.maxLibraryCount)
+        XCTAssertFalse(cappedProfile.canAddMoreSnippets)
+
+        // 65th distinct snippet is rejected, while updating an existing snippet still succeeds
+        let extraSnippet = TextSnippet(title: "Overflow", body: "Should not fit")
+        XCTAssertFalse(cappedProfile.upsertSnippet(extraSnippet))
+        XCTAssertEqual(cappedProfile.snippets.count, TextSnippet.maxLibraryCount)
+
+        var updatedFirst = cappedProfile.snippets[0]
+        updatedFirst.body = "Updated Body 1"
+        XCTAssertTrue(cappedProfile.upsertSnippet(updatedFirst))
+        XCTAssertEqual(cappedProfile.snippets[0].body, "Updated Body 1")
+
+        // Decoding a JSON profile containing > 64 snippets truncates cleanly to 64
+        var rawProfileObj = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(cappedProfile)) as? [String: Any])
+        var rawSnippets = try XCTUnwrap(rawProfileObj["snippets"] as? [[String: Any]])
+        for extra in 0..<6 {
+            rawSnippets.append([
+                "id": UUID().uuidString,
+                "title": "Extra \(extra)",
+                "body": "Body \(extra)"
+            ])
+        }
+        rawProfileObj["snippets"] = rawSnippets
+        let overfilledData = try JSONSerialization.data(withJSONObject: rawProfileObj)
+        let decodedOverfilled = try JSONDecoder().decode(ChocliftWorkspaceProfile.self, from: overfilledData)
+        XCTAssertEqual(decodedOverfilled.snippets.count, TextSnippet.maxLibraryCount)
+    }
+
+    #if os(macOS)
+    @MainActor
+    func testSnippetSyncAndInsertTextAcrossPhonePadAndWatch() async throws {
+        final class SnippetRecordingDelegate: MacServerEngineDelegate {
+            var profile = ChocliftDefaults.makeDefaultProfile()
+            var isEditingText = true
+            var focusedAppName: String? = "Notes"
+            weak var server: MacServerEngine?
+            var insertedPayloads: [(platform: DevicePlatform, text: String)] = []
+
+            func serverCurrentProfile() -> ChocliftWorkspaceProfile { profile }
+            func serverCurrentRecentApps() -> [RecentAppEntry] { [] }
+            func serverFrontmostBundleID() -> String? { "com.apple.Notes" }
+            func serverTextInputState() -> (isEditing: Bool, appName: String?) { (isEditingText, focusedAppName) }
+            func serverIsAccessibilityGranted() -> Bool { true }
+            func serverIcons(for bundleIDs: [String]) -> [String: Data] { [:] }
+            func serverDidUpdatePairedDevices(_ devices: [PairedDeviceRecord]) {}
+
+            func serverDidReceiveAuthenticatedMessage(
+                _ message: ClientMessage,
+                from device: PairedDeviceRecord,
+                reply: @escaping @MainActor (ServerMessage) -> Void
+            ) {
+                switch message {
+                case .updateProfile(let updated):
+                    profile = updated
+                    server?.broadcast(.profileUpdated(updated), excludingDeviceID: device.deviceID)
+                case .insertEmoji(let text):
+                    guard isEditingText else {
+                        reply(.actionFeedback(success: false, title: text, detail: "Click a text input field on your Mac first."))
+                        return
+                    }
+                    insertedPayloads.append((device.platform, text))
+                    reply(.actionFeedback(success: true, title: "Inserted", detail: "Inserted"))
+                default:
+                    break
+                }
+            }
+        }
+
+        func waitUntil(_ label: String, condition: @escaping @MainActor () -> Bool) async throws {
+            let start = Date()
+            while !condition() {
+                if Date().timeIntervalSince(start) > 4.0 {
+                    XCTFail("Timed out waiting for \(label)")
+                    return
+                }
+                try await Task.sleep(for: .milliseconds(20))
+            }
+        }
+
+        let suiteName = "com.choclift.snippettests.\(UUID().uuidString)"
+        let isolatedDefaults = UserDefaults(suiteName: suiteName)!
+        defer { isolatedDefaults.removePersistentDomain(forName: suiteName) }
+
+        let delegate = SnippetRecordingDelegate()
+        let server = MacServerEngine(macID: "mac-snippet-host", macName: "Studio Mac")
+        server.delegate = delegate
+        delegate.server = server
+        defer { server.stop() }
+
+        let iphone = CompanionClientEngine(
+            deviceID: "iphone-snip-1",
+            deviceName: "iPhone",
+            platform: .iPhone,
+            userDefaults: isolatedDefaults,
+            storageKeyPrefix: "iphoneSnip"
+        )
+        let ipad = CompanionClientEngine(
+            deviceID: "ipad-snip-1",
+            deviceName: "iPad",
+            platform: .iPad,
+            userDefaults: isolatedDefaults,
+            storageKeyPrefix: "ipadSnip"
+        )
+        let watch = CompanionClientEngine(
+            deviceID: "watch-snip-1",
+            deviceName: "Apple Watch",
+            platform: .appleWatch,
+            userDefaults: isolatedDefaults,
+            storageKeyPrefix: "watchSnip"
+        )
+        defer {
+            iphone.disconnect()
+            ipad.disconnect()
+            watch.disconnect()
+        }
+
+        for client in [iphone, ipad, watch] {
+            let transport = server.acceptInMemoryCompanion()
+            client.connectInMemoryBluetooth(to: transport, targetName: "Studio Mac", macID: "mac-snippet-host")
+            try await waitUntil("\(client.deviceName) awaiting PIN") {
+                if case .awaitingPIN = client.connectionState { return true }
+                return false
+            }
+            client.submitPIN(server.currentPIN)
+            try await waitUntil("\(client.deviceName) connected") { client.connectionState.isConnected }
+        }
+
+        // Create two snippets on iPhone and sync through workspace profile to Mac, iPad, and Watch
+        let sig = TextSnippet(title: "Signature", body: "Thanks,\nAlex")
+        let cmd = TextSnippet(title: "Deploy", body: "git status && swift test")
+        var edited = iphone.profile
+        XCTAssertTrue(edited.upsertSnippet(sig))
+        XCTAssertTrue(edited.upsertSnippet(cmd))
+        iphone.pushUpdatedProfile(edited)
+
+        try await waitUntil("iPad and Watch receive synced snippets") {
+            ipad.profile.snippets == [sig, cmd] && watch.profile.snippets == [sig, cmd]
+        }
+        XCTAssertEqual(delegate.profile.snippets, [sig, cmd])
+
+        // Trigger snippet insertion from iPhone, iPad, and Watch via insertText (reusing .insertEmoji wire message)
+        iphone.insertText(sig.body)
+        ipad.insertText(cmd.body)
+        watch.insertText(watch.profile.snippets[0].body)
+
+        try await waitUntil("All 3 snippet insertions delivered") {
+            delegate.insertedPayloads.count == 3
+        }
+        XCTAssertEqual(delegate.insertedPayloads[0].platform, .iPhone)
+        XCTAssertEqual(delegate.insertedPayloads[0].text, "Thanks,\nAlex")
+        XCTAssertEqual(delegate.insertedPayloads[1].platform, .iPad)
+        XCTAssertEqual(delegate.insertedPayloads[1].text, "git status && swift test")
+        XCTAssertEqual(delegate.insertedPayloads[2].platform, .appleWatch)
+        XCTAssertEqual(delegate.insertedPayloads[2].text, "Thanks,\nAlex")
+
+        // Unfocused Mac cursor state propagates focus hint to companions and blocks insertion
+        delegate.isEditingText = false
+        delegate.focusedAppName = "Finder"
+        server.broadcast(.textFieldFocusChanged(isEditingText: false, appName: "Finder"))
+        try await waitUntil("Companions reflect unfocused Mac cursor") {
+            !iphone.isEditingTextOnMac && !watch.isEditingTextOnMac && iphone.focusedMacAppName == "Finder"
+        }
+
+        iphone.lastFeedback = nil
+        iphone.insertText(sig.body)
+        try await waitUntil("Unfocused tap returns failure feedback without inserting") {
+            iphone.lastFeedback?.success == false
+        }
+        XCTAssertEqual(delegate.insertedPayloads.count, 3)
+    }
+    #endif
 }
