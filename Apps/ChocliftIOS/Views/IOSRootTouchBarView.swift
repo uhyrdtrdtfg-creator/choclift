@@ -66,7 +66,7 @@ public struct IOSRootTouchBarView: View {
                 if isIPadWide {
                     iPadExpandedWorkspace(size: geo.size)
                 } else if isLandscape {
-                    iPhoneLandscapeTouchBar
+                    iPhoneLandscapeTouchBar(totalWidth: geo.size.width)
                 } else {
                     iPhonePortraitTouchBar
                 }
@@ -169,7 +169,7 @@ public struct IOSRootTouchBarView: View {
 
     // MARK: - iPhone Landscape Touch Bar (Signature Layout)
 
-    private var iPhoneLandscapeTouchBar: some View {
+    private func iPhoneLandscapeTouchBar(totalWidth: CGFloat) -> some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
                 if !client.connectionState.isConnected {
@@ -180,6 +180,13 @@ public struct IOSRootTouchBarView: View {
 
                 activeMainContent(isLandscape: true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                IOSPersistentControlStripView(
+                    client: client,
+                    preferSingleRow: (totalWidth - 60) >= 580
+                )
+                .padding(.horizontal, 14)
+                .padding(.bottom, 8)
             }
 
             // Right-hand Vertical Control Rail — quiet link badge + generous 44pt mode targets
@@ -267,6 +274,12 @@ public struct IOSRootTouchBarView: View {
 
             activeMainContent(isLandscape: false)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            IOSPersistentControlStripView(
+                client: client,
+                preferSingleRow: false
+            )
+            .padding(.horizontal, 16)
 
             // Bottom Mode Switcher Dock (>= 44pt touch targets)
             HStack(spacing: 8) {
@@ -378,21 +391,19 @@ public struct IOSRootTouchBarView: View {
                     .padding(.horizontal, 18)
             }
 
-            // Main Split: Left = Chocolate Bar + Time Travel Strip | Right = Emoji Bar + Gestures
+            // Main Split: Left = Chocolate Bar + Control Strip + Time Travel Strip | Right = Emoji Bar + Gestures
+            let rightPanelWidth = min(368, size.width * 0.36)
+            let leftColumnWidth = max(320, size.width - 36 - 14 - rightPanelWidth)
+
             HStack(spacing: 14) {
                 VStack(spacing: 12) {
-                    IOSChocolateBarSurfaceView(
+                    IOSIPadChocolateBarDeckView(
                         client: client,
                         currentPageIndex: $currentPageIndex,
-                        isLandscape: true
+                        availableWidth: leftColumnWidth
                     ) { slot in
                         editingSlot = slot
                     }
-                    .background(palette.barSurface.opacity(0.65), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 26, style: .continuous)
-                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
-                    )
 
                     iPadTimeTravelDockStrip
                 }
@@ -422,7 +433,7 @@ public struct IOSRootTouchBarView: View {
                             .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
                     )
                 }
-                .frame(width: min(368, size.width * 0.36))
+                .frame(width: rightPanelWidth)
             }
             .padding(.horizontal, 18)
             .padding(.bottom, 14)

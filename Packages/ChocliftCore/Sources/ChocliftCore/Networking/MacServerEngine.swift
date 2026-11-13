@@ -73,6 +73,7 @@ public final class MacServerEngine: ObservableObject {
         var deviceName: String?
         var platform: DevicePlatform = .iPhone
         var isAuthenticated = false
+        var supportsControlStrip = false
         var sentIconBundleIDs: Set<String> = []
         var lastActivityAt = Date()
 
@@ -295,6 +296,15 @@ public final class MacServerEngine: ObservableObject {
                 continue
             }
             send(message, to: session)
+        }
+    }
+
+    public func broadcastControlStripState(_ state: ControlStripState, excludingDeviceID: String? = nil) {
+        for session in sessions.values where session.isAuthenticated && session.supportsControlStrip {
+            if let excludingDeviceID, session.deviceID == excludingDeviceID {
+                continue
+            }
+            send(.controlStripStateUpdated(state), to: session)
         }
     }
 
@@ -795,12 +805,22 @@ public final class MacServerEngine: ObservableObject {
         case .ping(let timestamp):
             send(.pong(timestamp: timestamp), to: session)
 
+        case .unknownClientMessage:
+            break
+
         default:
             guard session.isAuthenticated,
                   let deviceID = session.deviceID,
                   let record = pairedDevices.first(where: { $0.deviceID == deviceID }) else {
                 send(.pairingRequired(macID: macID, macName: macName), to: session)
                 return
+            }
+
+            switch message {
+            case .requestControlStripState, .setControlLevel, .setMicMuted:
+                session.supportsControlStrip = true
+            default:
+                break
             }
 
             if case .requestIcons(let bundleIdentifiers) = message {
