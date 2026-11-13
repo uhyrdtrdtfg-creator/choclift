@@ -7,16 +7,24 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0902B8781D8ACED446E80F86 /* terminal.png in Resources */ = {isa = PBXBuildFile; fileRef = 6CB4B777F556BB9F5483D0A8 /* terminal.png */; };
 		0F434D4989EDE569D36B3391 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 66E4E8891AFD6F4FABAFF271 /* Assets.xcassets */; };
+		0F582E8E29BA059DE8155ACC /* safari.png in Resources */ = {isa = PBXBuildFile; fileRef = D6A84CEE75CB8D687A708F81 /* safari.png */; };
 		1107BCC3808407CFEBB3335D /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378D57F87F9075FB787AF62B /* WireProtocol.swift */; };
 		11514719064CA3F4324F0633 /* MacSlotItemPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E799103D3FF189D12A92AC14 /* MacSlotItemPickerSheet.swift */; };
+		1450C9D8CEBD2522655EA27E /* reminders.png in Resources */ = {isa = PBXBuildFile; fileRef = 213217E3E0ADB61F84B88238 /* reminders.png */; };
+		198B34E371238CED9FDAFFD2 /* calendar.png in Resources */ = {isa = PBXBuildFile; fileRef = 30CE11D675395B109D762312 /* calendar.png */; };
+		1A1ADFCC402D53E141BE4FD4 /* music.png in Resources */ = {isa = PBXBuildFile; fileRef = 8215F8844882FF09DD4D19AC /* music.png */; };
 		1AF91D7A950360F2FC55A64E /* ActionFlows.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */; };
+		1DBAAF1183B0E8E08AE9E224 /* mail.png in Resources */ = {isa = PBXBuildFile; fileRef = 2FE0A5E4654684D8D73CB0A6 /* mail.png */; };
 		1DC30F48A2BE707B77945004 /* ChocliftIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F15036CF65DE146CA00BB84 /* ChocliftIOSApp.swift */; };
 		1EAB438701E11328B296FF8B /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
 		219F65F9BDE35A890476E5CD /* libChocliftCoreMac.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 309FB4ADE26AAF40909BC0FB /* libChocliftCoreMac.a */; };
+		231821A9E716F4AAF256C035 /* reminders.png in Resources */ = {isa = PBXBuildFile; fileRef = 213217E3E0ADB61F84B88238 /* reminders.png */; };
 		2C8E4122BC0C618D66E952D8 /* ChocolateBarStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00E7551CE4795CA307064107 /* ChocolateBarStudioView.swift */; };
 		3398DF62B62B53105D05AD43 /* ActionFlowsStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A0A827A172B80AEAD41CB0 /* ActionFlowsStudioView.swift */; };
 		345F6C0A12D26C40FDB51738 /* IOSRootTouchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C6F35B1BB29CD96ADCDCAA /* IOSRootTouchBarView.swift */; };
+		3695A85ECA5D017250793BC3 /* notes.png in Resources */ = {isa = PBXBuildFile; fileRef = BE2646C17F6B581FF2D9A9FC /* notes.png */; };
 		397EC37A53C4C6D011658F1E /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
 		39B7BF35A2DCA3748B9CCD32 /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
 		3C4C52891835C63359ED3EF3 /* IOSSlotEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 992E3238F727E1244DEB62AA /* IOSSlotEditorSheet.swift */; };
@@ -28,45 +36,70 @@
 		42E28ECB2B1007C4402E3112 /* ChocDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */; };
 		4384AE4390A37012B4601BFA /* WatchRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8199ABF1806E897A7512A503 /* WatchRootView.swift */; };
 		43ADD17D4B76EB5F4AD6416C /* BluetoothCompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */; };
+		4D9840876E5D692950FF865B /* finder.png in Resources */ = {isa = PBXBuildFile; fileRef = 289E4D12B0F6E3F188113079 /* finder.png */; };
 		4F3B6DEC8AF177C66489A9CF /* BluetoothCompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */; };
+		513AC3710015CB6F8A0F0E5E /* music.png in Resources */ = {isa = PBXBuildFile; fileRef = 8215F8844882FF09DD4D19AC /* music.png */; };
 		52082CB82A2482B4051813B6 /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
 		5A969ADA4B9D5D585B04C9AC /* WatchPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55A39DFD6BABFD8EDBD71C3E /* WatchPairingView.swift */; };
 		5FADBB823421CE699E25A31E /* MacAppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C7BD308B52CE99958DDECFA /* MacAppCoordinator.swift */; };
 		636AB976C55CBEBA27B1716A /* ActionFlows.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */; };
 		654CE5DF7566F6783D98BE4A /* IOSPairingAndConnectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD7D98161F2A0939B6B59889 /* IOSPairingAndConnectionSheet.swift */; };
+		690D7F9FD935271A91B7DBD3 /* BundledAppIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */; };
+		6938D92F8B6144C57713553D /* xcode.png in Resources */ = {isa = PBXBuildFile; fileRef = 0381A811167B0BA8047F75B9 /* xcode.png */; };
 		6A0D6FD1901DBDDA07EE1644 /* ChocliftWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 986435E767EE4D1C6FA42738 /* ChocliftWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		6BF1273A3B22B05D9D291B58 /* safari.png in Resources */ = {isa = PBXBuildFile; fileRef = D6A84CEE75CB8D687A708F81 /* safari.png */; };
 		6C90D70E5CDF89187DB9B236 /* PlatformCompanionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */; };
 		73A50ADF2E84DCAC91075CA4 /* PlatformCompanionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */; };
 		744EB2EA1DB278ECCE40EAF0 /* MacAppAndShortcutCatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B459D461CDBACF99B6F99A8E /* MacAppAndShortcutCatalogService.swift */; };
 		75412A9C9B26A552680AFD2D /* MacServerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3371CFFF20B9E1134EDB3E8 /* MacServerEngine.swift */; };
 		7581CD6E2F0929431A33F49F /* MacServerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3371CFFF20B9E1134EDB3E8 /* MacServerEngine.swift */; };
 		77751E9F1949AAB0488357B0 /* libChocliftCoreWatch.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6FC7D3375FFAED79D1CB7DE7 /* libChocliftCoreWatch.a */; };
+		78348E63FFB5BED7B7479BF4 /* xcode.png in Resources */ = {isa = PBXBuildFile; fileRef = 0381A811167B0BA8047F75B9 /* xcode.png */; };
+		7835B805B520ABC0E4F5B8CC /* terminal.png in Resources */ = {isa = PBXBuildFile; fileRef = 6CB4B777F556BB9F5483D0A8 /* terminal.png */; };
+		79190E0587870F258D91793C /* calendar.png in Resources */ = {isa = PBXBuildFile; fileRef = 30CE11D675395B109D762312 /* calendar.png */; };
 		7A194DD828D7FC40AD07184A /* WatchSurfacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9FE4714CD1037D2AFD3E731 /* WatchSurfacesView.swift */; };
+		7A433E0B51F8B9F8A1950AD7 /* xcode.png in Resources */ = {isa = PBXBuildFile; fileRef = 0381A811167B0BA8047F75B9 /* xcode.png */; };
 		7AB4E8F26192B87A6A53DD91 /* MultiTouchGestureOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55531469D9255C9D44CE4F85 /* MultiTouchGestureOverlay.swift */; };
+		7FD37A2F0B77A1D3EA6DBFC0 /* finder.png in Resources */ = {isa = PBXBuildFile; fileRef = 289E4D12B0F6E3F188113079 /* finder.png */; };
 		82612B4144EDA160119CA96E /* PlatformCompanionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */; };
+		83A2B79E6AA4B0064DCB8D8B /* messages.png in Resources */ = {isa = PBXBuildFile; fileRef = D2F04CF28043E06EA8DB3BE5 /* messages.png */; };
 		8CDA41C0F0FFD2D11986AFD0 /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
 		8DC9025CCB0479F66B909C6B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5803BC1A7998DE5911DF1E24 /* Assets.xcassets */; };
+		91E26155F0C875E30B5515E6 /* notes.png in Resources */ = {isa = PBXBuildFile; fileRef = BE2646C17F6B581FF2D9A9FC /* notes.png */; };
 		94068E1F1827A415A1EBA1E1 /* MacAccessibilityAndWindowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8003AD2FBC8B7C7AD4459D47 /* MacAccessibilityAndWindowService.swift */; };
 		9B3B62752E758C58AB001C99 /* ChocDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */; };
 		9CCC043223B77D2383E1CA84 /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8859A29A043A4B69F607B04C /* EmojiCatalog.swift */; };
+		9CF94F51BEED7383E1BCAF39 /* notes.png in Resources */ = {isa = PBXBuildFile; fileRef = BE2646C17F6B581FF2D9A9FC /* notes.png */; };
 		A30D2564AFDE27554AF84361 /* BluetoothCompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */; };
+		A33C8EE75538EA7E40D5DA14 /* messages.png in Resources */ = {isa = PBXBuildFile; fileRef = D2F04CF28043E06EA8DB3BE5 /* messages.png */; };
 		A616F76D587F3D7430BCB29C /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378D57F87F9075FB787AF62B /* WireProtocol.swift */; };
+		A82F9B22CC59F5BE1DA7E461 /* messages.png in Resources */ = {isa = PBXBuildFile; fileRef = D2F04CF28043E06EA8DB3BE5 /* messages.png */; };
+		A8E599E4AE698CB6BC397B22 /* mail.png in Resources */ = {isa = PBXBuildFile; fileRef = 2FE0A5E4654684D8D73CB0A6 /* mail.png */; };
 		B3A9932DA455C1C8C3515FF3 /* EmojiBarStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7CB5368CF46C2C2213D8656 /* EmojiBarStudioView.swift */; };
 		B779328CE1C37C369B1BDFE2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0637814C808EC6900262C681 /* Assets.xcassets */; };
+		B85F933F5A4A322234A160F5 /* calendar.png in Resources */ = {isa = PBXBuildFile; fileRef = 30CE11D675395B109D762312 /* calendar.png */; };
 		C0DE9291FA2C4F6F27838894 /* MacTimeTravelMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 813CADCB2CE124AC898446DE /* MacTimeTravelMonitor.swift */; };
+		C178C120B322517C52CAEE3A /* BundledAppIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */; };
 		C294D28D964EFF6643FAC393 /* IOSCompanionModesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65CAA7B788878C4CCF682A40 /* IOSCompanionModesView.swift */; };
 		C55F470AACCF7B28E03A49EF /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
 		C735ED138475E8FF8564F1FD /* MacInputAndMediaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2610F6011A383F732C01DC10 /* MacInputAndMediaService.swift */; };
 		D117BED0C6A4AC940F4AFA5A /* ChocDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */; };
+		D1416E3B8D4ECE187FBBCBFB /* mail.png in Resources */ = {isa = PBXBuildFile; fileRef = 2FE0A5E4654684D8D73CB0A6 /* mail.png */; };
 		D19ADC68FDF7AB4963E84CA3 /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8859A29A043A4B69F607B04C /* EmojiCatalog.swift */; };
+		D1FE97D409EB7ECCC933E602 /* safari.png in Resources */ = {isa = PBXBuildFile; fileRef = D6A84CEE75CB8D687A708F81 /* safari.png */; };
 		D7FCC2E5110CA56C5725F6DA /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
+		D98C8883FC0A69798C9BE591 /* music.png in Resources */ = {isa = PBXBuildFile; fileRef = 8215F8844882FF09DD4D19AC /* music.png */; };
 		DAB4CBDFA2B7DA671F50C2C0 /* MacServerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3371CFFF20B9E1134EDB3E8 /* MacServerEngine.swift */; };
+		DE2BB25340B0E35ECACB71AF /* reminders.png in Resources */ = {isa = PBXBuildFile; fileRef = 213217E3E0ADB61F84B88238 /* reminders.png */; };
 		DF61BE35854C52722D2F20F5 /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
 		DFB1DDE64AE82710C328A49C /* IOSFlowEditorViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */; };
 		E8750C18F4A9A27AA2A9EF3E /* ChocliftMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3DBA1BF1036F57F143E4AAA /* ChocliftMacApp.swift */; };
+		EB47886475B3208848D9B611 /* BundledAppIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */; };
 		F179169D873243EE590DC3CC /* TimeTravelAndGestureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9A7BFF5A52FBC825E5EC0A6 /* TimeTravelAndGestureViews.swift */; };
+		F67EF010677977FC8A1792D1 /* finder.png in Resources */ = {isa = PBXBuildFile; fileRef = 289E4D12B0F6E3F188113079 /* finder.png */; };
 		F9A2071D485ADDE2BBE5E965 /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378D57F87F9075FB787AF62B /* WireProtocol.swift */; };
 		F9FC4D6C32DF2E52155D2376 /* ChocliftWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 226A03B84444E14186ACF945 /* ChocliftWatchApp.swift */; };
+		FA6D9491F0BDCC9A6FB30C27 /* terminal.png in Resources */ = {isa = PBXBuildFile; fileRef = 6CB4B777F556BB9F5483D0A8 /* terminal.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -116,13 +149,19 @@
 
 /* Begin PBXFileReference section */
 		00E7551CE4795CA307064107 /* ChocolateBarStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocolateBarStudioView.swift; sourceTree = "<group>"; };
+		0381A811167B0BA8047F75B9 /* xcode.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = xcode.png; sourceTree = "<group>"; };
 		0455E6A3BEB8E8030DFB5547 /* ChocliftMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChocliftMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0637814C808EC6900262C681 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0D64F1BC1A63A04202433DEB /* ChocliftIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ChocliftIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledAppIcons.swift; sourceTree = "<group>"; };
+		213217E3E0ADB61F84B88238 /* reminders.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = reminders.png; sourceTree = "<group>"; };
 		226A03B84444E14186ACF945 /* ChocliftWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftWatchApp.swift; sourceTree = "<group>"; };
 		2610F6011A383F732C01DC10 /* MacInputAndMediaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacInputAndMediaService.swift; sourceTree = "<group>"; };
+		289E4D12B0F6E3F188113079 /* finder.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = finder.png; sourceTree = "<group>"; };
 		2F15036CF65DE146CA00BB84 /* ChocliftIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftIOSApp.swift; sourceTree = "<group>"; };
+		2FE0A5E4654684D8D73CB0A6 /* mail.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = mail.png; sourceTree = "<group>"; };
 		309FB4ADE26AAF40909BC0FB /* libChocliftCoreMac.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libChocliftCoreMac.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		30CE11D675395B109D762312 /* calendar.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = calendar.png; sourceTree = "<group>"; };
 		31CBDF43194BCF470C79690B /* DevicesAndMainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesAndMainWindowView.swift; sourceTree = "<group>"; };
 		378D57F87F9075FB787AF62B /* WireProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireProtocol.swift; sourceTree = "<group>"; };
 		55531469D9255C9D44CE4F85 /* MultiTouchGestureOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiTouchGestureOverlay.swift; sourceTree = "<group>"; };
@@ -130,6 +169,7 @@
 		5803BC1A7998DE5911DF1E24 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		65CAA7B788878C4CCF682A40 /* IOSCompanionModesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSCompanionModesView.swift; sourceTree = "<group>"; };
 		66E4E8891AFD6F4FABAFF271 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		6CB4B777F556BB9F5483D0A8 /* terminal.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = terminal.png; sourceTree = "<group>"; };
 		6FC7D3375FFAED79D1CB7DE7 /* libChocliftCoreWatch.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libChocliftCoreWatch.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothCompanionLink.swift; sourceTree = "<group>"; };
 		75A0A827A172B80AEAD41CB0 /* ActionFlowsStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionFlowsStudioView.swift; sourceTree = "<group>"; };
@@ -137,6 +177,7 @@
 		8003AD2FBC8B7C7AD4459D47 /* MacAccessibilityAndWindowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAccessibilityAndWindowService.swift; sourceTree = "<group>"; };
 		813CADCB2CE124AC898446DE /* MacTimeTravelMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTimeTravelMonitor.swift; sourceTree = "<group>"; };
 		8199ABF1806E897A7512A503 /* WatchRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRootView.swift; sourceTree = "<group>"; };
+		8215F8844882FF09DD4D19AC /* music.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = music.png; sourceTree = "<group>"; };
 		8859A29A043A4B69F607B04C /* EmojiCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiCatalog.swift; sourceTree = "<group>"; };
 		8C7BD308B52CE99958DDECFA /* MacAppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppCoordinator.swift; sourceTree = "<group>"; };
 		90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionLink.swift; sourceTree = "<group>"; };
@@ -150,8 +191,11 @@
 		B459D461CDBACF99B6F99A8E /* MacAppAndShortcutCatalogService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppAndShortcutCatalogService.swift; sourceTree = "<group>"; };
 		B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompanionSupport.swift; sourceTree = "<group>"; };
 		B9A7BFF5A52FBC825E5EC0A6 /* TimeTravelAndGestureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeTravelAndGestureViews.swift; sourceTree = "<group>"; };
+		BE2646C17F6B581FF2D9A9FC /* notes.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = notes.png; sourceTree = "<group>"; };
 		C5756FAFC7277A62567E747E /* ChocliftModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftModels.swift; sourceTree = "<group>"; };
+		D2F04CF28043E06EA8DB3BE5 /* messages.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = messages.png; sourceTree = "<group>"; };
 		D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSFlowEditorViews.swift; sourceTree = "<group>"; };
+		D6A84CEE75CB8D687A708F81 /* safari.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = safari.png; sourceTree = "<group>"; };
 		DD7D98161F2A0939B6B59889 /* IOSPairingAndConnectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSPairingAndConnectionSheet.swift; sourceTree = "<group>"; };
 		E799103D3FF189D12A92AC14 /* MacSlotItemPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSlotItemPickerSheet.swift; sourceTree = "<group>"; };
 		E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocDesignSystem.swift; sourceTree = "<group>"; };
@@ -204,6 +248,23 @@
 				813CADCB2CE124AC898446DE /* MacTimeTravelMonitor.swift */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		1131669875D124B40C036C96 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				30CE11D675395B109D762312 /* calendar.png */,
+				289E4D12B0F6E3F188113079 /* finder.png */,
+				2FE0A5E4654684D8D73CB0A6 /* mail.png */,
+				D2F04CF28043E06EA8DB3BE5 /* messages.png */,
+				8215F8844882FF09DD4D19AC /* music.png */,
+				BE2646C17F6B581FF2D9A9FC /* notes.png */,
+				213217E3E0ADB61F84B88238 /* reminders.png */,
+				D6A84CEE75CB8D687A708F81 /* safari.png */,
+				6CB4B777F556BB9F5483D0A8 /* terminal.png */,
+				0381A811167B0BA8047F75B9 /* xcode.png */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		11E46DC5D246539BF061D42A /* Networking */ = {
@@ -363,6 +424,7 @@
 				EF328F02173594A59963393B /* Models */,
 				11E46DC5D246539BF061D42A /* Networking */,
 				7622D5E122281EF62957FD41 /* Protocol */,
+				1131669875D124B40C036C96 /* Resources */,
 				7CEAC78863A2F2A513C1AF48 /* Theme */,
 			);
 			path = ChocliftCore;
@@ -397,6 +459,7 @@
 			isa = PBXGroup;
 			children = (
 				EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */,
+				15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */,
 				C5756FAFC7277A62567E747E /* ChocliftModels.swift */,
 				8859A29A043A4B69F607B04C /* EmojiCatalog.swift */,
 			);
@@ -583,6 +646,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				B779328CE1C37C369B1BDFE2 /* Assets.xcassets in Resources */,
+				79190E0587870F258D91793C /* calendar.png in Resources */,
+				F67EF010677977FC8A1792D1 /* finder.png in Resources */,
+				1DBAAF1183B0E8E08AE9E224 /* mail.png in Resources */,
+				83A2B79E6AA4B0064DCB8D8B /* messages.png in Resources */,
+				1A1ADFCC402D53E141BE4FD4 /* music.png in Resources */,
+				91E26155F0C875E30B5515E6 /* notes.png in Resources */,
+				231821A9E716F4AAF256C035 /* reminders.png in Resources */,
+				0F582E8E29BA059DE8155ACC /* safari.png in Resources */,
+				7835B805B520ABC0E4F5B8CC /* terminal.png in Resources */,
+				6938D92F8B6144C57713553D /* xcode.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -591,6 +664,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				8DC9025CCB0479F66B909C6B /* Assets.xcassets in Resources */,
+				198B34E371238CED9FDAFFD2 /* calendar.png in Resources */,
+				4D9840876E5D692950FF865B /* finder.png in Resources */,
+				D1416E3B8D4ECE187FBBCBFB /* mail.png in Resources */,
+				A33C8EE75538EA7E40D5DA14 /* messages.png in Resources */,
+				D98C8883FC0A69798C9BE591 /* music.png in Resources */,
+				9CF94F51BEED7383E1BCAF39 /* notes.png in Resources */,
+				DE2BB25340B0E35ECACB71AF /* reminders.png in Resources */,
+				D1FE97D409EB7ECCC933E602 /* safari.png in Resources */,
+				0902B8781D8ACED446E80F86 /* terminal.png in Resources */,
+				7A433E0B51F8B9F8A1950AD7 /* xcode.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -599,6 +682,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				0F434D4989EDE569D36B3391 /* Assets.xcassets in Resources */,
+				B85F933F5A4A322234A160F5 /* calendar.png in Resources */,
+				7FD37A2F0B77A1D3EA6DBFC0 /* finder.png in Resources */,
+				A8E599E4AE698CB6BC397B22 /* mail.png in Resources */,
+				A82F9B22CC59F5BE1DA7E461 /* messages.png in Resources */,
+				513AC3710015CB6F8A0F0E5E /* music.png in Resources */,
+				3695A85ECA5D017250793BC3 /* notes.png in Resources */,
+				1450C9D8CEBD2522655EA27E /* reminders.png in Resources */,
+				6BF1273A3B22B05D9D291B58 /* safari.png in Resources */,
+				FA6D9491F0BDCC9A6FB30C27 /* terminal.png in Resources */,
+				78348E63FFB5BED7B7479BF4 /* xcode.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -673,6 +766,7 @@
 			files = (
 				636AB976C55CBEBA27B1716A /* ActionFlows.swift in Sources */,
 				A30D2564AFDE27554AF84361 /* BluetoothCompanionLink.swift in Sources */,
+				EB47886475B3208848D9B611 /* BundledAppIcons.swift in Sources */,
 				D117BED0C6A4AC940F4AFA5A /* ChocDesignSystem.swift in Sources */,
 				52082CB82A2482B4051813B6 /* ChocliftModels.swift in Sources */,
 				C55F470AACCF7B28E03A49EF /* CompanionClientEngine.swift in Sources */,
@@ -690,6 +784,7 @@
 			files = (
 				1AF91D7A950360F2FC55A64E /* ActionFlows.swift in Sources */,
 				4F3B6DEC8AF177C66489A9CF /* BluetoothCompanionLink.swift in Sources */,
+				C178C120B322517C52CAEE3A /* BundledAppIcons.swift in Sources */,
 				42E28ECB2B1007C4402E3112 /* ChocDesignSystem.swift in Sources */,
 				39B7BF35A2DCA3748B9CCD32 /* ChocliftModels.swift in Sources */,
 				397EC37A53C4C6D011658F1E /* CompanionClientEngine.swift in Sources */,
@@ -726,6 +821,7 @@
 			files = (
 				3C8A64C1EFB1AB65A7B34C35 /* ActionFlows.swift in Sources */,
 				43ADD17D4B76EB5F4AD6416C /* BluetoothCompanionLink.swift in Sources */,
+				690D7F9FD935271A91B7DBD3 /* BundledAppIcons.swift in Sources */,
 				9B3B62752E758C58AB001C99 /* ChocDesignSystem.swift in Sources */,
 				D7FCC2E5110CA56C5725F6DA /* ChocliftModels.swift in Sources */,
 				1EAB438701E11328B296FF8B /* CompanionClientEngine.swift in Sources */,

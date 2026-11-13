@@ -17,7 +17,10 @@ let package = Package(
     targets: [
         .target(
             name: "ChocliftCore",
-            path: "Sources/ChocliftCore"
+            path: "Sources/ChocliftCore",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "ChocliftCoreTests",

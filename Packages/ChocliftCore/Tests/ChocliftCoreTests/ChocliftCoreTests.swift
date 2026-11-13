@@ -6,6 +6,26 @@ import UIKit
 #endif
 
 final class ChocliftCoreTests: XCTestCase {
+    func testBundledDefaultAppIconsAreOriginalPNGs() {
+        let daily = ChocliftDefaults.makeDefaultPages()[0]
+        let expected: [String] = [
+            "com.apple.finder",
+            "com.apple.Safari",
+            "com.apple.Notes",
+            "com.apple.iCal",
+            "com.apple.Music",
+            "com.apple.MobileSMS"
+        ]
+        for (index, bundleID) in expected.enumerated() {
+            XCTAssertEqual(daily.slots[index]?.bundleIdentifier, bundleID)
+            let data = BundledAppIcons.pngData(for: bundleID)
+            XCTAssertNotNil(data, bundleID)
+            XCTAssertEqual(Array(data!.prefix(8)), [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A], bundleID)
+        }
+        XCTAssertNotNil(BundledAppIcons.pngData(for: "com.apple.Terminal"))
+        XCTAssertNil(BundledAppIcons.pngData(for: "com.example.missing"))
+    }
+
     func testDefaultProfileStructure() {
         let profile = ChocliftDefaults.makeDefaultProfile()
         XCTAssertEqual(profile.pages.count, BarPage.maxPages)
