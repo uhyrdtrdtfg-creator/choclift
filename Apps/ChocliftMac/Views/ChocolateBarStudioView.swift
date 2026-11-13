@@ -33,8 +33,10 @@ public struct ChocolateBarStudioView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             pageSelectorStrip
+
+            appDeckBindingBar
 
             if filledSlotCount == 0 {
                 emptyPageCallout
@@ -65,6 +67,7 @@ public struct ChocolateBarStudioView: View {
             ForEach(coordinator.profile.pages) { page in
                 let isSelected = (page.index == coordinator.selectedPageIndex)
                 let count = page.slots.compactMap { $0 }.count
+                let hasBoundApp = !coordinator.profile.boundBundleIdentifiers(forPageID: page.id).isEmpty
 
                 Button {
                     withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
@@ -78,6 +81,11 @@ public struct ChocolateBarStudioView: View {
                             Text(page.title)
                                 .font(.system(.callout, design: .rounded, weight: .bold))
                                 .lineLimit(1)
+                            if hasBoundApp {
+                                Image(systemName: "macwindow")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(palette.accent)
+                            }
                             Text("\(count)/\(BarPage.slotsPerPage)")
                                 .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(palette.secondaryText)
@@ -85,7 +93,11 @@ public struct ChocolateBarStudioView: View {
                             Text("\(page.index + 1)")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(palette.secondaryText)
-                            if count > 0 {
+                            if hasBoundApp {
+                                Image(systemName: "macwindow")
+                                    .font(.system(size: 8.5, weight: .bold))
+                                    .foregroundStyle(palette.accent.opacity(0.85))
+                            } else if count > 0 {
                                 Circle()
                                     .fill(palette.secondaryText.opacity(0.65))
                                     .frame(width: 4.5, height: 4.5)
@@ -139,6 +151,197 @@ public struct ChocolateBarStudioView: View {
         }
     }
 
+    // MARK: - Frontmost App Deck Binding Picker
+
+    private var appDeckBindingBar: some View {
+        let page = currentPage
+        let boundBundleIDs = coordinator.profile.boundBundleIdentifiers(forPageID: page.id)
+
+        return HStack(spacing: 10) {
+            Image(systemName: "macwindow.on.rectangle")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(palette.accent)
+
+            Text(L10n.tr("当前台为此应用时显示本页：", "Show this page when this app is frontmost:", language: lang))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(1)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    if boundBundleIDs.isEmpty {
+                        Text(L10n.tr("无（仅手动切换）", "None (manual only)", language: lang))
+                            .font(.caption)
+                            .foregroundStyle(palette.secondaryText.opacity(0.85))
+                    } else {
+                        ForEach(boundBundleIDs, id: \.self) { bundleID in
+                            boundAppChip(bundleIdentifier: bundleID)
+                        }
+                    }
+                }
+            }
+
+            Spacer(minLength: 6)
+
+            appDeckPickerMenu(for: page)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
+    }
+
+    private func boundAppChip(bundleIdentifier: String) -> some View {
+        let appName = coordinator.profile.resolvedAppDisplayName(
+            forBundleIdentifier: bundleIdentifier,
+            recentApps: coordinator.timeTravel.timeline,
+            catalogApps: coordinator.installedApps
+        )
+        let iconData = coordinator.catalogService.iconData(forBundleID: bundleIdentifier)
+            ?? BundledAppIcons.pngData(for: bundleIdentifier)
+
+        return HStack(spacing: 5) {
+            DataImageView(pngData: iconData, fallbackSymbol: "app.fill", tint: palette.primaryText)
+                .frame(width: 15, height: 15)
+
+            Text(appName)
+                .font(.system(.caption, design: .rounded, weight: .semibold))
+                .foregroundStyle(palette.primaryText)
+                .lineLimit(1)
+
+            Button {
+                coordinator.mutateProfile { draft in
+                    draft.removeAppDeckBinding(bundleIdentifier: bundleIdentifier)
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.secondaryText)
+            }
+            .buttonStyle(.plain)
+            .help(L10n.tr("移除 \(appName) 绑定", "Unbind \(appName)", language: lang))
+        }
+        .padding(.leading, 7)
+        .padding(.trailing, 6)
+        .padding(.vertical, 3.5)
+        .background(palette.tileFillTop, in: Capsule())
+        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+    }
+
+    private func appDeckPickerMenu(for page: BarPage) -> some View {
+        let boundBundleIDs = coordinator.profile.boundBundleIdentifiers(forPageID: page.id)
+
+        return Menu {
+            if !coordinator.timeTravel.timeline.isEmpty {
+                Section(L10n.tr("最近使用的应用", "Recent Apps", language: lang)) {
+                    ForEach(coordinator.timeTravel.timeline) { entry in
+                        appMenuRow(
+                            bundleIdentifier: entry.bundleIdentifier,
+                            appName: entry.appName,
+                            targetPageID: page.id
+                        )
+                    }
+                }
+            }
+
+            if !coordinator.installedApps.isEmpty {
+                Section(L10n.tr("本机已安装应用", "Installed Apps", language: lang)) {
+                    ForEach(coordinator.installedApps) { app in
+                        appMenuRow(
+                            bundleIdentifier: app.bundleIdentifier,
+                            appName: app.appName,
+                            targetPageID: page.id
+                        )
+                    }
+                }
+            }
+
+            Divider()
+
+            Button {
+                chooseBoundAppViaFinder(for: page.id)
+            } label: {
+                Label(L10n.tr("从访达选择应用…", "Browse Finder…", language: lang), systemImage: "folder")
+            }
+
+            if !boundBundleIDs.isEmpty {
+                Divider()
+
+                Button(role: .destructive) {
+                    coordinator.mutateProfile { draft in
+                        draft.clearAppDeckBindings(forPageID: page.id)
+                    }
+                } label: {
+                    Label(L10n.tr("清除本页应用绑定", "Clear Bound Apps", language: lang), systemImage: "xmark.circle")
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: boundBundleIDs.isEmpty ? "plus.app" : "plus")
+                    .font(.caption2.weight(.bold))
+                Text(
+                    boundBundleIDs.isEmpty
+                        ? L10n.tr("选择应用…", "Choose App…", language: lang)
+                        : L10n.tr("添加应用…", "Add App…", language: lang)
+                )
+                .font(.caption.weight(.semibold))
+            }
+            .foregroundStyle(palette.primaryText)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(palette.tileFillBottom, in: Capsule())
+            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    @ViewBuilder
+    private func appMenuRow(bundleIdentifier: String, appName: String, targetPageID: UUID) -> some View {
+        let boundPage = coordinator.profile.boundPage(forBundleIdentifier: bundleIdentifier)
+        let isBoundHere = (boundPage?.id == targetPageID)
+
+        Button {
+            toggleAppDeckBinding(bundleIdentifier: bundleIdentifier, for: targetPageID)
+        } label: {
+            if isBoundHere {
+                Label(appName, systemImage: "checkmark")
+            } else if let otherPage = boundPage {
+                Text("\(appName)  (\(otherPage.iconEmoji) \(otherPage.title))")
+            } else {
+                Text(appName)
+            }
+        }
+    }
+
+    private func toggleAppDeckBinding(bundleIdentifier: String, for pageID: UUID) {
+        coordinator.mutateProfile { draft in
+            if draft.boundPageID(forBundleIdentifier: bundleIdentifier) == pageID {
+                draft.removeAppDeckBinding(bundleIdentifier: bundleIdentifier)
+            } else {
+                draft.setAppDeckBinding(bundleIdentifier: bundleIdentifier, pageID: pageID)
+            }
+        }
+    }
+
+    private func chooseBoundAppViaFinder(for pageID: UUID) {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.applicationBundle]
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        if panel.runModal() == .OK,
+           let url = panel.url,
+           let bundleID = Bundle(url: url)?.bundleIdentifier,
+           !bundleID.isEmpty {
+            coordinator.mutateProfile { draft in
+                draft.setAppDeckBinding(bundleIdentifier: bundleID, pageID: pageID)
+            }
+        }
+    }
+
     private var emptyPageCallout: some View {
         HStack(spacing: 10) {
             Image(systemName: "square.grid.2x2")
@@ -180,7 +383,10 @@ public struct ChocolateBarStudioView: View {
     }
 
     private var pageMetadataEditor: some View {
-        let idx = coordinator.selectedPageIndex
+        let idx = min(max(0, coordinator.selectedPageIndex), coordinator.profile.pages.count - 1)
+        let page = coordinator.profile.pages[idx]
+        let boundBundleIDs = coordinator.profile.boundBundleIdentifiers(forPageID: page.id)
+
         return VStack(alignment: .leading, spacing: 12) {
             Text(L10n.tr("第 \(idx + 1) 页设置", "Page #\(idx + 1) Settings", language: lang))
                 .font(.headline)
@@ -231,6 +437,32 @@ public struct ChocolateBarStudioView: View {
 
             Divider()
 
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(L10n.tr("当前台为此应用时显示本页", "Show this page when this app is frontmost", language: lang))
+                        .font(.caption)
+                        .foregroundStyle(palette.secondaryText)
+                    Spacer()
+                    appDeckPickerMenu(for: page)
+                }
+
+                if boundBundleIDs.isEmpty {
+                    Text(L10n.tr("未绑定应用（保持手动切换）", "No bound apps (manual switching)", language: lang))
+                        .font(.caption2)
+                        .foregroundStyle(palette.secondaryText.opacity(0.8))
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 5) {
+                            ForEach(boundBundleIDs, id: \.self) { bundleID in
+                                boundAppChip(bundleIdentifier: bundleID)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
             Button(role: .destructive) {
                 coordinator.mutateProfile { draft in
                     draft.pages[idx].slots = Array(repeating: nil, count: BarPage.slotsPerPage)
@@ -243,7 +475,7 @@ public struct ChocolateBarStudioView: View {
             .disabled(filledSlotCount == 0)
         }
         .padding(16)
-        .frame(width: 260)
+        .frame(width: 288)
         .background(palette.barSurface)
         .tint(palette.accent)
         .preferredColorScheme(.light)

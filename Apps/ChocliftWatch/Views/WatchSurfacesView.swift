@@ -72,23 +72,120 @@ private struct WatchConnectionStateBanner: View {
     }
 }
 
+private struct WatchOrcaComplicationLine: View {
+    @ObservedObject var client: CompanionClientEngine
+    let status: OrcaTaskStatusSnapshot
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
+    var body: some View {
+        if !status.isOrcaRunning {
+            HStack(spacing: 5) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(palette.secondaryText)
+                Text(L10n.tr("Orca 未运行", "Orca is not running", language: lang))
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(palette.secondaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(minHeight: 28)
+            .background(palette.barSurface.opacity(0.85), in: Capsule())
+        } else if let primary = status.primaryRow {
+            let tint = stateColor(primary.state)
+            let summary: String = {
+                if let title = primary.title, !title.isEmpty {
+                    return "\(primary.state.label(in: lang)) · \(title)"
+                }
+                return "Orca · \(primary.state.label(in: lang))"
+            }()
+
+            if primary.canTapToFocus {
+                Button {
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    client.focusOrcaTask(dispatchID: primary.dispatchID)
+                } label: {
+                    lineBody(state: primary.state, tint: tint, summary: summary, canFocus: true)
+                }
+                .buttonStyle(.plain)
+            } else {
+                lineBody(state: primary.state, tint: tint, summary: summary, canFocus: false)
+            }
+        }
+    }
+
+    private func lineBody(state: OrcaTaskState, tint: Color, summary: String, canFocus: Bool) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: state.sfSymbol)
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundStyle(tint)
+
+            Text(summary)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(palette.primaryText)
+                .lineLimit(1)
+
+            Spacer(minLength: 2)
+
+            if canFocus {
+                Image(systemName: "macwindow.on.rectangle")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(palette.accent)
+            }
+        }
+        .padding(.horizontal, 9)
+        .frame(minHeight: canFocus ? 34 : 28)
+        .background(palette.barSurface, in: Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(tint.opacity(0.4), lineWidth: 1)
+        )
+        .contentShape(Capsule())
+    }
+
+    private func stateColor(_ state: OrcaTaskState) -> Color {
+        switch state {
+        case .working:
+            return palette.statusConnected
+        case .waiting:
+            return palette.accentEmphasis
+        case .failed:
+            return palette.statusFailure
+        case .idle:
+            return palette.secondaryText
+        }
+    }
+}
+
 // MARK: - 1. Watch Chocolate Bar Surface (8 Synced Pages x 8 Slots)
 
 public struct WatchChocolateBarView: View {
     @ObservedObject var client: CompanionClientEngine
-    @Binding var currentPageIndex: Int
+    @Binding var deckFollower: AppDeckFollowerState
+    var isBarVisible: Bool = true
     let onRequestPairing: () -> Void
 
     @State private var showPagePickerSheet: Bool = false
     @State private var assigningSlot: WatchSlotCoordinate?
     @State private var pressedSlotKey: String?
+    @State private var crownVolume: Double = 0.5
+    @State private var isCrownRotating: Bool = false
+    @State private var crownThrottle = ControlLevelDragThrottle()
+    @FocusState private var isVolumeCrownFocused: Bool
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
+    private var isCrownActiveForBar: Bool {
+        isBarVisible && !showPagePickerSheet && assigningSlot == nil
+    }
+
     private var safePageIndex: Int {
         guard !client.profile.pages.isEmpty else { return 0 }
-        return min(max(0, currentPageIndex), client.profile.pages.count - 1)
+        return min(max(0, deckFollower.currentPageIndex), client.profile.pages.count - 1)
     }
 
     private var activePage: BarPage {
@@ -98,14 +195,36 @@ public struct WatchChocolateBarView: View {
         return client.profile.pages[safePageIndex]
     }
 
+    private var activeBoundFrontmostAppName: String? {
+        guard deckFollower.isFollowingFrontmostApp,
+              let frontBundleID = client.frontmostBundleID,
+              !client.profile.pages.isEmpty,
+              client.profile.boundPageID(forBundleIdentifier: frontBundleID) == activePage.id else {
+            return nil
+        }
+        return client.profile.resolvedAppDisplayName(
+            forBundleIdentifier: frontBundleID,
+            recentApps: client.recentApps,
+            catalogApps: client.macCatalogApps
+        )
+    }
+
     public var body: some View {
         ScrollView {
             VStack(spacing: 8) {
                 if !client.connectionState.isConnected {
                     WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
+                } else if let orcaStatus = client.orcaStatus {
+                    WatchOrcaComplicationLine(client: client, status: orcaStatus)
                 }
 
                 pageSwitcherBar
+
+                if !deckFollower.isFollowingFrontmostApp {
+                    followFrontmostAppButton
+                } else if let boundAppName = activeBoundFrontmostAppName {
+                    followingAppBadge(appName: boundAppName)
+                }
 
                 let columns = [
                     GridItem(.flexible(), spacing: 8),
@@ -134,7 +253,40 @@ public struct WatchChocolateBarView: View {
                 }
             }
             .padding(.horizontal, 6)
-            .padding(.bottom, 12)
+            .padding(.bottom, 8)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 4) {
+            watchCrownVolumeBar
+                .padding(.horizontal, 6)
+                .padding(.bottom, 2)
+        }
+        .onAppear {
+            crownVolume = ControlStripLevel.clamp(client.controlStripState.volume)
+            if isCrownActiveForBar {
+                isVolumeCrownFocused = true
+            }
+        }
+        .onReceive(client.$controlStripState) { updated in
+            guard !isCrownRotating else { return }
+            let clamped = ControlStripLevel.clamp(updated.volume)
+            if abs(crownVolume - clamped) > 0.004 {
+                crownVolume = clamped
+            }
+        }
+        .task(id: isCrownActiveForBar) {
+            if isCrownActiveForBar {
+                try? await Task.sleep(for: .milliseconds(60))
+                guard !Task.isCancelled, isCrownActiveForBar else { return }
+                isVolumeCrownFocused = true
+            } else {
+                isVolumeCrownFocused = false
+            }
+        }
+        .task(id: isVolumeCrownFocused) {
+            guard isCrownActiveForBar, !isVolumeCrownFocused else { return }
+            try? await Task.sleep(for: .milliseconds(220))
+            guard !Task.isCancelled, isCrownActiveForBar else { return }
+            isVolumeCrownFocused = true
         }
         .sheet(isPresented: $showPagePickerSheet) {
             pagePickerSheet
@@ -146,6 +298,110 @@ public struct WatchChocolateBarView: View {
                 slotIndex: coord.slotIndex
             )
         }
+    }
+
+    private var watchCrownVolumeBar: some View {
+        let isMuted = client.controlStripState.isVolumeMuted && !isCrownRotating
+        let displayedLevel = ControlStripLevel.clamp(isCrownRotating ? crownVolume : client.controlStripState.volume)
+        let pct = ControlStripLevel.percentage(for: displayedLevel)
+
+        return HStack(spacing: 7) {
+            Button {
+                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                client.performQuickAction(.volumeMute)
+                isVolumeCrownFocused = true
+            } label: {
+                Image(systemName: (isMuted || displayedLevel <= 0.001) ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(.system(size: 12.5, weight: .bold))
+                    .foregroundStyle(isMuted ? palette.emphasisForeground : palette.accent)
+                    .frame(width: 32, height: 30)
+                    .background(
+                        isMuted ? palette.statusFailure : palette.tileFillBottom,
+                        in: Capsule()
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(
+                                isMuted ? palette.statusFailure : palette.subtleCardStroke,
+                                lineWidth: 1
+                            )
+                    )
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("watch-bar-volume-mute")
+            .accessibilityLabel(
+                isMuted
+                    ? L10n.tr("取消静音", "Unmute", language: lang)
+                    : L10n.tr("静音", "Mute", language: lang)
+            )
+
+            GeometryReader { geo in
+                let width = max(1, geo.size.width)
+                let fillWidth = max(6, width * CGFloat(displayedLevel))
+
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(palette.tileFillBottom)
+                        .frame(height: 6)
+
+                    if displayedLevel > 0.005 {
+                        Capsule()
+                            .fill(isMuted ? palette.secondaryText.opacity(0.45) : palette.accent)
+                            .frame(width: min(width, fillWidth), height: 6)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            }
+            .frame(height: 16)
+
+            Text("\(pct)%")
+                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(isMuted ? palette.secondaryText : palette.primaryText)
+                .frame(minWidth: 31, alignment: .trailing)
+        }
+        .padding(.leading, 4)
+        .padding(.trailing, 8)
+        .padding(.vertical, 3)
+        .background(palette.barSurface.opacity(0.95), in: Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(
+                    isCrownRotating ? palette.accent : palette.subtleCardStroke,
+                    lineWidth: isCrownRotating ? 1.4 : 1
+                )
+        )
+        .focusable(isCrownActiveForBar)
+        .focused($isVolumeCrownFocused)
+        .focusEffectDisabled()
+        .digitalCrownRotation(
+            detent: $crownVolume,
+            from: 0.0,
+            through: 1.0,
+            by: 0.02,
+            sensitivity: .medium,
+            isContinuous: false,
+            isHapticFeedbackEnabled: true,
+            onChange: { _ in
+                guard isCrownActiveForBar else { return }
+                isCrownRotating = true
+                let clamped = ControlStripLevel.clamp(crownVolume)
+                let now = ProcessInfo.processInfo.systemUptime
+                if let throttled = crownThrottle.updateDrag(to: clamped, at: now) {
+                    client.setControlLevel(kind: .volume, level: throttled)
+                }
+            },
+            onIdle: {
+                guard isCrownRotating else { return }
+                isCrownRotating = false
+                let clamped = ControlStripLevel.clamp(crownVolume)
+                let now = ProcessInfo.processInfo.systemUptime
+                let committed = crownThrottle.endDrag(at: clamped, at: now)
+                client.setControlLevel(kind: .volume, level: committed)
+            }
+        )
+        .accessibilityIdentifier("watch-bar-crown-volume")
     }
 
     private var pageSwitcherBar: some View {
@@ -202,11 +458,54 @@ public struct WatchChocolateBarView: View {
         }
     }
 
+    private var followFrontmostAppButton: some View {
+        Button {
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            withAnimation(.easeInOut(duration: 0.22)) {
+                deckFollower.followFrontmostApp(
+                    frontmostBundleIdentifier: client.frontmostBundleID,
+                    in: client.profile
+                )
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 10.5, weight: .bold))
+                Text(L10n.tr("跟随前台应用", "Follow Frontmost App", language: lang))
+                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: 32)
+            .padding(.horizontal, 8)
+            .background(palette.accent, in: Capsule())
+            .foregroundStyle(palette.accentForeground)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("watch-follow-frontmost-app-button")
+    }
+
+    private func followingAppBadge(appName: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "macwindow")
+                .font(.system(size: 9.5, weight: .bold))
+            Text(L10n.tr("跟随 \(appName)", "Following \(appName)", language: lang))
+                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(palette.accent.opacity(0.14), in: Capsule())
+        .foregroundStyle(palette.accent)
+    }
+
     private func stepPage(by delta: Int) {
-        let count = client.profile.pages.count
-        guard count > 0 else { return }
+        guard !client.profile.pages.isEmpty else { return }
         CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
-        currentPageIndex = (safePageIndex + delta + count) % count
+        withAnimation(.easeInOut(duration: 0.2)) {
+            deckFollower.stepManualPage(by: delta, in: client.profile)
+        }
     }
 
     private func watchSlotButton(
@@ -253,11 +552,38 @@ public struct WatchChocolateBarView: View {
 
     private var pagePickerSheet: some View {
         List {
-            ForEach(client.profile.pages) { page in
-                let isSelected = (page.index == safePageIndex)
+            Button {
+                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                deckFollower.followFrontmostApp(
+                    frontmostBundleIdentifier: client.frontmostBundleID,
+                    in: client.profile
+                )
+                showPagePickerSheet = false
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.accent)
+                    Text(L10n.tr("跟随前台应用", "Follow Frontmost App", language: lang))
+                        .font(.system(size: 13, weight: deckFollower.isFollowingFrontmostApp ? .bold : .medium, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(1)
+                    Spacer()
+                    if deckFollower.isFollowingFrontmostApp {
+                        Image(systemName: "checkmark")
+                            .font(.caption.bold())
+                            .foregroundStyle(palette.accent)
+                    }
+                }
+                .frame(minHeight: 38)
+            }
+            .listRowBackground(palette.barSurface)
+
+            ForEach(Array(client.profile.pages.enumerated()), id: \.element.id) { pageOffset, page in
+                let isSelected = (!deckFollower.isFollowingFrontmostApp && pageOffset == safePageIndex)
                 Button {
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
-                    currentPageIndex = page.index
+                    deckFollower.selectManualPage(index: pageOffset, in: client.profile)
                     showPagePickerSheet = false
                 } label: {
                     HStack(spacing: 8) {
@@ -268,8 +594,8 @@ public struct WatchChocolateBarView: View {
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                         Spacer()
-                        if isSelected {
-                            Image(systemName: "checkmark")
+                        if pageOffset == safePageIndex {
+                            Image(systemName: deckFollower.isFollowingFrontmostApp ? "macwindow" : "checkmark")
                                 .font(.caption.bold())
                                 .foregroundStyle(palette.accent)
                         }
@@ -669,14 +995,22 @@ public struct WatchTimeTravelView: View {
     }
 }
 
-// MARK: - 4. Watch Emoji Bar Surface (8 Synced Slides)
+// MARK: - 4. Watch Emoji & Snippets Bar Surface (8 Synced Slides + Saved Snippet Slots)
 
 public struct WatchEmojiBarView: View {
+    private enum WatchTextMode: String, CaseIterable, Identifiable {
+        case emoji
+        case snippets
+        var id: String { rawValue }
+    }
+
     @ObservedObject var client: CompanionClientEngine
     @Binding var currentSlideIndex: Int
     let onRequestPairing: () -> Void
 
+    @State private var mode: WatchTextMode = .emoji
     @State private var pressedEmojiIndex: Int?
+    @State private var pressedSnippetID: UUID?
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -710,102 +1044,242 @@ public struct WatchEmojiBarView: View {
                     .padding(.vertical, 4)
                     .background(palette.statusConnected.opacity(0.22), in: Capsule())
                     .foregroundStyle(palette.statusConnected)
-                }
-
-                HStack(spacing: 6) {
-                    Button {
-                        stepSlide(by: -1)
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(palette.primaryText)
-                            .frame(width: 36, height: 36)
-                            .background(palette.tileFillBottom, in: Circle())
-                            .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-
-                    HStack(spacing: 5) {
-                        Text(activeSlide.iconEmoji)
-                            .font(.system(size: 13))
-                        Text(activeSlide.title)
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                            .foregroundStyle(palette.primaryText)
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: "character.cursor.ibeam")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(L10n.tr("请先在 Mac 点击输入框", "Focus a Mac text field", language: lang))
+                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
                             .lineLimit(1)
                     }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 36)
-                    .padding(.horizontal, 6)
-                    .background(palette.barSurface, in: Capsule())
-                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-
-                    Button {
-                        stepSlide(by: 1)
-                    } label: {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(palette.primaryText)
-                            .frame(width: 36, height: 36)
-                            .background(palette.tileFillBottom, in: Circle())
-                            .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3.5)
+                    .background(palette.tileFillBottom, in: Capsule())
+                    .foregroundStyle(palette.secondaryText)
                 }
 
-                let cols = [
-                    GridItem(.flexible(), spacing: 7),
-                    GridItem(.flexible(), spacing: 7)
-                ]
+                modeSegmentBar
 
-                LazyVGrid(columns: cols, spacing: 7) {
-                    ForEach(Array(activeSlide.emojis.enumerated()), id: \.offset) { idx, emoji in
-                        let isPressed = (pressedEmojiIndex == idx)
-
-                        Button {
-                            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
-                            withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
-                                pressedEmojiIndex = idx
-                            }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-                                if pressedEmojiIndex == idx {
-                                    withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                                        pressedEmojiIndex = nil
-                                    }
-                                }
-                            }
-                            if client.connectionState.isConnected {
-                                client.insertEmoji(emoji)
-                            } else {
-                                onRequestPairing()
-                            }
-                        } label: {
-                            Text(emoji)
-                                .font(.system(size: 26))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 50)
-                                .background(
-                                    LinearGradient(
-                                        colors: [palette.tileFillTop, palette.tileFillBottom],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    ),
-                                    in: RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                        .strokeBorder(palette.tileBorderHighlight.opacity(0.48), lineWidth: 1)
-                                )
-                                .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-                                .scaleEffect(isPressed ? 0.93 : 1.0)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                switch mode {
+                case .emoji:
+                    emojiSlideControlsAndGrid
+                case .snippets:
+                    savedSnippetsSlotsList
                 }
             }
             .padding(.horizontal, 6)
             .padding(.bottom, 12)
+        }
+    }
+
+    private var modeSegmentBar: some View {
+        HStack(spacing: 4) {
+            segmentPill(
+                target: .emoji,
+                symbol: "face.smiling.fill",
+                label: L10n.tr("表情", "Emoji", language: lang)
+            )
+            segmentPill(
+                target: .snippets,
+                symbol: "text.quote",
+                label: L10n.tr("片段", "Snippets", language: lang)
+            )
+        }
+        .padding(3)
+        .background(palette.tileFillBottom, in: Capsule())
+        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+    }
+
+    private func segmentPill(target: WatchTextMode, symbol: String, label: String) -> some View {
+        let selected = (mode == target)
+        return Button {
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            mode = target
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: symbol)
+                    .font(.system(size: 10.5, weight: .bold))
+                Text(label)
+                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
+            .frame(maxWidth: .infinity)
+            .frame(height: 30)
+            .background(selected ? palette.accent : Color.clear, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var emojiSlideControlsAndGrid: some View {
+        HStack(spacing: 6) {
+            Button {
+                stepSlide(by: -1)
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+                    .frame(width: 36, height: 36)
+                    .background(palette.tileFillBottom, in: Circle())
+                    .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 5) {
+                Text(activeSlide.iconEmoji)
+                    .font(.system(size: 13))
+                Text(activeSlide.title)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+            .padding(.horizontal, 6)
+            .background(palette.barSurface, in: Capsule())
+            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+
+            Button {
+                stepSlide(by: 1)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+                    .frame(width: 36, height: 36)
+                    .background(palette.tileFillBottom, in: Circle())
+                    .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+
+        let cols = [
+            GridItem(.flexible(), spacing: 7),
+            GridItem(.flexible(), spacing: 7)
+        ]
+
+        LazyVGrid(columns: cols, spacing: 7) {
+            ForEach(Array(activeSlide.emojis.enumerated()), id: \.offset) { idx, emoji in
+                let isPressed = (pressedEmojiIndex == idx)
+
+                Button {
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
+                        pressedEmojiIndex = idx
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                        if pressedEmojiIndex == idx {
+                            withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
+                                pressedEmojiIndex = nil
+                            }
+                        }
+                    }
+                    if client.connectionState.isConnected {
+                        client.insertEmoji(emoji)
+                    } else {
+                        onRequestPairing()
+                    }
+                } label: {
+                    Text(emoji)
+                        .font(.system(size: 26))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(
+                            LinearGradient(
+                                colors: [palette.tileFillTop, palette.tileFillBottom],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .strokeBorder(palette.tileBorderHighlight.opacity(0.48), lineWidth: 1)
+                        )
+                        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .scaleEffect(isPressed ? 0.93 : 1.0)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var savedSnippetsSlotsList: some View {
+        if client.profile.snippets.isEmpty {
+            VStack(spacing: 6) {
+                Image(systemName: "text.quote")
+                    .font(.title3)
+                    .foregroundStyle(palette.secondaryText)
+                Text(
+                    L10n.tr(
+                        "在 iPhone 或 iPad 上新建片段后即可在腕上一键输入",
+                        "Create snippets on iPhone or iPad to trigger them here",
+                        language: lang
+                    )
+                )
+                .font(.system(size: 11.5, design: .rounded))
+                .foregroundStyle(palette.secondaryText)
+                .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+        } else {
+            ForEach(client.profile.snippets) { snippet in
+                let isPressed = (pressedSnippetID == snippet.id)
+
+                Button {
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                    withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
+                        pressedSnippetID = snippet.id
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                        if pressedSnippetID == snippet.id {
+                            withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
+                                pressedSnippetID = nil
+                            }
+                        }
+                    }
+                    if client.connectionState.isConnected {
+                        client.insertText(snippet.body)
+                    } else {
+                        onRequestPairing()
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(snippet.displayTitle(in: lang))
+                            .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(palette.primaryText)
+                            .lineLimit(1)
+
+                        Text(snippet.singleLinePreview)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(palette.secondaryText)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .frame(minHeight: 46)
+                    .background(
+                        LinearGradient(
+                            colors: [palette.tileFillTop, palette.tileFillBottom],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .strokeBorder(palette.tileBorderHighlight.opacity(0.55), lineWidth: 1)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .scaleEffect(isPressed ? 0.94 : 1.0)
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 

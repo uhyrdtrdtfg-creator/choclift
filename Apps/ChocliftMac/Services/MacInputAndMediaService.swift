@@ -7,39 +7,119 @@ import Foundation
 @MainActor
 public final class MacInputAndMediaService {
     private let windowService: MacAccessibilityAndWindowService
+    private var pendingClipboardSnapshot: [PasteboardItemSnapshot]?
+    private var clipboardRestoreTask: Task<Void, Never>?
 
     public init(windowService: MacAccessibilityAndWindowService) {
         self.windowService = windowService
     }
 
-    // MARK: - Instant Emoji Injection ("Pick emojis right where you type")
+    // MARK: - Cursor-Aware Text & Emoji Insertion
 
-    public func insertEmojiAtCursor(_ emoji: String) -> (success: Bool, message: String) {
-        let pb = NSPasteboard.general
-        let savedSnapshot = snapshotPasteboard(pb)
+    public static func previewLabel(for text: String, maxCharacters: Int = 24) -> String {
+        let singleLine = text
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !singleLine.isEmpty else {
+            return ""
+        }
+        if singleLine.count <= maxCharacters {
+            return singleLine
+        }
+        return "\(singleLine.prefix(maxCharacters))…"
+    }
 
-        pb.clearContents()
-        pb.setString(emoji, forType: .string)
+    public func insertText(
+        _ text: String,
+        preferredPID: pid_t? = nil,
+        allowActivatingPreferredPID: Bool = false,
+        language: AppLanguage = .system
+    ) -> (success: Bool, message: String) {
+        let clamped = TextSnippet.clampBody(text)
+        guard !clamped.isEmpty else {
+            return (false, L10n.tr("输入内容为空", "Text is empty", language: language))
+        }
 
         guard windowService.isAccessibilityTrusted() else {
             return (
-                true,
+                false,
                 L10n.tr(
-                    "已复制 \(emoji) 到剪贴板（开启辅助功能后可自动输入到光标处）",
-                    "Copied \(emoji) to clipboard (enable Accessibility for direct cursor typing)"
+                    "请在系统设置 → 辅助功能中授权 Choclift 后输入到光标处",
+                    "Grant Accessibility permission in System Settings to insert at the cursor",
+                    language: language
                 )
             )
         }
 
-        postKeyStroke(virtualKey: CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let resolvedFocus: MacAccessibilityAndWindowService.FocusedTextInputTarget? = {
+            if let direct = windowService.focusedTextInput(excludingPID: myPID) {
+                return direct
+            }
+            if allowActivatingPreferredPID,
+               let preferredPID,
+               preferredPID != myPID,
+               let app = NSRunningApplication(processIdentifier: preferredPID),
+               !app.isTerminated {
+                app.activate()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.06))
+                return windowService.focusedTextInput(inApplicationPID: preferredPID)
+            }
+            return nil
+        }()
 
-        // Restore previous clipboard contents after target app processes Cmd+V
-        Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(200))
-            restorePasteboard(pb, snapshot: savedSnapshot)
+        guard let focused = resolvedFocus else {
+            return (
+                false,
+                L10n.tr(
+                    "未检测到焦点输入框，请先在 Mac 中点击文本框",
+                    "No text field focused on Mac — click a text field first",
+                    language: language
+                )
+            )
         }
 
-        return (true, L10n.tr("已输入 \(emoji)", "Inserted \(emoji)"))
+        let rawLabel = Self.previewLabel(for: clamped)
+        let label = rawLabel.isEmpty ? L10n.tr("文本片段", "snippet", language: language) : rawLabel
+
+        // 1. Insert directly via Accessibility into the focused text input without touching NSPasteboard.
+        if windowService.insertTextViaAX(clamped, into: focused.element) {
+            return (true, L10n.tr("已输入 \(label)", "Inserted \(label)", language: language))
+        }
+
+        // 2. Fallback for focused editable views that do not expose settable AXSelectedText (e.g. Terminal):
+        //    stage transiently, paste, and restore the user's prior clipboard contents.
+        pastePreservingClipboard(clamped)
+        return (true, L10n.tr("已输入 \(label)", "Inserted \(label)", language: language))
+    }
+
+    private func pastePreservingClipboard(_ text: String) {
+        let pb = NSPasteboard.general
+        if pendingClipboardSnapshot == nil {
+            pendingClipboardSnapshot = snapshotPasteboard(pb)
+        }
+        clipboardRestoreTask?.cancel()
+
+        pb.clearContents()
+        let item = NSPasteboardItem()
+        item.setString(text, forType: .string)
+        item.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
+        item.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.AutoGeneratedType"))
+        pb.writeObjects([item])
+        let stagedChangeCount = pb.changeCount
+
+        postKeyStroke(virtualKey: CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
+
+        clipboardRestoreTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(220))
+            guard let self, !Task.isCancelled else { return }
+            let snapshot = self.pendingClipboardSnapshot
+            self.pendingClipboardSnapshot = nil
+            self.clipboardRestoreTask = nil
+            guard let snapshot, pb.changeCount == stagedChangeCount else { return }
+            self.restorePasteboard(pb, snapshot: snapshot)
+        }
     }
 
     // MARK: - System Quick Actions & Gesture Actions

@@ -102,6 +102,8 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var appIconsByBundleID: [String: Data] = [:]
     @Published public private(set) var macCatalogApps: [InstalledAppSummary] = []
     @Published public private(set) var macCatalogShortcuts: [InstalledShortcutSummary] = []
+    @Published public private(set) var orcaStatus: OrcaTaskStatusSnapshot?
+    @Published public private(set) var controlStripState: ControlStripState = ControlStripState()
     @Published public var lastFeedback: CompanionFeedbackToast?
 
     public let deviceID: String
@@ -1319,6 +1321,7 @@ public final class CompanionClientEngine: ObservableObject {
         oldTransport?.cancel()
 
         activeLink = nil
+        orcaStatus = nil
         lastConnectionIssue = nil
         accumulator.reset()
         retriedTokenMacIDs.removeAll()
@@ -1387,7 +1390,16 @@ public final class CompanionClientEngine: ObservableObject {
         do {
             let frames = try accumulator.appendAndExtractPayloads(payload)
             for frame in frames {
-                handleServerMessage(try WireFrameCodec.decodePayload(ServerMessage.self, from: frame))
+                do {
+                    handleServerMessage(try WireFrameCodec.decodePayload(ServerMessage.self, from: frame))
+                } catch {
+                    // Each frame is 4-byte length-prefixed, so stream framing stays aligned when a payload
+                    // contains an unrecognized ServerMessage case; ignore unknown post-auth frames instead of
+                    // dropping an established companion session.
+                    guard connectionState.isConnected else {
+                        throw error
+                    }
+                }
             }
         } catch {
             let failed = activeLink ?? .wifi
@@ -1419,6 +1431,7 @@ public final class CompanionClientEngine: ObservableObject {
         if intentionalDisconnect {
             clearPINGlitchState()
             activeLink = nil
+            orcaStatus = nil
             connectionState = .disconnected
             return
         }
@@ -1472,6 +1485,7 @@ public final class CompanionClientEngine: ObservableObject {
         let lang = profile.settings.language
         let target = activeTargetName
         activeLink = nil
+        orcaStatus = nil
         connectionState = .disconnected
         if wasConnectedOrConnecting {
             lastConnectionIssue = L10n.tr(
@@ -1666,8 +1680,14 @@ public final class CompanionClientEngine: ObservableObject {
         send(.quitOrHideApp(bundleIdentifier: bundleIdentifier, shouldQuit: shouldQuit))
     }
 
+    public func insertText(_ text: String) {
+        let clamped = TextSnippet.clampBody(text)
+        guard !clamped.isEmpty else { return }
+        send(.insertEmoji(clamped))
+    }
+
     public func insertEmoji(_ emoji: String) {
-        send(.insertEmoji(emoji))
+        insertText(emoji)
     }
 
     public func performGesture(_ gesture: TouchGestureType) {
@@ -1676,6 +1696,37 @@ public final class CompanionClientEngine: ObservableObject {
 
     public func performQuickAction(_ action: SystemQuickAction) {
         send(.performQuickAction(action))
+    }
+
+    public func requestControlStripState() {
+        send(.requestControlStripState)
+    }
+
+    public func setControlLevel(kind: ControlLevelKind, level: Double) {
+        let clamped = ControlStripLevel.clamp(level)
+        var next = controlStripState
+        switch kind {
+        case .volume:
+            next.volume = clamped
+            if clamped > 0.001 {
+                next.isVolumeMuted = false
+            }
+        case .brightness:
+            next.brightness = clamped
+        }
+        controlStripState = next
+        send(.setControlLevel(kind: kind, level: clamped))
+    }
+
+    public func setMicMuted(_ isMuted: Bool) {
+        var next = controlStripState
+        next.isMicMuted = isMuted
+        controlStripState = next
+        send(.setMicMuted(isMuted))
+    }
+
+    public func toggleMicMute() {
+        setMicMuted(!controlStripState.isMicMuted)
     }
 
     public func pushUpdatedProfile(_ updated: ChocliftWorkspaceProfile) {
@@ -1688,6 +1739,12 @@ public final class CompanionClientEngine: ObservableObject {
 
     public func requestMacCatalog() {
         send(.requestMacCatalog)
+    }
+
+    public func focusOrcaTask(dispatchID: String) {
+        let trimmed = dispatchID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        send(.focusOrcaTask(dispatchID: trimmed))
     }
 
     public func forgetSavedMac(macID: String) {
@@ -1813,9 +1870,11 @@ public final class CompanionClientEngine: ObservableObject {
             isEditingTextOnMac = editingText
             focusedMacAppName = focusedApp
             isMacAccessibilityGranted = axTrusted
+            orcaStatus = nil
             connectionState = .connected(macID: macID, macName: macName)
             startHeartbeat(sessionID: currentSessionID)
             requestMissingIconsIfNeeded()
+            send(.requestControlStripState)
 
         case .authFailed(let reason):
             connectWatchdogTask?.cancel()
@@ -1863,7 +1922,16 @@ public final class CompanionClientEngine: ObservableObject {
         case .actionFeedback(let success, let title, let detail):
             lastFeedback = CompanionFeedbackToast(success: success, title: title, detail: detail)
 
+        case .orcaStatusUpdated(let snapshot):
+            orcaStatus = snapshot
+
         case .pong:
+            break
+
+        case .controlStripStateUpdated(let state):
+            controlStripState = state
+
+        case .unknownServerMessage:
             break
         }
     }

@@ -771,6 +771,27 @@ public struct DevicesAndSettingsView: View {
                 )
             )
             .tint(palette.accent)
+
+            Divider()
+
+            Toggle(
+                L10n.tr("Mac 顶部刘海 / 菜单栏悬停巧克力面板", "Mac Notch / Top-Center Hover Chocolate Panel", language: lang),
+                isOn: Binding(
+                    get: { coordinator.notchPanelEnabled },
+                    set: { coordinator.setNotchPanelEnabled($0) }
+                )
+            )
+            .tint(palette.accent)
+
+            Toggle(
+                L10n.tr("屏幕左边缘悬停呼出面板", "Show Panel on Left Screen Edge Hover", language: lang),
+                isOn: Binding(
+                    get: { coordinator.leftEdgePanelEnabled },
+                    set: { coordinator.setLeftEdgePanelEnabled($0) }
+                )
+            )
+            .tint(palette.accent)
+            .disabled(!coordinator.notchPanelEnabled)
         }
         .padding(16)
         .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -998,6 +1019,12 @@ public struct MacMainWindowView: View {
             .ignoresSafeArea()
         )
         .tint(palette.accent)
+        .onAppear {
+            coordinator.setMacSurfaceVisible(.studioWindow, isVisible: true)
+        }
+        .onDisappear {
+            coordinator.setMacSurfaceVisible(.studioWindow, isVisible: false)
+        }
     }
 
     private var topNavigationHeader: some View {
@@ -1289,6 +1316,23 @@ public struct MacMenuBarPopoverView: View {
                 .buttonStyle(.bordered)
             }
 
+            Toggle(
+                isOn: Binding(
+                    get: { coordinator.notchPanelEnabled },
+                    set: { coordinator.setNotchPanelEnabled($0) }
+                )
+            ) {
+                Label(
+                    L10n.tr("顶部悬浮巧克力栏", "Notch Hover Panel", language: lang),
+                    systemImage: "menubar.dock.rectangle"
+                )
+                .font(.caption.weight(.medium))
+                .foregroundStyle(palette.primaryText)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .tint(palette.accent)
+
             Divider()
 
             Button(role: .destructive) {
@@ -1312,5 +1356,11 @@ public struct MacMenuBarPopoverView: View {
             )
         )
         .tint(palette.accent)
+        .onAppear {
+            coordinator.setMacSurfaceVisible(.menuBarPopover, isVisible: true)
+        }
+        .onDisappear {
+            coordinator.setMacSurfaceVisible(.menuBarPopover, isVisible: false)
+        }
     }
 }

@@ -9,6 +9,7 @@ public protocol MacServerEngineDelegate: AnyObject {
     func serverFrontmostBundleID() -> String?
     func serverTextInputState() -> (isEditing: Bool, appName: String?)
     func serverIsAccessibilityGranted() -> Bool
+    func serverCurrentOrcaStatus() -> OrcaTaskStatusSnapshot?
     func serverIcons(for bundleIDs: [String]) -> [String: Data]
     func serverDidUpdatePairedDevices(_ devices: [PairedDeviceRecord])
     func serverDidReceiveAuthenticatedMessage(
@@ -16,6 +17,12 @@ public protocol MacServerEngineDelegate: AnyObject {
         from device: PairedDeviceRecord,
         reply: @escaping @MainActor (ServerMessage) -> Void
     )
+}
+
+public extension MacServerEngineDelegate {
+    func serverCurrentOrcaStatus() -> OrcaTaskStatusSnapshot? {
+        nil
+    }
 }
 
 @MainActor
@@ -69,10 +76,12 @@ public final class MacServerEngine: ObservableObject {
         var pendingHTTPPollResponder: ((Int, Data) -> Void)?
         var pendingHTTPPollTimeoutTask: Task<Void, Never>?
         var accumulator = WireStreamAccumulator()
+        var protocolVersion: Int = ChocliftDefaults.protocolVersion
         var deviceID: String?
         var deviceName: String?
         var platform: DevicePlatform = .iPhone
         var isAuthenticated = false
+        var supportsControlStrip = false
         var sentIconBundleIDs: Set<String> = []
         var lastActivityAt = Date()
 
@@ -289,12 +298,28 @@ public final class MacServerEngine: ObservableObject {
 
     // MARK: - Broadcasting to Connected Companion Devices
 
-    public func broadcast(_ message: ServerMessage, excludingDeviceID: String? = nil) {
+    public func broadcast(
+        _ message: ServerMessage,
+        excludingDeviceID: String? = nil,
+        minimumProtocolVersion: Int? = nil
+    ) {
         for session in sessions.values where session.isAuthenticated {
             if let excludingDeviceID, session.deviceID == excludingDeviceID {
                 continue
             }
+            if let minimumProtocolVersion, session.protocolVersion < minimumProtocolVersion {
+                continue
+            }
             send(message, to: session)
+        }
+    }
+
+    public func broadcastControlStripState(_ state: ControlStripState, excludingDeviceID: String? = nil) {
+        for session in sessions.values where session.isAuthenticated && session.supportsControlStrip {
+            if let excludingDeviceID, session.deviceID == excludingDeviceID {
+                continue
+            }
+            send(.controlStripStateUpdated(state), to: session)
         }
     }
 
@@ -746,7 +771,8 @@ public final class MacServerEngine: ObservableObject {
 
     private func handleIncomingMessage(_ message: ClientMessage, session: ClientSessionContext) {
         switch message {
-        case .hello(_, let deviceID, let deviceName, let platform, let savedAuthToken):
+        case .hello(let clientProtocolVersion, let deviceID, let deviceName, let platform, let savedAuthToken):
+            session.protocolVersion = clientProtocolVersion
             session.deviceID = deviceID
             session.deviceName = deviceName
             session.platform = platform
@@ -795,12 +821,22 @@ public final class MacServerEngine: ObservableObject {
         case .ping(let timestamp):
             send(.pong(timestamp: timestamp), to: session)
 
+        case .unknownClientMessage:
+            break
+
         default:
             guard session.isAuthenticated,
                   let deviceID = session.deviceID,
                   let record = pairedDevices.first(where: { $0.deviceID == deviceID }) else {
                 send(.pairingRequired(macID: macID, macName: macName), to: session)
                 return
+            }
+
+            switch message {
+            case .requestControlStripState, .setControlLevel, .setMicMuted:
+                session.supportsControlStrip = true
+            default:
+                break
             }
 
             if case .requestIcons(let bundleIdentifiers) = message {
@@ -853,6 +889,13 @@ public final class MacServerEngine: ObservableObject {
             ),
             to: session
         )
+
+        // Only send the Orca status frame to clients whose negotiated protocol version understands it,
+        // so older v2 clients never receive an unknown ServerMessage frame.
+        if session.protocolVersion >= ChocliftDefaults.orcaStatusMinProtocolVersion,
+           let orcaSnapshot = delegate.serverCurrentOrcaStatus() {
+            send(.orcaStatusUpdated(orcaSnapshot), to: session)
+        }
 
         // Immediately stream app icons referenced by profile + recentApps
         var referencedBundles = profile.referencedAppBundleIdentifiers

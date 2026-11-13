@@ -47,6 +47,9 @@ public struct MacActivityEvent: Identifiable, Equatable {
 
 @MainActor
 public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate {
+    private static let notchPanelEnabledKey = "com.choclift.mac.notchPanelEnabled"
+    private static let leftEdgePanelEnabledKey = "com.choclift.mac.leftEdgePanelEnabled"
+
     @Published public var selectedSection: MacStudioSection = .chocolateBar
     @Published public var selectedPageIndex: Int = 0
     @Published public var selectedEmojiSlideIndex: Int = 0
@@ -62,19 +65,36 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     @Published public private(set) var activityLog: [MacActivityEvent] = []
     @Published public private(set) var statusBannerMessage: String?
     @Published public private(set) var launchAtLoginEnabled: Bool = false
+    @Published public private(set) var notchPanelEnabled: Bool = true
+    @Published public private(set) var leftEdgePanelEnabled: Bool = false
     @Published public private(set) var runningFlowID: UUID?
+    @Published public private(set) var orcaStatus: OrcaTaskStatusSnapshot?
+
+    public enum MacVisibleSurface: Hashable {
+        case studioWindow
+        case menuBarPopover
+    }
+
+    private static let orcaMinPollIntervalSeconds: TimeInterval = 5.0
 
     public let server: MacServerEngine
     public let timeTravel: MacTimeTravelMonitor
     public let windowService: MacAccessibilityAndWindowService
     public let inputService: MacInputAndMediaService
     public let catalogService: MacAppAndShortcutCatalogService
+    public private(set) var notchPanelController: MacNotchPanelController?
+    public let orcaStatusService: MacOrcaStatusService
+    public let systemControlService: MacSystemControlService
 
     private let appSupportDirectory: URL
     private let profileFileURL: URL
     private let pairedDevicesFileURL: URL
     private var monitorTimerTask: Task<Void, Never>?
+    private var orcaPollTimerTask: Task<Void, Never>?
     private var pendingFlowQueueTask: Task<Void, Never>?
+    private var visibleMacSurfaces: Set<MacVisibleSurface> = []
+    private var lastOrcaPollStartedAt: Date = .distantPast
+    private var isPollingOrcaStatus: Bool = false
 
     public init() {
         let fm = FileManager.default
@@ -120,6 +140,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.windowService = winSvc
         self.inputService = MacInputAndMediaService(windowService: winSvc)
         self.catalogService = MacAppAndShortcutCatalogService()
+        self.orcaStatusService = MacOrcaStatusService()
+        self.systemControlService = MacSystemControlService()
         self.timeTravel = MacTimeTravelMonitor()
         self.server = MacServerEngine(
             macID: persistedMacID,
@@ -128,9 +150,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         )
         self.isAccessibilityGranted = winSvc.isAccessibilityTrusted()
         self.launchAtLoginEnabled = (SMAppService.mainApp.status == .enabled)
+        self.notchPanelEnabled = UserDefaults.standard.object(forKey: Self.notchPanelEnabledKey) as? Bool ?? true
+        self.leftEdgePanelEnabled = UserDefaults.standard.object(forKey: Self.leftEdgePanelEnabledKey) as? Bool ?? false
 
         self.server.delegate = self
+        let panelCtrl = MacNotchPanelController(coordinator: self)
+        self.notchPanelController = panelCtrl
         setupPipelines()
+        panelCtrl.start()
     }
 
     public var lang: AppLanguage {
@@ -159,10 +186,80 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             excluded: profile.settings.excludedTimeTravelBundleIDs
         )
 
+        systemControlService.onStateChanged = { [weak self] state in
+            self?.server.broadcastControlStripState(state)
+        }
+        systemControlService.start()
+
         server.start(preferredPort: ChocliftDefaults.defaultTCPPort, advertiseBonjour: true)
 
         refreshCatalog()
         startAccessibilityAndTextFocusLoop()
+        startOrcaStatusPollLoop()
+    }
+
+    public func setMacSurfaceVisible(_ surface: MacVisibleSurface, isVisible: Bool) {
+        if isVisible {
+            visibleMacSurfaces.insert(surface)
+            pollOrcaStatusIfEligible()
+        } else {
+            visibleMacSurfaces.remove(surface)
+        }
+    }
+
+    private var shouldPollOrcaStatus: Bool {
+        if server.connectedDeviceCount > 0 {
+            return true
+        }
+        if visibleMacSurfaces.contains(.menuBarPopover) {
+            return true
+        }
+        if visibleMacSurfaces.contains(.studioWindow) {
+            if let app = NSApp {
+                let anyStudioWindowVisible = app.windows.contains { win in
+                    win.isVisible && !win.isMiniaturized && win.frame.width >= 240 && win.frame.height >= 180
+                }
+                if anyStudioWindowVisible {
+                    return true
+                }
+            } else {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func startOrcaStatusPollLoop() {
+        orcaPollTimerTask?.cancel()
+        orcaPollTimerTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                self?.pollOrcaStatusIfEligible()
+                try? await Task.sleep(for: .seconds(1.0))
+            }
+        }
+    }
+
+    private func pollOrcaStatusIfEligible() {
+        guard shouldPollOrcaStatus, !isPollingOrcaStatus else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastOrcaPollStartedAt) >= Self.orcaMinPollIntervalSeconds else {
+            return
+        }
+        isPollingOrcaStatus = true
+        lastOrcaPollStartedAt = now
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.isPollingOrcaStatus = false }
+            let snapshot = await self.orcaStatusService.pollStatus()
+            if snapshot != self.orcaStatus {
+                self.orcaStatus = snapshot
+                self.server.broadcast(
+                    .orcaStatusUpdated(snapshot),
+                    minimumProtocolVersion: ChocliftDefaults.orcaStatusMinProtocolVersion
+                )
+            }
+        }
     }
 
     public func refreshCatalog() {
@@ -338,9 +435,25 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         }
     }
 
+    public func setNotchPanelEnabled(_ enabled: Bool) {
+        guard notchPanelEnabled != enabled else { return }
+        notchPanelEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.notchPanelEnabledKey)
+        notchPanelController?.syncSettingsChanged()
+    }
+
+    public func setLeftEdgePanelEnabled(_ enabled: Bool) {
+        guard leftEdgePanelEnabled != enabled else { return }
+        leftEdgePanelEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.leftEdgePanelEnabledKey)
+        notchPanelController?.syncSettingsChanged()
+    }
+
     public func resetToFactoryDefaults() {
         let defaults = ChocliftDefaults.makeDefaultProfile()
         applyAndSaveProfile(defaults, broadcastOriginDeviceID: nil)
+        setNotchPanelEnabled(true)
+        setLeftEdgePanelEnabled(false)
         flashBanner(L10n.tr("已恢复默认巧克力栏布局", "Restored default Chocolate Bar layout", language: lang))
     }
 
@@ -354,30 +467,48 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
     public func executeBarItem(_ item: BarItem, triggeredBy deviceName: String) {
         Task { @MainActor in
-            switch item.kind {
-            case .macApp(let bundleID, _, let appPath, _):
-                let result = await catalogService.launchOrActivateApp(
-                    bundleIdentifier: bundleID,
-                    appPath: appPath,
-                    windowService: windowService
-                )
-                recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+            _ = await triggerBarItem(item, triggeredBy: deviceName)
+        }
+    }
 
-            case .shortcut(let shortcutName, _, _):
-                let result = await catalogService.runShortcut(named: shortcutName)
-                recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+    @discardableResult
+    public func triggerBarItem(
+        _ item: BarItem,
+        triggeredBy deviceName: String
+    ) async -> (success: Bool, title: String, detail: String) {
+        switch item.kind {
+        case .macApp(let bundleID, _, let appPath, _):
+            let result = await catalogService.launchOrActivateApp(
+                bundleIdentifier: bundleID,
+                appPath: appPath,
+                windowService: windowService
+            )
+            recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+            return (result.success, item.displayTitle(in: lang), result.message)
 
-            case .website(let url, _, _, _, let switchExistingTab):
-                let result = await catalogService.openWebsite(rawURL: url, switchExistingTab: switchExistingTab)
-                recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+        case .shortcut(let shortcutName, _, _):
+            let result = await catalogService.runShortcut(named: shortcutName)
+            recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+            return (result.success, item.displayTitle(in: lang), result.message)
 
-            case .systemAction(let action, _, _):
-                let result = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
-                recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+        case .website(let url, _, _, _, let switchExistingTab):
+            let result = await catalogService.openWebsite(rawURL: url, switchExistingTab: switchExistingTab)
+            recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+            return (result.success, item.displayTitle(in: lang), result.message)
 
-            case .flow(let flowID, let titleSnapshot, _, _, _):
-                _ = await runFlowByID(flowID, fallbackName: titleSnapshot, triggeredBy: deviceName)
-            }
+        case .systemAction(let action, _, _):
+            let result = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
+            scheduleControlStripRefreshIfRelevant(for: action)
+            recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
+            return (result.success, item.displayTitle(in: lang), result.message)
+
+        case .flow(let flowID, let titleSnapshot, _, _, _):
+            let flowResult = await runFlowByID(
+                flowID,
+                fallbackName: titleSnapshot,
+                triggeredBy: deviceName
+            )
+            return (flowResult.success, flowResult.title, flowResult.detail)
         }
     }
 
@@ -435,14 +566,16 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         return ActionFlowRunResult(success: false, title: fallbackMsg, detail: fallbackMsg, executedStepCount: 0)
     }
 
-    public func executeEmojiInsertion(_ emoji: String, triggeredBy deviceName: String) -> (success: Bool, message: String) {
-        if let pid = timeTravel.lastExternalAppPID,
-           let front = NSWorkspace.shared.frontmostApplication,
-           front.processIdentifier == ProcessInfo.processInfo.processIdentifier,
-           let target = NSRunningApplication(processIdentifier: pid) {
-            target.activate()
-        }
-        let result = inputService.insertEmojiAtCursor(emoji)
+    @discardableResult
+    public func insertText(_ text: String, triggeredBy deviceName: String = "Mac Studio") -> (success: Bool, message: String) {
+        let allowActivatePreferred = (deviceName == "Mac Studio") &&
+            (NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier)
+        let result = inputService.insertText(
+            text,
+            preferredPID: timeTravel.lastExternalAppPID,
+            allowActivatingPreferredPID: allowActivatePreferred,
+            language: lang
+        )
         recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
         return result
     }
@@ -452,9 +585,19 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             return (false, L10n.tr("该手势当前已停用", "Gesture is currently disabled", language: lang))
         }
         let result = inputService.executeSystemAction(mappedAction, preferredPID: timeTravel.lastExternalAppPID)
+        scheduleControlStripRefreshIfRelevant(for: mappedAction)
         let summary = "\(gesture.title(in: lang)) → \(result.message)"
         recordActivity(deviceName: deviceName, summary: summary, isSuccess: result.success)
         return result
+    }
+
+    private func scheduleControlStripRefreshIfRelevant(for action: SystemQuickAction) {
+        switch action {
+        case .volumeUp, .volumeDown, .volumeMute, .mediaPlayPause, .mediaNext, .mediaPrevious:
+            systemControlService.schedulePostActionRefresh()
+        default:
+            break
+        }
     }
 
     private func recordActivity(deviceName: String, summary: String, isSuccess: Bool) {
@@ -498,6 +641,10 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         isAccessibilityGranted
     }
 
+    public func serverCurrentOrcaStatus() -> OrcaTaskStatusSnapshot? {
+        orcaStatus
+    }
+
     public func serverIcons(for bundleIDs: [String]) -> [String: Data] {
         catalogService.iconsBatch(for: bundleIDs)
     }
@@ -505,6 +652,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     public func serverDidUpdatePairedDevices(_ devices: [PairedDeviceRecord]) {
         if let data = try? JSONEncoder().encode(devices) {
             try? data.write(to: pairedDevicesFileURL, options: .atomic)
+        }
+        if devices.contains(where: \.isCurrentlyConnected) {
+            pollOrcaStatusIfEligible()
         }
     }
 
@@ -516,39 +666,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         switch message {
         case .triggerBarItem(let item):
             Task { @MainActor in
-                switch item.kind {
-                case .macApp(let bundleID, _, let appPath, _):
-                    let result = await catalogService.launchOrActivateApp(
-                        bundleIdentifier: bundleID,
-                        appPath: appPath,
-                        windowService: windowService
-                    )
-                    recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
-                    reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
-
-                case .shortcut(let shortcutName, _, _):
-                    let result = await catalogService.runShortcut(named: shortcutName)
-                    recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
-                    reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
-
-                case .website(let url, _, _, _, let switchExistingTab):
-                    let result = await catalogService.openWebsite(rawURL: url, switchExistingTab: switchExistingTab)
-                    recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
-                    reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
-
-                case .systemAction(let action, _, _):
-                    let result = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
-                    recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
-                    reply(.actionFeedback(success: result.success, title: item.displayTitle(in: lang), detail: result.message))
-
-                case .flow(let flowID, let titleSnapshot, _, _, _):
-                    let flowResult = await runFlowByID(
-                        flowID,
-                        fallbackName: titleSnapshot,
-                        triggeredBy: device.deviceName
-                    )
-                    reply(.actionFeedback(success: flowResult.success, title: flowResult.title, detail: flowResult.detail))
-                }
+                let feedback = await triggerBarItem(item, triggeredBy: device.deviceName)
+                reply(.actionFeedback(success: feedback.success, title: feedback.title, detail: feedback.detail))
             }
 
         case .triggerFlow(let flowID):
@@ -592,9 +711,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: res.message, detail: nil))
 
-        case .insertEmoji(let emoji):
-            let res = executeEmojiInsertion(emoji, triggeredBy: device.deviceName)
-            reply(.actionFeedback(success: res.success, title: emoji, detail: res.message))
+        case .insertEmoji(let text):
+            let res = insertText(text, triggeredBy: device.deviceName)
+            let label = MacInputAndMediaService.previewLabel(for: text)
+            reply(.actionFeedback(
+                success: res.success,
+                title: label.isEmpty ? L10n.tr("文本片段", "Snippet", language: lang) : label,
+                detail: res.message
+            ))
 
         case .performGesture(let gesture):
             let res = executeGesture(gesture, triggeredBy: device.deviceName)
@@ -602,8 +726,43 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .performQuickAction(let action):
             let res = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
+            scheduleControlStripRefreshIfRelevant(for: action)
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: action.title(in: lang), detail: res.message))
+
+        case .requestControlStripState:
+            let immediate = systemControlService.currentState
+            reply(.controlStripStateUpdated(immediate))
+            systemControlService.refreshNow { refreshed in
+                if refreshed.hasMeaningfulDifference(from: immediate) {
+                    reply(.controlStripStateUpdated(refreshed))
+                }
+            }
+
+        case .setControlLevel(let kind, let level):
+            let didApply: Bool
+            switch kind {
+            case .volume:
+                didApply = systemControlService.setVolume(level: level)
+            case .brightness:
+                didApply = systemControlService.setBrightness(level: level)
+            }
+            if didApply {
+                server.broadcastControlStripState(
+                    systemControlService.currentState,
+                    excludingDeviceID: device.deviceID
+                )
+            } else {
+                reply(.controlStripStateUpdated(systemControlService.currentState))
+            }
+
+        case .setMicMuted(let isMuted):
+            let ok = systemControlService.setMicMuted(isMuted)
+            server.broadcastControlStripState(systemControlService.currentState)
+            let summary = isMuted
+                ? L10n.tr("已将麦克风静音", "Microphone Muted", language: lang)
+                : L10n.tr("已取消麦克风静音", "Microphone Unmuted", language: lang)
+            recordActivity(deviceName: device.deviceName, summary: summary, isSuccess: ok)
 
         case .updateProfile(let updatedProfile):
             applyAndSaveProfile(updatedProfile, broadcastOriginDeviceID: device.deviceID)
@@ -620,6 +779,17 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 }
                 installedShortcuts = await catalogService.fetchInstalledShortcuts()
                 reply(.macCatalogSnapshot(apps: installedApps, shortcuts: installedShortcuts))
+            }
+
+        case .focusOrcaTask(let dispatchID):
+            Task { @MainActor in
+                let result = await orcaStatusService.focusTaskWindow(
+                    dispatchID: dispatchID,
+                    language: lang,
+                    windowService: windowService
+                )
+                recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
+                reply(.actionFeedback(success: result.success, title: "Orca", detail: result.message))
             }
 
         default:
