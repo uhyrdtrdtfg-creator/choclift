@@ -29,16 +29,25 @@ public enum WatchSurfaceMode: Int, CaseIterable, Identifiable {
 }
 
 public struct WatchRootView: View {
+    private struct WatchHUDToast: Equatable {
+        let id = UUID()
+        let text: String
+        let isFailure: Bool
+    }
+
     @ObservedObject var client: CompanionClientEngine
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var activeMode: WatchSurfaceMode = .chocolateBar
     @State private var modeBeforeAutoEmoji: WatchSurfaceMode?
     @State private var deckFollower = AppDeckFollowerState()
+    @State private var isDeckSwitchHighlighted: Bool = false
+    @State private var deckSwitchHighlightTask: Task<Void, Never>?
     @State private var currentEmojiSlideIndex: Int = 0
     @State private var showPairingSheet: Bool = false
     @State private var showModePickerSheet: Bool = false
-    @State private var hudMessage: String?
+    @State private var hudToast: WatchHUDToast?
+    @State private var hudDismissTask: Task<Void, Never>?
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -62,6 +71,7 @@ public struct WatchRootView: View {
                     WatchChocolateBarView(
                         client: client,
                         deckFollower: $deckFollower,
+                        isDeckSwitchHighlighted: isDeckSwitchHighlighted,
                         isBarVisible: activeMode == .chocolateBar && !showPairingSheet && !showModePickerSheet,
                         onRequestPairing: { showPairingSheet = true }
                     )
@@ -88,21 +98,35 @@ public struct WatchRootView: View {
                 }
                 .tabViewStyle(.page)
 
-                if let hud = hudMessage {
-                    Text(hud)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(palette.primaryText)
-                        .lineLimit(1)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 5)
-                        .background(palette.barSurface.opacity(0.95), in: Capsule())
-                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                        .padding(.bottom, 3)
-                        .allowsHitTesting(false)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                if let hud = hudToast {
+                    HStack(spacing: 5) {
+                        if hud.isFailure {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 10.5, weight: .bold))
+                                .foregroundStyle(palette.statusFailure)
+                        }
+                        Text(hud.text)
+                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(palette.primaryText)
+                            .lineLimit(hud.isFailure ? 2 : 1)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(palette.barSurface.opacity(0.96), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(
+                                hud.isFailure ? palette.statusFailure.opacity(0.75) : palette.subtleCardStroke,
+                                lineWidth: 1
+                            )
+                    )
+                    .padding(.bottom, 3)
+                    .zIndex(10)
+                    .allowsHitTesting(false)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: hudMessage)
+            .animation(.easeInOut(duration: 0.2), value: hudToast)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     connectionToolbarButton
@@ -126,8 +150,26 @@ public struct WatchRootView: View {
             }
         }
         .onChange(of: client.frontmostBundleID) { _, newBundleID in
-            withAnimation(.easeInOut(duration: 0.22)) {
+            let previousPageID = deckFollower.currentPageID
+            let wasFollowing = deckFollower.isFollowingFrontmostApp
+            withAnimation(.easeInOut(duration: 0.24)) {
                 deckFollower.handleFrontmostAppChanged(newBundleID, in: client.profile)
+            }
+            if wasFollowing,
+               let updatedPageID = deckFollower.currentPageID,
+               previousPageID != nil,
+               updatedPageID != previousPageID {
+                CompanionFeedbackHaptics.tap(
+                    enabled: client.profile.settings.hapticFeedbackEnabled,
+                    intensity: .light
+                )
+                deckSwitchHighlightTask?.cancel()
+                isDeckSwitchHighlighted = true
+                deckSwitchHighlightTask = Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(550))
+                    guard !Task.isCancelled else { return }
+                    isDeckSwitchHighlighted = false
+                }
             }
         }
         .onChange(of: client.profile) { _, newProfile in
@@ -177,7 +219,11 @@ public struct WatchRootView: View {
                     kind: .error
                 )
             }
-            flashHUD(toast.title)
+            let detail = (toast.detail ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = toast.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            let message = (!toast.success && !detail.isEmpty) ? detail : (!title.isEmpty ? title : detail)
+            guard !message.isEmpty else { return }
+            flashHUD(message, isFailure: !toast.success)
         }
     }
 
@@ -285,12 +331,15 @@ public struct WatchRootView: View {
         )
     }
 
-    private func flashHUD(_ text: String) {
-        hudMessage = text
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.6))
-            if hudMessage == text {
-                hudMessage = nil
+    private func flashHUD(_ text: String, isFailure: Bool) {
+        hudDismissTask?.cancel()
+        let banner = WatchHUDToast(text: text, isFailure: isFailure)
+        hudToast = banner
+        hudDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(isFailure ? 2.6 : 1.6))
+            guard !Task.isCancelled else { return }
+            if hudToast?.id == banner.id {
+                hudToast = nil
             }
         }
     }

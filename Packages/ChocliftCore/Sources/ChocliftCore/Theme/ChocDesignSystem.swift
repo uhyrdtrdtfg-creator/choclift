@@ -520,6 +520,7 @@ public struct ChocBarTileCard: View {
     public let item: BarItem?
     public let iconData: Data?
     public let isFrontmostApp: Bool
+    public let isPressed: Bool
     public let isAwaitingConfirmation: Bool
     public let palette: ChocPalette
     public let language: AppLanguage
@@ -529,6 +530,7 @@ public struct ChocBarTileCard: View {
         item: BarItem?,
         iconData: Data?,
         isFrontmostApp: Bool = false,
+        isPressed: Bool = false,
         isAwaitingConfirmation: Bool = false,
         palette: ChocPalette,
         language: AppLanguage = .system,
@@ -537,6 +539,7 @@ public struct ChocBarTileCard: View {
         self.item = item
         self.iconData = iconData
         self.isFrontmostApp = isFrontmostApp
+        self.isPressed = isPressed
         self.isAwaitingConfirmation = isAwaitingConfirmation
         self.palette = palette
         self.language = language
@@ -787,28 +790,38 @@ public struct ChocBarTileCard: View {
         borderWidth: CGFloat,
         shadowColor: Color
     ) -> some View {
-        RoundedRectangle(cornerRadius: corner, style: .continuous)
+        let resolvedTop = isPressed ? palette.tileFillBottom : top
+        let resolvedBorderColor = isPressed ? palette.accent : borderColor
+        let resolvedBorderWidth = isPressed ? 2.0 : borderWidth
+
+        return RoundedRectangle(cornerRadius: corner, style: .continuous)
             .fill(
                 LinearGradient(
-                    colors: [top, bottom],
+                    colors: [resolvedTop, bottom],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: borderWidth)
+                    .strokeBorder(resolvedBorderColor, lineWidth: resolvedBorderWidth)
             )
             .shadow(color: shadowColor, radius: 6, x: 0, y: 2)
     }
 
     private func emptyMoldedSquare(side: CGFloat, corner: CGFloat) -> some View {
         let isMicro = side < 68
+        let fillColors = isPressed
+            ? [palette.tileFillBottom, palette.tileFillBottom]
+            : [palette.barSurface.opacity(0.82), palette.tileFillBottom.opacity(0.75)]
+        let strokeColor = isPressed ? palette.accent : palette.tileBorderHighlight
+        let strokeWidth: CGFloat = isPressed ? 2.0 : 1.25
+
         return ZStack {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [palette.barSurface.opacity(0.82), palette.tileFillBottom.opacity(0.75)],
+                        colors: fillColors,
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -816,8 +829,8 @@ public struct ChocBarTileCard: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: corner, style: .continuous)
                         .strokeBorder(
-                            palette.tileBorderHighlight,
-                            style: StrokeStyle(lineWidth: 1.25, dash: [5, 4])
+                            strokeColor,
+                            style: StrokeStyle(lineWidth: strokeWidth, dash: [5, 4])
                         )
                 )
 
@@ -826,7 +839,7 @@ public struct ChocBarTileCard: View {
                     .font(.system(size: isMicro ? 15 : 17, weight: .bold, design: .rounded))
                     .foregroundStyle(palette.accent)
                     .frame(width: isMicro ? 26 : 32, height: isMicro ? 26 : 32)
-                    .background(palette.accent.opacity(0.11), in: Circle())
+                    .background(palette.accent.opacity(isPressed ? 0.18 : 0.11), in: Circle())
 
                 if side >= 78 {
                     Text(L10n.tr("添加动作", "Assign", language: language))
@@ -843,5 +856,175 @@ public struct ChocBarTileCard: View {
             return host.replacingOccurrences(of: "www.", with: "")
         }
         return rawURL
+    }
+}
+
+// MARK: - Touch-Down & Cancel-Safe Pressed Key Feedback
+
+@MainActor
+public enum ChocPressFeedback {
+    private static var touchDownTimes: [AnyHashable: TimeInterval] = [:]
+    private static var activeHoldTokens: [AnyHashable: UInt64] = [:]
+    private static var nextToken: UInt64 = 0
+
+    public static func beginPress<Key: Hashable>(
+        key: Key,
+        pressedKey: Binding<Key?>
+    ) {
+        let erased = AnyHashable(key)
+        activeHoldTokens.removeValue(forKey: erased)
+        touchDownTimes[erased] = ProcessInfo.processInfo.systemUptime
+        if pressedKey.wrappedValue != key {
+            withAnimation(.spring(response: 0.14, dampingFraction: 0.72)) {
+                pressedKey.wrappedValue = key
+            }
+        }
+    }
+
+    public static func completeTap<Key: Hashable>(
+        key: Key,
+        pressedKey: Binding<Key?>,
+        minimumVisibleDuration: TimeInterval = 0.11
+    ) {
+        let erased = AnyHashable(key)
+        let now = ProcessInfo.processInfo.systemUptime
+        let startedAt = touchDownTimes.removeValue(forKey: erased) ?? now
+        let elapsed = max(0, now - startedAt)
+
+        if pressedKey.wrappedValue != key {
+            withAnimation(.spring(response: 0.14, dampingFraction: 0.72)) {
+                pressedKey.wrappedValue = key
+            }
+        }
+
+        let remaining = minimumVisibleDuration - elapsed
+        guard remaining > 0.015 else {
+            activeHoldTokens.removeValue(forKey: erased)
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.78)) {
+                if pressedKey.wrappedValue == key {
+                    pressedKey.wrappedValue = nil
+                }
+            }
+            return
+        }
+
+        nextToken &+= 1
+        let token = nextToken
+        activeHoldTokens[erased] = token
+        let nanoseconds = UInt64(remaining * 1_000_000_000)
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard activeHoldTokens[erased] == token else { return }
+            activeHoldTokens.removeValue(forKey: erased)
+            if pressedKey.wrappedValue == key {
+                withAnimation(.spring(response: 0.18, dampingFraction: 0.78)) {
+                    pressedKey.wrappedValue = nil
+                }
+            }
+        }
+    }
+
+    public static func hasActiveHold<Key: Hashable>(for key: Key) -> Bool {
+        activeHoldTokens[AnyHashable(key)] != nil
+    }
+
+    public static func cancelPressImmediately<Key: Hashable>(
+        key: Key,
+        pressedKey: Binding<Key?>
+    ) {
+        let erased = AnyHashable(key)
+        touchDownTimes.removeValue(forKey: erased)
+        activeHoldTokens.removeValue(forKey: erased)
+        if pressedKey.wrappedValue == key {
+            withAnimation(.spring(response: 0.16, dampingFraction: 0.82)) {
+                pressedKey.wrappedValue = nil
+            }
+        }
+    }
+}
+
+/// Shared `ButtonStyle` that drives `pressedKey` immediately on touch-down and clears it
+/// immediately if the touch is cancelled (e.g., scroll, page swipe, or drag outside).
+public struct ChocPressedKeyButtonStyle<Key: Hashable>: ButtonStyle {
+    @Binding public var pressedKey: Key?
+    public let key: Key
+    public var isSuppressed: Bool
+    public var onTouchDown: (() -> Void)?
+
+    public init(
+        pressedKey: Binding<Key?>,
+        key: Key,
+        isSuppressed: Bool = false,
+        onTouchDown: (() -> Void)? = nil
+    ) {
+        self._pressedKey = pressedKey
+        self.key = key
+        self.isSuppressed = isSuppressed
+        self.onTouchDown = onTouchDown
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        PressedKeyObserverView(
+            configuration: configuration,
+            pressedKey: $pressedKey,
+            key: key,
+            isSuppressed: isSuppressed,
+            onTouchDown: onTouchDown
+        )
+    }
+
+    private struct PressedKeyObserverView: View {
+        let configuration: Configuration
+        @Binding var pressedKey: Key?
+        let key: Key
+        let isSuppressed: Bool
+        let onTouchDown: (() -> Void)?
+
+        var body: some View {
+            #if os(macOS)
+            configuration.label
+                .onChange(of: configuration.isPressed) { isPressed in
+                    handlePressChange(isPressed)
+                }
+                .onChange(of: isSuppressed) { suppressed in
+                    if suppressed {
+                        ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
+                    }
+                }
+                .onDisappear {
+                    ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
+                }
+            #else
+            configuration.label
+                .onChange(of: configuration.isPressed) { _, isPressed in
+                    handlePressChange(isPressed)
+                }
+                .onChange(of: isSuppressed) { _, suppressed in
+                    if suppressed {
+                        ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
+                    }
+                }
+                .onDisappear {
+                    ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
+                }
+            #endif
+        }
+
+        private func handlePressChange(_ isPressed: Bool) {
+            if isPressed {
+                guard !isSuppressed else { return }
+                onTouchDown?()
+                ChocPressFeedback.beginPress(key: key, pressedKey: $pressedKey)
+            } else {
+                let keySnapshot = key
+                let binding = $pressedKey
+                DispatchQueue.main.async {
+                    if !ChocPressFeedback.hasActiveHold(for: keySnapshot) {
+                        ChocPressFeedback.cancelPressImmediately(key: keySnapshot, pressedKey: binding)
+                    }
+                }
+            }
+        }
     }
 }

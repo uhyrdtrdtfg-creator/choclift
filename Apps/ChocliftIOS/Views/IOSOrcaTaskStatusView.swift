@@ -5,6 +5,8 @@ public struct IOSOrcaTaskStatusBar: View {
     @ObservedObject var client: CompanionClientEngine
     let compact: Bool
 
+    @State private var pressedKey: String?
+
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
@@ -58,21 +60,30 @@ public struct IOSOrcaTaskStatusBar: View {
     @ViewBuilder
     private func singleTaskRow(_ item: OrcaTaskStatusItem) -> some View {
         if item.canTapToFocus {
+            let isPressed = (pressedKey == item.id)
             Button {
                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                ChocPressFeedback.completeTap(key: item.id, pressedKey: $pressedKey)
                 client.focusOrcaTask(dispatchID: item.dispatchID)
             } label: {
                 taskRowContent(item, expandWidth: true)
                     .padding(.horizontal, 12)
                     .frame(minHeight: 44)
-                    .background(rowBackground(for: item.state), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .background(
+                        isPressed ? palette.tileFillBottom : rowBackground(for: item.state),
+                        in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    )
                     .overlay(
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .strokeBorder(rowBorderColor(for: item.state), lineWidth: 1)
+                            .strokeBorder(
+                                isPressed ? palette.accent : rowBorderColor(for: item.state),
+                                lineWidth: isPressed ? 1.8 : 1
+                            )
                     )
                     .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .scaleEffect(isPressed ? 0.97 : 1.0)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: item.id))
             .accessibilityIdentifier("ios-orca-task-row-\(item.id)")
         } else {
             taskRowContent(item, expandWidth: true)
@@ -108,21 +119,30 @@ public struct IOSOrcaTaskStatusBar: View {
                 HStack(spacing: 8) {
                     ForEach(rows) { item in
                         if item.canTapToFocus {
+                            let isPressed = (pressedKey == item.id)
                             Button {
                                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                                ChocPressFeedback.completeTap(key: item.id, pressedKey: $pressedKey)
                                 client.focusOrcaTask(dispatchID: item.dispatchID)
                             } label: {
                                 taskPillContent(item)
                                     .padding(.horizontal, 11)
                                     .frame(minHeight: 44)
-                                    .background(rowBackground(for: item.state), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .background(
+                                        isPressed ? palette.tileFillBottom : rowBackground(for: item.state),
+                                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    )
                                     .overlay(
                                         RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                            .strokeBorder(rowBorderColor(for: item.state), lineWidth: 1)
+                                            .strokeBorder(
+                                                isPressed ? palette.accent : rowBorderColor(for: item.state),
+                                                lineWidth: isPressed ? 1.8 : 1
+                                            )
                                     )
                                     .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                    .scaleEffect(isPressed ? 0.96 : 1.0)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: item.id))
                             .accessibilityIdentifier("ios-orca-task-row-\(item.id)")
                         } else {
                             taskPillContent(item)

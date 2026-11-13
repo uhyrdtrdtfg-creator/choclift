@@ -13,13 +13,23 @@ public struct IOSEditSlotSelection: Identifiable {
 }
 
 private struct TileHoldToEditButtonStyle: ButtonStyle {
+    @Binding var pressedKey: String?
+    let key: String
+    let isSuppressed: Bool
     let holdDurationSeconds: TimeInterval
+    let onTouchDown: () -> Void
+    let onTouchEnded: () -> Void
     let onLongPressHold: () -> Void
 
     func makeBody(configuration: Configuration) -> some View {
         TileHoldToEditLabelView(
             configuration: configuration,
+            pressedKey: $pressedKey,
+            key: key,
+            isSuppressed: isSuppressed,
             holdDurationSeconds: holdDurationSeconds,
+            onTouchDown: onTouchDown,
+            onTouchEnded: onTouchEnded,
             onLongPressHold: onLongPressHold
         )
     }
@@ -27,21 +37,49 @@ private struct TileHoldToEditButtonStyle: ButtonStyle {
 
 private struct TileHoldToEditLabelView: View {
     let configuration: ButtonStyle.Configuration
+    @Binding var pressedKey: String?
+    let key: String
+    let isSuppressed: Bool
     let holdDurationSeconds: TimeInterval
+    let onTouchDown: () -> Void
+    let onTouchEnded: () -> Void
     let onLongPressHold: () -> Void
 
     var body: some View {
+        let isHolding = configuration.isPressed && !isSuppressed
+
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
-            .animation(.spring(response: 0.16, dampingFraction: 0.72), value: configuration.isPressed)
-            .task(id: configuration.isPressed) {
-                guard configuration.isPressed else { return }
-                // Account for UIScrollView touch-down delay (~0.06s) inside TabView(.page)
-                // so total finger hold duration matches ~0.45s (tileLongPressDurationSeconds).
-                let sleepDuration = max(0.25, holdDurationSeconds - 0.06)
-                try? await Task.sleep(for: .seconds(sleepDuration))
-                guard !Task.isCancelled, configuration.isPressed else { return }
+            .onChange(of: configuration.isPressed) { _, isPressed in
+                if isPressed {
+                    guard !isSuppressed else { return }
+                    onTouchDown()
+                    ChocPressFeedback.beginPress(key: key, pressedKey: $pressedKey)
+                } else {
+                    let keySnapshot = key
+                    let binding = $pressedKey
+                    let ended = onTouchEnded
+                    DispatchQueue.main.async {
+                        if !ChocPressFeedback.hasActiveHold(for: keySnapshot) {
+                            ChocPressFeedback.cancelPressImmediately(key: keySnapshot, pressedKey: binding)
+                        }
+                        ended()
+                    }
+                }
+            }
+            .onChange(of: isSuppressed) { _, suppressed in
+                if suppressed {
+                    ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
+                }
+            }
+            .task(id: isHolding) {
+                guard isHolding else { return }
+                try? await Task.sleep(for: .seconds(max(0.25, holdDurationSeconds)))
+                guard !Task.isCancelled, configuration.isPressed, !isSuppressed else { return }
+                ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
                 onLongPressHold()
+            }
+            .onDisappear {
+                ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
             }
     }
 }
@@ -52,6 +90,7 @@ public struct IOSChocolateBarSurfaceView: View {
     @ObservedObject var client: CompanionClientEngine
     @Binding var currentPageIndex: Int
     var isFollowingFrontmostApp: Bool
+    var isDeckSwitchHighlighted: Bool
     var onFollowFrontmostApp: (() -> Void)?
     let isLandscape: Bool
     var onPromptHUD: ((String) -> Void)?
@@ -59,7 +98,9 @@ public struct IOSChocolateBarSurfaceView: View {
 
     @State private var pressedKey: String?
     @State private var confirmGate = DestructiveActionConfirmGate()
-    @State private var suppressedLongPressTap: (key: String, timestamp: TimeInterval)?
+    @State private var suppressedLongPressKey: String?
+    @GestureState private var activePageDragTranslation: CGSize = .zero
+    @State private var didCancelTapInActiveDrag: Bool = false
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -68,6 +109,7 @@ public struct IOSChocolateBarSurfaceView: View {
         client: CompanionClientEngine,
         currentPageIndex: Binding<Int>,
         isFollowingFrontmostApp: Bool = true,
+        isDeckSwitchHighlighted: Bool = false,
         onFollowFrontmostApp: (() -> Void)? = nil,
         isLandscape: Bool,
         onPromptHUD: ((String) -> Void)? = nil,
@@ -76,46 +118,130 @@ public struct IOSChocolateBarSurfaceView: View {
         self.client = client
         self._currentPageIndex = currentPageIndex
         self.isFollowingFrontmostApp = isFollowingFrontmostApp
+        self.isDeckSwitchHighlighted = isDeckSwitchHighlighted
         self.onFollowFrontmostApp = onFollowFrontmostApp
         self.isLandscape = isLandscape
         self.onPromptHUD = onPromptHUD
         self.onEditSlot = onEditSlot
     }
 
-    private var activeBoundFrontmostAppName: String? {
+    private var activeBoundDeckContext: (appName: String, page: BarPage)? {
         guard isFollowingFrontmostApp,
               let frontBundleID = client.frontmostBundleID,
-              !client.profile.pages.isEmpty else {
+              let boundPage = client.profile.boundPage(forBundleIdentifier: frontBundleID) else {
             return nil
         }
-        let safeIdx = min(max(0, currentPageIndex), client.profile.pages.count - 1)
-        let activePage = client.profile.pages[safeIdx]
-        guard client.profile.boundPageID(forBundleIdentifier: frontBundleID) == activePage.id else {
-            return nil
-        }
-        return client.profile.resolvedAppDisplayName(
+        let appName = client.profile.resolvedAppDisplayName(
             forBundleIdentifier: frontBundleID,
+            preferredAppName: client.frontmostAppName,
             recentApps: client.recentApps,
             catalogApps: client.macCatalogApps
         )
+        return (appName, boundPage)
     }
 
     public var body: some View {
         VStack(spacing: 0) {
             if !isFollowingFrontmostApp, let onFollowFrontmostApp {
                 manualPinnedHeader(onFollow: onFollowFrontmostApp)
-            } else if let boundAppName = activeBoundFrontmostAppName {
-                followingAppHeader(appName: boundAppName)
+            } else if let bound = activeBoundDeckContext {
+                followingAppHeader(appName: bound.appName, page: bound.page)
             }
 
-            TabView(selection: $currentPageIndex) {
-                ForEach(Array(client.profile.pages.enumerated()), id: \.element.id) { pageOffset, page in
-                    pageGrid(for: page, pageOffset: pageOffset)
-                        .tag(pageOffset)
+            barHorizontalPager
+        }
+        .onChange(of: currentPageIndex) { _, _ in
+            confirmGate.disarm()
+        }
+        .onChange(of: activePageDragTranslation == .zero) { _, isIdle in
+            if isIdle && didCancelTapInActiveDrag {
+                DispatchQueue.main.async {
+                    didCancelTapInActiveDrag = false
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
         }
+    }
+
+    private var barHorizontalPager: some View {
+        GeometryReader { pagerGeo in
+            let pageWidth = max(1, pagerGeo.size.width)
+            let pageHeight = max(1, pagerGeo.size.height)
+            let pages = client.profile.pages
+            let pageCount = pages.count
+            let safeIdx = pageCount > 0 ? min(max(0, currentPageIndex), pageCount - 1) : 0
+            let dragOffset = interactiveDragOffset(
+                translation: activePageDragTranslation,
+                safeIndex: safeIdx,
+                pageCount: pageCount,
+                pageWidth: pageWidth
+            )
+
+            HStack(spacing: 0) {
+                ForEach(Array(pages.enumerated()), id: \.element.id) { pageOffset, page in
+                    pageGrid(for: page, pageOffset: pageOffset)
+                        .frame(width: pageWidth, height: pageHeight)
+                        .allowsHitTesting(pageOffset == safeIdx)
+                        .accessibilityHidden(pageOffset != safeIdx)
+                }
+            }
+            .offset(x: -CGFloat(safeIdx) * pageWidth + dragOffset)
+            .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.88), value: activePageDragTranslation)
+            .frame(width: pageWidth, height: pageHeight, alignment: .leading)
+            .clipped()
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                DragGesture(
+                    minimumDistance: BarTouchGestureThresholds.maxTapMovementPoints,
+                    coordinateSpace: .local
+                )
+                .updating($activePageDragTranslation) { value, state, _ in
+                    state = value.translation
+                }
+                .onChanged { value in
+                    if BarTouchGestureThresholds.shouldCancelPress(translation: value.translation) {
+                        if !didCancelTapInActiveDrag {
+                            didCancelTapInActiveDrag = true
+                        }
+                        if let currentKey = pressedKey {
+                            ChocPressFeedback.cancelPressImmediately(key: currentKey, pressedKey: $pressedKey)
+                        }
+                    }
+                }
+                .onEnded { value in
+                    let targetIdx = BarTouchGestureThresholds.resolvedPageIndex(
+                        currentIndex: safeIdx,
+                        pageCount: pageCount,
+                        translation: value.translation
+                    )
+                    if targetIdx != safeIdx {
+                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                            currentPageIndex = targetIdx
+                        }
+                    }
+                    DispatchQueue.main.async {
+                        didCancelTapInActiveDrag = false
+                    }
+                }
+            )
+        }
+    }
+
+    private func interactiveDragOffset(
+        translation: CGSize,
+        safeIndex: Int,
+        pageCount: Int,
+        pageWidth: CGFloat
+    ) -> CGFloat {
+        guard BarTouchGestureThresholds.shouldCancelPress(translation: translation),
+              abs(translation.width) >= abs(translation.height) else {
+            return 0
+        }
+        let raw = translation.width
+        let atLeadingEdge = safeIndex <= 0 && raw > 0
+        let atTrailingEdge = safeIndex >= max(0, pageCount - 1) && raw < 0
+        let damped = (atLeadingEdge || atTrailingEdge) ? (raw * 0.28) : raw
+        return min(max(damped, -pageWidth * 0.92), pageWidth * 0.92)
     }
 
     private func manualPinnedHeader(onFollow: @escaping () -> Void) -> some View {
@@ -155,19 +281,38 @@ public struct IOSChocolateBarSurfaceView: View {
         .padding(.top, 8)
     }
 
-    private func followingAppHeader(appName: String) -> some View {
+    private func followingAppHeader(appName: String, page: BarPage) -> some View {
         HStack(spacing: 8) {
             HStack(spacing: 5) {
                 Image(systemName: "macwindow")
                     .font(.caption2.bold())
-                Text(L10n.tr("正跟随 \(appName)", "Following \(appName)", language: lang))
-                    .font(.caption2.bold())
-                    .lineLimit(1)
+                Text(
+                    L10n.tr(
+                        "正跟随 \(appName) · \(page.iconEmoji) \(page.title)",
+                        "Following \(appName) · \(page.iconEmoji) \(page.title)",
+                        language: lang
+                    )
+                )
+                .font(.caption2.bold())
+                .lineLimit(1)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(palette.accent.opacity(0.14), in: Capsule())
+            .background(
+                palette.accent.opacity(isDeckSwitchHighlighted ? 0.24 : 0.14),
+                in: Capsule()
+            )
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        isDeckSwitchHighlighted ? palette.accent : palette.accent.opacity(0.28),
+                        lineWidth: isDeckSwitchHighlighted ? 1.5 : 0.8
+                    )
+            )
             .foregroundStyle(palette.accent)
+            .scaleEffect(isDeckSwitchHighlighted ? 1.03 : 1.0)
+            .animation(.spring(response: 0.26, dampingFraction: 0.78), value: isDeckSwitchHighlighted)
+            .accessibilityIdentifier("ios-following-app-header")
 
             Spacer()
         }
@@ -245,6 +390,7 @@ public struct IOSChocolateBarSurfaceView: View {
                 item: item,
                 iconData: iconData,
                 isFrontmostApp: isFrontmost,
+                isPressed: isPressed,
                 isAwaitingConfirmation: isAwaitingConfirm,
                 palette: palette,
                 language: lang,
@@ -254,13 +400,28 @@ public struct IOSChocolateBarSurfaceView: View {
         }
         .buttonStyle(
             TileHoldToEditButtonStyle(
-                holdDurationSeconds: CompanionInteractionPolicy.tileLongPressDurationSeconds
-            ) {
-                suppressedLongPressTap = (key: key, timestamp: ProcessInfo.processInfo.systemUptime)
-                confirmGate.disarm()
-                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
-                onEditSlot(IOSEditSlotSelection(pageIndex: pageIndex, slotIndex: slotIndex))
-            }
+                pressedKey: $pressedKey,
+                key: key,
+                isSuppressed: didCancelTapInActiveDrag,
+                holdDurationSeconds: CompanionInteractionPolicy.tileLongPressDurationSeconds,
+                onTouchDown: {
+                    suppressedLongPressKey = nil
+                    if activePageDragTranslation == .zero {
+                        didCancelTapInActiveDrag = false
+                    }
+                },
+                onTouchEnded: {
+                    if suppressedLongPressKey == key {
+                        suppressedLongPressKey = nil
+                    }
+                },
+                onLongPressHold: {
+                    suppressedLongPressKey = key
+                    confirmGate.disarm()
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                    onEditSlot(IOSEditSlotSelection(pageIndex: pageIndex, slotIndex: slotIndex))
+                }
+            )
         )
         .accessibilityIdentifier("ios-slot-\(pageIndex)-\(slotIndex)")
         .accessibilityLabel(
@@ -275,13 +436,16 @@ public struct IOSChocolateBarSurfaceView: View {
         key: String,
         item: BarItem?
     ) {
-        let now = ProcessInfo.processInfo.systemUptime
-        if let suppressed = suppressedLongPressTap {
-            suppressedLongPressTap = nil
-            if suppressed.key == key && (now - suppressed.timestamp) < 1.0 {
-                return
-            }
+        if suppressedLongPressKey == key {
+            suppressedLongPressKey = nil
+            return
         }
+        guard !didCancelTapInActiveDrag,
+              !BarTouchGestureThresholds.shouldCancelPress(translation: activePageDragTranslation) else {
+            return
+        }
+
+        ChocPressFeedback.completeTap(key: key, pressedKey: $pressedKey)
 
         guard let item else {
             confirmGate.disarm()
@@ -290,6 +454,7 @@ public struct IOSChocolateBarSurfaceView: View {
             return
         }
 
+        let now = ProcessInfo.processInfo.systemUptime
         let isDestructive = item.requiresDestructiveConfirmation(in: client.profile)
         let decision = confirmGate.registerTap(
             targetID: key,
@@ -318,17 +483,15 @@ public struct IOSChocolateBarSurfaceView: View {
 
         case .runImmediately, .confirmedRun:
             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-            withAnimation(.spring(response: 0.16, dampingFraction: 0.6)) {
-                pressedKey = key
+            if client.connectionState.isConnected {
+                client.triggerBarItem(item)
+            } else {
+                client.lastFeedback = CompanionFeedbackToast(
+                    success: false,
+                    title: item.displayTitle(in: lang),
+                    detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                )
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-                if pressedKey == key {
-                    withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
-                        pressedKey = nil
-                    }
-                }
-            }
-            client.triggerBarItem(item)
         }
     }
 }
@@ -649,6 +812,9 @@ public struct IOSEmojiBarSurfaceView: View {
     @State private var customizingSlotIndex: Int?
     @State private var snippetEditorSession: IOSSnippetEditorSession?
     @State private var pressedSnippetID: UUID?
+    @State private var pressedEmojiKey: String?
+    @GestureState private var activeEmojiDragTranslation: CGSize = .zero
+    @State private var didCancelEmojiTapInActiveDrag: Bool = false
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -673,16 +839,17 @@ public struct IOSEmojiBarSurfaceView: View {
 
             switch activeSegment {
             case .emoji:
-                TabView(selection: $currentSlideIndex) {
-                    ForEach(client.profile.emojiSlides) { slide in
-                        emojiSlideGrid(slide)
-                            .tag(slide.index)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
+                emojiHorizontalPager
 
             case .snippets:
                 snippetsSurfaceContent
+            }
+        }
+        .onChange(of: activeEmojiDragTranslation == .zero) { _, isIdle in
+            if isIdle && didCancelEmojiTapInActiveDrag {
+                DispatchQueue.main.async {
+                    didCancelEmojiTapInActiveDrag = false
+                }
             }
         }
         .sheet(isPresented: $showAllCatalogSheet) {
@@ -690,6 +857,76 @@ public struct IOSEmojiBarSurfaceView: View {
         }
         .sheet(item: $snippetEditorSession) { session in
             IOSSnippetEditorSheet(client: client, session: session)
+        }
+    }
+
+    private var emojiHorizontalPager: some View {
+        GeometryReader { pagerGeo in
+            let pageWidth = max(1, pagerGeo.size.width)
+            let pageHeight = max(1, pagerGeo.size.height)
+            let slides = client.profile.emojiSlides
+            let slideCount = slides.count
+            let safeIdx = slideCount > 0 ? min(max(0, currentSlideIndex), slideCount - 1) : 0
+            let dragOffset: CGFloat = {
+                guard BarTouchGestureThresholds.shouldCancelPress(translation: activeEmojiDragTranslation),
+                      abs(activeEmojiDragTranslation.width) >= abs(activeEmojiDragTranslation.height) else {
+                    return 0
+                }
+                let raw = activeEmojiDragTranslation.width
+                let atStart = safeIdx <= 0 && raw > 0
+                let atEnd = safeIdx >= max(0, slideCount - 1) && raw < 0
+                let damped = (atStart || atEnd) ? (raw * 0.28) : raw
+                return min(max(damped, -pageWidth * 0.92), pageWidth * 0.92)
+            }()
+
+            HStack(spacing: 0) {
+                ForEach(Array(slides.enumerated()), id: \.element.id) { slideOffset, slide in
+                    emojiSlideGrid(slide, slideOffset: slideOffset)
+                        .frame(width: pageWidth, height: pageHeight)
+                        .allowsHitTesting(slideOffset == safeIdx)
+                        .accessibilityHidden(slideOffset != safeIdx)
+                }
+            }
+            .offset(x: -CGFloat(safeIdx) * pageWidth + dragOffset)
+            .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.88), value: activeEmojiDragTranslation)
+            .frame(width: pageWidth, height: pageHeight, alignment: .leading)
+            .clipped()
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                DragGesture(
+                    minimumDistance: BarTouchGestureThresholds.maxTapMovementPoints,
+                    coordinateSpace: .local
+                )
+                .updating($activeEmojiDragTranslation) { value, state, _ in
+                    state = value.translation
+                }
+                .onChanged { value in
+                    if BarTouchGestureThresholds.shouldCancelPress(translation: value.translation) {
+                        if !didCancelEmojiTapInActiveDrag {
+                            didCancelEmojiTapInActiveDrag = true
+                        }
+                        if let currentKey = pressedEmojiKey {
+                            ChocPressFeedback.cancelPressImmediately(key: currentKey, pressedKey: $pressedEmojiKey)
+                        }
+                    }
+                }
+                .onEnded { value in
+                    let targetIdx = BarTouchGestureThresholds.resolvedPageIndex(
+                        currentIndex: safeIdx,
+                        pageCount: slideCount,
+                        translation: value.translation
+                    )
+                    if targetIdx != safeIdx {
+                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+                            currentSlideIndex = targetIdx
+                        }
+                    }
+                    DispatchQueue.main.async {
+                        didCancelEmojiTapInActiveDrag = false
+                    }
+                }
+            )
         }
     }
 
@@ -948,7 +1185,7 @@ public struct IOSEmojiBarSurfaceView: View {
                 .padding(.vertical, 11)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedSnippetID, key: snippet.id))
             .accessibilityIdentifier("ios-snippet-card-\(snippet.id.uuidString)")
 
             Menu {
@@ -970,14 +1207,17 @@ public struct IOSEmojiBarSurfaceView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [palette.tileFillTop, palette.tileFillBottom],
+                        colors: [isPressed ? palette.tileFillBottom : palette.tileFillTop, palette.tileFillBottom],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .strokeBorder(palette.tileBorderHighlight.opacity(0.65), lineWidth: 1.1)
+                        .strokeBorder(
+                            isPressed ? palette.accent : palette.tileBorderHighlight.opacity(0.65),
+                            lineWidth: isPressed ? 1.8 : 1.1
+                        )
                 )
         )
         .scaleEffect(isPressed ? 0.96 : 1.0)
@@ -1017,16 +1257,7 @@ public struct IOSEmojiBarSurfaceView: View {
 
     private func triggerSnippet(_ snippet: TextSnippet) {
         CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
-        withAnimation(.spring(response: 0.16, dampingFraction: 0.65)) {
-            pressedSnippetID = snippet.id
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-            if pressedSnippetID == snippet.id {
-                withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                    pressedSnippetID = nil
-                }
-            }
-        }
+        ChocPressFeedback.completeTap(key: snippet.id, pressedKey: $pressedSnippetID)
         if client.connectionState.isConnected {
             client.insertText(snippet.body)
         } else {
@@ -1044,7 +1275,7 @@ public struct IOSEmojiBarSurfaceView: View {
         client.pushUpdatedProfile(updated)
     }
 
-    private func emojiSlideGrid(_ slide: EmojiSlide) -> some View {
+    private func emojiSlideGrid(_ slide: EmojiSlide, slideOffset: Int) -> some View {
         let colCount = isLandscape ? 4 : 2
         let rowCount = isLandscape ? 2 : 4
 
@@ -1061,17 +1292,41 @@ public struct IOSEmojiBarSurfaceView: View {
                         ForEach(0..<colCount, id: \.self) { c in
                             let idx = r * colCount + c
                             let emoji = slide.emojis[idx]
+                            let key = "\(slideOffset)-\(idx)"
+                            let isPressed = (pressedEmojiKey == key)
 
                             Button {
+                                guard !didCancelEmojiTapInActiveDrag,
+                                      !BarTouchGestureThresholds.shouldCancelPress(translation: activeEmojiDragTranslation) else {
+                                    return
+                                }
+                                ChocPressFeedback.completeTap(key: key, pressedKey: $pressedEmojiKey)
                                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                                client.insertEmoji(emoji)
+                                if client.connectionState.isConnected {
+                                    client.insertEmoji(emoji)
+                                } else {
+                                    client.lastFeedback = CompanionFeedbackToast(
+                                        success: false,
+                                        title: emoji,
+                                        detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                                    )
+                                }
                             } label: {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .fill(LinearGradient(colors: [palette.tileFillTop, palette.tileFillBottom], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [isPressed ? palette.tileFillBottom : palette.tileFillTop, palette.tileFillBottom],
+                                                startPoint: .topLeading,
+                                                endPoint: .bottomTrailing
+                                            )
+                                        )
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                                .strokeBorder(palette.tileBorderHighlight.opacity(0.5), lineWidth: 1.1)
+                                                .strokeBorder(
+                                                    isPressed ? palette.accent : palette.tileBorderHighlight.opacity(0.5),
+                                                    lineWidth: isPressed ? 2.0 : 1.1
+                                                )
                                         )
 
                                     Text(emoji)
@@ -1079,8 +1334,20 @@ public struct IOSEmojiBarSurfaceView: View {
                                 }
                                 .frame(width: tileW, height: tileH)
                                 .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                                .scaleEffect(isPressed ? 0.94 : 1.0)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(
+                                ChocPressedKeyButtonStyle(
+                                    pressedKey: $pressedEmojiKey,
+                                    key: key,
+                                    isSuppressed: didCancelEmojiTapInActiveDrag,
+                                    onTouchDown: {
+                                        if activeEmojiDragTranslation == .zero {
+                                            didCancelEmojiTapInActiveDrag = false
+                                        }
+                                    }
+                                )
+                            )
                             .contextMenu {
                                 Button {
                                     customizingSlotIndex = idx
@@ -1504,6 +1771,7 @@ public struct IOSIPadChocolateBarDeckView: View {
     @ObservedObject var client: CompanionClientEngine
     @Binding var currentPageIndex: Int
     var isFollowingFrontmostApp: Bool
+    var isDeckSwitchHighlighted: Bool
     var onFollowFrontmostApp: (() -> Void)?
     let availableWidth: CGFloat
     var isLandscape: Bool
@@ -1517,6 +1785,7 @@ public struct IOSIPadChocolateBarDeckView: View {
         client: CompanionClientEngine,
         currentPageIndex: Binding<Int>,
         isFollowingFrontmostApp: Bool = true,
+        isDeckSwitchHighlighted: Bool = false,
         onFollowFrontmostApp: (() -> Void)? = nil,
         availableWidth: CGFloat,
         isLandscape: Bool = true,
@@ -1526,6 +1795,7 @@ public struct IOSIPadChocolateBarDeckView: View {
         self.client = client
         self._currentPageIndex = currentPageIndex
         self.isFollowingFrontmostApp = isFollowingFrontmostApp
+        self.isDeckSwitchHighlighted = isDeckSwitchHighlighted
         self.onFollowFrontmostApp = onFollowFrontmostApp
         self.availableWidth = availableWidth
         self.isLandscape = isLandscape
@@ -1611,6 +1881,7 @@ public struct IOSIPadChocolateBarDeckView: View {
                 client: client,
                 currentPageIndex: $currentPageIndex,
                 isFollowingFrontmostApp: isFollowingFrontmostApp,
+                isDeckSwitchHighlighted: isDeckSwitchHighlighted,
                 onFollowFrontmostApp: onFollowFrontmostApp,
                 isLandscape: isLandscape,
                 onPromptHUD: onPromptHUD,
@@ -1643,6 +1914,7 @@ public struct IOSPersistentControlStripView: View {
     let preferSingleRow: Bool
     let embeddedInSurface: Bool
 
+    @State private var pressedKey: String?
     @State private var volumeDragLevel: Double?
     @State private var brightnessDragLevel: Double?
     @State private var volumeThrottle = ControlLevelDragThrottle()
@@ -1766,30 +2038,37 @@ public struct IOSPersistentControlStripView: View {
     private var volumeControlCluster: some View {
         let isMuted = state.isVolumeMuted && volumeDragLevel == nil
         let pct = ControlStripLevel.percentage(for: effectiveVolume)
+        let isMutePressed = (pressedKey == "volumeMute")
 
         return HStack(spacing: 6) {
             Button {
                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                client.performQuickAction(.volumeMute)
+                ChocPressFeedback.completeTap(key: "volumeMute", pressedKey: $pressedKey)
+                triggerStripQuickAction(.volumeMute)
             } label: {
                 Image(systemName: speakerSymbol(level: effectiveVolume, isMuted: isMuted))
                     .font(.system(size: 13.5, weight: .bold))
                     .foregroundStyle(isMuted ? palette.statusFailure : palette.accent)
                     .frame(width: 34, height: 34)
                     .background(
-                        (isMuted ? palette.statusFailure.opacity(0.14) : palette.tileFillBottom),
+                        isMutePressed
+                            ? palette.accent.opacity(0.18)
+                            : (isMuted ? palette.statusFailure.opacity(0.14) : palette.tileFillBottom),
                         in: RoundedRectangle(cornerRadius: 10, style: .continuous)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .strokeBorder(
-                                isMuted ? palette.statusFailure.opacity(0.45) : palette.subtleCardStroke,
-                                lineWidth: 1
+                                isMutePressed
+                                    ? palette.accent
+                                    : (isMuted ? palette.statusFailure.opacity(0.45) : palette.subtleCardStroke),
+                                lineWidth: isMutePressed ? 1.8 : 1
                             )
                     )
                     .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .scaleEffect(isMutePressed ? 0.92 : 1.0)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: "volumeMute"))
             .accessibilityIdentifier("ios-strip-volume-mute")
             .accessibilityLabel(
                 isMuted
@@ -1926,41 +2205,59 @@ public struct IOSPersistentControlStripView: View {
             )
             .accessibilityIdentifier("ios-strip-now-playing-label")
 
+            let isPlayPressed = (pressedKey == "playPause")
             Button {
                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                client.performQuickAction(.mediaPlayPause)
+                ChocPressFeedback.completeTap(key: "playPause", pressedKey: $pressedKey)
+                triggerStripQuickAction(.mediaPlayPause)
             } label: {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.primaryText)
                     .frame(width: 34, height: 34)
-                    .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(
+                        isPlayPressed ? palette.tileFillBottom : palette.tileFillTop,
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                            .strokeBorder(
+                                isPlayPressed ? palette.accent : palette.subtleCardStroke,
+                                lineWidth: isPlayPressed ? 1.8 : 1
+                            )
                     )
                     .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .scaleEffect(isPlayPressed ? 0.92 : 1.0)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: "playPause"))
             .accessibilityIdentifier("ios-strip-play-pause")
             .accessibilityLabel(L10n.tr("播放或暂停", "Play or Pause", language: lang))
 
+            let isNextPressed = (pressedKey == "nextTrack")
             Button {
                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                client.performQuickAction(.mediaNext)
+                ChocPressFeedback.completeTap(key: "nextTrack", pressedKey: $pressedKey)
+                triggerStripQuickAction(.mediaNext)
             } label: {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 12.5, weight: .bold))
                     .foregroundStyle(palette.primaryText)
                     .frame(width: 34, height: 34)
-                    .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(
+                        isNextPressed ? palette.tileFillBottom : palette.tileFillTop,
+                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    )
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                            .strokeBorder(
+                                isNextPressed ? palette.accent : palette.subtleCardStroke,
+                                lineWidth: isNextPressed ? 1.8 : 1
+                            )
                     )
                     .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .scaleEffect(isNextPressed ? 0.92 : 1.0)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: "nextTrack"))
             .accessibilityIdentifier("ios-strip-next-track")
             .accessibilityLabel(L10n.tr("下一曲", "Next Track", language: lang))
         }
@@ -2007,10 +2304,20 @@ public struct IOSPersistentControlStripView: View {
 
     private func micMuteButton(compactLabel: Bool) -> some View {
         let isMuted = state.isMicMuted
+        let isMicPressed = (pressedKey == "micMute")
 
         return Button {
             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
-            client.toggleMicMute()
+            ChocPressFeedback.completeTap(key: "micMute", pressedKey: $pressedKey)
+            if client.connectionState.isConnected {
+                client.toggleMicMute()
+            } else {
+                client.lastFeedback = CompanionFeedbackToast(
+                    success: false,
+                    title: L10n.tr("麦克风静音", "Microphone Mute", language: lang),
+                    detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                )
+            }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
@@ -2035,22 +2342,39 @@ public struct IOSPersistentControlStripView: View {
             .padding(.horizontal, 9)
             .frame(height: 34)
             .background(
-                isMuted ? palette.statusFailure : palette.tileFillBottom,
+                isMuted
+                    ? palette.statusFailure.opacity(isMicPressed ? 0.84 : 1.0)
+                    : (isMicPressed ? palette.accent.opacity(0.16) : palette.tileFillBottom),
                 in: RoundedRectangle(cornerRadius: 10, style: .continuous)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(
-                        isMuted ? palette.statusFailure : palette.statusConnected.opacity(0.5),
-                        lineWidth: 1
+                        isMicPressed
+                            ? palette.accent
+                            : (isMuted ? palette.statusFailure : palette.statusConnected.opacity(0.5)),
+                        lineWidth: isMicPressed ? 1.8 : 1
                     )
             )
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .scaleEffect(isMicPressed ? 0.94 : 1.0)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: "micMute"))
         .accessibilityIdentifier("ios-strip-mic-mute")
         .accessibilityLabel(L10n.tr("麦克风静音开关", "Microphone Mute", language: lang))
         .accessibilityValue(isMuted ? L10n.tr("已静音", "Muted", language: lang) : L10n.tr("开启中", "On", language: lang))
+    }
+
+    private func triggerStripQuickAction(_ action: SystemQuickAction) {
+        if client.connectionState.isConnected {
+            client.performQuickAction(action)
+        } else {
+            client.lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: action.compactTitle(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+        }
     }
 
     // MARK: - Clock (Local Time, Text Only)
@@ -2080,6 +2404,9 @@ private struct ControlStripDragSlider: View {
     let onDragChanged: (Double) -> Void
     let onDragEnded: (Double) -> Void
     let onAccessibilityStep: (Double) -> Void
+
+    @GestureState private var isDragging: Bool = false
+    @State private var activeDraggedLevel: Double?
 
     private let trackHeight: CGFloat = 10
     private let thumbSize: CGFloat = 18
@@ -2115,21 +2442,34 @@ private struct ControlStripDragSlider: View {
                             .strokeBorder(fillColor, lineWidth: 2)
                     )
                     .shadow(color: palette.primaryText.opacity(0.12), radius: 2, x: 0, y: 1)
+                    .scaleEffect(isDragging ? 1.14 : 1.0)
+                    .animation(.easeOut(duration: 0.12), value: isDragging)
                     .offset(x: thumbX)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .updating($isDragging) { _, state, _ in
+                        state = true
+                    }
                     .onChanged { value in
                         let normalized = ControlStripLevel.clamp(Double(value.location.x / width))
+                        activeDraggedLevel = normalized
                         onDragChanged(normalized)
                     }
                     .onEnded { value in
                         let normalized = ControlStripLevel.clamp(Double(value.location.x / width))
+                        activeDraggedLevel = nil
                         onDragEnded(normalized)
                     }
             )
+            .onChange(of: isDragging) { _, dragging in
+                if !dragging, let pending = activeDraggedLevel {
+                    activeDraggedLevel = nil
+                    onDragEnded(pending)
+                }
+            }
         }
         .frame(height: 34)
         .accessibilityElement(children: .ignore)

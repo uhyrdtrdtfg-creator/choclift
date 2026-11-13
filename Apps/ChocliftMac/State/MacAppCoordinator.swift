@@ -786,7 +786,19 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             let summary = isMuted
                 ? L10n.tr("已将麦克风静音", "Microphone Muted", language: lang)
                 : L10n.tr("已取消麦克风静音", "Microphone Unmuted", language: lang)
-            recordActivity(deviceName: device.deviceName, summary: summary, isSuccess: ok)
+            let failureDetail = L10n.tr(
+                "无法切换麦克风静音状态，请检查音频输入设备。",
+                "Could not change microphone mute state. Check your audio input device.",
+                language: lang
+            )
+            recordActivity(deviceName: device.deviceName, summary: ok ? summary : failureDetail, isSuccess: ok)
+            if !ok {
+                reply(.actionFeedback(
+                    success: false,
+                    title: L10n.tr("麦克风", "Microphone", language: lang),
+                    detail: failureDetail
+                ))
+            }
 
         case .undoLastWindowMove:
             let outcome = undoLastWindowMove(triggeredBy: device.deviceName)

@@ -6,6 +6,7 @@ import SwiftUI
 public final class NotchPanelPresentationState: ObservableObject {
     @Published public var anchor: NotchPanelAnchor = .topNotch
     @Published public var hoveredSlotIndex: Int?
+    @Published public var pressedSlotIndex: Int?
     @Published public var inlineFeedback: String?
 
     private var feedbackTask: Task<Void, Never>?
@@ -43,7 +44,8 @@ public struct MacNotchPanelView: View {
 
     @ObservedObject var coordinator: MacAppCoordinator
     @ObservedObject var presentation: NotchPanelPresentationState
-    let onTriggerItem: (BarItem) -> Void
+    let onTriggerSlot: (Int, BarItem?) -> Void
+    let onSlotPressChanged: (Int, Bool) -> Void
     let onOpenStudio: () -> Void
     let onDismiss: () -> Void
 
@@ -68,13 +70,15 @@ public struct MacNotchPanelView: View {
     public init(
         coordinator: MacAppCoordinator,
         presentation: NotchPanelPresentationState,
-        onTriggerItem: @escaping (BarItem) -> Void,
+        onTriggerSlot: @escaping (Int, BarItem?) -> Void,
+        onSlotPressChanged: @escaping (Int, Bool) -> Void = { _, _ in },
         onOpenStudio: @escaping () -> Void,
         onDismiss: @escaping () -> Void
     ) {
         self.coordinator = coordinator
         self.presentation = presentation
-        self.onTriggerItem = onTriggerItem
+        self.onTriggerSlot = onTriggerSlot
+        self.onSlotPressChanged = onSlotPressChanged
         self.onOpenStudio = onOpenStudio
         self.onDismiss = onDismiss
     }
@@ -265,13 +269,15 @@ public struct MacNotchPanelView: View {
                 let iconData = slotItem?.bundleIdentifier.flatMap { coordinator.catalogService.iconData(forBundleID: $0) }
                 let isFrontmost = (slotItem?.bundleIdentifier != nil && slotItem?.bundleIdentifier == frontmostBundleID)
                 let isHovered = (presentation.hoveredSlotIndex == slotIdx)
+                let isPressed = (presentation.pressedSlotIndex == slotIdx)
 
                 tileCell(
                     slotIndex: slotIdx,
                     item: slotItem,
                     iconData: iconData,
                     isFrontmost: isFrontmost,
-                    isHovered: isHovered
+                    isHovered: isHovered,
+                    isPressed: isPressed
                 )
                 .frame(width: Self.tileSide, height: Self.tileSide)
             }
@@ -284,38 +290,59 @@ public struct MacNotchPanelView: View {
         item: BarItem?,
         iconData: Data?,
         isFrontmost: Bool,
-        isHovered: Bool
+        isHovered: Bool,
+        isPressed: Bool
     ) -> some View {
         if let item {
             Button {
-                onTriggerItem(item)
+                onTriggerSlot(slotIndex, item)
             } label: {
                 ChocBarTileCard(
                     item: item,
                     iconData: iconData,
                     isFrontmostApp: isFrontmost,
+                    isPressed: isPressed,
+                    isAwaitingConfirmation: false,
                     palette: palette,
                     language: lang,
                     compact: true
                 )
             }
-            .buttonStyle(NotchTileButtonStyle(isHovered: isHovered, accent: palette.accent))
+            .buttonStyle(
+                NotchTileButtonStyle(
+                    slotIndex: slotIndex,
+                    isHovered: isHovered,
+                    isExternallyPressed: isPressed,
+                    accent: palette.accent,
+                    onPressChanged: onSlotPressChanged
+                )
+            )
             .accessibilityLabel(item.displayTitle(in: lang))
         } else {
             Button {
-                onOpenStudio()
+                onTriggerSlot(slotIndex, nil)
             } label: {
                 ChocBarTileCard(
                     item: nil,
                     iconData: nil,
                     isFrontmostApp: false,
+                    isPressed: isPressed,
+                    isAwaitingConfirmation: false,
                     palette: palette,
                     language: lang,
                     compact: true
                 )
-                .opacity(isHovered ? 0.92 : 0.68)
+                .opacity(isPressed ? 1.0 : (isHovered ? 0.92 : 0.68))
             }
-            .buttonStyle(NotchTileButtonStyle(isHovered: isHovered, accent: palette.accent))
+            .buttonStyle(
+                NotchTileButtonStyle(
+                    slotIndex: slotIndex,
+                    isHovered: isHovered,
+                    isExternallyPressed: isPressed,
+                    accent: palette.accent,
+                    onPressChanged: onSlotPressChanged
+                )
+            )
             .help(L10n.tr("点击在工作台中分配此槽位", "Assign this slot in Choclift Studio", language: lang))
         }
     }
@@ -329,9 +356,11 @@ public struct MacNotchPanelView: View {
     /// Computes which of the 8 tile slots (if any) contains `pointInWindow` (AppKit bottom-left view coordinates).
     public static func hitTestSlotIndex(at pointInWindow: CGPoint) -> Int? {
         let gridOriginX = shadowHorizontalPadding + 14
-        let gridBottomY = shadowBottomPadding + 13
         let gridWidth = (tileSide * 4) + (gridSpacing * 3)
         let gridHeight = (tileSide * 2) + gridSpacing
+        let contentVStackHeight: CGFloat = 11 + 24 + 10 + gridHeight + 13
+        let verticalSlack = max(0, (cardHeight - contentVStackHeight) / 2)
+        let gridBottomY = shadowBottomPadding + 13 + verticalSlack
 
         let relX = pointInWindow.x - gridOriginX
         let relYFromBottom = pointInWindow.y - gridBottomY
@@ -355,17 +384,27 @@ public struct MacNotchPanelView: View {
 }
 
 private struct NotchTileButtonStyle: ButtonStyle {
+    let slotIndex: Int
     let isHovered: Bool
+    let isExternallyPressed: Bool
     let accent: Color
+    let onPressChanged: (Int, Bool) -> Void
 
     func makeBody(configuration: Configuration) -> some View {
+        let activePressed = configuration.isPressed || isExternallyPressed
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.95 : (isHovered ? 1.028 : 1.0))
+            .scaleEffect(activePressed ? 0.94 : (isHovered ? 1.028 : 1.0))
             .overlay(
                 RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .strokeBorder(isHovered ? accent.opacity(0.55) : Color.clear, lineWidth: 1.5)
+                    .strokeBorder(
+                        activePressed ? accent : (isHovered ? accent.opacity(0.55) : Color.clear),
+                        lineWidth: activePressed ? 2.0 : 1.5
+                    )
             )
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.09), value: activePressed)
             .animation(.easeOut(duration: 0.14), value: isHovered)
+            .onChange(of: configuration.isPressed) { pressing in
+                onPressChanged(slotIndex, pressing)
+            }
     }
 }

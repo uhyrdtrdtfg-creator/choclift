@@ -1026,9 +1026,14 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     /// Best-effort display name for a bundle identifier on companion devices using synced metadata.
     public func resolvedAppDisplayName(
         forBundleIdentifier bundleIdentifier: String,
+        preferredAppName: String? = nil,
         recentApps: [RecentAppEntry] = [],
         catalogApps: [InstalledAppSummary] = []
     ) -> String {
+        if let preferred = preferredAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !preferred.isEmpty {
+            return preferred
+        }
         let trimmed = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         if let recent = recentApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(trimmed) == .orderedSame }),
            !recent.appName.isEmpty {

@@ -30,18 +30,28 @@ public enum IOSActiveSurfaceMode: String, CaseIterable, Identifiable {
 }
 
 public struct IOSRootTouchBarView: View {
+    private struct HUDToastBanner: Equatable {
+        let id = UUID()
+        let primaryText: String
+        let secondaryText: String?
+        let isFailure: Bool
+    }
+
     @ObservedObject var client: CompanionClientEngine
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var activeMode: IOSActiveSurfaceMode = .chocolateBar
     @State private var modeBeforeAutoEmoji: IOSActiveSurfaceMode?
     @State private var deckFollower = AppDeckFollowerState()
+    @State private var isDeckSwitchHighlighted: Bool = false
+    @State private var deckSwitchHighlightTask: Task<Void, Never>?
     @State private var currentEmojiSlideIndex: Int = 0
     @State private var currentEmojiSegment: IOSEmojiBarSegment = .emoji
     @State private var showPairingSheet: Bool = false
     @State private var showFlowsManagerSheet: Bool = false
     @State private var editingSlot: IOSEditSlotSelection?
-    @State private var gestureHUDText: String?
+    @State private var hudToast: HUDToastBanner?
+    @State private var hudDismissTask: Task<Void, Never>?
     @State private var gestureConfirmGate = DestructiveActionConfirmGate()
 
     private var currentPageIndex: Int { deckFollower.currentPageIndex }
@@ -101,30 +111,53 @@ public struct IOSRootTouchBarView: View {
                 .ignoresSafeArea()
 
                 // Non-interactive HUD Toast
-                if let hud = gestureHUDText {
+                if let hud = hudToast {
+                    let cornerRadius: CGFloat = hud.secondaryText == nil ? 20 : 14
                     VStack {
-                        HStack(spacing: 6) {
-                            Image(systemName: "sparkles")
-                                .font(.caption2.bold())
-                                .foregroundStyle(palette.accent)
-                            Text(hud)
-                                .font(.system(.caption, design: .rounded, weight: .bold))
-                                .foregroundStyle(palette.primaryText)
-                                .lineLimit(1)
+                        HStack(spacing: 7) {
+                            Image(systemName: hud.isFailure ? "exclamationmark.triangle.fill" : "sparkles")
+                                .font(.caption.bold())
+                                .foregroundStyle(hud.isFailure ? palette.statusFailure : palette.accent)
+
+                            VStack(alignment: .leading, spacing: 1.5) {
+                                Text(hud.primaryText)
+                                    .font(.system(.caption, design: .rounded, weight: .bold))
+                                    .foregroundStyle(palette.primaryText)
+                                    .lineLimit(hud.secondaryText == nil ? 2 : 1)
+
+                                if let secondary = hud.secondaryText {
+                                    Text(secondary)
+                                        .font(.caption2.weight(.medium))
+                                        .foregroundStyle(hud.isFailure ? palette.statusFailure : palette.secondaryText)
+                                        .lineLimit(2)
+                                }
+                            }
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(palette.barSurface.opacity(0.96), in: Capsule())
-                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                        .background(
+                            palette.barSurface.opacity(0.97),
+                            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .strokeBorder(
+                                    hud.isFailure ? palette.statusFailure.opacity(0.75) : palette.subtleCardStroke,
+                                    lineWidth: hud.isFailure ? 1.3 : 1
+                                )
+                        )
                         .shadow(color: palette.primaryText.opacity(0.08), radius: 8, x: 0, y: 4)
+                        .padding(.horizontal, 16)
                         .padding(.top, 10)
                         Spacer()
                     }
+                    .zIndex(10)
                     .allowsHitTesting(false)
+                    .accessibilityIdentifier("ios-feedback-toast")
                     .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: gestureHUDText)
+            .animation(.easeInOut(duration: 0.2), value: hudToast)
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
@@ -150,12 +183,21 @@ public struct IOSRootTouchBarView: View {
             }
         }
         .onChange(of: client.frontmostBundleID) { _, newBundleID in
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+            let previousPageID = deckFollower.currentPageID
+            let wasFollowing = deckFollower.isFollowingFrontmostApp
+            withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
                 deckFollower.handleFrontmostAppChanged(newBundleID, in: client.profile)
+            }
+            if wasFollowing,
+               let updatedPageID = deckFollower.currentPageID,
+               previousPageID != nil,
+               updatedPageID != previousPageID {
+                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                pulseDeckSwitchHighlight()
             }
         }
         .onChange(of: client.profile) { _, newProfile in
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+            withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
                 deckFollower.handleProfileUpdated(newProfile, frontmostBundleIdentifier: client.frontmostBundleID)
             }
         }
@@ -194,12 +236,7 @@ public struct IOSRootTouchBarView: View {
         }
         .onChange(of: client.lastFeedback) { _, toast in
             guard let toast else { return }
-            if toast.success {
-                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-            } else {
-                CompanionHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, type: .error)
-            }
-            flashHUD(toast.detail ?? toast.title)
+            presentFeedbackToast(toast)
         }
     }
 
@@ -461,6 +498,7 @@ public struct IOSRootTouchBarView: View {
                         client: client,
                         currentPageIndex: manualPageSelectionBinding,
                         isFollowingFrontmostApp: deckFollower.isFollowingFrontmostApp,
+                        isDeckSwitchHighlighted: isDeckSwitchHighlighted,
                         onFollowFrontmostApp: resumeFollowingFrontmostApp,
                         availableWidth: leftColumnWidth,
                         isLandscape: true,
@@ -591,6 +629,7 @@ public struct IOSRootTouchBarView: View {
                 client: client,
                 currentPageIndex: manualPageSelectionBinding,
                 isFollowingFrontmostApp: deckFollower.isFollowingFrontmostApp,
+                isDeckSwitchHighlighted: isDeckSwitchHighlighted,
                 onFollowFrontmostApp: resumeFollowingFrontmostApp,
                 isLandscape: isLandscape,
                 onPromptHUD: { message in
@@ -1082,11 +1121,25 @@ public struct IOSRootTouchBarView: View {
     }
 
     private func resumeFollowingFrontmostApp() {
-        withAnimation(.spring(response: 0.28, dampingFraction: 0.84)) {
+        let previousPageID = deckFollower.currentPageID
+        withAnimation(.spring(response: 0.30, dampingFraction: 0.85)) {
             deckFollower.followFrontmostApp(
                 frontmostBundleIdentifier: client.frontmostBundleID,
                 in: client.profile
             )
+        }
+        if deckFollower.currentPageID != previousPageID {
+            pulseDeckSwitchHighlight()
+        }
+    }
+
+    private func pulseDeckSwitchHighlight() {
+        deckSwitchHighlightTask?.cancel()
+        isDeckSwitchHighlighted = true
+        deckSwitchHighlightTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(550))
+            guard !Task.isCancelled else { return }
+            isDeckSwitchHighlighted = false
         }
     }
 
@@ -1104,24 +1157,75 @@ public struct IOSRootTouchBarView: View {
             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
             let label = mapped?.title(in: lang) ?? gesture.title(in: lang)
             flashHUD(L10n.tr("3 秒内再点一次确认：\(label)", "Tap again within 3s: \(label)", language: lang))
+            let delay = CompanionInteractionPolicy.destructiveConfirmWindowSeconds + 0.05
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(delay))
+                gestureConfirmGate.expireIfNeeded(at: ProcessInfo.processInfo.systemUptime)
+            }
             return
         }
 
         CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .rigid)
+        guard client.connectionState.isConnected else {
+            client.lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: gesture.title(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
         client.performGesture(gesture)
         if let mapped {
-            flashHUD("\(gesture.title(in: lang)) → \(mapped.title(in: lang))")
+            showHUD(
+                primary: "\(gesture.title(in: lang)) → \(mapped.title(in: lang))",
+                secondary: nil,
+                isFailure: false,
+                duration: 1.8
+            )
         } else {
-            flashHUD(gesture.title(in: lang))
+            showHUD(primary: gesture.title(in: lang), secondary: nil, isFailure: false, duration: 1.8)
         }
     }
 
+    private func presentFeedbackToast(_ toast: CompanionFeedbackToast) {
+        let trimmedTitle = toast.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDetail = (toast.detail ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if !toast.success {
+            CompanionHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, type: .error)
+            if !trimmedTitle.isEmpty,
+               !trimmedDetail.isEmpty,
+               trimmedTitle.caseInsensitiveCompare(trimmedDetail) != .orderedSame,
+               !trimmedDetail.localizedCaseInsensitiveContains(trimmedTitle) {
+                showHUD(primary: trimmedTitle, secondary: trimmedDetail, isFailure: true, duration: 3.0)
+            } else {
+                let fallback = !trimmedDetail.isEmpty
+                    ? trimmedDetail
+                    : (!trimmedTitle.isEmpty ? trimmedTitle : L10n.tr("操作执行失败", "Action Failed", language: lang))
+                showHUD(primary: fallback, secondary: nil, isFailure: true, duration: 3.0)
+            }
+            return
+        }
+
+        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+        let message = !trimmedDetail.isEmpty ? trimmedDetail : trimmedTitle
+        guard !message.isEmpty else { return }
+        showHUD(primary: message, secondary: nil, isFailure: false, duration: 1.8)
+    }
+
     private func flashHUD(_ message: String) {
-        gestureHUDText = message
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.8))
-            if gestureHUDText == message {
-                gestureHUDText = nil
+        showHUD(primary: message, secondary: nil, isFailure: false, duration: 2.2)
+    }
+
+    private func showHUD(primary: String, secondary: String?, isFailure: Bool, duration: TimeInterval) {
+        hudDismissTask?.cancel()
+        let banner = HUDToastBanner(primaryText: primary, secondaryText: secondary, isFailure: isFailure)
+        hudToast = banner
+        hudDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(duration))
+            guard !Task.isCancelled else { return }
+            if hudToast?.id == banner.id {
+                hudToast = nil
             }
         }
     }

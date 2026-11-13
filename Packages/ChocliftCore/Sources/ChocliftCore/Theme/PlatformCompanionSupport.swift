@@ -112,6 +112,69 @@ public enum CompanionFeedbackHaptics {
     }
 }
 
+// MARK: - Single-Finger Bar Tap vs. Page Swipe Thresholds
+
+public enum BarPageSwipeDirection: String, Equatable, Sendable {
+    case previous
+    case next
+}
+
+public enum BarTouchInteractionOutcome: Equatable, Sendable {
+    case tap
+    case cancelPress
+    case pageSwipe(BarPageSwipeDirection)
+}
+
+/// Pure gesture thresholds shared by iPhone and iPad Chocolate Bar surfaces so short finger wobble
+/// stays a tile tap while deliberate horizontal swipes change pages without triggering tiles.
+public enum BarTouchGestureThresholds {
+    /// Movements up to 14pt (for example an 8pt thumb wobble) remain a tap and never pan pages.
+    public static let maxTapMovementPoints: CGFloat = 14
+    /// Horizontal translation required before releasing a drag commits a page change (for example 40pt).
+    public static let minPageSwipeHorizontalPoints: CGFloat = 32
+    /// Horizontal-to-vertical ratio required so diagonal/vertical drags cancel without flipping pages.
+    public static let horizontalDominanceRatio: CGFloat = 1.35
+
+    public static func travelDistance(for translation: CGSize) -> CGFloat {
+        hypot(translation.width, translation.height)
+    }
+
+    /// True once finger movement exceeds the tap slop and any active tile press must be cancelled.
+    public static func shouldCancelPress(translation: CGSize) -> Bool {
+        travelDistance(for: translation) > maxTapMovementPoints
+    }
+
+    public static func classify(translation: CGSize) -> BarTouchInteractionOutcome {
+        guard shouldCancelPress(translation: translation) else {
+            return .tap
+        }
+        let absX = abs(translation.width)
+        let absY = abs(translation.height)
+        guard absX >= minPageSwipeHorizontalPoints,
+              absX >= absY * horizontalDominanceRatio else {
+            return .cancelPress
+        }
+        return translation.width < 0 ? .pageSwipe(.next) : .pageSwipe(.previous)
+    }
+
+    public static func resolvedPageIndex(
+        currentIndex: Int,
+        pageCount: Int,
+        translation: CGSize
+    ) -> Int {
+        guard pageCount > 0 else { return 0 }
+        let safeCurrent = min(max(0, currentIndex), pageCount - 1)
+        switch classify(translation: translation) {
+        case .tap, .cancelPress:
+            return safeCurrent
+        case .pageSwipe(.next):
+            return min(pageCount - 1, safeCurrent + 1)
+        case .pageSwipe(.previous):
+            return max(0, safeCurrent - 1)
+        }
+    }
+}
+
 // MARK: - Multi-Touch Overlay Pass-Through Support
 
 public enum MultiTouchOverlayPolicy {

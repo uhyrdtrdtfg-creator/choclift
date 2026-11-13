@@ -360,7 +360,9 @@ public struct NotchPanelHoverStateMachine: Equatable, Sendable {
                 screen: screen
             )
 
-            if inside {
+            // Keep the panel alive while inside the keep-alive zone OR while an active click
+            // initiated on the open panel is still held down so the panel never hides mid-click.
+            if inside || isMouseButtonPressed {
                 session.pointerExitedAt = nil
                 visibleSession = session
                 return .none

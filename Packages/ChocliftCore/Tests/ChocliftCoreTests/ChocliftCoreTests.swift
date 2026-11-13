@@ -996,4 +996,61 @@ final class ChocliftCoreTests: XCTestCase {
         XCTAssertEqual(delegate.insertedPayloads.count, 3)
     }
     #endif
+
+    func testBarTouchGestureThresholdsDistinguishShortTapFromHorizontalPageSwipe() {
+        // An 8-point movement stays a tap and does not cancel press or change pages.
+        let shortHorizontal = CGSize(width: 8, height: 0)
+        XCTAssertEqual(BarTouchGestureThresholds.classify(translation: shortHorizontal), .tap)
+        XCTAssertFalse(BarTouchGestureThresholds.shouldCancelPress(translation: shortHorizontal))
+        XCTAssertEqual(
+            BarTouchGestureThresholds.resolvedPageIndex(currentIndex: 2, pageCount: 8, translation: shortHorizontal),
+            2
+        )
+
+        let shortDiagonal = CGSize(width: -6, height: 5) // ~7.81pt <= 14pt
+        XCTAssertEqual(BarTouchGestureThresholds.classify(translation: shortDiagonal), .tap)
+        XCTAssertFalse(BarTouchGestureThresholds.shouldCancelPress(translation: shortDiagonal))
+
+        // A 40-point horizontal movement is classified as a page swipe and advances/retreats one page.
+        let swipeNext = CGSize(width: -40, height: 0)
+        XCTAssertEqual(BarTouchGestureThresholds.classify(translation: swipeNext), .pageSwipe(.next))
+        XCTAssertTrue(BarTouchGestureThresholds.shouldCancelPress(translation: swipeNext))
+        XCTAssertEqual(
+            BarTouchGestureThresholds.resolvedPageIndex(currentIndex: 0, pageCount: 8, translation: swipeNext),
+            1
+        )
+        XCTAssertEqual(
+            BarTouchGestureThresholds.resolvedPageIndex(currentIndex: 7, pageCount: 8, translation: swipeNext),
+            7
+        )
+
+        let swipePrevious = CGSize(width: 40, height: 4)
+        XCTAssertEqual(BarTouchGestureThresholds.classify(translation: swipePrevious), .pageSwipe(.previous))
+        XCTAssertTrue(BarTouchGestureThresholds.shouldCancelPress(translation: swipePrevious))
+        XCTAssertEqual(
+            BarTouchGestureThresholds.resolvedPageIndex(currentIndex: 2, pageCount: 8, translation: swipePrevious),
+            1
+        )
+        XCTAssertEqual(
+            BarTouchGestureThresholds.resolvedPageIndex(currentIndex: 0, pageCount: 8, translation: swipePrevious),
+            0
+        )
+
+        // Intermediate drift (> 14pt, < 32pt) or vertical-dominant movement cancels tile press without changing page.
+        let intermediateDrift = CGSize(width: -20, height: 3)
+        XCTAssertEqual(BarTouchGestureThresholds.classify(translation: intermediateDrift), .cancelPress)
+        XCTAssertTrue(BarTouchGestureThresholds.shouldCancelPress(translation: intermediateDrift))
+        XCTAssertEqual(
+            BarTouchGestureThresholds.resolvedPageIndex(currentIndex: 2, pageCount: 8, translation: intermediateDrift),
+            2
+        )
+
+        let verticalDrag = CGSize(width: 24, height: 40)
+        XCTAssertEqual(BarTouchGestureThresholds.classify(translation: verticalDrag), .cancelPress)
+        XCTAssertTrue(BarTouchGestureThresholds.shouldCancelPress(translation: verticalDrag))
+        XCTAssertEqual(
+            BarTouchGestureThresholds.resolvedPageIndex(currentIndex: 2, pageCount: 8, translation: verticalDrag),
+            2
+        )
+    }
 }

@@ -96,6 +96,7 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public var profile: ChocliftWorkspaceProfile = ChocliftDefaults.makeDefaultProfile()
     @Published public private(set) var recentApps: [RecentAppEntry] = []
     @Published public private(set) var frontmostBundleID: String?
+    @Published public private(set) var frontmostAppName: String?
     @Published public private(set) var isEditingTextOnMac: Bool = false
     @Published public private(set) var focusedMacAppName: String?
     @Published public private(set) var isMacAccessibilityGranted: Bool = true
@@ -1875,6 +1876,9 @@ public final class CompanionClientEngine: ObservableObject {
             profile = serverProfile
             recentApps = serverRecents
             frontmostBundleID = frontmost
+            frontmostAppName = frontmost.flatMap { bid in
+                serverRecents.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame })?.appName
+            }
             isEditingTextOnMac = editingText
             focusedMacAppName = focusedApp
             isMacAccessibilityGranted = axTrusted
@@ -1903,8 +1907,9 @@ public final class CompanionClientEngine: ObservableObject {
             recentApps = entries
             requestMissingIconsIfNeeded()
 
-        case .frontmostAppChanged(let bundleID, _):
+        case .frontmostAppChanged(let bundleID, let appName):
             frontmostBundleID = bundleID
+            frontmostAppName = appName
 
         case .textFieldFocusChanged(let isEditingText, let appName):
             isEditingTextOnMac = isEditingText

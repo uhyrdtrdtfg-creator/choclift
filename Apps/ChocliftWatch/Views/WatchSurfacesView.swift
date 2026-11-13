@@ -76,6 +76,8 @@ private struct WatchOrcaComplicationLine: View {
     @ObservedObject var client: CompanionClientEngine
     let status: OrcaTaskStatusSnapshot
 
+    @State private var pressedRowID: String?
+
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
@@ -104,20 +106,22 @@ private struct WatchOrcaComplicationLine: View {
             }()
 
             if primary.canTapToFocus {
+                let isPressed = (pressedRowID == primary.id)
                 Button {
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    ChocPressFeedback.completeTap(key: primary.id, pressedKey: $pressedRowID)
                     client.focusOrcaTask(dispatchID: primary.dispatchID)
                 } label: {
-                    lineBody(state: primary.state, tint: tint, summary: summary, canFocus: true)
+                    lineBody(state: primary.state, tint: tint, summary: summary, canFocus: true, isPressed: isPressed)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedRowID, key: primary.id))
             } else {
-                lineBody(state: primary.state, tint: tint, summary: summary, canFocus: false)
+                lineBody(state: primary.state, tint: tint, summary: summary, canFocus: false, isPressed: false)
             }
         }
     }
 
-    private func lineBody(state: OrcaTaskState, tint: Color, summary: String, canFocus: Bool) -> some View {
+    private func lineBody(state: OrcaTaskState, tint: Color, summary: String, canFocus: Bool, isPressed: Bool) -> some View {
         HStack(spacing: 5) {
             Image(systemName: state.sfSymbol)
                 .font(.system(size: 10.5, weight: .bold))
@@ -138,12 +142,13 @@ private struct WatchOrcaComplicationLine: View {
         }
         .padding(.horizontal, 9)
         .frame(minHeight: canFocus ? 34 : 28)
-        .background(palette.barSurface, in: Capsule())
+        .background(isPressed ? palette.tileFillBottom : palette.barSurface, in: Capsule())
         .overlay(
             Capsule()
-                .strokeBorder(tint.opacity(0.4), lineWidth: 1)
+                .strokeBorder(isPressed ? palette.accent : tint.opacity(0.4), lineWidth: isPressed ? 1.6 : 1)
         )
         .contentShape(Capsule())
+        .scaleEffect(isPressed ? 0.96 : 1.0)
     }
 
     private func stateColor(_ state: OrcaTaskState) -> Color {
@@ -165,6 +170,7 @@ private struct WatchOrcaComplicationLine: View {
 public struct WatchChocolateBarView: View {
     @ObservedObject var client: CompanionClientEngine
     @Binding var deckFollower: AppDeckFollowerState
+    var isDeckSwitchHighlighted: Bool = false
     var isBarVisible: Bool = true
     let onRequestPairing: () -> Void
 
@@ -196,18 +202,19 @@ public struct WatchChocolateBarView: View {
         return client.profile.pages[safePageIndex]
     }
 
-    private var activeBoundFrontmostAppName: String? {
+    private var activeBoundDeckContext: (appName: String, page: BarPage)? {
         guard deckFollower.isFollowingFrontmostApp,
               let frontBundleID = client.frontmostBundleID,
-              !client.profile.pages.isEmpty,
-              client.profile.boundPageID(forBundleIdentifier: frontBundleID) == activePage.id else {
+              let boundPage = client.profile.boundPage(forBundleIdentifier: frontBundleID) else {
             return nil
         }
-        return client.profile.resolvedAppDisplayName(
+        let appName = client.profile.resolvedAppDisplayName(
             forBundleIdentifier: frontBundleID,
+            preferredAppName: client.frontmostAppName,
             recentApps: client.recentApps,
             catalogApps: client.macCatalogApps
         )
+        return (appName, boundPage)
     }
 
     public var body: some View {
@@ -225,8 +232,8 @@ public struct WatchChocolateBarView: View {
 
                 if !deckFollower.isFollowingFrontmostApp {
                     followFrontmostAppButton
-                } else if let boundAppName = activeBoundFrontmostAppName {
-                    followingAppBadge(appName: boundAppName)
+                } else if let bound = activeBoundDeckContext {
+                    followingAppBadge(appName: bound.appName, page: bound.page)
                 }
 
                 let columns = [
@@ -254,6 +261,9 @@ public struct WatchChocolateBarView: View {
                         .frame(height: 64)
                     }
                 }
+                .id(activePage.id)
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.22), value: safePageIndex)
             }
             .padding(.horizontal, 6)
             .padding(.bottom, 8)
@@ -307,11 +317,22 @@ public struct WatchChocolateBarView: View {
         let isMuted = client.controlStripState.isVolumeMuted && !isCrownRotating
         let displayedLevel = ControlStripLevel.clamp(isCrownRotating ? crownVolume : client.controlStripState.volume)
         let pct = ControlStripLevel.percentage(for: displayedLevel)
+        let muteKey = "watch-volume-mute"
+        let isMutePressed = (pressedSlotKey == muteKey)
 
         return HStack(spacing: 7) {
             Button {
                 CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
-                client.performQuickAction(.volumeMute)
+                ChocPressFeedback.completeTap(key: muteKey, pressedKey: $pressedSlotKey)
+                if client.connectionState.isConnected {
+                    client.performQuickAction(.volumeMute)
+                } else {
+                    client.lastFeedback = CompanionFeedbackToast(
+                        success: false,
+                        title: L10n.tr("静音", "Mute", language: lang),
+                        detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                    )
+                }
                 isVolumeCrownFocused = true
             } label: {
                 Image(systemName: (isMuted || displayedLevel <= 0.001) ? "speaker.slash.fill" : "speaker.wave.2.fill")
@@ -319,19 +340,24 @@ public struct WatchChocolateBarView: View {
                     .foregroundStyle(isMuted ? palette.emphasisForeground : palette.accent)
                     .frame(width: 32, height: 30)
                     .background(
-                        isMuted ? palette.statusFailure : palette.tileFillBottom,
+                        isMuted
+                            ? palette.statusFailure.opacity(isMutePressed ? 0.84 : 1.0)
+                            : (isMutePressed ? palette.accent.opacity(0.18) : palette.tileFillBottom),
                         in: Capsule()
                     )
                     .overlay(
                         Capsule()
                             .strokeBorder(
-                                isMuted ? palette.statusFailure : palette.subtleCardStroke,
-                                lineWidth: 1
+                                isMutePressed
+                                    ? palette.accent
+                                    : (isMuted ? palette.statusFailure : palette.subtleCardStroke),
+                                lineWidth: isMutePressed ? 1.6 : 1
                             )
                     )
                     .contentShape(Capsule())
+                    .scaleEffect(isMutePressed ? 0.92 : 1.0)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedSlotKey, key: muteKey))
             .accessibilityIdentifier("watch-bar-volume-mute")
             .accessibilityLabel(
                 isMuted
@@ -518,18 +544,36 @@ public struct WatchChocolateBarView: View {
         .accessibilityIdentifier("watch-follow-frontmost-app-button")
     }
 
-    private func followingAppBadge(appName: String) -> some View {
+    private func followingAppBadge(appName: String, page: BarPage) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "macwindow")
                 .font(.system(size: 9.5, weight: .bold))
-            Text(L10n.tr("跟随 \(appName)", "Following \(appName)", language: lang))
-                .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                .lineLimit(1)
+            Text(
+                L10n.tr(
+                    "跟随 \(appName) · \(page.iconEmoji) \(page.title)",
+                    "Following \(appName) · \(page.iconEmoji) \(page.title)",
+                    language: lang
+                )
+            )
+            .font(.system(size: 10.5, weight: .bold, design: .rounded))
+            .lineLimit(1)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .background(palette.accent.opacity(0.14), in: Capsule())
+        .background(
+            palette.accent.opacity(isDeckSwitchHighlighted ? 0.24 : 0.14),
+            in: Capsule()
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(
+                    isDeckSwitchHighlighted ? palette.accent : palette.accent.opacity(0.28),
+                    lineWidth: isDeckSwitchHighlighted ? 1.4 : 0.8
+                )
+        )
         .foregroundStyle(palette.accent)
+        .scaleEffect(isDeckSwitchHighlighted ? 1.03 : 1.0)
+        .animation(.easeInOut(duration: 0.2), value: isDeckSwitchHighlighted)
     }
 
     private func selectPageDot(_ pageOffset: Int) {
@@ -560,9 +604,13 @@ public struct WatchChocolateBarView: View {
     ) -> some View {
         let isPressed = (pressedSlotKey == key)
         let isDestructive = item?.requiresDestructiveConfirmation(in: client.profile) ?? false
-        let isAwaitingConfirm = isDestructive && (confirmGate.armedTargetID == key)
+        let isAwaitingConfirm = isDestructive && confirmGate.isArmed(
+            targetID: key,
+            at: ProcessInfo.processInfo.systemUptime
+        )
 
         return Button {
+            ChocPressFeedback.completeTap(key: key, pressedKey: $pressedSlotKey)
             if let item {
                 let now = ProcessInfo.processInfo.systemUptime
                 let decision = confirmGate.registerTap(
@@ -579,17 +627,18 @@ public struct WatchChocolateBarView: View {
                     }
                 case .runImmediately, .confirmedRun:
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
-                    withAnimation(.spring(response: 0.16, dampingFraction: 0.65)) {
-                        pressedSlotKey = key
+                    if client.connectionState.isConnected {
+                        client.triggerBarItem(item)
+                    } else {
+                        client.lastFeedback = CompanionFeedbackToast(
+                            success: false,
+                            title: item.displayTitle(in: lang),
+                            detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                        )
                     }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                        if pressedSlotKey == key {
-                            withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                                pressedSlotKey = nil
-                            }
-                        }
-                    }
-                    client.triggerBarItem(item)
+                }
+                if isCrownActiveForBar {
+                    isVolumeCrownFocused = true
                 }
             } else {
                 confirmGate.disarm()
@@ -601,6 +650,7 @@ public struct WatchChocolateBarView: View {
                 item: item,
                 iconData: iconData,
                 isFrontmostApp: isFrontmost,
+                isPressed: isPressed,
                 isAwaitingConfirmation: isAwaitingConfirm,
                 palette: palette,
                 language: lang,
@@ -608,7 +658,7 @@ public struct WatchChocolateBarView: View {
             )
             .scaleEffect(isPressed ? 0.93 : 1.0)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedSlotKey, key: key))
     }
 
     private var pagePickerSheet: some View {
@@ -904,7 +954,7 @@ public struct WatchQuickActionsView: View {
                         .background(
                             LinearGradient(
                                 colors: [
-                                    palette.tileFillTop,
+                                    isPressed ? palette.tileFillBottom : palette.tileFillTop,
                                     tileTone
                                 ],
                                 startPoint: .topLeading,
@@ -915,14 +965,14 @@ public struct WatchQuickActionsView: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .strokeBorder(
-                                    isPrimary ? palette.accent.opacity(0.65) : palette.subtleCardStroke,
-                                    lineWidth: 1
+                                    isPressed ? palette.accent : (isPrimary ? palette.accent.opacity(0.65) : palette.subtleCardStroke),
+                                    lineWidth: isPressed ? 1.8 : 1
                                 )
                         )
                         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .scaleEffect(isPressed ? 0.94 : 1.0)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedAction, key: action))
                 .accessibilityLabel(action.compactTitle(in: lang))
             }
         }
@@ -938,7 +988,10 @@ public struct WatchQuickActionsView: View {
             ForEach(actions) { action in
                 let tileTone = ChocSwatch.resolvedTileColor(hex: action.accentHex, fallbackHex: ChocPalette.coreTileBottomHex)
                 let isPressed = (pressedAction == action)
-                let isArmed = action.requiresDestructiveConfirmation && (confirmGate.armedTargetID == action.rawValue)
+                let isArmed = action.requiresDestructiveConfirmation && confirmGate.isArmed(
+                    targetID: action.rawValue,
+                    at: ProcessInfo.processInfo.systemUptime
+                )
 
                 Button {
                     trigger(action)
@@ -965,7 +1018,7 @@ public struct WatchQuickActionsView: View {
                     .frame(height: 48)
                     .background(
                         LinearGradient(
-                            colors: [palette.tileFillTop, tileTone],
+                            colors: [isPressed ? palette.tileFillBottom : palette.tileFillTop, tileTone],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -974,19 +1027,20 @@ public struct WatchQuickActionsView: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
                             .strokeBorder(
-                                isArmed ? palette.statusFailure : palette.subtleCardStroke,
-                                lineWidth: isArmed ? 1.8 : 1
+                                isArmed ? palette.statusFailure : (isPressed ? palette.accent : palette.subtleCardStroke),
+                                lineWidth: (isArmed || isPressed) ? 1.8 : 1
                             )
                     )
                     .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                     .scaleEffect(isPressed ? 0.94 : 1.0)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedAction, key: action))
             }
         }
     }
 
     private func trigger(_ action: SystemQuickAction) {
+        ChocPressFeedback.completeTap(key: action, pressedKey: $pressedAction)
         let now = ProcessInfo.processInfo.systemUptime
         let decision = confirmGate.registerTap(
             targetID: action.rawValue,
@@ -1002,17 +1056,15 @@ public struct WatchQuickActionsView: View {
             }
         case .runImmediately, .confirmedRun:
             CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .rigid)
-            withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
-                pressedAction = action
+            if client.connectionState.isConnected {
+                client.performQuickAction(action)
+            } else {
+                client.lastFeedback = CompanionFeedbackToast(
+                    success: false,
+                    title: action.compactTitle(in: lang),
+                    detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                )
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-                if pressedAction == action {
-                    withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                        pressedAction = nil
-                    }
-                }
-            }
-            client.performQuickAction(action)
         }
     }
 }
@@ -1293,16 +1345,7 @@ public struct WatchEmojiBarView: View {
 
                 Button {
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
-                    withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
-                        pressedEmojiIndex = idx
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-                        if pressedEmojiIndex == idx {
-                            withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                                pressedEmojiIndex = nil
-                            }
-                        }
-                    }
+                    ChocPressFeedback.completeTap(key: idx, pressedKey: $pressedEmojiIndex)
                     if client.connectionState.isConnected {
                         client.insertEmoji(emoji)
                     } else {
@@ -1315,7 +1358,7 @@ public struct WatchEmojiBarView: View {
                         .frame(height: 50)
                         .background(
                             LinearGradient(
-                                colors: [palette.tileFillTop, palette.tileFillBottom],
+                                colors: [isPressed ? palette.tileFillBottom : palette.tileFillTop, palette.tileFillBottom],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
@@ -1323,12 +1366,15 @@ public struct WatchEmojiBarView: View {
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                .strokeBorder(palette.tileBorderHighlight.opacity(0.48), lineWidth: 1)
+                                .strokeBorder(
+                                    isPressed ? palette.accent : palette.tileBorderHighlight.opacity(0.48),
+                                    lineWidth: isPressed ? 1.8 : 1
+                                )
                         )
                         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                         .scaleEffect(isPressed ? 0.93 : 1.0)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedEmojiIndex, key: idx))
             }
         }
     }
@@ -1359,16 +1405,7 @@ public struct WatchEmojiBarView: View {
 
                 Button {
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
-                    withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
-                        pressedSnippetID = snippet.id
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-                        if pressedSnippetID == snippet.id {
-                            withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                                pressedSnippetID = nil
-                            }
-                        }
-                    }
+                    ChocPressFeedback.completeTap(key: snippet.id, pressedKey: $pressedSnippetID)
                     if client.connectionState.isConnected {
                         client.insertText(snippet.body)
                     } else {
@@ -1391,7 +1428,7 @@ public struct WatchEmojiBarView: View {
                     .frame(minHeight: 46)
                     .background(
                         LinearGradient(
-                            colors: [palette.tileFillTop, palette.tileFillBottom],
+                            colors: [isPressed ? palette.tileFillBottom : palette.tileFillTop, palette.tileFillBottom],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -1399,12 +1436,15 @@ public struct WatchEmojiBarView: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .strokeBorder(palette.tileBorderHighlight.opacity(0.55), lineWidth: 1)
+                            .strokeBorder(
+                                isPressed ? palette.accent : palette.tileBorderHighlight.opacity(0.55),
+                                lineWidth: isPressed ? 1.8 : 1
+                            )
                     )
                     .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                     .scaleEffect(isPressed ? 0.94 : 1.0)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedSnippetID, key: snippet.id))
             }
         }
     }
