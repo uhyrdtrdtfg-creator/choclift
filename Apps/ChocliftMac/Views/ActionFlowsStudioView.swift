@@ -62,7 +62,7 @@ public struct ActionFlowsStudioView: View {
                 selectedFlowID = flows.first?.id
             }
         }
-        .onChange(of: coordinator.profile.flows) { _, updatedFlows in
+        .onChange(of: coordinator.profile.flows) { updatedFlows in
             if let current = selectedFlowID, updatedFlows.contains(where: { $0.id == current }) {
                 return
             }

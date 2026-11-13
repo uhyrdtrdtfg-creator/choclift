@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "ChocliftCore",
     platforms: [
-        .macOS(.v14),
+        .macOS(.v13),
         .iOS(.v17),
         .watchOS(.v10)
     ],

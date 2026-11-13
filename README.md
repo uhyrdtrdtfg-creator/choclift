@@ -59,7 +59,7 @@ choclift/
 ├── ExportOptions.plist                 # macOS Developer ID manual signing export options
 ├── ios/
 │   └── ExportOptions.plist             # iOS + embedded Watch App Store Connect manual signing export options
-├── project.yml                         # XcodeGen multi-platform spec (macOS 14+, iOS 17+, watchOS 10+)
+├── project.yml                         # XcodeGen multi-platform spec (macOS 13+, iOS 17+, watchOS 10+)
 ├── Choclift.xcodeproj                  # Generated Xcode project (ChocliftMac, ChocliftIOS, ChocliftWatch)
 ├── Packages/
 │   └── ChocliftCore/                   # Shared models, length-prefixed TCP/BLE wire protocol, networking & theme
@@ -100,7 +100,7 @@ choclift/
 ## How to Run Each Target
 
 ### Prerequisites
-- macOS 14.0+ with **Xcode 16+** installed at `/Applications/Xcode.app`.
+- macOS 13.0+ with **Xcode 16+** installed at `/Applications/Xcode.app`.
 - If regenerating `Choclift.xcodeproj` after editing `project.yml`, run:
   ```bash
   xcodegen generate
