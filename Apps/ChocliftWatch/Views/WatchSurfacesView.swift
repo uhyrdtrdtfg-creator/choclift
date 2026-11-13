@@ -72,6 +72,94 @@ private struct WatchConnectionStateBanner: View {
     }
 }
 
+private struct WatchOrcaComplicationLine: View {
+    @ObservedObject var client: CompanionClientEngine
+    let status: OrcaTaskStatusSnapshot
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
+    var body: some View {
+        if !status.isOrcaRunning {
+            HStack(spacing: 5) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(palette.secondaryText)
+                Text(L10n.tr("Orca 未运行", "Orca is not running", language: lang))
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .foregroundStyle(palette.secondaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(minHeight: 28)
+            .background(palette.barSurface.opacity(0.85), in: Capsule())
+        } else if let primary = status.primaryRow {
+            let tint = stateColor(primary.state)
+            let summary: String = {
+                if let title = primary.title, !title.isEmpty {
+                    return "\(primary.state.label(in: lang)) · \(title)"
+                }
+                return "Orca · \(primary.state.label(in: lang))"
+            }()
+
+            if primary.canTapToFocus {
+                Button {
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    client.focusOrcaTask(dispatchID: primary.dispatchID)
+                } label: {
+                    lineBody(state: primary.state, tint: tint, summary: summary, canFocus: true)
+                }
+                .buttonStyle(.plain)
+            } else {
+                lineBody(state: primary.state, tint: tint, summary: summary, canFocus: false)
+            }
+        }
+    }
+
+    private func lineBody(state: OrcaTaskState, tint: Color, summary: String, canFocus: Bool) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: state.sfSymbol)
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundStyle(tint)
+
+            Text(summary)
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .foregroundStyle(palette.primaryText)
+                .lineLimit(1)
+
+            Spacer(minLength: 2)
+
+            if canFocus {
+                Image(systemName: "macwindow.on.rectangle")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(palette.accent)
+            }
+        }
+        .padding(.horizontal, 9)
+        .frame(minHeight: canFocus ? 34 : 28)
+        .background(palette.barSurface, in: Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(tint.opacity(0.4), lineWidth: 1)
+        )
+        .contentShape(Capsule())
+    }
+
+    private func stateColor(_ state: OrcaTaskState) -> Color {
+        switch state {
+        case .working:
+            return palette.statusConnected
+        case .waiting:
+            return palette.accentEmphasis
+        case .failed:
+            return palette.statusFailure
+        case .idle:
+            return palette.secondaryText
+        }
+    }
+}
+
 // MARK: - 1. Watch Chocolate Bar Surface (8 Synced Pages x 8 Slots)
 
 public struct WatchChocolateBarView: View {
@@ -117,6 +205,8 @@ public struct WatchChocolateBarView: View {
             VStack(spacing: 8) {
                 if !client.connectionState.isConnected {
                     WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
+                } else if let orcaStatus = client.orcaStatus {
+                    WatchOrcaComplicationLine(client: client, status: orcaStatus)
                 }
 
                 pageSwitcherBar

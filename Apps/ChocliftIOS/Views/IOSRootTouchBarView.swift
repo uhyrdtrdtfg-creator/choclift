@@ -206,6 +206,10 @@ public struct IOSRootTouchBarView: View {
                     nonConnectedStatusBanner(compact: true)
                         .padding(.horizontal, 14)
                         .padding(.top, 8)
+                } else if client.orcaStatus != nil {
+                    IOSOrcaTaskStatusBar(client: client, compact: true)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 6)
                 }
 
                 activeMainContent(isLandscape: true)
@@ -287,6 +291,9 @@ public struct IOSRootTouchBarView: View {
 
             if !client.connectionState.isConnected {
                 nonConnectedStatusBanner(compact: false)
+                    .padding(.horizontal, 16)
+            } else if client.orcaStatus != nil {
+                IOSOrcaTaskStatusBar(client: client, compact: false)
                     .padding(.horizontal, 16)
             }
 
@@ -413,6 +420,9 @@ public struct IOSRootTouchBarView: View {
 
             if !client.connectionState.isConnected {
                 nonConnectedStatusBanner(compact: true)
+                    .padding(.horizontal, 18)
+            } else if client.orcaStatus != nil {
+                IOSOrcaTaskStatusBar(client: client, compact: false)
                     .padding(.horizontal, 18)
             }
 

@@ -1378,7 +1378,8 @@ public struct InstalledShortcutSummary: Codable, Equatable, Hashable, Identifiab
 public enum ChocliftDefaults {
     public static let bonjourServiceType = "_choclift._tcp"
     public static let defaultTCPPort: UInt16 = 54821
-    public static let protocolVersion = 2
+    public static let protocolVersion = 3
+    public static let orcaStatusMinProtocolVersion = 3
 
     public static func makeDefaultGestureConfiguration() -> GestureConfiguration {
         GestureConfiguration(
