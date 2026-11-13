@@ -82,6 +82,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case volumeDown = "volume_down"
     case volumeMute = "volume_mute"
     case lockScreen = "lock_screen"
+    case quitApp = "quit_app"
     case openEmojiPicker = "open_emoji_picker"
 
     public var id: String { rawValue }
@@ -109,6 +110,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .volumeDown: return "speaker.wave.1.fill"
         case .volumeMute: return "speaker.slash.fill"
         case .lockScreen: return "lock.display"
+        case .quitApp: return "xmark.octagon.fill"
         case .openEmojiPicker: return "face.smiling.inverse"
         }
     }
@@ -119,7 +121,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return "#EDF6FF"
         case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
             return "#F3EEFF"
-        case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .openEmojiPicker:
+        case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker:
             return "#FFF1EC"
         case .mediaPlayPause, .mediaNext, .mediaPrevious, .volumeUp, .volumeDown, .volumeMute:
             return "#ECFAEE"
@@ -135,12 +137,30 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         }
     }
 
+    public var isUndoableWindowMove: Bool {
+        switch self {
+        case .maximizeWindow, .snapWindowLeft, .snapWindowRight:
+            return true
+        default:
+            return false
+        }
+    }
+
+    public var requiresDestructiveConfirmation: Bool {
+        switch self {
+        case .lockScreen, .quitApp:
+            return true
+        default:
+            return false
+        }
+    }
+
     public var targetsApplication: Bool {
         if isWindowAction {
             return true
         }
         switch self {
-        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
+        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp:
             return true
         default:
             return false
@@ -170,6 +190,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .volumeDown: return L10n.tr("音量减小", "Volume Down", language: lang)
         case .volumeMute: return L10n.tr("静音切换", "Mute Toggle", language: lang)
         case .lockScreen: return L10n.tr("锁定屏幕", "Lock Screen", language: lang)
+        case .quitApp: return L10n.tr("退出应用 (⌘Q)", "Quit Application (⌘Q)", language: lang)
         case .openEmojiPicker: return L10n.tr("系统表情面板", "macOS Emoji Panel", language: lang)
         }
     }
@@ -197,6 +218,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .volumeDown: return L10n.tr("音量-", "Vol -", language: lang)
         case .volumeMute: return L10n.tr("静音", "Mute", language: lang)
         case .lockScreen: return L10n.tr("锁屏", "Lock", language: lang)
+        case .quitApp: return L10n.tr("退出", "Quit", language: lang)
         case .openEmojiPicker: return L10n.tr("表情框", "Emoji", language: lang)
         }
     }
@@ -432,6 +454,17 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
             return id
         }
         return nil
+    }
+
+    public func requiresDestructiveConfirmation(in profile: ChocliftWorkspaceProfile) -> Bool {
+        switch kind {
+        case .systemAction(let action, _, _):
+            return action.requiresDestructiveConfirmation
+        case .flow(let flowID, _, _, _, _):
+            return profile.flow(withID: flowID)?.requiresDestructiveConfirmation ?? false
+        case .macApp, .shortcut, .website:
+            return false
+        }
     }
 }
 

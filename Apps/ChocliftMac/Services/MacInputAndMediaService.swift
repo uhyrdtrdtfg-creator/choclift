@@ -243,6 +243,43 @@ public final class MacInputAndMediaService {
             }
             return accessibilityDeniedResult()
 
+        case .quitApp:
+            let myPID = ProcessInfo.processInfo.processIdentifier
+            let targetApp: NSRunningApplication? = {
+                if strictTargetPID {
+                    guard let preferredPID,
+                          preferredPID != myPID,
+                          let app = NSRunningApplication(processIdentifier: preferredPID),
+                          !app.isTerminated else {
+                        return nil
+                    }
+                    return app
+                }
+                if let preferredPID,
+                   preferredPID != myPID,
+                   let app = NSRunningApplication(processIdentifier: preferredPID),
+                   !app.isTerminated {
+                    return app
+                }
+                if let front = NSWorkspace.shared.frontmostApplication,
+                   front.processIdentifier != myPID,
+                   !front.isTerminated {
+                    return front
+                }
+                return nil
+            }()
+            guard let app = targetApp else {
+                if strictTargetPID {
+                    return missingStrictTargetResult()
+                }
+                return (false, L10n.tr("当前没有可退出的前台应用", "No active application to quit"))
+            }
+            let name = app.localizedName ?? app.bundleIdentifier ?? "App"
+            let ok = app.terminate()
+            return ok
+                ? (true, L10n.tr("已退出 \(name)", "Quit \(name)"))
+                : (false, L10n.tr("无法退出 \(name)", "Could not quit \(name)"))
+
         case .openEmojiPicker:
             if windowService.isAccessibilityTrusted() {
                 postKeyStroke(virtualKey: CGKeyCode(kVK_Space), flags: [.maskCommand, .maskControl])

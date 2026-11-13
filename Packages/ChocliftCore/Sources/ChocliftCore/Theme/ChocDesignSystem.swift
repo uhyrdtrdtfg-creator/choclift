@@ -520,6 +520,7 @@ public struct ChocBarTileCard: View {
     public let item: BarItem?
     public let iconData: Data?
     public let isFrontmostApp: Bool
+    public let isAwaitingConfirmation: Bool
     public let palette: ChocPalette
     public let language: AppLanguage
     public let compact: Bool
@@ -528,6 +529,7 @@ public struct ChocBarTileCard: View {
         item: BarItem?,
         iconData: Data?,
         isFrontmostApp: Bool = false,
+        isAwaitingConfirmation: Bool = false,
         palette: ChocPalette,
         language: AppLanguage = .system,
         compact: Bool = false
@@ -535,6 +537,7 @@ public struct ChocBarTileCard: View {
         self.item = item
         self.iconData = iconData
         self.isFrontmostApp = isFrontmostApp
+        self.isAwaitingConfirmation = isAwaitingConfirmation
         self.palette = palette
         self.language = language
         self.compact = compact
@@ -544,12 +547,35 @@ public struct ChocBarTileCard: View {
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)
             let corner = max(side < 68 ? 13 : 16, side * 0.22)
+            let isMicro = side < 68
 
-            Group {
+            ZStack {
                 if let item {
                     filledTile(for: item, side: side, corner: corner)
                 } else {
                     emptyMoldedSquare(side: side, corner: corner)
+                }
+
+                if isAwaitingConfirmation && item != nil {
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .strokeBorder(palette.statusFailure, lineWidth: 2.0)
+
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 3) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: max(8.5, side * 0.095), weight: .bold))
+                            Text(L10n.tr("再点确认", "Tap Again", language: language))
+                                .font(.system(size: max(9.5, side * 0.105), weight: .bold, design: .rounded))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
+                        .foregroundStyle(palette.emphasisForeground)
+                        .padding(.horizontal, isMicro ? 6 : 8)
+                        .padding(.vertical, isMicro ? 2.5 : 3.5)
+                        .background(palette.statusFailure, in: Capsule())
+                        .padding(.bottom, isMicro ? 4 : 6)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

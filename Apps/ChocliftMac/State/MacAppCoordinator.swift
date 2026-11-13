@@ -69,6 +69,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     @Published public private(set) var leftEdgePanelEnabled: Bool = false
     @Published public private(set) var runningFlowID: UUID?
     @Published public private(set) var orcaStatus: OrcaTaskStatusSnapshot?
+    @Published public private(set) var canUndoWindowMove: Bool = false
 
     public enum MacVisibleSurface: Hashable {
         case studioWindow
@@ -186,6 +187,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             excluded: profile.settings.excludedTimeTravelBundleIDs
         )
 
+        systemControlService.canUndoWindowMoveProvider = { [weak self] in
+            self?.windowService.canUndoLastWindowMove ?? false
+        }
+        windowService.onUndoAvailabilityChanged = { [weak self] in
+            guard let self else { return }
+            self.canUndoWindowMove = self.windowService.canUndoLastWindowMove
+            self.systemControlService.syncWindowUndoAvailability()
+        }
         systemControlService.onStateChanged = { [weak self] state in
             self?.server.broadcastControlStripState(state)
         }
@@ -551,6 +560,10 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 }
             }
             let driver = MacCoordinatorFlowDriver(coordinator: self)
+            self.windowService.beginWindowUndoTransaction()
+            defer {
+                self.windowService.commitWindowUndoTransaction()
+            }
             let res = await ActionFlowRunner.run(flow, driver: driver, language: self.lang)
             capturedResult = res
             self.recordActivity(deviceName: deviceName, summary: res.detail, isSuccess: res.success)
@@ -589,6 +602,17 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         let summary = "\(gesture.title(in: lang)) → \(result.message)"
         recordActivity(deviceName: deviceName, summary: summary, isSuccess: result.success)
         return result
+    }
+
+    @discardableResult
+    public func undoLastWindowMove(
+        triggeredBy deviceName: String
+    ) -> MacAccessibilityAndWindowService.WindowUndoOutcome {
+        let outcome = windowService.undoLastWindowMove(language: lang)
+        if case .restored(let summary) = outcome {
+            recordActivity(deviceName: deviceName, summary: summary, isSuccess: true)
+        }
+        return outcome
     }
 
     private func scheduleControlStripRefreshIfRelevant(for action: SystemQuickAction) {
@@ -763,6 +787,19 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 ? L10n.tr("已将麦克风静音", "Microphone Muted", language: lang)
                 : L10n.tr("已取消麦克风静音", "Microphone Unmuted", language: lang)
             recordActivity(deviceName: device.deviceName, summary: summary, isSuccess: ok)
+
+        case .undoLastWindowMove:
+            let outcome = undoLastWindowMove(triggeredBy: device.deviceName)
+            switch outcome {
+            case .restored(let summary):
+                reply(.actionFeedback(
+                    success: true,
+                    title: L10n.tr("已撤销窗口移动", "Undid Window Move", language: lang),
+                    detail: summary
+                ))
+            case .nothingToUndo:
+                reply(.controlStripStateUpdated(systemControlService.currentState))
+            }
 
         case .updateProfile(let updatedProfile):
             applyAndSaveProfile(updatedProfile, broadcastOriginDeviceID: device.deviceID)

@@ -11,6 +11,7 @@ import IOKit.graphics
 @MainActor
 public final class MacSystemControlService {
     public var onStateChanged: ((ControlStripState) -> Void)?
+    public var canUndoWindowMoveProvider: (() -> Bool)?
     public private(set) var currentState: ControlStripState
 
     private struct RegisteredAudioListener {
@@ -142,6 +143,7 @@ public final class MacSystemControlService {
         let (volume, isOutputMuted) = readOutputVolumeAndMute(deviceID: outDevice)
         let isMicMuted = readInputMicMuted(deviceID: inDevice)
         let brightnessReading = displayBridge.readMainDisplayBrightness()
+        let canUndoWindow = canUndoWindowMoveProvider?() ?? currentState.canUndoWindowMove
 
         return ControlStripState(
             volume: volume,
@@ -149,8 +151,18 @@ public final class MacSystemControlService {
             brightness: brightnessReading ?? currentState.brightness,
             isBrightnessAvailable: brightnessReading != nil,
             isMicMuted: isMicMuted,
-            nowPlaying: nowPlaying
+            nowPlaying: nowPlaying,
+            canUndoWindowMove: canUndoWindow
         )
+    }
+
+    public func syncWindowUndoAvailability() {
+        let canUndo = canUndoWindowMoveProvider?() ?? false
+        guard currentState.canUndoWindowMove != canUndo else { return }
+        var updated = currentState
+        updated.canUndoWindowMove = canUndo
+        currentState = updated
+        onStateChanged?(updated)
     }
 
     // MARK: - Setting Volume, Brightness & Mic Mute on macOS 13+

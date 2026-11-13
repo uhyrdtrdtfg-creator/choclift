@@ -32,6 +32,7 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case setControlLevel(kind: ControlLevelKind, level: Double)
     case setMicMuted(Bool)
     case requestControlStripState
+    case undoLastWindowMove
     case unknownClientMessage
 }
 

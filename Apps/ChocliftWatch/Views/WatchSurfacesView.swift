@@ -171,6 +171,7 @@ public struct WatchChocolateBarView: View {
     @State private var showPagePickerSheet: Bool = false
     @State private var assigningSlot: WatchSlotCoordinate?
     @State private var pressedSlotKey: String?
+    @State private var confirmGate = DestructiveActionConfirmGate()
     @State private var crownVolume: Double = 0.5
     @State private var isCrownRotating: Bool = false
     @State private var crownThrottle = ControlLevelDragThrottle()
@@ -219,6 +220,8 @@ public struct WatchChocolateBarView: View {
                 }
 
                 pageSwitcherBar
+
+                pageDotsBar
 
                 if !deckFollower.isFollowingFrontmostApp {
                     followFrontmostAppButton
@@ -458,9 +461,38 @@ public struct WatchChocolateBarView: View {
         }
     }
 
+    private var pageDotsBar: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<client.profile.pages.count, id: \.self) { dotIdx in
+                let isCurrent = (dotIdx == safePageIndex)
+                Button {
+                    selectPageDot(dotIdx)
+                } label: {
+                    Capsule()
+                        .fill(isCurrent ? palette.accent : palette.secondaryText.opacity(0.35))
+                        .frame(width: isCurrent ? 14 : 6, height: 6)
+                        .frame(minWidth: 18, minHeight: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("watch-page-dot-\(dotIdx)")
+                .accessibilityLabel(
+                    L10n.tr(
+                        "第 \(dotIdx + 1) 页：\(client.profile.pages[dotIdx].title)",
+                        "Page \(dotIdx + 1): \(client.profile.pages[dotIdx].title)",
+                        language: lang
+                    )
+                )
+            }
+        }
+        .padding(.horizontal, 4)
+        .background(palette.barSurface.opacity(0.75), in: Capsule())
+    }
+
     private var followFrontmostAppButton: some View {
         Button {
             CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            confirmGate.disarm()
             withAnimation(.easeInOut(duration: 0.22)) {
                 deckFollower.followFrontmostApp(
                     frontmostBundleIdentifier: client.frontmostBundleID,
@@ -500,9 +532,19 @@ public struct WatchChocolateBarView: View {
         .foregroundStyle(palette.accent)
     }
 
+    private func selectPageDot(_ pageOffset: Int) {
+        guard client.profile.pages.indices.contains(pageOffset) else { return }
+        CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+        confirmGate.disarm()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            deckFollower.selectManualPage(index: pageOffset, in: client.profile)
+        }
+    }
+
     private func stepPage(by delta: Int) {
         guard !client.profile.pages.isEmpty else { return }
         CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+        confirmGate.disarm()
         withAnimation(.easeInOut(duration: 0.2)) {
             deckFollower.stepManualPage(by: delta, in: client.profile)
         }
@@ -517,22 +559,40 @@ public struct WatchChocolateBarView: View {
         isFrontmost: Bool
     ) -> some View {
         let isPressed = (pressedSlotKey == key)
+        let isDestructive = item?.requiresDestructiveConfirmation(in: client.profile) ?? false
+        let isAwaitingConfirm = isDestructive && (confirmGate.armedTargetID == key)
 
         return Button {
             if let item {
-                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
-                withAnimation(.spring(response: 0.16, dampingFraction: 0.65)) {
-                    pressedSlotKey = key
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    if pressedSlotKey == key {
-                        withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                            pressedSlotKey = nil
+                let now = ProcessInfo.processInfo.systemUptime
+                let decision = confirmGate.registerTap(
+                    targetID: key,
+                    isDestructive: isDestructive,
+                    at: now
+                )
+                switch decision {
+                case .requireSecondTap:
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(CompanionInteractionPolicy.destructiveConfirmWindowSeconds + 0.05))
+                        confirmGate.expireIfNeeded(at: ProcessInfo.processInfo.systemUptime)
+                    }
+                case .runImmediately, .confirmedRun:
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                    withAnimation(.spring(response: 0.16, dampingFraction: 0.65)) {
+                        pressedSlotKey = key
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        if pressedSlotKey == key {
+                            withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
+                                pressedSlotKey = nil
+                            }
                         }
                     }
+                    client.triggerBarItem(item)
                 }
-                client.triggerBarItem(item)
             } else {
+                confirmGate.disarm()
                 CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
                 assigningSlot = WatchSlotCoordinate(pageIndex: pageIndex, slotIndex: slotIndex)
             }
@@ -541,6 +601,7 @@ public struct WatchChocolateBarView: View {
                 item: item,
                 iconData: iconData,
                 isFrontmostApp: isFrontmost,
+                isAwaitingConfirmation: isAwaitingConfirm,
                 palette: palette,
                 language: lang,
                 compact: true
@@ -726,6 +787,7 @@ public struct WatchQuickActionsView: View {
     let onRequestPairing: () -> Void
 
     @State private var pressedAction: SystemQuickAction?
+    @State private var confirmGate = DestructiveActionConfirmGate()
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -740,7 +802,8 @@ public struct WatchQuickActionsView: View {
         .missionControl, .showDesktop,
         .copySelection, .pasteClipboard,
         .undoAction, .screenshotInteractive,
-        .openEmojiPicker, .lockScreen
+        .openEmojiPicker, .lockScreen,
+        .quitApp
     ]
 
     public var body: some View {
@@ -760,6 +823,7 @@ public struct WatchQuickActionsView: View {
                 sectionHeader(L10n.tr("窗口布局", "Window Layout", language: lang), symbol: "macwindow")
 
                 actionTwoColumnGrid(windowActions)
+                undoWindowMoveButton
 
                 // Workspace & Clipboard
                 sectionHeader(L10n.tr("工作区与编辑", "Workspace & Edit", language: lang), symbol: "sparkles")
@@ -769,6 +833,45 @@ public struct WatchQuickActionsView: View {
             .padding(.horizontal, 6)
             .padding(.bottom, 12)
         }
+    }
+
+    private var undoWindowMoveButton: some View {
+        let canUndo = client.controlStripState.canUndoWindowMove
+        return Button {
+            guard canUndo else { return }
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+            client.undoLastWindowMove()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 12.5, weight: .bold))
+                    .foregroundStyle(canUndo ? palette.accent : palette.secondaryText)
+                Text(L10n.tr("撤销上次窗口移动", "Undo Last Window Move", language: lang))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(canUndo ? palette.primaryText : palette.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 42)
+            .background(
+                LinearGradient(
+                    colors: [palette.tileFillTop, palette.tileFillBottom],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(canUndo ? palette.accent.opacity(0.55) : palette.subtleCardStroke, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .opacity(canUndo ? 1.0 : 0.45)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("watch-undo-window-move")
     }
 
     private func sectionHeader(_ text: String, symbol: String) -> some View {
@@ -835,21 +938,26 @@ public struct WatchQuickActionsView: View {
             ForEach(actions) { action in
                 let tileTone = ChocSwatch.resolvedTileColor(hex: action.accentHex, fallbackHex: ChocPalette.coreTileBottomHex)
                 let isPressed = (pressedAction == action)
+                let isArmed = action.requiresDestructiveConfirmation && (confirmGate.armedTargetID == action.rawValue)
 
                 Button {
                     trigger(action)
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: action.sfSymbol)
+                        Image(systemName: isArmed ? "exclamationmark.triangle.fill" : action.sfSymbol)
                             .font(.system(size: 13.5, weight: .bold))
-                            .foregroundStyle(palette.primaryText)
+                            .foregroundStyle(isArmed ? palette.statusFailure : palette.primaryText)
                             .frame(width: 18)
 
-                        Text(action.compactTitle(in: lang))
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                            .foregroundStyle(palette.primaryText)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
+                        Text(
+                            isArmed
+                                ? L10n.tr("再点确认", "Tap Again", language: lang)
+                                : action.compactTitle(in: lang)
+                        )
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(isArmed ? palette.statusFailure : palette.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
 
                         Spacer(minLength: 0)
                     }
@@ -865,7 +973,10 @@ public struct WatchQuickActionsView: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                            .strokeBorder(
+                                isArmed ? palette.statusFailure : palette.subtleCardStroke,
+                                lineWidth: isArmed ? 1.8 : 1
+                            )
                     )
                     .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                     .scaleEffect(isPressed ? 0.94 : 1.0)
@@ -876,18 +987,33 @@ public struct WatchQuickActionsView: View {
     }
 
     private func trigger(_ action: SystemQuickAction) {
-        CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .rigid)
-        withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
-            pressedAction = action
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-            if pressedAction == action {
-                withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                    pressedAction = nil
+        let now = ProcessInfo.processInfo.systemUptime
+        let decision = confirmGate.registerTap(
+            targetID: action.rawValue,
+            isDestructive: action.requiresDestructiveConfirmation,
+            at: now
+        )
+        switch decision {
+        case .requireSecondTap:
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(CompanionInteractionPolicy.destructiveConfirmWindowSeconds + 0.05))
+                confirmGate.expireIfNeeded(at: ProcessInfo.processInfo.systemUptime)
+            }
+        case .runImmediately, .confirmedRun:
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .rigid)
+            withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
+                pressedAction = action
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                if pressedAction == action {
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
+                        pressedAction = nil
+                    }
                 }
             }
+            client.performQuickAction(action)
         }
-        client.performQuickAction(action)
     }
 }
 

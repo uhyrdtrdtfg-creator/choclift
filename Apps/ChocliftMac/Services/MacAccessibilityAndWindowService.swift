@@ -5,9 +5,125 @@ import Foundation
 
 @MainActor
 public final class MacAccessibilityAndWindowService {
+    public enum WindowUndoOutcome: Equatable {
+        case nothingToUndo
+        case restored(summary: String)
+    }
+
+    private struct RetainedWindowUndoTarget {
+        let pid: pid_t
+        let windowElement: AXUIElement
+        let appName: String
+    }
+
+    public var onUndoAvailabilityChanged: (() -> Void)?
+
     private var previousWindowFrames: [String: CGRect] = [:]
+    private var undoBuffer = WindowMoveUndoBuffer<String>()
+    private var retainedUndoTargets: [String: RetainedWindowUndoTarget] = [:]
 
     public init() {}
+
+    public var canUndoLastWindowMove: Bool {
+        undoBuffer.canUndo
+    }
+
+    public func beginWindowUndoTransaction() {
+        undoBuffer.beginTransaction()
+    }
+
+    public func commitWindowUndoTransaction() {
+        let didReplace = undoBuffer.commitTransaction()
+        if didReplace {
+            let activeIDs = Set(undoBuffer.lastEntry?.map(\.windowID) ?? [])
+            retainedUndoTargets = retainedUndoTargets.filter { activeIDs.contains($0.key) }
+            onUndoAvailabilityChanged?()
+        } else {
+            let activeIDs = Set(undoBuffer.lastEntry?.map(\.windowID) ?? [])
+            retainedUndoTargets = retainedUndoTargets.filter { activeIDs.contains($0.key) }
+        }
+    }
+
+    private func recordWindowMoveForUndo(
+        windowKey: String,
+        pid: pid_t,
+        windowElement: AXUIElement,
+        appName: String,
+        previousFrame: CGRect
+    ) {
+        if undoBuffer.isInTransaction {
+            if retainedUndoTargets[windowKey] == nil {
+                retainedUndoTargets[windowKey] = RetainedWindowUndoTarget(
+                    pid: pid,
+                    windowElement: windowElement,
+                    appName: appName
+                )
+            }
+            undoBuffer.recordMove(
+                windowID: windowKey,
+                appName: appName,
+                previousFrame: WindowQuartzRect(previousFrame)
+            )
+        } else {
+            retainedUndoTargets = [
+                windowKey: RetainedWindowUndoTarget(
+                    pid: pid,
+                    windowElement: windowElement,
+                    appName: appName
+                )
+            ]
+            undoBuffer.recordMove(
+                windowID: windowKey,
+                appName: appName,
+                previousFrame: WindowQuartzRect(previousFrame)
+            )
+            onUndoAvailabilityChanged?()
+        }
+    }
+
+    /// Restores the single most recent window move (or multi-window split flow move).
+    /// One level only; returns `.nothingToUndo` quietly when empty or when target windows are gone.
+    public func undoLastWindowMove(language: AppLanguage = .system) -> WindowUndoOutcome {
+        guard let snapshots = undoBuffer.popUndoEntry(), !snapshots.isEmpty else {
+            return .nothingToUndo
+        }
+        let targets = retainedUndoTargets
+        retainedUndoTargets.removeAll()
+        onUndoAvailabilityChanged?()
+
+        guard AXIsProcessTrusted() else {
+            return .nothingToUndo
+        }
+
+        var restoredNames: [String] = []
+        for snapshot in snapshots {
+            guard let target = targets[snapshot.windowID],
+                  let runningApp = NSRunningApplication(processIdentifier: target.pid),
+                  !runningApp.isTerminated else {
+                continue
+            }
+            if writeWindowQuartzFrame(target.windowElement, frame: snapshot.previousFrame.cgRect) {
+                previousWindowFrames.removeValue(forKey: snapshot.windowID)
+                let cleanName = snapshot.appName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let displayName = cleanName.isEmpty ? (runningApp.localizedName ?? "App") : cleanName
+                if !restoredNames.contains(displayName) {
+                    restoredNames.append(displayName)
+                }
+            }
+        }
+
+        guard !restoredNames.isEmpty else {
+            return .nothingToUndo
+        }
+
+        let joinedNames = restoredNames.joined(separator: " · ")
+        let summary = L10n.tr(
+            "已还原 \(joinedNames) 窗口位置",
+            "Restored \(joinedNames) window",
+            language: language
+        )
+        return .restored(summary: summary)
+    }
 
     // MARK: - Permissions
 
@@ -319,6 +435,17 @@ public final class MacAccessibilityAndWindowService {
             }
 
             let ok = writeWindowQuartzFrame(windowElement, frame: desiredFrame)
+            if ok,
+               let cur = currentFrame,
+               (op == .maximizeOrRestore || op == .snapLeft || op == .snapRight) {
+                recordWindowMoveForUndo(
+                    windowKey: windowKey,
+                    pid: app.processIdentifier,
+                    windowElement: windowElement,
+                    appName: app.localizedName ?? "App",
+                    previousFrame: cur
+                )
+            }
             return ok
                 ? (true, L10n.tr("已调整 \(app.localizedName ?? "") 窗口", "Adjusted \(app.localizedName ?? "") window"))
                 : (false, L10n.tr("无法调整该窗口尺寸", "Unable to resize window"))

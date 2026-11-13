@@ -42,6 +42,7 @@ public struct IOSRootTouchBarView: View {
     @State private var showFlowsManagerSheet: Bool = false
     @State private var editingSlot: IOSEditSlotSelection?
     @State private var gestureHUDText: String?
+    @State private var gestureConfirmGate = DestructiveActionConfirmGate()
 
     private var currentPageIndex: Int { deckFollower.currentPageIndex }
     private var lang: AppLanguage { client.profile.settings.language }
@@ -193,6 +194,11 @@ public struct IOSRootTouchBarView: View {
         }
         .onChange(of: client.lastFeedback) { _, toast in
             guard let toast else { return }
+            if toast.success {
+                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            } else {
+                CompanionHaptics.notify(enabled: client.profile.settings.hapticFeedbackEnabled, type: .error)
+            }
             flashHUD(toast.detail ?? toast.title)
         }
     }
@@ -208,6 +214,12 @@ public struct IOSRootTouchBarView: View {
                         .padding(.top, 8)
                 } else if client.orcaStatus != nil {
                     IOSOrcaTaskStatusBar(client: client, compact: true)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 6)
+                }
+
+                if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
+                    landscapePageDotsStepperBar
                         .padding(.horizontal, 14)
                         .padding(.top, 6)
                 }
@@ -451,7 +463,10 @@ public struct IOSRootTouchBarView: View {
                         isFollowingFrontmostApp: deckFollower.isFollowingFrontmostApp,
                         onFollowFrontmostApp: resumeFollowingFrontmostApp,
                         availableWidth: leftColumnWidth,
-                        isLandscape: true
+                        isLandscape: true,
+                        onPromptHUD: { message in
+                            flashHUD(message)
+                        }
                     ) { slot in
                         editingSlot = slot
                     }
@@ -577,7 +592,10 @@ public struct IOSRootTouchBarView: View {
                 currentPageIndex: manualPageSelectionBinding,
                 isFollowingFrontmostApp: deckFollower.isFollowingFrontmostApp,
                 onFollowFrontmostApp: resumeFollowingFrontmostApp,
-                isLandscape: isLandscape
+                isLandscape: isLandscape,
+                onPromptHUD: { message in
+                    flashHUD(message)
+                }
             ) { slot in
                 editingSlot = slot
             }
@@ -586,7 +604,10 @@ public struct IOSRootTouchBarView: View {
                 client: client,
                 isLandscape: isLandscape,
                 currentBarPageIndex: currentPageIndex,
-                onRequestPairing: { showPairingSheet = true }
+                onRequestPairing: { showPairingSheet = true },
+                onPromptHUD: { message in
+                    flashHUD(message)
+                }
             )
         case .emojiBar:
             IOSEmojiBarSurfaceView(
@@ -869,51 +890,182 @@ public struct IOSRootTouchBarView: View {
             return "Daily"
         }()
 
+        return VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Button {
+                    stepPortraitPage(by: -1, count: count, isEmoji: isEmoji, current: activeIdx)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.primaryText)
+                        .frame(width: 40, height: 36)
+                        .background(palette.tileFillBottom.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ios-page-prev-button")
+
+                HStack(spacing: 6) {
+                    Text(icon)
+                        .font(.system(size: 14))
+                    Text(title)
+                        .font(.system(.subheadline, design: .rounded, weight: .bold))
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(1)
+                    Text("\(activeIdx + 1)/\(count)")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(palette.secondaryText)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 36)
+                .background(palette.barSurface.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                )
+
+                Button {
+                    stepPortraitPage(by: 1, count: count, isEmoji: isEmoji, current: activeIdx)
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.primaryText)
+                        .frame(width: 40, height: 36)
+                        .background(palette.tileFillBottom.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ios-page-next-button")
+            }
+
+            reachablePageDotsRow(count: count, isEmoji: isEmoji, activeIdx: activeIdx)
+                .padding(.horizontal, 4)
+                .frame(height: 28)
+                .background(palette.barSurface.opacity(0.82), in: Capsule())
+                .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+        }
+    }
+
+    private var landscapePageDotsStepperBar: some View {
+        let isEmoji = (activeMode == .emojiBar)
+        let count = max(1, isEmoji ? client.profile.emojiSlides.count : client.profile.pages.count)
+        let activeIdx = min(max(0, isEmoji ? currentEmojiSlideIndex : currentPageIndex), count - 1)
+        let icon: String = {
+            if isEmoji, client.profile.emojiSlides.indices.contains(activeIdx) {
+                return client.profile.emojiSlides[activeIdx].iconEmoji
+            } else if !isEmoji, client.profile.pages.indices.contains(activeIdx) {
+                return client.profile.pages[activeIdx].iconEmoji
+            }
+            return "🍫"
+        }()
+        let title: String = {
+            if isEmoji, client.profile.emojiSlides.indices.contains(activeIdx) {
+                return client.profile.emojiSlides[activeIdx].title
+            } else if !isEmoji, client.profile.pages.indices.contains(activeIdx) {
+                return client.profile.pages[activeIdx].title
+            }
+            return "Daily"
+        }()
+
         return HStack(spacing: 8) {
+            HStack(spacing: 5) {
+                Text(icon)
+                    .font(.system(size: 13))
+                Text(title)
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                Text("\(activeIdx + 1)/\(count)")
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(palette.secondaryText)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(palette.barSurface.opacity(0.88), in: Capsule())
+            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+
             Button {
                 stepPortraitPage(by: -1, count: count, isEmoji: isEmoji, current: activeIdx)
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.primaryText)
-                    .frame(width: 40, height: 36)
-                    .background(palette.tileFillBottom.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .frame(width: 34, height: 30)
+                    .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("ios-page-prev-button")
 
-            HStack(spacing: 6) {
-                Text(icon)
-                    .font(.system(size: 14))
-                Text(title)
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
-                    .foregroundStyle(palette.primaryText)
-                    .lineLimit(1)
-                Text("\(activeIdx + 1)/\(count)")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(palette.secondaryText)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 36)
-            .background(palette.barSurface.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
-            )
+            reachablePageDotsRow(count: count, isEmoji: isEmoji, activeIdx: activeIdx)
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity)
+                .frame(height: 30)
+                .background(palette.barSurface.opacity(0.88), in: Capsule())
+                .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
             Button {
                 stepPortraitPage(by: 1, count: count, isEmoji: isEmoji, current: activeIdx)
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.primaryText)
-                    .frame(width: 40, height: 36)
-                    .background(palette.tileFillBottom.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .frame(width: 34, height: 30)
+                    .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
+                    .contentShape(Capsule())
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("ios-page-next-button")
+        }
+    }
+
+    private func reachablePageDotsRow(count: Int, isEmoji: Bool, activeIdx: Int) -> some View {
+        HStack(spacing: 2) {
+            ForEach(0..<count, id: \.self) { dotIdx in
+                let isSelected = (dotIdx == activeIdx)
+                let dotLabel: String = {
+                    if isEmoji, client.profile.emojiSlides.indices.contains(dotIdx) {
+                        return client.profile.emojiSlides[dotIdx].title
+                    } else if !isEmoji, client.profile.pages.indices.contains(dotIdx) {
+                        return client.profile.pages[dotIdx].title
+                    }
+                    return "\(dotIdx + 1)"
+                }()
+
+                Button {
+                    selectPageDot(index: dotIdx, count: count, isEmoji: isEmoji)
+                } label: {
+                    ZStack {
+                        if isSelected {
+                            Capsule()
+                                .fill(palette.accent)
+                                .frame(width: 18, height: 7)
+                        } else {
+                            Circle()
+                                .fill(palette.secondaryText.opacity(0.35))
+                                .frame(width: 7, height: 7)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier(isEmoji ? "ios-emoji-dot-\(dotIdx)" : "ios-page-dot-\(dotIdx)")
+                .accessibilityLabel(L10n.tr("第 \(dotIdx + 1) 页：\(dotLabel)", "Page \(dotIdx + 1): \(dotLabel)", language: lang))
+            }
+        }
+    }
+
+    private func selectPageDot(index: Int, count: Int, isEmoji: Bool) {
+        guard count > 0 else { return }
+        let clamped = min(max(0, index), count - 1)
+        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+        withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+            if isEmoji {
+                currentEmojiSlideIndex = clamped
+            } else {
+                deckFollower.selectManualPage(index: clamped, in: client.profile)
+            }
         }
     }
 
@@ -941,9 +1093,23 @@ public struct IOSRootTouchBarView: View {
     // MARK: - Helpers
 
     private func triggerCompanionGesture(_ gesture: TouchGestureType) {
+        let mapped = client.profile.gestureConfig.action(for: gesture)
+        let isDestructive = mapped?.requiresDestructiveConfirmation ?? false
+        let decision = gestureConfirmGate.registerTap(
+            targetID: "gesture-\(gesture.rawValue)",
+            isDestructive: isDestructive,
+            at: ProcessInfo.processInfo.systemUptime
+        )
+        if case .requireSecondTap = decision {
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            let label = mapped?.title(in: lang) ?? gesture.title(in: lang)
+            flashHUD(L10n.tr("3 秒内再点一次确认：\(label)", "Tap again within 3s: \(label)", language: lang))
+            return
+        }
+
         CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .rigid)
         client.performGesture(gesture)
-        if let mapped = client.profile.gestureConfig.action(for: gesture) {
+        if let mapped {
             flashHUD("\(gesture.title(in: lang)) → \(mapped.title(in: lang))")
         } else {
             flashHUD(gesture.title(in: lang))

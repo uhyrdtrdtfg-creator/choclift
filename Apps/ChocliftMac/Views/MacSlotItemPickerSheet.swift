@@ -903,7 +903,7 @@ public struct MacSlotItemPickerSheet: View {
             ),
             (
                 L10n.tr("桌面与系统控制", "Workspace & System", language: lang),
-                [.missionControl, .showDesktop, .screenshotInteractive, .openEmojiPicker, .lockScreen]
+                [.missionControl, .showDesktop, .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp]
             )
         ]
 

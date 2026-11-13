@@ -140,6 +140,8 @@ public struct MacNotchPanelView: View {
 
             pageSwitcherControl
 
+            undoWindowMoveControl
+
             Button {
                 onOpenStudio()
             } label: {
@@ -219,6 +221,38 @@ public struct MacNotchPanelView: View {
         .frame(height: 22)
         .background(palette.barSurface.opacity(0.88), in: Capsule())
         .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
+    }
+
+    private var undoWindowMoveControl: some View {
+        let canUndo = coordinator.canUndoWindowMove
+
+        return Button {
+            guard coordinator.canUndoWindowMove else { return }
+            let sourceName = L10n.tr("Mac 悬浮栏", "Mac Notch Bar", language: lang)
+            if case .restored = coordinator.undoLastWindowMove(triggeredBy: sourceName) {
+                presentation.flashFeedback("✓ \(L10n.tr("已撤销窗口移动", "Undid Window Move", language: lang))")
+            }
+        } label: {
+            Image(systemName: "arrow.uturn.backward")
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundStyle(canUndo ? palette.accent : palette.secondaryText.opacity(0.42))
+                .frame(width: 24, height: 22)
+                .background(
+                    (canUndo ? palette.accent.opacity(0.14) : palette.barSurface.opacity(0.68)),
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(
+                            canUndo ? palette.accent.opacity(0.55) : palette.subtleCardStroke,
+                            lineWidth: 0.8
+                        )
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("mac-notch-undo-window-move")
+        .help(L10n.tr("撤销上次窗口移动", "Undo Last Window Move", language: lang))
     }
 
     private var tileGrid: some View {

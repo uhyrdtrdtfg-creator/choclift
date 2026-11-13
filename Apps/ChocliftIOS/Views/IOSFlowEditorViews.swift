@@ -359,6 +359,8 @@ private struct IOSFlowsListContent: View {
     let onRequestEdit: (IOSFlowEditSession) -> Void
     let onRequestPlaceInSlot: ((ActionFlow) -> Void)?
 
+    @State private var flowConfirmGate = DestructiveActionConfirmGate()
+
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
@@ -472,6 +474,32 @@ private struct IOSFlowsListContent: View {
 
                         Spacer(minLength: 4)
 
+                        if client.connectionState.isConnected,
+                           flowConfirmGate.isArmed(
+                               targetID: flow.id.uuidString,
+                               at: ProcessInfo.processInfo.systemUptime
+                           ) {
+                            Button {
+                                let decision = flowConfirmGate.registerTap(
+                                    targetID: flow.id.uuidString,
+                                    isDestructive: flow.requiresDestructiveConfirmation,
+                                    at: ProcessInfo.processInfo.systemUptime
+                                )
+                                if decision == .confirmedRun || decision == .runImmediately {
+                                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                    client.triggerFlow(id: flow.id)
+                                }
+                            } label: {
+                                Text(L10n.tr("再点确认", "Tap Again", language: lang))
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(palette.emphasisForeground)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 5)
+                                    .background(palette.statusFailure, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+
                         Menu {
                             if let onSelectForSlot {
                                 Button {
@@ -491,7 +519,23 @@ private struct IOSFlowsListContent: View {
 
                             if client.connectionState.isConnected {
                                 Button {
-                                    client.triggerFlow(id: flow.id)
+                                    let decision = flowConfirmGate.registerTap(
+                                        targetID: flow.id.uuidString,
+                                        isDestructive: flow.requiresDestructiveConfirmation,
+                                        at: ProcessInfo.processInfo.systemUptime
+                                    )
+                                    switch decision {
+                                    case .requireSecondTap:
+                                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                        let delay = CompanionInteractionPolicy.destructiveConfirmWindowSeconds + 0.05
+                                        Task { @MainActor in
+                                            try? await Task.sleep(for: .seconds(delay))
+                                            flowConfirmGate.expireIfNeeded(at: ProcessInfo.processInfo.systemUptime)
+                                        }
+                                    case .runImmediately, .confirmedRun:
+                                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                        client.triggerFlow(id: flow.id)
+                                    }
                                 } label: {
                                     Label(L10n.tr("立即在 Mac 上运行", "Run on Mac Now", language: lang), systemImage: "play.fill")
                                 }

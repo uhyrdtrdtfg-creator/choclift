@@ -12,6 +12,40 @@ public struct IOSEditSlotSelection: Identifiable {
     }
 }
 
+private struct TileHoldToEditButtonStyle: ButtonStyle {
+    let holdDurationSeconds: TimeInterval
+    let onLongPressHold: () -> Void
+
+    func makeBody(configuration: Configuration) -> some View {
+        TileHoldToEditLabelView(
+            configuration: configuration,
+            holdDurationSeconds: holdDurationSeconds,
+            onLongPressHold: onLongPressHold
+        )
+    }
+}
+
+private struct TileHoldToEditLabelView: View {
+    let configuration: ButtonStyle.Configuration
+    let holdDurationSeconds: TimeInterval
+    let onLongPressHold: () -> Void
+
+    var body: some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
+            .animation(.spring(response: 0.16, dampingFraction: 0.72), value: configuration.isPressed)
+            .task(id: configuration.isPressed) {
+                guard configuration.isPressed else { return }
+                // Account for UIScrollView touch-down delay (~0.06s) inside TabView(.page)
+                // so total finger hold duration matches ~0.45s (tileLongPressDurationSeconds).
+                let sleepDuration = max(0.25, holdDurationSeconds - 0.06)
+                try? await Task.sleep(for: .seconds(sleepDuration))
+                guard !Task.isCancelled, configuration.isPressed else { return }
+                onLongPressHold()
+            }
+    }
+}
+
 // MARK: - 1. Chocolate Bar Surface (8 Pages x 8 Slots)
 
 public struct IOSChocolateBarSurfaceView: View {
@@ -20,9 +54,12 @@ public struct IOSChocolateBarSurfaceView: View {
     var isFollowingFrontmostApp: Bool
     var onFollowFrontmostApp: (() -> Void)?
     let isLandscape: Bool
+    var onPromptHUD: ((String) -> Void)?
     let onEditSlot: (IOSEditSlotSelection) -> Void
 
     @State private var pressedKey: String?
+    @State private var confirmGate = DestructiveActionConfirmGate()
+    @State private var suppressedLongPressTap: (key: String, timestamp: TimeInterval)?
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -33,6 +70,7 @@ public struct IOSChocolateBarSurfaceView: View {
         isFollowingFrontmostApp: Bool = true,
         onFollowFrontmostApp: (() -> Void)? = nil,
         isLandscape: Bool,
+        onPromptHUD: ((String) -> Void)? = nil,
         onEditSlot: @escaping (IOSEditSlotSelection) -> Void
     ) {
         self.client = client
@@ -40,6 +78,7 @@ public struct IOSChocolateBarSurfaceView: View {
         self.isFollowingFrontmostApp = isFollowingFrontmostApp
         self.onFollowFrontmostApp = onFollowFrontmostApp
         self.isLandscape = isLandscape
+        self.onPromptHUD = onPromptHUD
         self.onEditSlot = onEditSlot
     }
 
@@ -189,66 +228,107 @@ public struct IOSChocolateBarSurfaceView: View {
         isFrontmost: Bool
     ) -> some View {
         let isPressed = (pressedKey == key)
+        let isAwaitingConfirm = (item != nil) && confirmGate.isArmed(
+            targetID: key,
+            at: ProcessInfo.processInfo.systemUptime
+        )
 
         return Button {
-            if let item {
-                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
-                withAnimation(.spring(response: 0.16, dampingFraction: 0.6)) {
-                    pressedKey = key
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-                    if pressedKey == key {
-                        withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
-                            pressedKey = nil
-                        }
-                    }
-                }
-                client.triggerBarItem(item)
-            } else {
-                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                onEditSlot(IOSEditSlotSelection(pageIndex: pageIndex, slotIndex: slotIndex))
-            }
+            handleTileShortTap(
+                pageIndex: pageIndex,
+                slotIndex: slotIndex,
+                key: key,
+                item: item
+            )
         } label: {
             ChocBarTileCard(
                 item: item,
                 iconData: iconData,
                 isFrontmostApp: isFrontmost,
+                isAwaitingConfirmation: isAwaitingConfirm,
                 palette: palette,
                 language: lang,
                 compact: true
             )
             .scaleEffect(isPressed ? 0.94 : 1.0)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(
+            TileHoldToEditButtonStyle(
+                holdDurationSeconds: CompanionInteractionPolicy.tileLongPressDurationSeconds
+            ) {
+                suppressedLongPressTap = (key: key, timestamp: ProcessInfo.processInfo.systemUptime)
+                confirmGate.disarm()
+                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                onEditSlot(IOSEditSlotSelection(pageIndex: pageIndex, slotIndex: slotIndex))
+            }
+        )
         .accessibilityIdentifier("ios-slot-\(pageIndex)-\(slotIndex)")
         .accessibilityLabel(
             item?.displayTitle(in: lang)
                 ?? L10n.tr("空槽位 \(slotIndex + 1)", "Empty Slot \(slotIndex + 1)", language: lang)
         )
-        .contextMenu {
-            Button {
-                onEditSlot(IOSEditSlotSelection(pageIndex: pageIndex, slotIndex: slotIndex))
-            } label: {
-                Label(L10n.tr("配置此巧克力槽…", "Configure Slot…", language: lang), systemImage: "pencil")
+    }
+
+    private func handleTileShortTap(
+        pageIndex: Int,
+        slotIndex: Int,
+        key: String,
+        item: BarItem?
+    ) {
+        let now = ProcessInfo.processInfo.systemUptime
+        if let suppressed = suppressedLongPressTap {
+            suppressedLongPressTap = nil
+            if suppressed.key == key && (now - suppressed.timestamp) < 1.0 {
+                return
+            }
+        }
+
+        guard let item else {
+            confirmGate.disarm()
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            onEditSlot(IOSEditSlotSelection(pageIndex: pageIndex, slotIndex: slotIndex))
+            return
+        }
+
+        let isDestructive = item.requiresDestructiveConfirmation(in: client.profile)
+        let decision = confirmGate.registerTap(
+            targetID: key,
+            isDestructive: isDestructive,
+            at: now
+        )
+
+        switch decision {
+        case .requireSecondTap:
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            let title = item.displayTitle(in: lang)
+            onPromptHUD?(
+                L10n.tr(
+                    "3 秒内再点一次确认：\(title)",
+                    "Tap again within 3s: \(title)",
+                    language: lang
+                )
+            )
+            let delay = CompanionInteractionPolicy.destructiveConfirmWindowSeconds + 0.05
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(delay))
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    confirmGate.expireIfNeeded(at: ProcessInfo.processInfo.systemUptime)
+                }
             }
 
-            if let item {
-                Button {
-                    client.triggerBarItem(item)
-                } label: {
-                    Label(L10n.tr("立即在 Mac 执行", "Run on Mac", language: lang), systemImage: "play.fill")
-                }
-
-                Button(role: .destructive) {
-                    var updated = client.profile
-                    guard updated.pages.indices.contains(pageIndex),
-                          updated.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
-                    updated.pages[pageIndex].slots[slotIndex] = nil
-                    client.pushUpdatedProfile(updated)
-                } label: {
-                    Label(L10n.tr("清空槽位", "Clear Slot", language: lang), systemImage: "trash")
+        case .runImmediately, .confirmedRun:
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            withAnimation(.spring(response: 0.16, dampingFraction: 0.6)) {
+                pressedKey = key
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
+                if pressedKey == key {
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                        pressedKey = nil
+                    }
                 }
             }
+            client.triggerBarItem(item)
         }
     }
 }
@@ -260,6 +340,9 @@ public struct IOSTimeTravelSurfaceView: View {
     let isLandscape: Bool
     let currentBarPageIndex: Int
     var onRequestPairing: (() -> Void)?
+    var onPromptHUD: ((String) -> Void)?
+
+    @State private var quitConfirmGate = DestructiveActionConfirmGate()
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -268,12 +351,14 @@ public struct IOSTimeTravelSurfaceView: View {
         client: CompanionClientEngine,
         isLandscape: Bool,
         currentBarPageIndex: Int,
-        onRequestPairing: (() -> Void)? = nil
+        onRequestPairing: (() -> Void)? = nil,
+        onPromptHUD: ((String) -> Void)? = nil
     ) {
         self.client = client
         self.isLandscape = isLandscape
         self.currentBarPageIndex = currentBarPageIndex
         self.onRequestPairing = onRequestPairing
+        self.onPromptHUD = onPromptHUD
     }
 
     public var body: some View {
@@ -354,9 +439,27 @@ public struct IOSTimeTravelSurfaceView: View {
 
     private func recentAppCard(_ entry: RecentAppEntry) -> some View {
         let icon = client.appIconsByBundleID[entry.bundleIdentifier] ?? BundledAppIcons.pngData(for: entry.bundleIdentifier)
+        let quitKey = "quit-\(entry.bundleIdentifier)"
+        let isAwaitingQuitConfirm = quitConfirmGate.isArmed(
+            targetID: quitKey,
+            at: ProcessInfo.processInfo.systemUptime
+        )
 
         return Button {
-            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+            if isAwaitingQuitConfirm {
+                let decision = quitConfirmGate.registerTap(
+                    targetID: quitKey,
+                    isDestructive: true,
+                    at: ProcessInfo.processInfo.systemUptime
+                )
+                if decision == .confirmedRun {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    client.quitOrHideApp(bundleIdentifier: entry.bundleIdentifier, shouldQuit: true)
+                }
+                return
+            }
+            quitConfirmGate.disarm()
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
             client.activateRecentApp(entry)
         } label: {
             VStack(spacing: 6) {
@@ -379,17 +482,26 @@ public struct IOSTimeTravelSurfaceView: View {
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
 
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(entry.isFrontmost ? palette.accent : (entry.isRunning ? palette.statusConnected : palette.secondaryText.opacity(0.5)))
-                        .frame(width: 5.5, height: 5.5)
-                    Text(
-                        entry.isFrontmost
-                            ? L10n.tr("当前窗口", "Active", language: lang)
-                            : (entry.isRunning ? L10n.tr("运行中", "Running", language: lang) : L10n.tr("已固定", "Pinned", language: lang))
-                    )
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(palette.secondaryText)
+                if isAwaitingQuitConfirm {
+                    Text(L10n.tr("再点确认退出", "Tap Again to Quit", language: lang))
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.emphasisForeground)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(palette.statusFailure, in: Capsule())
+                } else {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(entry.isFrontmost ? palette.accent : (entry.isRunning ? palette.statusConnected : palette.secondaryText.opacity(0.5)))
+                            .frame(width: 5.5, height: 5.5)
+                        Text(
+                            entry.isFrontmost
+                                ? L10n.tr("当前窗口", "Active", language: lang)
+                                : (entry.isRunning ? L10n.tr("运行中", "Running", language: lang) : L10n.tr("已固定", "Pinned", language: lang))
+                        )
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(palette.secondaryText)
+                    }
                 }
             }
             .padding(.vertical, 12)
@@ -400,7 +512,12 @@ public struct IOSTimeTravelSurfaceView: View {
                     .fill(LinearGradient(colors: [palette.tileFillTop, palette.tileFillBottom], startPoint: .topLeading, endPoint: .bottomTrailing))
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .strokeBorder(entry.isFrontmost ? palette.accent : palette.tileBorderHighlight.opacity(0.45), lineWidth: entry.isFrontmost ? 2 : 1)
+                            .strokeBorder(
+                                isAwaitingQuitConfirm
+                                    ? palette.statusFailure
+                                    : (entry.isFrontmost ? palette.accent : palette.tileBorderHighlight.opacity(0.45)),
+                                lineWidth: (isAwaitingQuitConfirm || entry.isFrontmost) ? 2 : 1
+                            )
                     )
             )
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -431,11 +548,41 @@ public struct IOSTimeTravelSurfaceView: View {
                 }
 
                 Button(role: .destructive) {
-                    client.quitOrHideApp(bundleIdentifier: entry.bundleIdentifier, shouldQuit: true)
+                    handleQuitRecentApp(entry)
                 } label: {
                     Label(L10n.tr("退出应用", "Quit App on Mac", language: lang), systemImage: "xmark.octagon")
                 }
             }
+        }
+    }
+
+    private func handleQuitRecentApp(_ entry: RecentAppEntry) {
+        let quitKey = "quit-\(entry.bundleIdentifier)"
+        let decision = quitConfirmGate.registerTap(
+            targetID: quitKey,
+            isDestructive: true,
+            at: ProcessInfo.processInfo.systemUptime
+        )
+        switch decision {
+        case .requireSecondTap:
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            onPromptHUD?(
+                L10n.tr(
+                    "3 秒内点按 \(entry.appName) 确认退出",
+                    "Tap \(entry.appName) within 3s to confirm Quit",
+                    language: lang
+                )
+            )
+            let delay = CompanionInteractionPolicy.destructiveConfirmWindowSeconds + 0.05
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(delay))
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    quitConfirmGate.expireIfNeeded(at: ProcessInfo.processInfo.systemUptime)
+                }
+            }
+        case .runImmediately, .confirmedRun:
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            client.quitOrHideApp(bundleIdentifier: entry.bundleIdentifier, shouldQuit: true)
         }
     }
 
@@ -1360,8 +1507,10 @@ public struct IOSIPadChocolateBarDeckView: View {
     var onFollowFrontmostApp: (() -> Void)?
     let availableWidth: CGFloat
     var isLandscape: Bool
+    var onPromptHUD: ((String) -> Void)?
     let onEditSlot: (IOSEditSlotSelection) -> Void
 
+    private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
     public init(
@@ -1371,6 +1520,7 @@ public struct IOSIPadChocolateBarDeckView: View {
         onFollowFrontmostApp: (() -> Void)? = nil,
         availableWidth: CGFloat,
         isLandscape: Bool = true,
+        onPromptHUD: ((String) -> Void)? = nil,
         onEditSlot: @escaping (IOSEditSlotSelection) -> Void
     ) {
         self.client = client
@@ -1379,17 +1529,91 @@ public struct IOSIPadChocolateBarDeckView: View {
         self.onFollowFrontmostApp = onFollowFrontmostApp
         self.availableWidth = availableWidth
         self.isLandscape = isLandscape
+        self.onPromptHUD = onPromptHUD
         self.onEditSlot = onEditSlot
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
+        let pageCount = max(1, client.profile.pages.count)
+        let activeIdx = min(max(0, currentPageIndex), pageCount - 1)
+
+        return VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Button {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                        currentPageIndex = (activeIdx - 1 + pageCount) % pageCount
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(palette.primaryText)
+                        .frame(width: 34, height: 28)
+                        .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ios-page-prev-button")
+
+                HStack(spacing: 2) {
+                    ForEach(0..<pageCount, id: \.self) { dotIdx in
+                        let isSelected = (dotIdx == activeIdx)
+                        Button {
+                            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                            withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                                currentPageIndex = dotIdx
+                            }
+                        } label: {
+                            ZStack {
+                                if isSelected {
+                                    Capsule()
+                                        .fill(palette.accent)
+                                        .frame(width: 18, height: 7)
+                                } else {
+                                    Circle()
+                                        .fill(palette.secondaryText.opacity(0.35))
+                                        .frame(width: 7, height: 7)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("ios-page-dot-\(dotIdx)")
+                    }
+                }
+                .padding(.horizontal, 6)
+                .frame(maxWidth: .infinity)
+                .frame(height: 28)
+                .background(palette.barSurface.opacity(0.88), in: Capsule())
+                .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+
+                Button {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                        currentPageIndex = (activeIdx + 1) % pageCount
+                    }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(palette.primaryText)
+                        .frame(width: 34, height: 28)
+                        .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ios-page-next-button")
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+
             IOSChocolateBarSurfaceView(
                 client: client,
                 currentPageIndex: $currentPageIndex,
                 isFollowingFrontmostApp: isFollowingFrontmostApp,
                 onFollowFrontmostApp: onFollowFrontmostApp,
                 isLandscape: isLandscape,
+                onPromptHUD: onPromptHUD,
                 onEditSlot: onEditSlot
             )
 
@@ -1498,6 +1722,8 @@ public struct IOSPersistentControlStripView: View {
 
             stripDivider
 
+            undoWindowMoveButton
+
             micMuteButton(compactLabel: true)
 
             clockTextView
@@ -1519,6 +1745,8 @@ public struct IOSPersistentControlStripView: View {
             HStack(spacing: 8) {
                 nowPlayingCluster
                     .frame(maxWidth: .infinity)
+
+                undoWindowMoveButton
 
                 micMuteButton(compactLabel: false)
 
@@ -1738,6 +1966,43 @@ public struct IOSPersistentControlStripView: View {
         }
     }
 
+    // MARK: - One-Level Window Move Undo (Quiet When Nothing to Undo)
+
+    private var undoWindowMoveButton: some View {
+        let canUndo = state.canUndoWindowMove
+
+        return Button {
+            guard state.canUndoWindowMove else { return }
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            client.undoLastWindowMove()
+        } label: {
+            Image(systemName: "arrow.uturn.backward")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(canUndo ? palette.accent : palette.secondaryText.opacity(0.42))
+                .frame(width: 34, height: 34)
+                .background(
+                    (canUndo ? palette.accent.opacity(0.14) : palette.tileFillBottom.opacity(0.55)),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(
+                            canUndo ? palette.accent.opacity(0.6) : palette.subtleCardStroke,
+                            lineWidth: 1
+                        )
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("ios-strip-undo-window-move")
+        .accessibilityLabel(L10n.tr("撤销上次窗口移动", "Undo Last Window Move", language: lang))
+        .accessibilityValue(
+            canUndo
+                ? L10n.tr("可撤销", "Available", language: lang)
+                : L10n.tr("无窗口移动可撤销", "Nothing to Undo", language: lang)
+        )
+    }
+
     // MARK: - Mic Mute (One Tap, Visible On/Off State)
 
     private func micMuteButton(compactLabel: Bool) -> some View {
@@ -1854,7 +2119,7 @@ private struct ControlStripDragSlider: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .gesture(
+            .highPriorityGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onChanged { value in
                         let normalized = ControlStripLevel.clamp(Double(value.location.x / width))

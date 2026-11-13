@@ -166,10 +166,17 @@ public struct WatchRootView: View {
         }
         .onChange(of: client.lastFeedback) { _, toast in
             guard let toast else { return }
-            CompanionFeedbackHaptics.notify(
-                enabled: client.profile.settings.hapticFeedbackEnabled,
-                kind: toast.success ? .success : .error
-            )
+            if toast.success {
+                CompanionFeedbackHaptics.tap(
+                    enabled: client.profile.settings.hapticFeedbackEnabled,
+                    intensity: .light
+                )
+            } else {
+                CompanionFeedbackHaptics.notify(
+                    enabled: client.profile.settings.hapticFeedbackEnabled,
+                    kind: .error
+                )
+            }
             flashHUD(toast.title)
         }
     }

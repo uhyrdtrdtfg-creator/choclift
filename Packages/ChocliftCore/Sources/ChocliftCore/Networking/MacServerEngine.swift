@@ -833,7 +833,7 @@ public final class MacServerEngine: ObservableObject {
             }
 
             switch message {
-            case .requestControlStripState, .setControlLevel, .setMicMuted:
+            case .requestControlStripState, .setControlLevel, .setMicMuted, .undoLastWindowMove:
                 session.supportsControlStrip = true
             default:
                 break

@@ -161,6 +161,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
     public var isBrightnessAvailable: Bool
     public var isMicMuted: Bool
     public var nowPlaying: NowPlayingStatus?
+    public var canUndoWindowMove: Bool
 
     private enum CodingKeys: String, CodingKey {
         case volume
@@ -169,6 +170,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         case isBrightnessAvailable
         case isMicMuted
         case nowPlaying
+        case canUndoWindowMove
     }
 
     public init(
@@ -177,7 +179,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         brightness: Double = 0.75,
         isBrightnessAvailable: Bool = true,
         isMicMuted: Bool = false,
-        nowPlaying: NowPlayingStatus? = nil
+        nowPlaying: NowPlayingStatus? = nil,
+        canUndoWindowMove: Bool = false
     ) {
         self.volume = ControlStripLevel.clamp(volume)
         self.isVolumeMuted = isVolumeMuted
@@ -185,6 +188,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.isBrightnessAvailable = isBrightnessAvailable
         self.isMicMuted = isMicMuted
         self.nowPlaying = (nowPlaying?.hasActiveMedia == true) ? nowPlaying : nil
+        self.canUndoWindowMove = canUndoWindowMove
     }
 
     public init(from decoder: Decoder) throws {
@@ -198,6 +202,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.isMicMuted = try container.decodeIfPresent(Bool.self, forKey: .isMicMuted) ?? false
         let decodedNP = try container.decodeIfPresent(NowPlayingStatus.self, forKey: .nowPlaying)
         self.nowPlaying = (decodedNP?.hasActiveMedia == true) ? decodedNP : nil
+        self.canUndoWindowMove = try container.decodeIfPresent(Bool.self, forKey: .canUndoWindowMove) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -208,13 +213,15 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         try container.encode(isBrightnessAvailable, forKey: .isBrightnessAvailable)
         try container.encode(isMicMuted, forKey: .isMicMuted)
         try container.encodeIfPresent(nowPlaying, forKey: .nowPlaying)
+        try container.encode(canUndoWindowMove, forKey: .canUndoWindowMove)
     }
 
     public func hasMeaningfulDifference(from other: ControlStripState, tolerance: Double = 0.004) -> Bool {
         if isVolumeMuted != other.isVolumeMuted ||
             isBrightnessAvailable != other.isBrightnessAvailable ||
             isMicMuted != other.isMicMuted ||
-            nowPlaying != other.nowPlaying {
+            nowPlaying != other.nowPlaying ||
+            canUndoWindowMove != other.canUndoWindowMove {
             return true
         }
         if (volume <= 0.001) != (other.volume <= 0.001) ||

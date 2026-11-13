@@ -1729,6 +1729,14 @@ public final class CompanionClientEngine: ObservableObject {
         setMicMuted(!controlStripState.isMicMuted)
     }
 
+    public func undoLastWindowMove() {
+        guard controlStripState.canUndoWindowMove else { return }
+        var next = controlStripState
+        next.canUndoWindowMove = false
+        controlStripState = next
+        send(.undoLastWindowMove)
+    }
+
     public func pushUpdatedProfile(_ updated: ChocliftWorkspaceProfile) {
         var next = updated
         next.bumpRevision()
