@@ -174,8 +174,12 @@ public struct IOSCompanionStripStatusRow: View {
 
     public var body: some View {
         ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 IOSMacBatteryStripBadge(client: client)
+
+                IOSWiFiSSIDStripBadge(client: client)
+
+                IOSPrivacyCaptureStripBadge(client: client)
 
                 Spacer(minLength: 4)
 
@@ -184,11 +188,23 @@ public struct IOSCompanionStripStatusRow: View {
                 }
             }
 
-            VStack(alignment: .leading, spacing: 4) {
-                IOSMacBatteryStripBadge(client: client)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    IOSMacBatteryStripBadge(client: client)
 
-                if let reason = activeAwakeReason {
-                    IOSAwakeReasonStripLabel(reason: reason, palette: palette)
+                    IOSWiFiSSIDStripBadge(client: client)
+
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: 6) {
+                    IOSPrivacyCaptureStripBadge(client: client)
+
+                    Spacer(minLength: 0)
+
+                    if let reason = activeAwakeReason {
+                        IOSAwakeReasonStripLabel(reason: reason, palette: palette)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

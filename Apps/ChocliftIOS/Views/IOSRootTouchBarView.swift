@@ -294,7 +294,8 @@ public struct IOSRootTouchBarView: View {
                             activeMode = .emojiBar
                             currentEmojiSegment = .clipboard
                         }
-                    }
+                    },
+                    onPromptHUD: { flashHUD($0) }
                 )
                 .padding(.horizontal, 14)
                 .padding(.top, 6)
@@ -414,7 +415,8 @@ public struct IOSRootTouchBarView: View {
             IOSCompanionBarRibbon(
                 client: client,
                 compact: true,
-                includeInlineClipboard: false
+                includeInlineClipboard: false,
+                onPromptHUD: { flashHUD($0) }
             )
             .padding(.horizontal, 16)
 
@@ -631,7 +633,8 @@ public struct IOSRootTouchBarView: View {
             IOSCompanionBarRibbon(
                 client: client,
                 compact: false,
-                includeInlineClipboard: false
+                includeInlineClipboard: false,
+                onPromptHUD: { flashHUD($0) }
             )
             .padding(.horizontal, 18)
 

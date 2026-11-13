@@ -178,6 +178,12 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
     public var macBattery: MacBatteryStatus?
     /// True when Finder's `CreateDesktop` preference is enabled so desktop icons are shown on the Mac.
     public var areFinderDesktopIconsVisible: Bool
+    /// Read-only Mac camera/microphone active capture status and app names when exposed by macOS.
+    public var privacyCapture: MacPrivacyCaptureStatus
+    /// Current Mac Wi-Fi SSID only (`nil` when unavailable; formatted as `"Wi-Fi"` with no name).
+    public var wifiSSID: String?
+    /// Count of mounted external volumes eligible for ejection (excludes startup and fixed internal volumes).
+    public var ejectableExternalVolumeCount: Int
 
     private enum CodingKeys: String, CodingKey {
         case volume
@@ -196,6 +202,9 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         case canSwitchAudioOutput
         case macBattery
         case areFinderDesktopIconsVisible
+        case privacyCapture
+        case wifiSSID
+        case ejectableExternalVolumeCount
     }
 
     public init(
@@ -214,7 +223,10 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         selectedAudioOutputDeviceID: String? = nil,
         canSwitchAudioOutput: Bool = true,
         macBattery: MacBatteryStatus? = nil,
-        areFinderDesktopIconsVisible: Bool = true
+        areFinderDesktopIconsVisible: Bool = true,
+        privacyCapture: MacPrivacyCaptureStatus = .inactive,
+        wifiSSID: String? = nil,
+        ejectableExternalVolumeCount: Int = 0
     ) {
         self.volume = ControlStripLevel.clamp(volume)
         self.isVolumeMuted = isVolumeMuted
@@ -235,6 +247,9 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.canSwitchAudioOutput = canSwitchAudioOutput
         self.macBattery = macBattery
         self.areFinderDesktopIconsVisible = areFinderDesktopIconsVisible
+        self.privacyCapture = privacyCapture
+        self.wifiSSID = MacWiFiStatusFormatter.sanitizedSSID(wifiSSID)
+        self.ejectableExternalVolumeCount = max(0, ejectableExternalVolumeCount)
     }
 
     public init(from decoder: Decoder) throws {
@@ -266,6 +281,12 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.canSwitchAudioOutput = try container.decodeIfPresent(Bool.self, forKey: .canSwitchAudioOutput) ?? true
         self.macBattery = try container.decodeIfPresent(MacBatteryStatus.self, forKey: .macBattery)
         self.areFinderDesktopIconsVisible = try container.decodeIfPresent(Bool.self, forKey: .areFinderDesktopIconsVisible) ?? true
+        self.privacyCapture = try container.decodeIfPresent(MacPrivacyCaptureStatus.self, forKey: .privacyCapture) ?? .inactive
+        self.wifiSSID = MacWiFiStatusFormatter.sanitizedSSID(
+            try container.decodeIfPresent(String.self, forKey: .wifiSSID)
+        )
+        let rawEjectableCount = try container.decodeIfPresent(Int.self, forKey: .ejectableExternalVolumeCount) ?? 0
+        self.ejectableExternalVolumeCount = max(0, rawEjectableCount)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -294,6 +315,23 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         try container.encode(canSwitchAudioOutput, forKey: .canSwitchAudioOutput)
         try container.encodeIfPresent(macBattery, forKey: .macBattery)
         try container.encode(areFinderDesktopIconsVisible, forKey: .areFinderDesktopIconsVisible)
+        if privacyCapture != .inactive {
+            try container.encode(privacyCapture, forKey: .privacyCapture)
+        }
+        try container.encodeIfPresent(MacWiFiStatusFormatter.sanitizedSSID(wifiSSID), forKey: .wifiSSID)
+        if ejectableExternalVolumeCount > 0 {
+            try container.encode(max(0, ejectableExternalVolumeCount), forKey: .ejectableExternalVolumeCount)
+        }
+    }
+
+    /// Current Wi-Fi SSID string, or `"Wi-Fi"` with no network name when unavailable.
+    public var wifiDisplayLabel: String {
+        MacWiFiStatusFormatter.displayText(ssid: wifiSSID)
+    }
+
+    /// True when at least one eligible external volume is mounted on the Mac.
+    public var hasEjectableExternalDisks: Bool {
+        ejectableExternalVolumeCount > 0
     }
 
     /// Explicit reason line shown on the companion strip ONLY while Choclift's keep-awake assertion is on (`nil` when off).
@@ -359,7 +397,10 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             Self.cleanAudioID(selectedAudioOutputDeviceID) != Self.cleanAudioID(other.selectedAudioOutputDeviceID) ||
             canSwitchAudioOutput != other.canSwitchAudioOutput ||
             macBattery != other.macBattery ||
-            areFinderDesktopIconsVisible != other.areFinderDesktopIconsVisible {
+            areFinderDesktopIconsVisible != other.areFinderDesktopIconsVisible ||
+            privacyCapture != other.privacyCapture ||
+            MacWiFiStatusFormatter.sanitizedSSID(wifiSSID) != MacWiFiStatusFormatter.sanitizedSSID(other.wifiSSID) ||
+            max(0, ejectableExternalVolumeCount) != max(0, other.ejectableExternalVolumeCount) {
             return true
         }
         if (volume <= 0.001) != (other.volume <= 0.001) ||

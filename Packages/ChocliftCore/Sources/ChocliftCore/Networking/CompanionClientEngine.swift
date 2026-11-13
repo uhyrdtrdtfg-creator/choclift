@@ -112,6 +112,7 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var frontmostWindows: FrontmostAppWindowSnapshot = .empty
     @Published public private(set) var activeTileFeedback: TileActionFeedbackBanner?
     @Published public private(set) var recentlyTriggeredTiles: [RecentlyTriggeredTileEntry] = []
+    @Published public private(set) var maintenanceConfirmController = Round08MaintenanceConfirmController()
     @Published public var lastFeedback: CompanionFeedbackToast?
 
     public let deviceID: String
@@ -179,6 +180,7 @@ public final class CompanionClientEngine: ObservableObject {
     private var pinSubmissionWatchdogTask: Task<Void, Never>?
     private var tileFeedbackTracker = TileActionFeedbackTracker()
     private var tileFeedbackExpiryTask: Task<Void, Never>?
+    private var maintenanceConfirmExpiryTask: Task<Void, Never>?
 
     public init(
         deviceID: String,
@@ -1400,7 +1402,11 @@ public final class CompanionClientEngine: ObservableObject {
         var disconnectedStrip = controlStripState
         disconnectedStrip.isKeepMacAwakeEnabled = false
         disconnectedStrip.macBattery = nil
+        disconnectedStrip.privacyCapture = .inactive
+        disconnectedStrip.wifiSSID = nil
+        disconnectedStrip.ejectableExternalVolumeCount = 0
         controlStripState = disconnectedStrip
+        disarmMaintenanceConfirmation()
         tileFeedbackTracker.clearPendingWithoutFeedback()
         lastConnectionIssue = nil
         accumulator.reset()
@@ -1520,7 +1526,11 @@ public final class CompanionClientEngine: ObservableObject {
             var disconnectedStrip = controlStripState
             disconnectedStrip.isKeepMacAwakeEnabled = false
             disconnectedStrip.macBattery = nil
+            disconnectedStrip.privacyCapture = .inactive
+            disconnectedStrip.wifiSSID = nil
+            disconnectedStrip.ejectableExternalVolumeCount = 0
             controlStripState = disconnectedStrip
+            disarmMaintenanceConfirmation()
             tileFeedbackTracker.clearPendingWithoutFeedback()
             connectionState = .disconnected
             return
@@ -1583,7 +1593,11 @@ public final class CompanionClientEngine: ObservableObject {
         var disconnectedStrip = controlStripState
         disconnectedStrip.isKeepMacAwakeEnabled = false
         disconnectedStrip.macBattery = nil
+        disconnectedStrip.privacyCapture = .inactive
+        disconnectedStrip.wifiSSID = nil
+        disconnectedStrip.ejectableExternalVolumeCount = 0
         controlStripState = disconnectedStrip
+        disarmMaintenanceConfirmation()
         if let failedBanner = tileFeedbackTracker.failPendingOnDisconnect() {
             publishTileFeedback(failedBanner)
         }
@@ -2066,6 +2080,89 @@ public final class CompanionClientEngine: ObservableObject {
         setFinderDesktopIconsVisible(!controlStripState.areFinderDesktopIconsVisible)
     }
 
+    // MARK: - Round 8 Two-Tap Maintenance Actions (Empty Trash & Eject External Disks)
+
+    public func isMaintenanceActionArmed(
+        _ action: Round08MaintenanceAction,
+        at now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Bool {
+        maintenanceConfirmController.isArmed(action, at: now)
+    }
+
+    public func disarmMaintenanceConfirmation() {
+        maintenanceConfirmExpiryTask?.cancel()
+        maintenanceConfirmExpiryTask = nil
+        if maintenanceConfirmController.gate.armedTargetID != nil {
+            maintenanceConfirmController.disarm()
+        }
+    }
+
+    /// Registers a tap on Empty Trash using the 3-second second-tap confirm gate.
+    /// Never sends `.emptyMacTrash` on the first tap.
+    @discardableResult
+    public func tapEmptyTrash(
+        at now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Round08MaintenanceTapOutcome {
+        handleMaintenanceTap(.emptyTrash, at: now)
+    }
+
+    /// Registers a tap on Eject External Disks using the 3-second second-tap confirm gate.
+    /// Stays completely quiet when `ejectableExternalVolumeCount <= 0` and never runs on the first tap.
+    @discardableResult
+    public func tapEjectExternalDisks(
+        at now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Round08MaintenanceTapOutcome {
+        handleMaintenanceTap(.ejectExternalDisks, at: now)
+    }
+
+    private func handleMaintenanceTap(
+        _ action: Round08MaintenanceAction,
+        at now: TimeInterval
+    ) -> Round08MaintenanceTapOutcome {
+        maintenanceConfirmExpiryTask?.cancel()
+        maintenanceConfirmExpiryTask = nil
+
+        let ejectableCount = connectionState.isConnected ? controlStripState.ejectableExternalVolumeCount : 0
+        let outcome = maintenanceConfirmController.registerTap(
+            action: action,
+            ejectableVolumeCount: ejectableCount,
+            at: now
+        )
+
+        switch outcome {
+        case .quietNothingToEject:
+            return .quietNothingToEject
+
+        case .requireSecondTap(let expiresAt):
+            let delay = maintenanceConfirmController.confirmationWindowSeconds + 0.05
+            maintenanceConfirmExpiryTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard let self, !Task.isCancelled else { return }
+                self.maintenanceConfirmController.expireIfNeeded(at: expiresAt + 0.01)
+            }
+            return .requireSecondTap(expiresAt: expiresAt)
+
+        case .confirmedExecute:
+            let lang = profile.settings.language
+            guard connectionState.isConnected else {
+                lastFeedback = CompanionFeedbackToast(
+                    success: false,
+                    title: action.title(ejectableCount: ejectableCount, compact: false, in: lang),
+                    detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                )
+                return .confirmedExecute
+            }
+            tileFeedbackTracker.clearPendingWithoutFeedback()
+            switch action {
+            case .emptyTrash:
+                send(.emptyMacTrash)
+            case .ejectExternalDisks:
+                send(.ejectExternalDisks)
+            }
+            return .confirmedExecute
+        }
+    }
+
     /// Sends Escape, Space, or an Arrow key to the frontmost Mac app through the existing input path.
     public func sendCompactKey(_ key: CompanionCompactKey) {
         let lang = profile.settings.language
@@ -2328,6 +2425,10 @@ public final class CompanionClientEngine: ObservableObject {
         case .controlStripStateUpdated(let state):
             controlStripState = state
             profile.soundboardVolume = state.soundboardVolume
+            if state.ejectableExternalVolumeCount <= 0,
+               maintenanceConfirmController.gate.armedTargetID == Round08MaintenanceAction.ejectExternalDisks.rawValue {
+                disarmMaintenanceConfirmation()
+            }
 
         case .clipboardPreviewUpdated(let snapshot):
             guard platform != .appleWatch else {

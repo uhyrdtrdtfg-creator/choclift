@@ -10,6 +10,7 @@ public struct IOSCompanionBarRibbon: View {
     let includeInlineClipboard: Bool
     let allowMultiRow: Bool
     var onOpenClipboardSegment: (() -> Void)?
+    var onPromptHUD: ((String) -> Void)?
 
     @State private var pressedKey: String?
 
@@ -21,13 +22,15 @@ public struct IOSCompanionBarRibbon: View {
         compact: Bool,
         includeInlineClipboard: Bool = false,
         allowMultiRow: Bool = true,
-        onOpenClipboardSegment: (() -> Void)? = nil
+        onOpenClipboardSegment: (() -> Void)? = nil,
+        onPromptHUD: ((String) -> Void)? = nil
     ) {
         self.client = client
         self.compact = compact
         self.includeInlineClipboard = includeInlineClipboard
         self.allowMultiRow = allowMultiRow
         self.onOpenClipboardSegment = onOpenClipboardSegment
+        self.onPromptHUD = onPromptHUD
     }
 
     public var body: some View {
@@ -60,6 +63,10 @@ public struct IOSCompanionBarRibbon: View {
 
             IOSFinderDesktopIconsPillButton(client: client, compact: compact)
 
+            IOSEmptyTrashPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+
+            IOSEjectExternalDisksPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+
             IOSFrontmostWindowsRibbonButton(client: client, compact: compact)
 
             screenshotCaptureButton
@@ -90,6 +97,14 @@ public struct IOSCompanionBarRibbon: View {
                 IOSSleepDisplayPillButton(client: client, compact: compact)
 
                 IOSFrontmostWindowsRibbonButton(client: client, compact: compact)
+            }
+
+            HStack(spacing: 6) {
+                IOSEmptyTrashPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+
+                IOSEjectExternalDisksPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
+
+                Spacer(minLength: 0)
             }
         }
     }

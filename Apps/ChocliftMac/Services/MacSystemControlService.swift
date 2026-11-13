@@ -3,6 +3,8 @@ import AudioToolbox
 import ChocliftCore
 import CoreAudio
 import CoreGraphics
+import CoreMediaIO
+import CoreWLAN
 import Darwin
 import Foundation
 import IOKit
@@ -33,6 +35,7 @@ public final class MacSystemControlService {
     // CoreAudio Process Object selectors (macOS 14+ runtime capability, safe FourCC constants on macOS 13 SDK)
     private static let selectorProcessObjectList: AudioObjectPropertySelector = 0x70727323 // 'prs#'
     private static let selectorProcessPID: AudioObjectPropertySelector = 0x70706964        // 'ppid'
+    private static let selectorProcessIsRunningInput: AudioObjectPropertySelector = 0x70697269  // 'piri'
     private static let selectorProcessIsRunningOutput: AudioObjectPropertySelector = 0x7069726f // 'piro'
 
     private let listenerQueue = DispatchQueue.main
@@ -40,6 +43,7 @@ public final class MacSystemControlService {
     private var deviceAudioListeners: [RegisteredAudioListener] = []
     private var distributedObservers: [NSObjectProtocol] = []
     private var localObservers: [NSObjectProtocol] = []
+    private var workspaceObservers: [NSObjectProtocol] = []
     private var periodicPollTask: Task<Void, Never>?
     private var postActionRefreshTask: Task<Void, Never>?
 
@@ -62,6 +66,7 @@ public final class MacSystemControlService {
         registerSystemAudioDeviceListeners()
         rebindActiveAudioDeviceListeners()
         registerNowPlayingObservers()
+        registerVolumeMountObservers()
         refreshNow()
 
         periodicPollTask = Task { @MainActor [weak self] in
@@ -93,6 +98,12 @@ public final class MacSystemControlService {
             nc.removeObserver(token)
         }
         localObservers.removeAll()
+
+        let wsnc = NSWorkspace.shared.notificationCenter
+        for token in workspaceObservers {
+            wsnc.removeObserver(token)
+        }
+        workspaceObservers.removeAll()
     }
 
     // MARK: - Reading & Refreshing State
@@ -158,6 +169,9 @@ public final class MacSystemControlService {
         let audioSnapshot = Self.enumerateAudioOutputDevices(defaultOutputID: outDevice)
         let batteryStatus = Self.readMacBatteryStatus()
         let finderIconsVisible = Self.readFinderDesktopIconsVisible()
+        let privacyCapture = Self.readPrivacyCaptureStatus(defaultInputDeviceID: inDevice)
+        let currentWiFiSSID = Self.readCurrentWiFiSSID()
+        let ejectableVolumeCount = Self.enumerateEjectableExternalVolumes().count
 
         return ControlStripState(
             volume: volume,
@@ -175,7 +189,10 @@ public final class MacSystemControlService {
             selectedAudioOutputDeviceID: audioSnapshot.selectedID,
             canSwitchAudioOutput: audioSnapshot.canSwitch,
             macBattery: batteryStatus,
-            areFinderDesktopIconsVisible: finderIconsVisible
+            areFinderDesktopIconsVisible: finderIconsVisible,
+            privacyCapture: privacyCapture,
+            wifiSSID: currentWiFiSSID,
+            ejectableExternalVolumeCount: ejectableVolumeCount
         )
     }
 
@@ -321,6 +338,532 @@ public final class MacSystemControlService {
             ? L10n.tr("已显示桌面图标并重启 Finder", "Desktop icons shown (Finder restarted)", language: language)
             : L10n.tr("已隐藏桌面图标并重启 Finder", "Desktop icons hidden (Finder restarted)", language: language)
         return (true, title, detail)
+    }
+
+    // MARK: - Round 8: Camera/Mic In Use, Wi-Fi SSID, Empty Trash & Eject External Disks
+
+    private func registerVolumeMountObservers() {
+        let wsnc = NSWorkspace.shared.notificationCenter
+        let names: [Notification.Name] = [
+            NSWorkspace.didMountNotification,
+            NSWorkspace.didUnmountNotification,
+            NSWorkspace.didRenameVolumeNotification
+        ]
+        for name in names {
+            let token = wsnc.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshNow()
+                }
+            }
+            workspaceObservers.append(token)
+        }
+    }
+
+    /// Reads only the current Wi-Fi SSID via public `CoreWLAN` (`CWWiFiClient.shared().interface()?.ssid()`).
+    /// Never performs a network scan, never reads cached scan lists, and never accesses Wi-Fi passwords.
+    public static func readCurrentWiFiSSID() -> String? {
+        let rawSSID = CWWiFiClient.shared().interface()?.ssid()
+        return MacWiFiStatusFormatter.sanitizedSSID(rawSSID)
+    }
+
+    /// Reads whether any Mac camera (`CoreMediaIO`) or microphone (`CoreAudio`) is currently capturing,
+    /// along with the user-facing app name when macOS exposes the owning PID via public APIs.
+    /// Never opens capture sessions, streams video/audio, or touches shutter controls.
+    public static func readPrivacyCaptureStatus(
+        defaultInputDeviceID: AudioObjectID = AudioObjectID(kAudioObjectUnknown)
+    ) -> MacPrivacyCaptureStatus {
+        let camera = readCameraCaptureStatus()
+        let resolvedInput = (defaultInputDeviceID != kAudioObjectUnknown)
+            ? defaultInputDeviceID
+            : defaultAudioDevice(isInput: true)
+        let microphone = readMicrophoneCaptureStatus(defaultInputDeviceID: resolvedInput)
+        return MacPrivacyCaptureStatus(
+            isCameraInUse: camera.isInUse,
+            cameraAppName: camera.appName,
+            isMicrophoneInUse: microphone.isInUse,
+            microphoneAppName: microphone.appName
+        )
+    }
+
+    private static func readCameraCaptureStatus() -> (isInUse: Bool, appName: String?) {
+        let systemObject = CMIOObjectID(kCMIOObjectSystemObject)
+        var devicesAddress = CMIOObjectPropertyAddress(
+            mSelector: CMIOObjectPropertySelector(kCMIOHardwarePropertyDevices),
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+        )
+        guard CMIOObjectHasProperty(systemObject, &devicesAddress) else {
+            return (false, nil)
+        }
+
+        var dataSize: UInt32 = 0
+        var dataUsed: UInt32 = 0
+        guard CMIOObjectGetPropertyDataSize(systemObject, &devicesAddress, 0, nil, &dataSize) == OSStatus(kCMIOHardwareNoError),
+              dataSize >= UInt32(MemoryLayout<CMIODeviceID>.size) else {
+            return (false, nil)
+        }
+
+        let count = Int(dataSize) / MemoryLayout<CMIODeviceID>.size
+        var deviceIDs = [CMIODeviceID](repeating: 0, count: count)
+        let fetchStatus = deviceIDs.withUnsafeMutableBytes { rawBuffer -> OSStatus in
+            guard let baseAddress = rawBuffer.baseAddress else { return -1 }
+            return CMIOObjectGetPropertyData(systemObject, &devicesAddress, 0, nil, dataSize, &dataUsed, baseAddress)
+        }
+        guard fetchStatus == OSStatus(kCMIOHardwareNoError) else {
+            return (false, nil)
+        }
+
+        var anyCameraRunning = false
+        var fallbackAppName: String?
+
+        for deviceID in deviceIDs where deviceID != CMIODeviceID(kCMIOObjectUnknown) {
+            guard cmioDeviceHasInputStreams(deviceID: deviceID) else { continue }
+            guard isCMIODeviceRunningSomewhere(deviceID: deviceID) else { continue }
+            anyCameraRunning = true
+
+            if let controllingPID = readCMIODeviceControllingPID(deviceID: deviceID),
+               let resolved = resolveUserFacingAppName(forPID: controllingPID) {
+                if resolved.isRegularApp {
+                    return (true, resolved.name)
+                }
+                if fallbackAppName == nil {
+                    fallbackAppName = resolved.name
+                }
+            }
+        }
+
+        return (anyCameraRunning, anyCameraRunning ? fallbackAppName : nil)
+    }
+
+    private static func cmioDeviceHasInputStreams(deviceID: CMIODeviceID) -> Bool {
+        var streamsAddr = CMIOObjectPropertyAddress(
+            mSelector: CMIOObjectPropertySelector(kCMIODevicePropertyStreams),
+            mScope: CMIOObjectPropertyScope(kCMIODevicePropertyScopeInput),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+        )
+        guard CMIOObjectHasProperty(deviceID, &streamsAddr) else { return false }
+        var byteSize: UInt32 = 0
+        guard CMIOObjectGetPropertyDataSize(deviceID, &streamsAddr, 0, nil, &byteSize) == OSStatus(kCMIOHardwareNoError) else {
+            return false
+        }
+        return byteSize >= UInt32(MemoryLayout<CMIOStreamID>.size)
+    }
+
+    private static func isCMIODeviceRunningSomewhere(deviceID: CMIODeviceID) -> Bool {
+        var runningAddr = CMIOObjectPropertyAddress(
+            mSelector: CMIOObjectPropertySelector(kCMIODevicePropertyDeviceIsRunningSomewhere),
+            mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+            mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+        )
+        guard CMIOObjectHasProperty(deviceID, &runningAddr) else { return false }
+        var isRunning: UInt32 = 0
+        var dataUsed: UInt32 = 0
+        let status = withUnsafeMutableBytes(of: &isRunning) { rawBuffer -> OSStatus in
+            guard let baseAddress = rawBuffer.baseAddress else { return -1 }
+            return CMIOObjectGetPropertyData(
+                deviceID,
+                &runningAddr,
+                0,
+                nil,
+                UInt32(MemoryLayout<UInt32>.size),
+                &dataUsed,
+                baseAddress
+            )
+        }
+        return status == OSStatus(kCMIOHardwareNoError) && isRunning != 0
+    }
+
+    private static func readCMIODeviceControllingPID(deviceID: CMIODeviceID) -> pid_t? {
+        let candidateSelectors: [CMIOObjectPropertySelector] = [
+            CMIOObjectPropertySelector(kCMIODevicePropertyHogMode),
+            CMIOObjectPropertySelector(kCMIODevicePropertyDeviceControl)
+        ]
+        for selector in candidateSelectors {
+            var addr = CMIOObjectPropertyAddress(
+                mSelector: selector,
+                mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+                mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain)
+            )
+            guard CMIOObjectHasProperty(deviceID, &addr) else { continue }
+            var ownerPID: pid_t = -1
+            var dataUsed: UInt32 = 0
+            let status = withUnsafeMutableBytes(of: &ownerPID) { rawBuffer -> OSStatus in
+                guard let baseAddress = rawBuffer.baseAddress else { return -1 }
+                return CMIOObjectGetPropertyData(
+                    deviceID,
+                    &addr,
+                    0,
+                    nil,
+                    UInt32(MemoryLayout<pid_t>.size),
+                    &dataUsed,
+                    baseAddress
+                )
+            }
+            if status == OSStatus(kCMIOHardwareNoError), ownerPID > 0 {
+                return ownerPID
+            }
+        }
+        return nil
+    }
+
+    private static func readMicrophoneCaptureStatus(
+        defaultInputDeviceID: AudioObjectID
+    ) -> (isInUse: Bool, appName: String?) {
+        let sysObj = AudioObjectID(kAudioObjectSystemObject)
+        var listAddr = AudioObjectPropertyAddress(
+            mSelector: selectorProcessObjectList,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        // Preferred path on macOS 14+: per-process CoreAudio input activity + owning PID.
+        if AudioObjectHasProperty(sysObj, &listAddr) {
+            var byteSize: UInt32 = 0
+            if AudioObjectGetPropertyDataSize(sysObj, &listAddr, 0, nil, &byteSize) == noErr {
+                if byteSize < UInt32(MemoryLayout<AudioObjectID>.size) {
+                    return (false, nil)
+                }
+                let count = Int(byteSize) / MemoryLayout<AudioObjectID>.size
+                var procObjects = [AudioObjectID](repeating: 0, count: count)
+                if AudioObjectGetPropertyData(sysObj, &listAddr, 0, nil, &byteSize, &procObjects) == noErr {
+                    var anyInputRunning = false
+                    var fallbackAppName: String?
+
+                    for procObj in procObjects {
+                        var isRunningInput: UInt32 = 0
+                        var runSize = UInt32(MemoryLayout<UInt32>.size)
+                        var inAddr = AudioObjectPropertyAddress(
+                            mSelector: selectorProcessIsRunningInput,
+                            mScope: kAudioObjectPropertyScopeGlobal,
+                            mElement: kAudioObjectPropertyElementMain
+                        )
+                        guard AudioObjectGetPropertyData(procObj, &inAddr, 0, nil, &runSize, &isRunningInput) == noErr,
+                              isRunningInput != 0 else {
+                            continue
+                        }
+                        anyInputRunning = true
+
+                        var pid: pid_t = 0
+                        var pidSize = UInt32(MemoryLayout<pid_t>.size)
+                        var pidAddr = AudioObjectPropertyAddress(
+                            mSelector: selectorProcessPID,
+                            mScope: kAudioObjectPropertyScopeGlobal,
+                            mElement: kAudioObjectPropertyElementMain
+                        )
+                        if AudioObjectGetPropertyData(procObj, &pidAddr, 0, nil, &pidSize, &pid) == noErr,
+                           pid > 0,
+                           let resolved = resolveUserFacingAppName(forPID: pid) {
+                            if resolved.isRegularApp {
+                                return (true, resolved.name)
+                            }
+                            if fallbackAppName == nil {
+                                fallbackAppName = resolved.name
+                            }
+                        }
+                    }
+
+                    return (anyInputRunning, anyInputRunning ? fallbackAppName : nil)
+                }
+            }
+        }
+
+        // macOS 13 fallback: inspect input-capable CoreAudio devices via public HAL properties.
+        var devicesAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var byteSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(sysObj, &devicesAddr, 0, nil, &byteSize) == noErr,
+              byteSize >= UInt32(MemoryLayout<AudioObjectID>.size) else {
+            return (false, nil)
+        }
+
+        let count = Int(byteSize) / MemoryLayout<AudioObjectID>.size
+        var rawIDs = [AudioObjectID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(sysObj, &devicesAddr, 0, nil, &byteSize, &rawIDs) == noErr else {
+            return (false, nil)
+        }
+
+        var anyMicRunning = false
+        var fallbackAppName: String?
+
+        for devID in rawIDs where devID != kAudioObjectUnknown {
+            if devID != defaultInputDeviceID && isAudioDeviceHidden(deviceID: devID) {
+                continue
+            }
+            guard inputChannelCount(deviceID: devID) > 0 else { continue }
+            guard isAudioDeviceCapturingInput(deviceID: devID) else { continue }
+            anyMicRunning = true
+
+            var hogAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyHogMode,
+                mScope: kAudioDevicePropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            if !AudioObjectHasProperty(devID, &hogAddr) {
+                hogAddr.mScope = kAudioObjectPropertyScopeGlobal
+            }
+            if AudioObjectHasProperty(devID, &hogAddr) {
+                var hogPID: pid_t = -1
+                var pidSize = UInt32(MemoryLayout<pid_t>.size)
+                if AudioObjectGetPropertyData(devID, &hogAddr, 0, nil, &pidSize, &hogPID) == noErr,
+                   hogPID > 0,
+                   let resolved = resolveUserFacingAppName(forPID: hogPID) {
+                    if resolved.isRegularApp {
+                        return (true, resolved.name)
+                    }
+                    if fallbackAppName == nil {
+                        fallbackAppName = resolved.name
+                    }
+                }
+            }
+        }
+
+        return (anyMicRunning, anyMicRunning ? fallbackAppName : nil)
+    }
+
+    private static func isAudioDeviceCapturingInput(deviceID: AudioObjectID) -> Bool {
+        var inRunningAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        if AudioObjectHasProperty(deviceID, &inRunningAddr) {
+            var running: UInt32 = 0
+            var size = UInt32(MemoryLayout<UInt32>.size)
+            if AudioObjectGetPropertyData(deviceID, &inRunningAddr, 0, nil, &size, &running) == noErr {
+                return running != 0
+            }
+        }
+
+        // Only fall back to global scope if the device is input-only (no output channels).
+        guard outputChannelCount(deviceID: deviceID) == 0 else {
+            return false
+        }
+        return isDeviceRunningAudio(deviceID: deviceID)
+    }
+
+    private static func inputChannelCount(deviceID: AudioObjectID) -> Int {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreamConfiguration,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(deviceID, &addr) else { return 0 }
+        var byteSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(deviceID, &addr, 0, nil, &byteSize) == noErr,
+              byteSize >= UInt32(MemoryLayout<AudioBufferList>.size) else {
+            return 0
+        }
+
+        let rawPtr = UnsafeMutableRawPointer.allocate(
+            byteCount: Int(byteSize),
+            alignment: MemoryLayout<AudioBufferList>.alignment
+        )
+        defer { rawPtr.deallocate() }
+
+        guard AudioObjectGetPropertyData(deviceID, &addr, 0, nil, &byteSize, rawPtr) == noErr else {
+            return 0
+        }
+        let bufferList = UnsafeMutableAudioBufferListPointer(rawPtr.assumingMemoryBound(to: AudioBufferList.self))
+        return bufferList.reduce(0) { $0 + Int($1.mNumberChannels) }
+    }
+
+    public static func enumerateEjectableExternalVolumes() -> [ExternalDiskVolumeCandidate] {
+        let keys: [URLResourceKey] = [
+            .volumeLocalizedNameKey,
+            .volumeIsRootFileSystemKey,
+            .volumeIsInternalKey,
+            .volumeIsRemovableKey,
+            .volumeIsEjectableKey,
+            .volumeIsLocalKey,
+            .volumeIsBrowsableKey
+        ]
+        guard let mountedURLs = FileManager.default.mountedVolumeURLs(
+            includingResourceValuesForKeys: keys,
+            options: [.skipHiddenVolumes]
+        ) else {
+            return []
+        }
+
+        var candidates: [ExternalDiskVolumeCandidate] = []
+        candidates.reserveCapacity(mountedURLs.count)
+        for url in mountedURLs {
+            guard let values = try? url.resourceValues(forKeys: Set(keys)) else { continue }
+            candidates.append(
+                ExternalDiskVolumeCandidate(
+                    url: url,
+                    localizedName: values.volumeLocalizedName,
+                    isRootFileSystem: values.volumeIsRootFileSystem ?? false,
+                    isInternal: values.volumeIsInternal,
+                    isRemovable: values.volumeIsRemovable ?? false,
+                    isEjectable: values.volumeIsEjectable ?? false,
+                    isLocal: values.volumeIsLocal ?? true,
+                    isBrowsable: values.volumeIsBrowsable ?? true
+                )
+            )
+        }
+
+        return ExternalDiskFilter.eligibleVolumes(from: candidates)
+    }
+
+    /// Empties the Mac's Trash via Finder AppleEvents without blocking on Finder's modal warning dialog
+    /// (after the user has already completed the 3-second second-tap confirm on the companion).
+    public func emptyTrash(
+        language: AppLanguage = .system
+    ) async -> (success: Bool, title: String, detail: String) {
+        let title = L10n.tr("清空废纸篓", "Empty Trash", language: language)
+        let outcome = await Task.detached(priority: .userInitiated) {
+            Self.runEmptyTrashAppleScript()
+        }.value
+
+        schedulePostActionRefresh()
+
+        switch outcome {
+        case .alreadyEmpty:
+            return (
+                true,
+                title,
+                L10n.tr("废纸篓已经是空的", "Trash is already empty", language: language)
+            )
+        case .emptied:
+            return (
+                true,
+                title,
+                L10n.tr("已清空废纸篓", "Emptied Trash", language: language)
+            )
+        case .failed(let message):
+            return (
+                false,
+                title,
+                L10n.tr("无法清空废纸篓：\(message)", "Could not empty Trash: \(message)", language: language)
+            )
+        }
+    }
+
+    private enum EmptyTrashScriptResult: Sendable {
+        case alreadyEmpty
+        case emptied
+        case failed(String)
+    }
+
+    nonisolated private static func runEmptyTrashAppleScript() -> EmptyTrashScriptResult {
+        let source = """
+        with timeout of 20 seconds
+            tell application "Finder"
+                if (count of items of trash) is 0 then
+                    return "ALREADY_EMPTY"
+                end if
+                set prevWarn to warns before emptying of trash
+                set warns before emptying of trash to false
+                try
+                    empty the trash
+                on error errMsg number errNum
+                    try
+                        set warns before emptying of trash to prevWarn
+                    end try
+                    error errMsg number errNum
+                end try
+                set warns before emptying of trash to prevWarn
+                return "EMPTIED"
+            end tell
+        end timeout
+        """
+        var errorDict: NSDictionary?
+        guard let script = NSAppleScript(source: source) else {
+            return .failed("AppleScript initialization failed")
+        }
+        let descriptor = script.executeAndReturnError(&errorDict)
+        if let errorDict {
+            let reason = (errorDict[NSAppleScript.errorMessage] as? String)
+                ?? (errorDict[NSAppleScript.errorBriefMessage] as? String)
+                ?? "Finder AppleEvent error"
+            return .failed(reason)
+        }
+        if descriptor.stringValue == "ALREADY_EMPTY" {
+            return .alreadyEmpty
+        }
+        return .emptied
+    }
+
+    /// Ejects all currently mounted external volumes via `NSWorkspace.unmountAndEjectDevice(at:)`,
+    /// strictly excluding the startup disk (`/`) and fixed internal volumes.
+    public func ejectExternalDisks(
+        language: AppLanguage = .system
+    ) async -> (success: Bool, title: String, detail: String) {
+        let title = L10n.tr("推出外置磁盘", "Eject External Disks", language: language)
+        let eligible = Self.enumerateEjectableExternalVolumes()
+
+        guard !eligible.isEmpty else {
+            applyRefreshedSnapshot()
+            return (
+                true,
+                title,
+                L10n.tr("当前没有可推出的外置磁盘", "No mounted external disks to eject", language: language)
+            )
+        }
+
+        let ejectReport = await Task.detached(priority: .userInitiated) {
+            Self.unmountAndEjectCandidates(eligible)
+        }.value
+
+        applyRefreshedSnapshot()
+        schedulePostActionRefresh()
+
+        if ejectReport.failures.isEmpty {
+            let names = ejectReport.ejectedNames.joined(separator: ", ")
+            return (
+                true,
+                title,
+                L10n.tr("已推出：\(names)", "Ejected: \(names)", language: language)
+            )
+        } else if !ejectReport.ejectedNames.isEmpty {
+            let okNames = ejectReport.ejectedNames.joined(separator: ", ")
+            let errSummary = ejectReport.failures.joined(separator: "; ")
+            return (
+                false,
+                title,
+                L10n.tr(
+                    "已推出 \(okNames)；部分失败：\(errSummary)",
+                    "Ejected \(okNames); failed: \(errSummary)",
+                    language: language
+                )
+            )
+        } else {
+            let errSummary = ejectReport.failures.joined(separator: "; ")
+            return (
+                false,
+                title,
+                L10n.tr("无法推出外置磁盘：\(errSummary)", "Could not eject external disks: \(errSummary)", language: language)
+            )
+        }
+    }
+
+    nonisolated private static func unmountAndEjectCandidates(
+        _ candidates: [ExternalDiskVolumeCandidate]
+    ) -> (ejectedNames: [String], failures: [String]) {
+        var ejected: [String] = []
+        var failures: [String] = []
+
+        for candidate in candidates {
+            // Belt-and-suspenders guard: never touch root or /System even if passed directly.
+            let stdPath = candidate.url.standardizedFileURL.path
+            guard ExternalDiskFilter.isEligibleExternalVolume(candidate),
+                  stdPath != "/",
+                  !stdPath.hasPrefix("/System") else {
+                continue
+            }
+
+            do {
+                try NSWorkspace.shared.unmountAndEjectDevice(at: candidate.url)
+                ejected.append(candidate.localizedName)
+            } catch {
+                failures.append("\(candidate.localizedName) (\(error.localizedDescription))")
+            }
+        }
+
+        return (ejected, failures)
     }
 
     public func syncSoundboardVolume(_ volume: Double) {
@@ -1004,6 +1547,11 @@ public final class MacSystemControlService {
                 AudioObjectPropertyAddress(
                     mSelector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
                     mScope: kAudioDevicePropertyScopeInput,
+                    mElement: kAudioObjectPropertyElementMain
+                ),
+                AudioObjectPropertyAddress(
+                    mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+                    mScope: kAudioObjectPropertyScopeGlobal,
                     mElement: kAudioObjectPropertyElementMain
                 )
             ]

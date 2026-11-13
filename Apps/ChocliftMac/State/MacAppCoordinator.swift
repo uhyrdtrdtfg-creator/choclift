@@ -1431,6 +1431,24 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
 
+        case .emptyMacTrash:
+            Task { @MainActor in
+                let res = await systemControlService.emptyTrash(language: lang)
+                server.broadcastControlStripState(systemControlService.currentState)
+                reply(.controlStripStateUpdated(systemControlService.currentState))
+                recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
+                reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
+            }
+
+        case .ejectExternalDisks:
+            Task { @MainActor in
+                let res = await systemControlService.ejectExternalDisks(language: lang)
+                server.broadcastControlStripState(systemControlService.currentState)
+                reply(.controlStripStateUpdated(systemControlService.currentState))
+                recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
+                reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
+            }
+
         case .sendCompactKey(let key):
             let res = inputService.sendCompactKey(
                 key,
