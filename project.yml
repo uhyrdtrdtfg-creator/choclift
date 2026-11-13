@@ -86,12 +86,15 @@ targets:
         NSBonjourServices:
           - "_choclift._tcp"
         NSAppleEventsUsageDescription: "choclift 使用自动化脚本在点击网页书签时切换到已打开的浏览器标签页。"
+        NSCalendarsUsageDescription: "choclift 以只读方式显示你的下一条日历日程标题与开始时间，不会新建或修改任何日程。"
+        NSCalendarsFullAccessUsageDescription: "choclift 以只读方式显示你的下一条日历日程标题与开始时间，不会新建或修改任何日程。"
         SUPublicEDKey: "sW8VDD67w99pj0oQLD8p5nIWgkEzM2FV/sBbmnu5vxw="
     entitlements:
       path: Apps/ChocliftMac/ChocliftMac.entitlements
       properties:
         com.apple.security.app-sandbox: false
         com.apple.security.automation.apple-events: true
+        com.apple.security.personal-information.calendars: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.choclift.mac

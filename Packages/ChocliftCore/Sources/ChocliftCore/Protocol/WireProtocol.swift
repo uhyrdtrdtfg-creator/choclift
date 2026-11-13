@@ -32,6 +32,27 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case setControlLevel(kind: ControlLevelKind, level: Double)
     case setMicMuted(Bool)
     case requestControlStripState
+    case undoLastWindowMove
+    case requestCompanionDashboard
+    case pasteMacClipboard
+    case captureMainDisplayScreenshot
+    case setTargetDisplay(displayID: UInt32?)
+    case openCalendarApp
+    case triggerSoundboardClip(soundID: UUID)
+    case stopSoundboardPlayback
+    case setSoundboardVolume(level: Double)
+    case setKeepMacAwake(Bool)
+    case setAudioOutputDevice(deviceID: String)
+    case requestFrontmostAppWindows
+    case raiseFrontmostWindow(windowID: String)
+    case sleepMacDisplay
+    case sendCompactKey(CompanionCompactKey)
+    case insertSnippet(text: String, mode: SnippetInsertMode)
+    case setFinderDesktopIconsVisible(Bool)
+    case emptyMacTrash
+    case ejectExternalDisks
+    case lockMacScreen
+    case hideOtherApplications
     case unknownClientMessage
 }
 
@@ -72,6 +93,10 @@ public enum ServerMessage: Codable, Equatable, Sendable {
     case orcaStatusUpdated(OrcaTaskStatusSnapshot)
     case pong(timestamp: TimeInterval)
     case controlStripStateUpdated(ControlStripState)
+    case clipboardPreviewUpdated(ClipboardPreviewSnapshot)
+    case screenshotCaptured(ScreenshotCaptureResult)
+    case calendarStatusUpdated(NextCalendarEventSnapshot)
+    case frontmostWindowsUpdated(FrontmostAppWindowSnapshot)
     case unknownServerMessage
 }
 

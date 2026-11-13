@@ -520,45 +520,191 @@ public struct ChocBarTileCard: View {
     public let item: BarItem?
     public let iconData: Data?
     public let isFrontmostApp: Bool
+    public let isPressed: Bool
+    public let isAwaitingConfirmation: Bool
+    public let lastRunOutcome: TileActionOutcome?
     public let palette: ChocPalette
     public let language: AppLanguage
     public let compact: Bool
+    public let profile: ChocliftWorkspaceProfile?
+    public let slotOrigin: SlotCoordinate?
+    public let lastTriggeredText: String?
+    public let iconLookup: ((String) -> Data?)?
 
     public init(
         item: BarItem?,
         iconData: Data?,
         isFrontmostApp: Bool = false,
+        isPressed: Bool = false,
+        isAwaitingConfirmation: Bool = false,
+        lastRunOutcome: TileActionOutcome? = nil,
         palette: ChocPalette,
         language: AppLanguage = .system,
-        compact: Bool = false
+        compact: Bool = false,
+        profile: ChocliftWorkspaceProfile? = nil,
+        slotOrigin: SlotCoordinate? = nil,
+        lastTriggeredText: String? = nil,
+        iconLookup: ((String) -> Data?)? = nil
     ) {
         self.item = item
         self.iconData = iconData
         self.isFrontmostApp = isFrontmostApp
+        self.isPressed = isPressed
+        self.isAwaitingConfirmation = isAwaitingConfirmation
+        self.lastRunOutcome = lastRunOutcome
         self.palette = palette
         self.language = language
         self.compact = compact
+        self.profile = profile
+        self.slotOrigin = slotOrigin
+        self.lastTriggeredText = lastTriggeredText
+        self.iconLookup = iconLookup
     }
 
     public var body: some View {
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)
             let corner = max(side < 68 ? 13 : 16, side * 0.22)
+            let isMicro = side < 68
 
-            Group {
+            ZStack {
                 if let item {
                     filledTile(for: item, side: side, corner: corner)
                 } else {
                     emptyMoldedSquare(side: side, corner: corner)
                 }
+
+                if isAwaitingConfirmation && item != nil {
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .strokeBorder(palette.statusFailure, lineWidth: 2.0)
+
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 3) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: max(8.5, side * 0.095), weight: .bold))
+                            Text(L10n.tr("再点确认", "Tap Again", language: language))
+                                .font(.system(size: max(9.5, side * 0.105), weight: .bold, design: .rounded))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                        }
+                        .foregroundStyle(palette.emphasisForeground)
+                        .padding(.horizontal, isMicro ? 6 : 8)
+                        .padding(.vertical, isMicro ? 2.5 : 3.5)
+                        .background(palette.statusFailure, in: Capsule())
+                        .padding(.bottom, isMicro ? 4 : 6)
+                    }
+                } else if let lastRunOutcome, item != nil {
+                    let outcomeTint = (lastRunOutcome == .success) ? palette.statusConnected : palette.statusFailure
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .fill(outcomeTint.opacity(0.11))
+                        .allowsHitTesting(false)
+
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .strokeBorder(outcomeTint, lineWidth: 2.0)
+                        .allowsHitTesting(false)
+
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 3) {
+                            Image(systemName: lastRunOutcome == .success ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                                .font(.system(size: max(8.5, side * 0.095), weight: .bold))
+                            Text(
+                                lastRunOutcome == .success
+                                    ? L10n.tr("已执行", "Done", language: language)
+                                    : L10n.tr("失败", "Failed", language: language)
+                            )
+                            .font(.system(size: max(9.5, side * 0.105), weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                        }
+                        .foregroundStyle(palette.emphasisForeground)
+                        .padding(.horizontal, isMicro ? 6 : 8)
+                        .padding(.vertical, isMicro ? 2.5 : 3.5)
+                        .background(outcomeTint, in: Capsule())
+                        .padding(.bottom, isMicro ? 4 : 6)
+                    }
+                    .allowsHitTesting(false)
+                } else if let lastTriggeredText, !lastTriggeredText.isEmpty, let item {
+                    VStack {
+                        if item.isSlotReference {
+                            Spacer()
+                            HStack {
+                                Spacer()
+                                lastTriggeredPill(lastTriggeredText, side: side, isMicro: isMicro)
+                                    .padding(isMicro ? 4 : 6)
+                            }
+                        } else {
+                            HStack {
+                                lastTriggeredPill(lastTriggeredText, side: side, isMicro: isMicro)
+                                    .padding(isMicro ? 4 : 6)
+                                Spacer()
+                            }
+                            Spacer()
+                        }
+                    }
+                    .allowsHitTesting(false)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            .animation(.easeInOut(duration: 0.18), value: lastRunOutcome)
         }
+    }
+
+    private func resolvedIconData(for targetItem: BarItem) -> Data? {
+        if let iconData {
+            return iconData
+        }
+        if let bid = targetItem.bundleIdentifier {
+            if let lookedUp = iconLookup?(bid) {
+                return lookedUp
+            }
+            return BundledAppIcons.pngData(for: bid)
+        }
+        return nil
     }
 
     @ViewBuilder
     private func filledTile(for item: BarItem, side: CGFloat, corner: CGFloat) -> some View {
+        let isMicro = side < 68
+
+        switch item.kind {
+        case .slotReference:
+            if let profile,
+               case .resolved(_, _, _, _, _, let targetItem) = profile.resolveBarItem(item, from: slotOrigin) {
+                ZStack {
+                    concreteTile(for: targetItem, side: side, corner: corner)
+
+                    VStack {
+                        HStack {
+                            HStack(spacing: 2) {
+                                Image(systemName: "arrow.turn.up.right")
+                                    .font(.system(size: max(7.5, side * 0.082), weight: .bold))
+                            }
+                            .foregroundStyle(palette.secondaryText)
+                            .padding(.horizontal, isMicro ? 4 : 5)
+                            .padding(.vertical, 2.5)
+                            .background(palette.barSurface.opacity(0.92), in: Capsule())
+                            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
+                            .padding(isMicro ? 4 : 6)
+
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                }
+            } else {
+                quietMissingReferenceTile(side: side, corner: corner)
+            }
+
+        default:
+            concreteTile(for: item, side: side, corner: corner)
+        }
+    }
+
+    @ViewBuilder
+    private func concreteTile(for item: BarItem, side: CGFloat, corner: CGFloat) -> some View {
         let isMicro = side < 68
 
         switch item.kind {
@@ -575,7 +721,7 @@ public struct ChocBarTileCard: View {
 
                 VStack(spacing: isMicro ? 3 : (compact ? 4 : 6)) {
                     DataImageView(
-                        pngData: iconData ?? BundledAppIcons.pngData(for: item.bundleIdentifier ?? ""),
+                        pngData: resolvedIconData(for: item),
                         fallbackSymbol: fallbackSymbol,
                         tint: palette.secondaryText
                     )
@@ -679,6 +825,7 @@ public struct ChocBarTileCard: View {
 
         case .systemAction(let action, let customTitle, let customHex):
             let base = ChocSwatch.resolvedTileColor(hex: customHex ?? action.accentHex, fallbackHex: "#EDF6FF")
+            let shortcutText = action.sentKeyboardShortcut
             ZStack {
                 moldedBaseShape(
                     corner: corner,
@@ -689,12 +836,36 @@ public struct ChocBarTileCard: View {
                     shadowColor: palette.primaryText.opacity(0.06)
                 )
 
+                if let shortcutText {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Text(shortcutText)
+                                .font(.system(size: max(7.5, side * 0.085), weight: .bold, design: .monospaced))
+                                .foregroundStyle(palette.primaryText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                                .padding(.horizontal, isMicro ? 4 : 5.5)
+                                .padding(.vertical, 2)
+                                .background(palette.barSurface.opacity(0.92), in: Capsule())
+                                .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
+                                .padding(isMicro ? 4 : 6)
+                        }
+                        Spacer()
+                    }
+                }
+
                 VStack(spacing: isMicro ? 3 : (compact ? 4 : 6)) {
                     Image(systemName: action.sfSymbol)
-                        .font(.system(size: side * (isMicro ? 0.25 : 0.27), weight: .semibold))
+                        .font(.system(size: side * (isMicro ? 0.24 : 0.26), weight: .semibold))
                         .foregroundStyle(palette.accent)
 
-                    let defaultActionLabel = isMicro ? action.compactTitle(in: language) : action.title(in: language)
+                    let defaultActionLabel: String = {
+                        if shortcutText != nil || isMicro {
+                            return action.compactTitle(in: language)
+                        }
+                        return action.title(in: language)
+                    }()
                     Text((customTitle?.isEmpty == false ? customTitle! : defaultActionLabel))
                         .font(.system(size: max(10.5, side * 0.11), weight: .semibold, design: .rounded))
                         .foregroundStyle(palette.primaryText)
@@ -705,8 +876,13 @@ public struct ChocBarTileCard: View {
                 }
             }
 
-        case .flow(_, _, let emoji, let backgroundHex, let stepCountSnapshot):
-            let base = ChocSwatch.resolvedTileColor(hex: backgroundHex, fallbackHex: "#ECFAFE")
+        case .flow(let flowID, _, let emoji, let backgroundHex, let stepCountSnapshot):
+            let liveFlow = profile?.flow(withID: flowID)
+            let resolvedEmoji = liveFlow?.emoji ?? emoji
+            let resolvedHex = liveFlow?.backgroundHex ?? backgroundHex
+            let resolvedStepCount = liveFlow?.enabledStepCount ?? stepCountSnapshot
+            let resolvedTitle = liveFlow?.name ?? item.displayTitle(in: language)
+            let base = ChocSwatch.resolvedTileColor(hex: resolvedHex, fallbackHex: "#ECFAFE")
             ZStack {
                 moldedBaseShape(
                     corner: corner,
@@ -723,8 +899,8 @@ public struct ChocBarTileCard: View {
                         HStack(spacing: 2) {
                             Image(systemName: "arrow.triangle.branch")
                                 .font(.system(size: max(8, side * 0.085), weight: .bold))
-                            if stepCountSnapshot > 0 && side >= 54 {
-                                Text("\(stepCountSnapshot)")
+                            if resolvedStepCount > 0 && side >= 54 {
+                                Text("\(resolvedStepCount)")
                                     .font(.system(size: max(8, side * 0.085), weight: .heavy, design: .rounded))
                             }
                         }
@@ -738,10 +914,10 @@ public struct ChocBarTileCard: View {
                 }
 
                 VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
-                    Text(emoji.isEmpty ? "⚡️" : emoji)
+                    Text(resolvedEmoji.isEmpty ? "⚡️" : resolvedEmoji)
                         .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
 
-                    Text(item.displayTitle(in: language))
+                    Text(resolvedTitle)
                         .font(.system(size: max(10.5, side * 0.112), weight: .bold, design: .rounded))
                         .foregroundStyle(palette.primaryText)
                         .multilineTextAlignment(.center)
@@ -749,6 +925,140 @@ public struct ChocBarTileCard: View {
                         .minimumScaleFactor(0.8)
                         .padding(.horizontal, isMicro ? 5 : 7)
                 }
+            }
+
+        case .soundboard(let soundID, _, let emoji, let backgroundHex):
+            let liveClip = profile?.soundboardClip(withID: soundID)
+            let resolvedEmoji = liveClip?.emoji ?? emoji
+            let resolvedHex = liveClip?.backgroundHex ?? backgroundHex
+            let resolvedTitle = liveClip?.name ?? item.displayTitle(in: language)
+            let base = ChocSwatch.resolvedTileColor(hex: resolvedHex, fallbackHex: "#ECFAEE")
+            ZStack {
+                moldedBaseShape(
+                    corner: corner,
+                    top: palette.tileFillTop,
+                    bottom: base,
+                    borderColor: palette.tileBorderHighlight,
+                    borderWidth: 1.15,
+                    shadowColor: palette.primaryText.opacity(0.06)
+                )
+
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: max(8, side * 0.088), weight: .bold))
+                            .foregroundStyle(palette.accent)
+                            .padding(.horizontal, isMicro ? 4 : 5)
+                            .padding(.vertical, 2)
+                            .background(palette.accent.opacity(0.12), in: Capsule())
+                            .padding(isMicro ? 4 : 6)
+                    }
+                    Spacer()
+                }
+
+                VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
+                    Text(resolvedEmoji.isEmpty ? "🔊" : resolvedEmoji)
+                        .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
+
+                    Text(resolvedTitle)
+                        .font(.system(size: max(10.5, side * 0.112), weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(isMicro ? 1 : 2)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, isMicro ? 5 : 7)
+                }
+            }
+
+        case .folder(let folder):
+            let base = ChocSwatch.resolvedTileColor(hex: folder.backgroundHex, fallbackHex: "#FFF6E3")
+            ZStack {
+                moldedBaseShape(
+                    corner: corner,
+                    top: palette.tileFillTop,
+                    bottom: base,
+                    borderColor: palette.tileBorderHighlight,
+                    borderWidth: 1.15,
+                    shadowColor: palette.primaryText.opacity(0.06)
+                )
+
+                VStack {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 2.5) {
+                            Image(systemName: "square.grid.2x2.fill")
+                                .font(.system(size: max(7.5, side * 0.082), weight: .bold))
+                            Text("\(folder.children.count)")
+                                .font(.system(size: max(8, side * 0.085), weight: .heavy, design: .rounded))
+                                .monospacedDigit()
+                        }
+                        .foregroundStyle(palette.accent)
+                        .padding(.horizontal, isMicro ? 4 : 5.5)
+                        .padding(.vertical, 2)
+                        .background(palette.accent.opacity(0.12), in: Capsule())
+                        .padding(isMicro ? 4 : 6)
+                    }
+                    Spacer()
+                }
+
+                VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
+                    Text(folder.emoji.isEmpty ? TileFolder.defaultEmoji : folder.emoji)
+                        .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
+
+                    Text(folder.displayTitle(in: language))
+                        .font(.system(size: max(10.5, side * 0.112), weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(isMicro ? 1 : 2)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, isMicro ? 5 : 7)
+                }
+            }
+
+        case .slotReference:
+            quietMissingReferenceTile(side: side, corner: corner)
+        }
+    }
+
+    private func lastTriggeredPill(_ text: String, side: CGFloat, isMicro: Bool) -> some View {
+        Text(text)
+            .font(.system(size: max(7.5, side * 0.082), weight: .semibold, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(palette.secondaryText)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .padding(.horizontal, isMicro ? 4 : 5)
+            .padding(.vertical, 1.8)
+            .background(palette.barSurface.opacity(0.92), in: Capsule())
+            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.75))
+    }
+
+    private func quietMissingReferenceTile(side: CGFloat, corner: CGFloat) -> some View {
+        let isMicro = side < 68
+        return ZStack {
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .fill(palette.barSurface.opacity(0.84))
+                .overlay(
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .strokeBorder(
+                            palette.subtleCardStroke,
+                            style: StrokeStyle(lineWidth: 1.2, dash: [4, 3])
+                        )
+                )
+
+            VStack(spacing: isMicro ? 3 : 5) {
+                Image(systemName: "link")
+                    .font(.system(size: side * (isMicro ? 0.22 : 0.24), weight: .semibold))
+                    .foregroundStyle(palette.secondaryText.opacity(0.72))
+
+                Text(L10n.tr("原槽位已空", "Target Missing", language: language))
+                    .font(.system(size: max(9.5, side * 0.105), weight: .medium, design: .rounded))
+                    .foregroundStyle(palette.secondaryText.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(isMicro ? 1 : 2)
+                    .minimumScaleFactor(0.75)
+                    .padding(.horizontal, isMicro ? 4 : 6)
             }
         }
     }
@@ -761,28 +1071,39 @@ public struct ChocBarTileCard: View {
         borderWidth: CGFloat,
         shadowColor: Color
     ) -> some View {
-        RoundedRectangle(cornerRadius: corner, style: .continuous)
+        let resolvedTop = isPressed ? palette.tileFillBottom : top
+        let resolvedBorderColor = isPressed ? palette.accent : borderColor
+        let resolvedBorderWidth = isPressed ? 2.0 : borderWidth
+
+        return RoundedRectangle(cornerRadius: corner, style: .continuous)
             .fill(
                 LinearGradient(
-                    colors: [top, bottom],
+                    colors: [resolvedTop, bottom],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
             )
             .overlay(
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .strokeBorder(borderColor, lineWidth: borderWidth)
+                    .strokeBorder(resolvedBorderColor, lineWidth: resolvedBorderWidth)
             )
             .shadow(color: shadowColor, radius: 6, x: 0, y: 2)
     }
 
     private func emptyMoldedSquare(side: CGFloat, corner: CGFloat) -> some View {
         let isMicro = side < 68
+        let fillColors = isPressed
+            ? [palette.tileFillBottom, palette.tileFillBottom]
+            : [palette.barSurface.opacity(0.76), palette.tileFillBottom.opacity(0.68)]
+        let strokeColor = isPressed ? palette.accent : palette.subtleCardStroke
+        let strokeWidth: CGFloat = isPressed ? 1.8 : 1.1
+        let addLabel = EmptySlotHintPolicy.hintLabel(for: nil, language: language)
+
         return ZStack {
             RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .fill(
                     LinearGradient(
-                        colors: [palette.barSurface.opacity(0.82), palette.tileFillBottom.opacity(0.75)],
+                        colors: fillColors,
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -790,22 +1111,31 @@ public struct ChocBarTileCard: View {
                 .overlay(
                     RoundedRectangle(cornerRadius: corner, style: .continuous)
                         .strokeBorder(
-                            palette.tileBorderHighlight,
-                            style: StrokeStyle(lineWidth: 1.25, dash: [5, 4])
+                            strokeColor,
+                            style: StrokeStyle(lineWidth: strokeWidth, dash: [5, 4])
                         )
                 )
 
-            VStack(spacing: 4) {
-                Image(systemName: "plus")
-                    .font(.system(size: isMicro ? 15 : 17, weight: .bold, design: .rounded))
-                    .foregroundStyle(palette.accent)
-                    .frame(width: isMicro ? 26 : 32, height: isMicro ? 26 : 32)
-                    .background(palette.accent.opacity(0.11), in: Circle())
+            VStack(spacing: isMicro ? 2.5 : 4) {
+                if let plusSymbol = EmptySlotHintPolicy.plusSymbolName(for: nil) {
+                    Image(systemName: plusSymbol)
+                        .font(.system(size: isMicro ? 12.5 : 14.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(isPressed ? palette.primaryText : palette.secondaryText.opacity(0.78))
+                        .frame(width: isMicro ? 22 : 26, height: isMicro ? 22 : 26)
+                        .background(
+                            palette.tileFillBottom.opacity(isPressed ? 0.95 : 0.72),
+                            in: Circle()
+                        )
+                        .overlay(
+                            Circle()
+                                .strokeBorder(palette.subtleCardStroke.opacity(0.85), lineWidth: 0.8)
+                        )
+                }
 
-                if side >= 78 {
-                    Text(L10n.tr("添加动作", "Assign", language: language))
-                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                        .foregroundStyle(palette.secondaryText)
+                if let addLabel, side >= 38 {
+                    Text(addLabel)
+                        .font(.system(size: isMicro ? 9.5 : 10.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(isPressed ? palette.primaryText : palette.secondaryText.opacity(0.82))
                         .lineLimit(1)
                 }
             }
@@ -817,5 +1147,201 @@ public struct ChocBarTileCard: View {
             return host.replacingOccurrences(of: "www.", with: "")
         }
         return rawURL
+    }
+}
+
+// MARK: - Touch-Down & Cancel-Safe Pressed Key Feedback
+
+@MainActor
+public enum ChocPressFeedback {
+    private static var touchDownTimes: [AnyHashable: TimeInterval] = [:]
+    private static var activeHoldTokens: [AnyHashable: UInt64] = [:]
+    private static var nextToken: UInt64 = 0
+
+    public static func beginPress<Key: Hashable>(
+        key: Key,
+        pressedKey: Binding<Key?>
+    ) {
+        let erased = AnyHashable(key)
+        activeHoldTokens.removeValue(forKey: erased)
+        touchDownTimes[erased] = ProcessInfo.processInfo.systemUptime
+        if pressedKey.wrappedValue != key {
+            withAnimation(.spring(response: 0.14, dampingFraction: 0.72)) {
+                pressedKey.wrappedValue = key
+            }
+        }
+    }
+
+    public static func completeTap<Key: Hashable>(
+        key: Key,
+        pressedKey: Binding<Key?>,
+        minimumVisibleDuration: TimeInterval = 0.11
+    ) {
+        let erased = AnyHashable(key)
+        let now = ProcessInfo.processInfo.systemUptime
+        let startedAt = touchDownTimes.removeValue(forKey: erased) ?? now
+        let elapsed = max(0, now - startedAt)
+
+        if pressedKey.wrappedValue != key {
+            withAnimation(.spring(response: 0.14, dampingFraction: 0.72)) {
+                pressedKey.wrappedValue = key
+            }
+        }
+
+        let remaining = minimumVisibleDuration - elapsed
+        guard remaining > 0.015 else {
+            activeHoldTokens.removeValue(forKey: erased)
+            withAnimation(.spring(response: 0.18, dampingFraction: 0.78)) {
+                if pressedKey.wrappedValue == key {
+                    pressedKey.wrappedValue = nil
+                }
+            }
+            return
+        }
+
+        nextToken &+= 1
+        let token = nextToken
+        activeHoldTokens[erased] = token
+        let nanoseconds = UInt64(remaining * 1_000_000_000)
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard activeHoldTokens[erased] == token else { return }
+            activeHoldTokens.removeValue(forKey: erased)
+            if pressedKey.wrappedValue == key {
+                withAnimation(.spring(response: 0.18, dampingFraction: 0.78)) {
+                    pressedKey.wrappedValue = nil
+                }
+            }
+        }
+    }
+
+    public static func hasActiveHold<Key: Hashable>(for key: Key) -> Bool {
+        activeHoldTokens[AnyHashable(key)] != nil
+    }
+
+    public static func cancelPressImmediately<Key: Hashable>(
+        key: Key,
+        pressedKey: Binding<Key?>
+    ) {
+        let erased = AnyHashable(key)
+        touchDownTimes.removeValue(forKey: erased)
+        activeHoldTokens.removeValue(forKey: erased)
+        if pressedKey.wrappedValue == key {
+            withAnimation(.spring(response: 0.16, dampingFraction: 0.82)) {
+                pressedKey.wrappedValue = nil
+            }
+        }
+    }
+}
+
+/// Shared `ButtonStyle` that drives `pressedKey` immediately on touch-down and clears it
+/// immediately if the touch is cancelled (e.g., scroll, page swipe, or drag outside).
+public struct ChocPressedKeyButtonStyle<Key: Hashable>: ButtonStyle {
+    @Binding public var pressedKey: Key?
+    public let key: Key
+    public var isSuppressed: Bool
+    public var onTouchDown: (() -> Void)?
+
+    public init(
+        pressedKey: Binding<Key?>,
+        key: Key,
+        isSuppressed: Bool = false,
+        onTouchDown: (() -> Void)? = nil
+    ) {
+        self._pressedKey = pressedKey
+        self.key = key
+        self.isSuppressed = isSuppressed
+        self.onTouchDown = onTouchDown
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        PressedKeyObserverView(
+            configuration: configuration,
+            pressedKey: $pressedKey,
+            key: key,
+            isSuppressed: isSuppressed,
+            onTouchDown: onTouchDown
+        )
+    }
+
+    private struct PressedKeyObserverView: View {
+        let configuration: Configuration
+        @Binding var pressedKey: Key?
+        let key: Key
+        let isSuppressed: Bool
+        let onTouchDown: (() -> Void)?
+
+        var body: some View {
+            #if os(macOS)
+            configuration.label
+                .onChange(of: configuration.isPressed) { isPressed in
+                    handlePressChange(isPressed)
+                }
+                .onChange(of: isSuppressed) { suppressed in
+                    if suppressed {
+                        ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
+                    }
+                }
+                .onDisappear {
+                    ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
+                }
+            #else
+            configuration.label
+                .onChange(of: configuration.isPressed) { _, isPressed in
+                    handlePressChange(isPressed)
+                }
+                .onChange(of: isSuppressed) { _, suppressed in
+                    if suppressed {
+                        ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
+                    }
+                }
+                .onDisappear {
+                    ChocPressFeedback.cancelPressImmediately(key: key, pressedKey: $pressedKey)
+                }
+            #endif
+        }
+
+        private func handlePressChange(_ isPressed: Bool) {
+            if isPressed {
+                guard !isSuppressed else { return }
+                onTouchDown?()
+                ChocPressFeedback.beginPress(key: key, pressedKey: $pressedKey)
+            } else {
+                let keySnapshot = key
+                let binding = $pressedKey
+                DispatchQueue.main.async {
+                    if !ChocPressFeedback.hasActiveHold(for: keySnapshot) {
+                        ChocPressFeedback.cancelPressImmediately(key: keySnapshot, pressedKey: binding)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Bounds a single-line pill label's width inside horizontal `ScrollView`s so short page names size snugly
+/// while long page names truncate cleanly with an ellipsis (`…`).
+public struct MaxWidthPillTitleLayout: Layout {
+    public var maxWidth: CGFloat
+
+    public init(maxWidth: CGFloat) {
+        self.maxWidth = max(24, maxWidth)
+    }
+
+    public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let first = subviews.first else { return .zero }
+        let cappedWidth = min(proposal.width ?? maxWidth, maxWidth)
+        let measured = first.sizeThatFits(ProposedViewSize(width: cappedWidth, height: proposal.height))
+        return CGSize(width: min(measured.width, cappedWidth), height: measured.height)
+    }
+
+    public func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let first = subviews.first else { return }
+        first.place(
+            at: CGPoint(x: bounds.minX, y: bounds.midY),
+            anchor: .leading,
+            proposal: ProposedViewSize(width: bounds.width, height: bounds.height)
+        )
     }
 }

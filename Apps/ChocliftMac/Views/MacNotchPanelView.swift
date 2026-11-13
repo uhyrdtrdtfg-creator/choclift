@@ -6,6 +6,8 @@ import SwiftUI
 public final class NotchPanelPresentationState: ObservableObject {
     @Published public var anchor: NotchPanelAnchor = .topNotch
     @Published public var hoveredSlotIndex: Int?
+    @Published public var pressedSlotIndex: Int?
+    @Published public var openFolderSlotIndex: Int?
     @Published public var inlineFeedback: String?
 
     private var feedbackTask: Task<Void, Never>?
@@ -43,7 +45,8 @@ public struct MacNotchPanelView: View {
 
     @ObservedObject var coordinator: MacAppCoordinator
     @ObservedObject var presentation: NotchPanelPresentationState
-    let onTriggerItem: (BarItem) -> Void
+    let onTriggerSlot: (Int, BarItem?) -> Void
+    let onSlotPressChanged: (Int, Bool) -> Void
     let onOpenStudio: () -> Void
     let onDismiss: () -> Void
 
@@ -65,16 +68,27 @@ public struct MacNotchPanelView: View {
         return coordinator.profile.pages[safePageIndex]
     }
 
+    private var activeFolder: TileFolder? {
+        guard let idx = presentation.openFolderSlotIndex,
+              currentPage.slots.indices.contains(idx),
+              case .folder(let folder) = currentPage.slots[idx]?.kind else {
+            return nil
+        }
+        return folder
+    }
+
     public init(
         coordinator: MacAppCoordinator,
         presentation: NotchPanelPresentationState,
-        onTriggerItem: @escaping (BarItem) -> Void,
+        onTriggerSlot: @escaping (Int, BarItem?) -> Void,
+        onSlotPressChanged: @escaping (Int, Bool) -> Void = { _, _ in },
         onOpenStudio: @escaping () -> Void,
         onDismiss: @escaping () -> Void
     ) {
         self.coordinator = coordinator
         self.presentation = presentation
-        self.onTriggerItem = onTriggerItem
+        self.onTriggerSlot = onTriggerSlot
+        self.onSlotPressChanged = onSlotPressChanged
         self.onOpenStudio = onOpenStudio
         self.onDismiss = onDismiss
     }
@@ -113,16 +127,38 @@ public struct MacNotchPanelView: View {
 
     private var headerBar: some View {
         HStack(spacing: 7) {
-            HStack(spacing: 5) {
-                Text(currentPage.iconEmoji)
-                    .font(.system(size: 13.5))
-                Text(currentPage.title)
-                    .font(.system(size: 12.5, weight: .bold, design: .rounded))
+            if let activeFolder {
+                Button {
+                    presentation.openFolderSlotIndex = nil
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(activeFolder.emoji)
+                            .font(.system(size: 13))
+                        Text(activeFolder.displayTitle(in: lang))
+                            .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                            .lineLimit(1)
+                    }
                     .foregroundStyle(palette.primaryText)
-                    .lineLimit(1)
-                Text("\(safePageIndex + 1)/\(safePageCount)")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(palette.secondaryText)
+                    .padding(.horizontal, 8)
+                    .frame(height: 22)
+                    .background(palette.barSurface.opacity(0.92), in: Capsule())
+                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+            } else {
+                HStack(spacing: 5) {
+                    Text(currentPage.iconEmoji)
+                        .font(.system(size: 13.5))
+                    Text(currentPage.title)
+                        .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(1)
+                    Text("\(safePageIndex + 1)/\(safePageCount)")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(palette.secondaryText)
+                }
             }
 
             if let feedback = presentation.inlineFeedback {
@@ -139,6 +175,12 @@ public struct MacNotchPanelView: View {
             Spacer(minLength: 4)
 
             pageSwitcherControl
+
+            if DisplaySnapTargetResolver.shouldShowPicker(for: coordinator.connectedDisplays) {
+                displayPickerControl
+            }
+
+            undoWindowMoveControl
 
             Button {
                 onOpenStudio()
@@ -221,23 +263,120 @@ public struct MacNotchPanelView: View {
         .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
     }
 
+    private var undoWindowMoveControl: some View {
+        let canUndo = coordinator.canUndoWindowMove
+
+        return Button {
+            guard coordinator.canUndoWindowMove else { return }
+            let sourceName = L10n.tr("Mac 悬浮栏", "Mac Notch Bar", language: lang)
+            if case .restored = coordinator.undoLastWindowMove(triggeredBy: sourceName) {
+                presentation.flashFeedback("✓ \(L10n.tr("已撤销窗口移动", "Undid Window Move", language: lang))")
+            }
+        } label: {
+            Image(systemName: "arrow.uturn.backward")
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundStyle(canUndo ? palette.accent : palette.secondaryText.opacity(0.42))
+                .frame(width: 24, height: 22)
+                .background(
+                    (canUndo ? palette.accent.opacity(0.14) : palette.barSurface.opacity(0.68)),
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(
+                            canUndo ? palette.accent.opacity(0.55) : palette.subtleCardStroke,
+                            lineWidth: 0.8
+                        )
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("mac-notch-undo-window-move")
+        .help(L10n.tr("撤销上次窗口移动", "Undo Last Window Move", language: lang))
+    }
+
+    private var displayPickerControl: some View {
+        let selectedID = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: coordinator.selectedTargetDisplayID,
+            connectedDisplays: coordinator.connectedDisplays
+        )
+        let isCustomDisplay = (selectedID != nil)
+
+        return Menu {
+            Button {
+                coordinator.setTargetDisplay(displayID: nil)
+            } label: {
+                HStack {
+                    Text(L10n.tr("当前窗口所在屏幕（默认）", "Frontmost Window Display (Default)", language: lang))
+                    if selectedID == nil {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+
+            Divider()
+
+            ForEach(coordinator.connectedDisplays) { display in
+                Button {
+                    coordinator.setTargetDisplay(displayID: display.displayID)
+                } label: {
+                    HStack {
+                        Text(display.name)
+                        if selectedID == display.displayID {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "display.2")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(isCustomDisplay ? palette.accent : palette.secondaryText)
+                .frame(width: 24, height: 22)
+                .background(
+                    (isCustomDisplay ? palette.accent.opacity(0.14) : palette.barSurface.opacity(0.88)),
+                    in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(
+                            isCustomDisplay ? palette.accent.opacity(0.55) : palette.subtleCardStroke,
+                            lineWidth: 0.8
+                        )
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityIdentifier("mac-notch-display-picker")
+        .help(L10n.tr("选择窗口贴靠目标显示器", "Choose target display for window snap", language: lang))
+    }
+
     private var tileGrid: some View {
         let columns = Array(repeating: GridItem(.fixed(Self.tileSide), spacing: Self.gridSpacing), count: 4)
         let frontmostBundleID = coordinator.timeTravel.frontmostBundleID
 
         return LazyVGrid(columns: columns, spacing: Self.gridSpacing) {
             ForEach(0..<BarPage.slotsPerPage, id: \.self) { slotIdx in
-                let slotItem = currentPage.slots.indices.contains(slotIdx) ? currentPage.slots[slotIdx] : nil
+                let slotItem: BarItem? = {
+                    if let activeFolder {
+                        return activeFolder.children.indices.contains(slotIdx) ? activeFolder.children[slotIdx] : nil
+                    }
+                    return currentPage.slots.indices.contains(slotIdx) ? currentPage.slots[slotIdx] : nil
+                }()
                 let iconData = slotItem?.bundleIdentifier.flatMap { coordinator.catalogService.iconData(forBundleID: $0) }
                 let isFrontmost = (slotItem?.bundleIdentifier != nil && slotItem?.bundleIdentifier == frontmostBundleID)
                 let isHovered = (presentation.hoveredSlotIndex == slotIdx)
+                let isPressed = (presentation.pressedSlotIndex == slotIdx)
 
                 tileCell(
                     slotIndex: slotIdx,
                     item: slotItem,
                     iconData: iconData,
                     isFrontmost: isFrontmost,
-                    isHovered: isHovered
+                    isHovered: isHovered,
+                    isPressed: isPressed
                 )
                 .frame(width: Self.tileSide, height: Self.tileSide)
             }
@@ -250,38 +389,74 @@ public struct MacNotchPanelView: View {
         item: BarItem?,
         iconData: Data?,
         isFrontmost: Bool,
-        isHovered: Bool
+        isHovered: Bool,
+        isPressed: Bool
     ) -> some View {
         if let item {
+            let origin = SlotCoordinate(pageID: currentPage.id, slotIndex: slotIndex)
+            let isBrokenRef = item.isSlotReference && coordinator.profile.resolveBarItem(item, from: origin).isMissing
+
             Button {
-                onTriggerItem(item)
+                guard !isBrokenRef else { return }
+                if activeFolder == nil, item.isFolder {
+                    presentation.openFolderSlotIndex = slotIndex
+                } else {
+                    onTriggerSlot(slotIndex, item)
+                }
             } label: {
                 ChocBarTileCard(
                     item: item,
                     iconData: iconData,
                     isFrontmostApp: isFrontmost,
+                    isPressed: isPressed && !isBrokenRef,
+                    isAwaitingConfirmation: false,
                     palette: palette,
                     language: lang,
-                    compact: true
+                    compact: true,
+                    profile: coordinator.profile,
+                    slotOrigin: origin,
+                    iconLookup: { coordinator.catalogService.iconData(forBundleID: $0) }
                 )
             }
-            .buttonStyle(NotchTileButtonStyle(isHovered: isHovered, accent: palette.accent))
-            .accessibilityLabel(item.displayTitle(in: lang))
+            .buttonStyle(
+                NotchTileButtonStyle(
+                    slotIndex: slotIndex,
+                    isHovered: isHovered,
+                    isExternallyPressed: isPressed && !isBrokenRef,
+                    accent: palette.accent,
+                    onPressChanged: onSlotPressChanged
+                )
+            )
+            .accessibilityLabel(coordinator.profile.displayTitle(for: item, from: origin, in: lang))
         } else {
             Button {
-                onOpenStudio()
+                if let folderSlotIdx = presentation.openFolderSlotIndex {
+                    onTriggerSlot(folderSlotIdx, nil)
+                } else {
+                    onTriggerSlot(slotIndex, nil)
+                }
             } label: {
                 ChocBarTileCard(
                     item: nil,
                     iconData: nil,
                     isFrontmostApp: false,
+                    isPressed: isPressed,
+                    isAwaitingConfirmation: false,
                     palette: palette,
                     language: lang,
                     compact: true
                 )
-                .opacity(isHovered ? 0.92 : 0.68)
+                .opacity(isPressed ? 1.0 : (isHovered ? 0.92 : 0.68))
             }
-            .buttonStyle(NotchTileButtonStyle(isHovered: isHovered, accent: palette.accent))
+            .buttonStyle(
+                NotchTileButtonStyle(
+                    slotIndex: slotIndex,
+                    isHovered: isHovered,
+                    isExternallyPressed: isPressed,
+                    accent: palette.accent,
+                    onPressChanged: onSlotPressChanged
+                )
+            )
             .help(L10n.tr("点击在工作台中分配此槽位", "Assign this slot in Choclift Studio", language: lang))
         }
     }
@@ -289,15 +464,18 @@ public struct MacNotchPanelView: View {
     private func stepPage(by delta: Int) {
         let count = safePageCount
         guard count > 0 else { return }
+        presentation.openFolderSlotIndex = nil
         coordinator.selectedPageIndex = (safePageIndex + delta + count) % count
     }
 
     /// Computes which of the 8 tile slots (if any) contains `pointInWindow` (AppKit bottom-left view coordinates).
     public static func hitTestSlotIndex(at pointInWindow: CGPoint) -> Int? {
         let gridOriginX = shadowHorizontalPadding + 14
-        let gridBottomY = shadowBottomPadding + 13
         let gridWidth = (tileSide * 4) + (gridSpacing * 3)
         let gridHeight = (tileSide * 2) + gridSpacing
+        let contentVStackHeight: CGFloat = 11 + 24 + 10 + gridHeight + 13
+        let verticalSlack = max(0, (cardHeight - contentVStackHeight) / 2)
+        let gridBottomY = shadowBottomPadding + 13 + verticalSlack
 
         let relX = pointInWindow.x - gridOriginX
         let relYFromBottom = pointInWindow.y - gridBottomY
@@ -321,17 +499,27 @@ public struct MacNotchPanelView: View {
 }
 
 private struct NotchTileButtonStyle: ButtonStyle {
+    let slotIndex: Int
     let isHovered: Bool
+    let isExternallyPressed: Bool
     let accent: Color
+    let onPressChanged: (Int, Bool) -> Void
 
     func makeBody(configuration: Configuration) -> some View {
+        let activePressed = configuration.isPressed || isExternallyPressed
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.95 : (isHovered ? 1.028 : 1.0))
+            .scaleEffect(activePressed ? 0.94 : (isHovered ? 1.028 : 1.0))
             .overlay(
                 RoundedRectangle(cornerRadius: 17, style: .continuous)
-                    .strokeBorder(isHovered ? accent.opacity(0.55) : Color.clear, lineWidth: 1.5)
+                    .strokeBorder(
+                        activePressed ? accent : (isHovered ? accent.opacity(0.55) : Color.clear),
+                        lineWidth: activePressed ? 2.0 : 1.5
+                    )
             )
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: 0.09), value: activePressed)
             .animation(.easeOut(duration: 0.14), value: isHovered)
+            .onChange(of: configuration.isPressed) { pressing in
+                onPressChanged(slotIndex, pressing)
+            }
     }
 }

@@ -14,6 +14,10 @@ public final class MacInputAndMediaService {
         self.windowService = windowService
     }
 
+    public var isStagingTransientPasteboard: Bool {
+        pendingClipboardSnapshot != nil
+    }
+
     // MARK: - Cursor-Aware Text & Emoji Insertion
 
     public static func previewLabel(for text: String, maxCharacters: Int = 24) -> String {
@@ -92,6 +96,119 @@ public final class MacInputAndMediaService {
         //    stage transiently, paste, and restore the user's prior clipboard contents.
         pastePreservingClipboard(clamped)
         return (true, L10n.tr("已输入 \(label)", "Inserted \(label)", language: language))
+    }
+
+    public func executeSnippet(
+        _ text: String,
+        mode: SnippetInsertMode,
+        preferredPID: pid_t? = nil,
+        allowActivatingPreferredPID: Bool = false,
+        language: AppLanguage = .system
+    ) -> (success: Bool, didPerformAction: Bool, message: String) {
+        let clamped = TextSnippet.clampBody(text)
+        guard !clamped.isEmpty else {
+            return (false, false, L10n.tr("输入内容为空", "Text is empty", language: language))
+        }
+
+        let rawLabel = Self.previewLabel(for: clamped)
+        let label = rawLabel.isEmpty ? L10n.tr("文本片段", "snippet", language: language) : rawLabel
+        let myPID = ProcessInfo.processInfo.processIdentifier
+
+        switch mode {
+        case .focusedFieldInsert:
+            let res = insertText(
+                clamped,
+                preferredPID: preferredPID,
+                allowActivatingPreferredPID: allowActivatingPreferredPID,
+                language: language
+            )
+            return (res.success, true, res.message)
+
+        case .clipboardPaste:
+            guard ensureAccessibilityOrPrompt() else {
+                return (
+                    false,
+                    true,
+                    L10n.tr(
+                        "请在系统设置 → 辅助功能中授权 Choclift 后粘贴文本片段",
+                        "Grant Accessibility permission in System Settings to paste snippets",
+                        language: language
+                    )
+                )
+            }
+            guard activateTargetForKeystroke(preferredPID, strict: false) else {
+                let denied = missingStrictTargetResult()
+                return (denied.success, true, denied.message)
+            }
+            // Cancel any pending transient clipboard restore so explicit clipboard paste remains on NSPasteboard.
+            clipboardRestoreTask?.cancel()
+            clipboardRestoreTask = nil
+            pendingClipboardSnapshot = nil
+
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(clamped, forType: .string)
+            postKeyStroke(virtualKey: CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
+            return (
+                true,
+                true,
+                L10n.tr("已通过剪贴板粘贴 \(label)", "Pasted \(label) via clipboard", language: language)
+            )
+
+        case .typeKeys:
+            // Typing mode is only available when a field is focused. If no field is focused, do nothing.
+            guard windowService.isAccessibilityTrusted() else {
+                return (false, false, "")
+            }
+            let hasFocusedField = (windowService.focusedTextInput(excludingPID: myPID) != nil)
+            let plan = SnippetInsertPolicy.evaluate(
+                body: clamped,
+                mode: .typeKeys,
+                isFieldFocused: hasFocusedField
+            )
+            guard case .typeThroughKeyPath(let textToType) = plan else {
+                return (false, false, "")
+            }
+            typeStringThroughKeyPath(textToType)
+            return (
+                true,
+                true,
+                L10n.tr("已逐字键入 \(label)", "Typed \(label)", language: language)
+            )
+        }
+    }
+
+    private func typeStringThroughKeyPath(_ text: String) {
+        let normalized = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        guard let source = CGEventSource(stateID: .combinedSessionState) else {
+            return
+        }
+
+        for ch in normalized {
+            if ch == "\n" {
+                postKeyStroke(virtualKey: CGKeyCode(kVK_Return), flags: [])
+                continue
+            }
+            if ch == "\t" {
+                postKeyStroke(virtualKey: CGKeyCode(kVK_Tab), flags: [])
+                continue
+            }
+            var utf16Units = Array(String(ch).utf16)
+            guard !utf16Units.isEmpty,
+                  let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                  let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else {
+                continue
+            }
+            keyDown.flags = []
+            keyUp.flags = []
+            keyDown.keyboardSetUnicodeString(stringLength: utf16Units.count, unicodeString: &utf16Units)
+            keyUp.keyboardSetUnicodeString(stringLength: utf16Units.count, unicodeString: &utf16Units)
+            keyDown.post(tap: .cghidEventTap)
+            keyUp.post(tap: .cghidEventTap)
+        }
     }
 
     private func pastePreservingClipboard(_ text: String) {
@@ -243,6 +360,43 @@ public final class MacInputAndMediaService {
             }
             return accessibilityDeniedResult()
 
+        case .quitApp:
+            let myPID = ProcessInfo.processInfo.processIdentifier
+            let targetApp: NSRunningApplication? = {
+                if strictTargetPID {
+                    guard let preferredPID,
+                          preferredPID != myPID,
+                          let app = NSRunningApplication(processIdentifier: preferredPID),
+                          !app.isTerminated else {
+                        return nil
+                    }
+                    return app
+                }
+                if let preferredPID,
+                   preferredPID != myPID,
+                   let app = NSRunningApplication(processIdentifier: preferredPID),
+                   !app.isTerminated {
+                    return app
+                }
+                if let front = NSWorkspace.shared.frontmostApplication,
+                   front.processIdentifier != myPID,
+                   !front.isTerminated {
+                    return front
+                }
+                return nil
+            }()
+            guard let app = targetApp else {
+                if strictTargetPID {
+                    return missingStrictTargetResult()
+                }
+                return (false, L10n.tr("当前没有可退出的前台应用", "No active application to quit"))
+            }
+            let name = app.localizedName ?? app.bundleIdentifier ?? "App"
+            let ok = app.terminate()
+            return ok
+                ? (true, L10n.tr("已退出 \(name)", "Quit \(name)"))
+                : (false, L10n.tr("无法退出 \(name)", "Could not quit \(name)"))
+
         case .openEmojiPicker:
             if windowService.isAccessibilityTrusted() {
                 postKeyStroke(virtualKey: CGKeyCode(kVK_Space), flags: [.maskCommand, .maskControl])
@@ -251,6 +405,55 @@ public final class MacInputAndMediaService {
             }
             return (true, L10n.tr("已打开表情面板", "Opened Emoji Palette"))
         }
+    }
+
+    // MARK: - Compact Key Row (Arrows, Escape, Space — Existing Input Path)
+
+    public func sendCompactKey(
+        _ key: CompanionCompactKey,
+        preferredPID: pid_t? = nil,
+        language: AppLanguage = .system
+    ) -> (success: Bool, message: String) {
+        guard ensureAccessibilityOrPrompt() else {
+            return (
+                false,
+                L10n.tr(
+                    "需要辅助功能权限才能发送按键，请在系统设置中开启",
+                    "Accessibility permission is required to send keys",
+                    language: language
+                )
+            )
+        }
+        guard activateTargetForKeystroke(preferredPID, strict: false) else {
+            return missingStrictTargetResult()
+        }
+
+        let virtualKey: CGKeyCode
+        let flags: CGEventFlags
+        switch key {
+        case .escape:
+            virtualKey = CGKeyCode(kVK_Escape)
+            flags = []
+        case .leftArrow:
+            virtualKey = CGKeyCode(kVK_LeftArrow)
+            flags = [.maskSecondaryFn, .maskNumericPad]
+        case .upArrow:
+            virtualKey = CGKeyCode(kVK_UpArrow)
+            flags = [.maskSecondaryFn, .maskNumericPad]
+        case .downArrow:
+            virtualKey = CGKeyCode(kVK_DownArrow)
+            flags = [.maskSecondaryFn, .maskNumericPad]
+        case .rightArrow:
+            virtualKey = CGKeyCode(kVK_RightArrow)
+            flags = [.maskSecondaryFn, .maskNumericPad]
+        case .space:
+            virtualKey = CGKeyCode(kVK_Space)
+            flags = []
+        }
+
+        postKeyStroke(virtualKey: virtualKey, flags: flags)
+        let label = key.capLabel(in: language)
+        return (true, L10n.tr("已发送 \(label)", "Sent \(label)", language: language))
     }
 
     // MARK: - Low-Level CGEvent & Pasteboard Helpers

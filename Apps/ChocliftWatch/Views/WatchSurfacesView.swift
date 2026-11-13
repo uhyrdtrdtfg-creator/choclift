@@ -76,6 +76,8 @@ private struct WatchOrcaComplicationLine: View {
     @ObservedObject var client: CompanionClientEngine
     let status: OrcaTaskStatusSnapshot
 
+    @State private var pressedRowID: String?
+
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
@@ -104,20 +106,22 @@ private struct WatchOrcaComplicationLine: View {
             }()
 
             if primary.canTapToFocus {
+                let isPressed = (pressedRowID == primary.id)
                 Button {
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    ChocPressFeedback.completeTap(key: primary.id, pressedKey: $pressedRowID)
                     client.focusOrcaTask(dispatchID: primary.dispatchID)
                 } label: {
-                    lineBody(state: primary.state, tint: tint, summary: summary, canFocus: true)
+                    lineBody(state: primary.state, tint: tint, summary: summary, canFocus: true, isPressed: isPressed)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedRowID, key: primary.id))
             } else {
-                lineBody(state: primary.state, tint: tint, summary: summary, canFocus: false)
+                lineBody(state: primary.state, tint: tint, summary: summary, canFocus: false, isPressed: false)
             }
         }
     }
 
-    private func lineBody(state: OrcaTaskState, tint: Color, summary: String, canFocus: Bool) -> some View {
+    private func lineBody(state: OrcaTaskState, tint: Color, summary: String, canFocus: Bool, isPressed: Bool) -> some View {
         HStack(spacing: 5) {
             Image(systemName: state.sfSymbol)
                 .font(.system(size: 10.5, weight: .bold))
@@ -138,12 +142,13 @@ private struct WatchOrcaComplicationLine: View {
         }
         .padding(.horizontal, 9)
         .frame(minHeight: canFocus ? 34 : 28)
-        .background(palette.barSurface, in: Capsule())
+        .background(isPressed ? palette.tileFillBottom : palette.barSurface, in: Capsule())
         .overlay(
             Capsule()
-                .strokeBorder(tint.opacity(0.4), lineWidth: 1)
+                .strokeBorder(isPressed ? palette.accent : tint.opacity(0.4), lineWidth: isPressed ? 1.6 : 1)
         )
         .contentShape(Capsule())
+        .scaleEffect(isPressed ? 0.96 : 1.0)
     }
 
     private func stateColor(_ state: OrcaTaskState) -> Color {
@@ -160,17 +165,98 @@ private struct WatchOrcaComplicationLine: View {
     }
 }
 
+private struct WatchCalendarComplicationLine: View {
+    @ObservedObject var client: CompanionClientEngine
+    @State private var pressedKey: String?
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
+    var body: some View {
+        let snapshot = client.calendarSnapshot
+        if let event = snapshot.nextEvent {
+            let key = "watch-calendar-next"
+            let isPressed = (pressedKey == key)
+            TimelineView(.periodic(from: .now, by: 30.0)) { context in
+                Button {
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    ChocPressFeedback.completeTap(key: key, pressedKey: $pressedKey)
+                    client.openCalendarOnMac()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(palette.accent)
+                        Text(event.title)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .foregroundStyle(palette.primaryText)
+                            .lineLimit(1)
+                        Spacer(minLength: 2)
+                        Text(
+                            NextCalendarEventSnapshot.formattedStartTime(
+                                for: event,
+                                referenceDate: context.date,
+                                language: lang
+                            )
+                        )
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(minHeight: 32)
+                    .background(isPressed ? palette.tileFillBottom : palette.barSurface, in: Capsule())
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(isPressed ? palette.accent : palette.subtleCardStroke, lineWidth: isPressed ? 1.5 : 1)
+                    )
+                    .contentShape(Capsule())
+                    .scaleEffect(isPressed ? 0.96 : 1.0)
+                }
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: key))
+                .accessibilityIdentifier("watch-calendar-event-button")
+            }
+        } else if snapshot.permission == .denied {
+            Button {
+                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                client.openCalendarOnMac()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "calendar.badge.exclamationmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(palette.secondaryText)
+                    Text(L10n.tr("日历权限未开启", "Calendar access off", language: lang))
+                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 8)
+                .frame(minHeight: 28)
+                .background(palette.barSurface.opacity(0.85), in: Capsule())
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("watch-calendar-denied-line")
+        }
+    }
+}
+
 // MARK: - 1. Watch Chocolate Bar Surface (8 Synced Pages x 8 Slots)
 
 public struct WatchChocolateBarView: View {
     @ObservedObject var client: CompanionClientEngine
     @Binding var deckFollower: AppDeckFollowerState
+    var isDeckSwitchHighlighted: Bool = false
     var isBarVisible: Bool = true
     let onRequestPairing: () -> Void
 
     @State private var showPagePickerSheet: Bool = false
     @State private var assigningSlot: WatchSlotCoordinate?
+    @State private var openFolderSlot: WatchSlotCoordinate?
     @State private var pressedSlotKey: String?
+    @State private var confirmGate = DestructiveActionConfirmGate()
     @State private var crownVolume: Double = 0.5
     @State private var isCrownRotating: Bool = false
     @State private var crownThrottle = ControlLevelDragThrottle()
@@ -180,7 +266,7 @@ public struct WatchChocolateBarView: View {
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
     private var isCrownActiveForBar: Bool {
-        isBarVisible && !showPagePickerSheet && assigningSlot == nil
+        isBarVisible && !showPagePickerSheet && assigningSlot == nil && openFolderSlot == nil
     }
 
     private var safePageIndex: Int {
@@ -195,18 +281,19 @@ public struct WatchChocolateBarView: View {
         return client.profile.pages[safePageIndex]
     }
 
-    private var activeBoundFrontmostAppName: String? {
+    private var activeBoundDeckContext: (appName: String, page: BarPage)? {
         guard deckFollower.isFollowingFrontmostApp,
               let frontBundleID = client.frontmostBundleID,
-              !client.profile.pages.isEmpty,
-              client.profile.boundPageID(forBundleIdentifier: frontBundleID) == activePage.id else {
+              let boundPage = client.profile.boundPage(forBundleIdentifier: frontBundleID) else {
             return nil
         }
-        return client.profile.resolvedAppDisplayName(
+        let appName = client.profile.resolvedAppDisplayName(
             forBundleIdentifier: frontBundleID,
+            preferredAppName: client.frontmostAppName,
             recentApps: client.recentApps,
             catalogApps: client.macCatalogApps
         )
+        return (appName, boundPage)
     }
 
     public var body: some View {
@@ -214,16 +301,21 @@ public struct WatchChocolateBarView: View {
             VStack(spacing: 8) {
                 if !client.connectionState.isConnected {
                     WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
-                } else if let orcaStatus = client.orcaStatus {
-                    WatchOrcaComplicationLine(client: client, status: orcaStatus)
+                } else {
+                    if let orcaStatus = client.orcaStatus {
+                        WatchOrcaComplicationLine(client: client, status: orcaStatus)
+                    }
+                    WatchCalendarComplicationLine(client: client)
                 }
 
                 pageSwitcherBar
 
+                pageDotsBar
+
                 if !deckFollower.isFollowingFrontmostApp {
                     followFrontmostAppButton
-                } else if let boundAppName = activeBoundFrontmostAppName {
-                    followingAppBadge(appName: boundAppName)
+                } else if let bound = activeBoundDeckContext {
+                    followingAppBadge(appName: bound.appName, page: bound.page)
                 }
 
                 let columns = [
@@ -235,14 +327,17 @@ public struct WatchChocolateBarView: View {
                     ForEach(0..<BarPage.slotsPerPage, id: \.self) { slotIdx in
                         let item = activePage.slots[slotIdx]
                         let key = "\(safePageIndex)-\(slotIdx)"
-                        let iconData = item?.bundleIdentifier.flatMap {
+                        let slotOrigin = SlotCoordinate(pageID: activePage.id, slotIndex: slotIdx)
+                        let effectiveItem = item.flatMap { client.profile.resolveBarItem($0, from: slotOrigin).resolvedItem }
+                        let iconData = effectiveItem?.bundleIdentifier.flatMap {
                             client.appIconsByBundleID[$0] ?? BundledAppIcons.pngData(for: $0)
                         }
-                        let isFrontmost = (item?.bundleIdentifier != nil && item?.bundleIdentifier == client.frontmostBundleID)
+                        let isFrontmost = (effectiveItem?.bundleIdentifier != nil && effectiveItem?.bundleIdentifier == client.frontmostBundleID)
 
                         watchSlotButton(
                             pageIndex: safePageIndex,
                             slotIndex: slotIdx,
+                            slotOrigin: slotOrigin,
                             key: key,
                             item: item,
                             iconData: iconData,
@@ -251,6 +346,9 @@ public struct WatchChocolateBarView: View {
                         .frame(height: 64)
                     }
                 }
+                .id(activePage.id)
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.22), value: safePageIndex)
             }
             .padding(.horizontal, 6)
             .padding(.bottom, 8)
@@ -298,17 +396,35 @@ public struct WatchChocolateBarView: View {
                 slotIndex: coord.slotIndex
             )
         }
+        .sheet(item: $openFolderSlot) { coord in
+            WatchTileFolderSheet(
+                client: client,
+                pageIndex: coord.pageIndex,
+                slotIndex: coord.slotIndex
+            )
+        }
     }
 
     private var watchCrownVolumeBar: some View {
         let isMuted = client.controlStripState.isVolumeMuted && !isCrownRotating
         let displayedLevel = ControlStripLevel.clamp(isCrownRotating ? crownVolume : client.controlStripState.volume)
         let pct = ControlStripLevel.percentage(for: displayedLevel)
+        let muteKey = "watch-volume-mute"
+        let isMutePressed = (pressedSlotKey == muteKey)
 
         return HStack(spacing: 7) {
             Button {
                 CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
-                client.performQuickAction(.volumeMute)
+                ChocPressFeedback.completeTap(key: muteKey, pressedKey: $pressedSlotKey)
+                if client.connectionState.isConnected {
+                    client.performQuickAction(.volumeMute)
+                } else {
+                    client.lastFeedback = CompanionFeedbackToast(
+                        success: false,
+                        title: L10n.tr("静音", "Mute", language: lang),
+                        detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                    )
+                }
                 isVolumeCrownFocused = true
             } label: {
                 Image(systemName: (isMuted || displayedLevel <= 0.001) ? "speaker.slash.fill" : "speaker.wave.2.fill")
@@ -316,19 +432,24 @@ public struct WatchChocolateBarView: View {
                     .foregroundStyle(isMuted ? palette.emphasisForeground : palette.accent)
                     .frame(width: 32, height: 30)
                     .background(
-                        isMuted ? palette.statusFailure : palette.tileFillBottom,
+                        isMuted
+                            ? palette.statusFailure.opacity(isMutePressed ? 0.84 : 1.0)
+                            : (isMutePressed ? palette.accent.opacity(0.18) : palette.tileFillBottom),
                         in: Capsule()
                     )
                     .overlay(
                         Capsule()
                             .strokeBorder(
-                                isMuted ? palette.statusFailure : palette.subtleCardStroke,
-                                lineWidth: 1
+                                isMutePressed
+                                    ? palette.accent
+                                    : (isMuted ? palette.statusFailure : palette.subtleCardStroke),
+                                lineWidth: isMutePressed ? 1.6 : 1
                             )
                     )
                     .contentShape(Capsule())
+                    .scaleEffect(isMutePressed ? 0.92 : 1.0)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedSlotKey, key: muteKey))
             .accessibilityIdentifier("watch-bar-volume-mute")
             .accessibilityLabel(
                 isMuted
@@ -458,9 +579,38 @@ public struct WatchChocolateBarView: View {
         }
     }
 
+    private var pageDotsBar: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<client.profile.pages.count, id: \.self) { dotIdx in
+                let isCurrent = (dotIdx == safePageIndex)
+                Button {
+                    selectPageDot(dotIdx)
+                } label: {
+                    Capsule()
+                        .fill(isCurrent ? palette.accent : palette.secondaryText.opacity(0.35))
+                        .frame(width: isCurrent ? 14 : 6, height: 6)
+                        .frame(minWidth: 18, minHeight: 24)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("watch-page-dot-\(dotIdx)")
+                .accessibilityLabel(
+                    L10n.tr(
+                        "第 \(dotIdx + 1) 页：\(client.profile.pages[dotIdx].title)",
+                        "Page \(dotIdx + 1): \(client.profile.pages[dotIdx].title)",
+                        language: lang
+                    )
+                )
+            }
+        }
+        .padding(.horizontal, 4)
+        .background(palette.barSurface.opacity(0.75), in: Capsule())
+    }
+
     private var followFrontmostAppButton: some View {
         Button {
             CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            confirmGate.disarm()
             withAnimation(.easeInOut(duration: 0.22)) {
                 deckFollower.followFrontmostApp(
                     frontmostBundleIdentifier: client.frontmostBundleID,
@@ -486,23 +636,51 @@ public struct WatchChocolateBarView: View {
         .accessibilityIdentifier("watch-follow-frontmost-app-button")
     }
 
-    private func followingAppBadge(appName: String) -> some View {
+    private func followingAppBadge(appName: String, page: BarPage) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "macwindow")
                 .font(.system(size: 9.5, weight: .bold))
-            Text(L10n.tr("跟随 \(appName)", "Following \(appName)", language: lang))
-                .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                .lineLimit(1)
+            Text(
+                L10n.tr(
+                    "跟随 \(appName) · \(page.iconEmoji) \(page.title)",
+                    "Following \(appName) · \(page.iconEmoji) \(page.title)",
+                    language: lang
+                )
+            )
+            .font(.system(size: 10.5, weight: .bold, design: .rounded))
+            .lineLimit(1)
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .background(palette.accent.opacity(0.14), in: Capsule())
+        .background(
+            palette.accent.opacity(isDeckSwitchHighlighted ? 0.24 : 0.14),
+            in: Capsule()
+        )
+        .overlay(
+            Capsule()
+                .strokeBorder(
+                    isDeckSwitchHighlighted ? palette.accent : palette.accent.opacity(0.28),
+                    lineWidth: isDeckSwitchHighlighted ? 1.4 : 0.8
+                )
+        )
         .foregroundStyle(palette.accent)
+        .scaleEffect(isDeckSwitchHighlighted ? 1.03 : 1.0)
+        .animation(.easeInOut(duration: 0.2), value: isDeckSwitchHighlighted)
+    }
+
+    private func selectPageDot(_ pageOffset: Int) {
+        guard client.profile.pages.indices.contains(pageOffset) else { return }
+        CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+        confirmGate.disarm()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            deckFollower.selectManualPage(index: pageOffset, in: client.profile)
+        }
     }
 
     private func stepPage(by delta: Int) {
         guard !client.profile.pages.isEmpty else { return }
         CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+        confirmGate.disarm()
         withAnimation(.easeInOut(duration: 0.2)) {
             deckFollower.stepManualPage(by: delta, in: client.profile)
         }
@@ -511,28 +689,63 @@ public struct WatchChocolateBarView: View {
     private func watchSlotButton(
         pageIndex: Int,
         slotIndex: Int,
+        slotOrigin: SlotCoordinate,
         key: String,
         item: BarItem?,
         iconData: Data?,
         isFrontmost: Bool
     ) -> some View {
         let isPressed = (pressedSlotKey == key)
+        let isDestructive = item?.requiresDestructiveConfirmation(in: client.profile, from: slotOrigin) ?? false
+        let isAwaitingConfirm = isDestructive && confirmGate.isArmed(
+            targetID: key,
+            at: ProcessInfo.processInfo.systemUptime
+        )
 
         return Button {
+            ChocPressFeedback.completeTap(key: key, pressedKey: $pressedSlotKey)
             if let item {
-                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
-                withAnimation(.spring(response: 0.16, dampingFraction: 0.65)) {
-                    pressedSlotKey = key
+                if item.isFolder {
+                    confirmGate.disarm()
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    openFolderSlot = WatchSlotCoordinate(pageIndex: pageIndex, slotIndex: slotIndex)
+                    return
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    if pressedSlotKey == key {
-                        withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                            pressedSlotKey = nil
-                        }
+                if item.isSlotReference,
+                   client.profile.resolveBarItem(item, from: slotOrigin).isMissing {
+                    confirmGate.disarm()
+                    return
+                }
+                let now = ProcessInfo.processInfo.systemUptime
+                let decision = confirmGate.registerTap(
+                    targetID: key,
+                    isDestructive: isDestructive,
+                    at: now
+                )
+                switch decision {
+                case .requireSecondTap:
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(CompanionInteractionPolicy.destructiveConfirmWindowSeconds + 0.05))
+                        confirmGate.expireIfNeeded(at: ProcessInfo.processInfo.systemUptime)
+                    }
+                case .runImmediately, .confirmedRun:
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                    if client.connectionState.isConnected {
+                        client.triggerBarItem(item, from: slotOrigin)
+                    } else {
+                        client.recordOfflineTileFailure(
+                            slot: slotOrigin,
+                            title: client.profile.displayTitle(for: item, from: slotOrigin, in: lang),
+                            detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                        )
                     }
                 }
-                client.triggerBarItem(item)
+                if isCrownActiveForBar {
+                    isVolumeCrownFocused = true
+                }
             } else {
+                confirmGate.disarm()
                 CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
                 assigningSlot = WatchSlotCoordinate(pageIndex: pageIndex, slotIndex: slotIndex)
             }
@@ -541,13 +754,22 @@ public struct WatchChocolateBarView: View {
                 item: item,
                 iconData: iconData,
                 isFrontmostApp: isFrontmost,
+                isPressed: isPressed,
+                isAwaitingConfirmation: isAwaitingConfirm,
+                lastRunOutcome: client.tileOutcome(for: slotOrigin),
                 palette: palette,
                 language: lang,
-                compact: true
+                compact: true,
+                profile: client.profile,
+                slotOrigin: slotOrigin,
+                lastTriggeredText: client.lastTriggeredText(for: item, from: slotOrigin),
+                iconLookup: { bundleID in
+                    client.appIconsByBundleID[bundleID] ?? BundledAppIcons.pngData(for: bundleID)
+                }
             )
             .scaleEffect(isPressed ? 0.93 : 1.0)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedSlotKey, key: key))
     }
 
     private var pagePickerSheet: some View {
@@ -684,15 +906,48 @@ private struct WatchSlotQuickAssignSheet: View {
                 }
             }
 
+            if !client.profile.soundboardClips.isEmpty {
+                Section(L10n.tr("本机音效 (Sounds)", "Soundboard", language: lang)) {
+                    ForEach(client.profile.soundboardClips) { clip in
+                        Button {
+                            assign(client.profile.makeBarItem(for: clip))
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(clip.emoji)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(clip.name)
+                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(palette.primaryText)
+                                        .lineLimit(1)
+                                    Text(clip.formattedDuration)
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(palette.secondaryText)
+                                }
+                            }
+                            .frame(minHeight: 38)
+                        }
+                        .listRowBackground(palette.barSurface)
+                    }
+                }
+            }
+
             Section(L10n.tr("系统快捷动作", "Quick Actions", language: lang)) {
                 ForEach(SystemQuickAction.allCases) { action in
                     Button {
                         assign(BarItem(kind: .systemAction(action: action)))
                     } label: {
-                        Label(action.compactTitle(in: lang), systemImage: action.sfSymbol)
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(palette.primaryText)
-                            .frame(minHeight: 38)
+                        HStack(spacing: 6) {
+                            Label(action.compactTitle(in: lang), systemImage: action.sfSymbol)
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundStyle(palette.primaryText)
+                            Spacer(minLength: 2)
+                            if let shortcut = action.sentKeyboardShortcut {
+                                Text(shortcut)
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(palette.secondaryText)
+                            }
+                        }
+                        .frame(minHeight: 38)
                     }
                     .listRowBackground(palette.barSurface)
                 }
@@ -726,6 +981,8 @@ public struct WatchQuickActionsView: View {
     let onRequestPairing: () -> Void
 
     @State private var pressedAction: SystemQuickAction?
+    @State private var confirmGate = DestructiveActionConfirmGate()
+    @State private var showDisplayPickerSheet: Bool = false
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -740,7 +997,8 @@ public struct WatchQuickActionsView: View {
         .missionControl, .showDesktop,
         .copySelection, .pasteClipboard,
         .undoAction, .screenshotInteractive,
-        .openEmojiPicker, .lockScreen
+        .openEmojiPicker, .lockScreen,
+        .quitApp
     ]
 
     public var body: some View {
@@ -759,7 +1017,12 @@ public struct WatchQuickActionsView: View {
                 // Window Snap & Sizing
                 sectionHeader(L10n.tr("窗口布局", "Window Layout", language: lang), symbol: "macwindow")
 
+                if client.controlStripState.shouldShowDisplayPicker {
+                    watchDisplayPickerButton
+                }
+
                 actionTwoColumnGrid(windowActions)
+                undoWindowMoveButton
 
                 // Workspace & Clipboard
                 sectionHeader(L10n.tr("工作区与编辑", "Workspace & Edit", language: lang), symbol: "sparkles")
@@ -769,6 +1032,142 @@ public struct WatchQuickActionsView: View {
             .padding(.horizontal, 6)
             .padding(.bottom, 12)
         }
+        .sheet(isPresented: $showDisplayPickerSheet) {
+            watchDisplayPickerSheet
+        }
+    }
+
+    private var watchDisplayPickerButton: some View {
+        let state = client.controlStripState
+        let hasOverride = state.effectiveTargetDisplayID != nil
+
+        return Button {
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            showDisplayPickerSheet = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "display.2")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(hasOverride ? palette.accent : palette.secondaryText)
+                Text(state.selectedDisplayLabel(in: lang))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(palette.secondaryText)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 40)
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(hasOverride ? palette.accent.opacity(0.6) : palette.subtleCardStroke, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("watch-display-picker-button")
+    }
+
+    private var watchDisplayPickerSheet: some View {
+        let state = client.controlStripState
+        let selectedID = state.effectiveTargetDisplayID
+
+        return List {
+            Button {
+                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                client.setTargetDisplay(displayID: nil)
+                showDisplayPickerSheet = false
+            } label: {
+                HStack(spacing: 8) {
+                    Text(L10n.tr("当前窗口屏幕", "Frontmost Window", language: lang))
+                        .font(.system(size: 13, weight: selectedID == nil ? .bold : .medium, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                    Spacer()
+                    if selectedID == nil {
+                        Image(systemName: "checkmark")
+                            .font(.caption.bold())
+                            .foregroundStyle(palette.accent)
+                    }
+                }
+                .frame(minHeight: 38)
+            }
+            .listRowBackground(palette.barSurface)
+
+            ForEach(state.connectedDisplays) { display in
+                let isSelected = (selectedID == display.displayID)
+                Button {
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    client.setTargetDisplay(displayID: display.displayID)
+                    showDisplayPickerSheet = false
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(display.name)
+                            .font(.system(size: 13, weight: isSelected ? .bold : .medium, design: .rounded))
+                            .foregroundStyle(palette.primaryText)
+                            .lineLimit(1)
+                        Spacer()
+                        if isSelected {
+                            Image(systemName: "checkmark")
+                                .font(.caption.bold())
+                                .foregroundStyle(palette.accent)
+                        }
+                    }
+                    .frame(minHeight: 38)
+                }
+                .listRowBackground(palette.barSurface)
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
+    }
+
+    private var undoWindowMoveButton: some View {
+        let canUndo = client.controlStripState.canUndoWindowMove
+        return Button {
+            guard canUndo else { return }
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+            client.undoLastWindowMove()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 12.5, weight: .bold))
+                    .foregroundStyle(canUndo ? palette.accent : palette.secondaryText)
+                Text(L10n.tr("撤销上次窗口移动", "Undo Last Window Move", language: lang))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(canUndo ? palette.primaryText : palette.secondaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 42)
+            .background(
+                LinearGradient(
+                    colors: [palette.tileFillTop, palette.tileFillBottom],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(canUndo ? palette.accent.opacity(0.55) : palette.subtleCardStroke, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .opacity(canUndo ? 1.0 : 0.45)
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("watch-undo-window-move")
     }
 
     private func sectionHeader(_ text: String, symbol: String) -> some View {
@@ -801,7 +1200,7 @@ public struct WatchQuickActionsView: View {
                         .background(
                             LinearGradient(
                                 colors: [
-                                    palette.tileFillTop,
+                                    isPressed ? palette.tileFillBottom : palette.tileFillTop,
                                     tileTone
                                 ],
                                 startPoint: .topLeading,
@@ -812,14 +1211,14 @@ public struct WatchQuickActionsView: View {
                         .overlay(
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .strokeBorder(
-                                    isPrimary ? palette.accent.opacity(0.65) : palette.subtleCardStroke,
-                                    lineWidth: 1
+                                    isPressed ? palette.accent : (isPrimary ? palette.accent.opacity(0.65) : palette.subtleCardStroke),
+                                    lineWidth: isPressed ? 1.8 : 1
                                 )
                         )
                         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .scaleEffect(isPressed ? 0.94 : 1.0)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedAction, key: action))
                 .accessibilityLabel(action.compactTitle(in: lang))
             }
         }
@@ -835,21 +1234,29 @@ public struct WatchQuickActionsView: View {
             ForEach(actions) { action in
                 let tileTone = ChocSwatch.resolvedTileColor(hex: action.accentHex, fallbackHex: ChocPalette.coreTileBottomHex)
                 let isPressed = (pressedAction == action)
+                let isArmed = action.requiresDestructiveConfirmation && confirmGate.isArmed(
+                    targetID: action.rawValue,
+                    at: ProcessInfo.processInfo.systemUptime
+                )
 
                 Button {
                     trigger(action)
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: action.sfSymbol)
+                        Image(systemName: isArmed ? "exclamationmark.triangle.fill" : action.sfSymbol)
                             .font(.system(size: 13.5, weight: .bold))
-                            .foregroundStyle(palette.primaryText)
+                            .foregroundStyle(isArmed ? palette.statusFailure : palette.primaryText)
                             .frame(width: 18)
 
-                        Text(action.compactTitle(in: lang))
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                            .foregroundStyle(palette.primaryText)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
+                        Text(
+                            isArmed
+                                ? L10n.tr("再点确认", "Tap Again", language: lang)
+                                : action.compactTitle(in: lang)
+                        )
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(isArmed ? palette.statusFailure : palette.primaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
 
                         Spacer(minLength: 0)
                     }
@@ -857,7 +1264,7 @@ public struct WatchQuickActionsView: View {
                     .frame(height: 48)
                     .background(
                         LinearGradient(
-                            colors: [palette.tileFillTop, tileTone],
+                            colors: [isPressed ? palette.tileFillBottom : palette.tileFillTop, tileTone],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -865,29 +1272,46 @@ public struct WatchQuickActionsView: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                            .strokeBorder(
+                                isArmed ? palette.statusFailure : (isPressed ? palette.accent : palette.subtleCardStroke),
+                                lineWidth: (isArmed || isPressed) ? 1.8 : 1
+                            )
                     )
                     .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                     .scaleEffect(isPressed ? 0.94 : 1.0)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedAction, key: action))
             }
         }
     }
 
     private func trigger(_ action: SystemQuickAction) {
-        CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .rigid)
-        withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
-            pressedAction = action
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-            if pressedAction == action {
-                withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                    pressedAction = nil
-                }
+        ChocPressFeedback.completeTap(key: action, pressedKey: $pressedAction)
+        let now = ProcessInfo.processInfo.systemUptime
+        let decision = confirmGate.registerTap(
+            targetID: action.rawValue,
+            isDestructive: action.requiresDestructiveConfirmation,
+            at: now
+        )
+        switch decision {
+        case .requireSecondTap:
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(CompanionInteractionPolicy.destructiveConfirmWindowSeconds + 0.05))
+                confirmGate.expireIfNeeded(at: ProcessInfo.processInfo.systemUptime)
+            }
+        case .runImmediately, .confirmedRun:
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .rigid)
+            if client.connectionState.isConnected {
+                client.performQuickAction(action)
+            } else {
+                client.lastFeedback = CompanionFeedbackToast(
+                    success: false,
+                    title: action.compactTitle(in: lang),
+                    detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                )
             }
         }
-        client.performQuickAction(action)
     }
 }
 
@@ -1011,6 +1435,7 @@ public struct WatchEmojiBarView: View {
     @State private var mode: WatchTextMode = .emoji
     @State private var pressedEmojiIndex: Int?
     @State private var pressedSnippetID: UUID?
+    @State private var pressedPasteKey: String?
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -1058,6 +1483,8 @@ public struct WatchEmojiBarView: View {
                     .foregroundStyle(palette.secondaryText)
                 }
 
+                watchPasteClipboardButton
+
                 modeSegmentBar
 
                 switch mode {
@@ -1070,6 +1497,50 @@ public struct WatchEmojiBarView: View {
             .padding(.horizontal, 6)
             .padding(.bottom, 12)
         }
+    }
+
+    private var watchPasteClipboardButton: some View {
+        let key = "watch-paste-clipboard"
+        let isPressed = (pressedPasteKey == key)
+
+        return Button {
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+            ChocPressFeedback.completeTap(key: key, pressedKey: $pressedPasteKey)
+            if client.connectionState.isConnected {
+                client.pasteMacClipboard()
+            } else {
+                onRequestPairing()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.on.clipboard")
+                    .font(.system(size: 12.5, weight: .bold))
+                    .foregroundStyle(palette.accent)
+                Text(L10n.tr("粘贴剪贴板", "Paste Clipboard", language: lang))
+                    .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 11)
+            .frame(maxWidth: .infinity, minHeight: 42)
+            .background(
+                LinearGradient(
+                    colors: [isPressed ? palette.tileFillBottom : palette.tileFillTop, palette.tileFillBottom],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(isPressed ? palette.accent : palette.subtleCardStroke, lineWidth: isPressed ? 1.8 : 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .scaleEffect(isPressed ? 0.94 : 1.0)
+        }
+        .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedPasteKey, key: key))
+        .accessibilityIdentifier("watch-paste-clipboard-button")
     }
 
     private var modeSegmentBar: some View {
@@ -1167,16 +1638,7 @@ public struct WatchEmojiBarView: View {
 
                 Button {
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
-                    withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
-                        pressedEmojiIndex = idx
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-                        if pressedEmojiIndex == idx {
-                            withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                                pressedEmojiIndex = nil
-                            }
-                        }
-                    }
+                    ChocPressFeedback.completeTap(key: idx, pressedKey: $pressedEmojiIndex)
                     if client.connectionState.isConnected {
                         client.insertEmoji(emoji)
                     } else {
@@ -1189,7 +1651,7 @@ public struct WatchEmojiBarView: View {
                         .frame(height: 50)
                         .background(
                             LinearGradient(
-                                colors: [palette.tileFillTop, palette.tileFillBottom],
+                                colors: [isPressed ? palette.tileFillBottom : palette.tileFillTop, palette.tileFillBottom],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
@@ -1197,12 +1659,15 @@ public struct WatchEmojiBarView: View {
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                .strokeBorder(palette.tileBorderHighlight.opacity(0.48), lineWidth: 1)
+                                .strokeBorder(
+                                    isPressed ? palette.accent : palette.tileBorderHighlight.opacity(0.48),
+                                    lineWidth: isPressed ? 1.8 : 1
+                                )
                         )
                         .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                         .scaleEffect(isPressed ? 0.93 : 1.0)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedEmojiIndex, key: idx))
             }
         }
     }
@@ -1232,19 +1697,14 @@ public struct WatchEmojiBarView: View {
                 let isPressed = (pressedSnippetID == snippet.id)
 
                 Button {
+                    if snippet.insertMode == .typeKeys,
+                       !SnippetInsertPolicy.isModeAvailable(.typeKeys, isFieldFocused: client.isEditingTextOnMac) {
+                        return
+                    }
                     CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
-                    withAnimation(.spring(response: 0.14, dampingFraction: 0.65)) {
-                        pressedSnippetID = snippet.id
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
-                        if pressedSnippetID == snippet.id {
-                            withAnimation(.spring(response: 0.2, dampingFraction: 0.75)) {
-                                pressedSnippetID = nil
-                            }
-                        }
-                    }
+                    ChocPressFeedback.completeTap(key: snippet.id, pressedKey: $pressedSnippetID)
                     if client.connectionState.isConnected {
-                        client.insertText(snippet.body)
+                        _ = client.triggerSnippet(snippet)
                     } else {
                         onRequestPairing()
                     }
@@ -1265,7 +1725,7 @@ public struct WatchEmojiBarView: View {
                     .frame(minHeight: 46)
                     .background(
                         LinearGradient(
-                            colors: [palette.tileFillTop, palette.tileFillBottom],
+                            colors: [isPressed ? palette.tileFillBottom : palette.tileFillTop, palette.tileFillBottom],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -1273,12 +1733,15 @@ public struct WatchEmojiBarView: View {
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .strokeBorder(palette.tileBorderHighlight.opacity(0.55), lineWidth: 1)
+                            .strokeBorder(
+                                isPressed ? palette.accent : palette.tileBorderHighlight.opacity(0.55),
+                                lineWidth: isPressed ? 1.8 : 1
+                            )
                     )
                     .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                     .scaleEffect(isPressed ? 0.94 : 1.0)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedSnippetID, key: snippet.id))
             }
         }
     }
@@ -1288,5 +1751,70 @@ public struct WatchEmojiBarView: View {
         guard count > 0 else { return }
         CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
         currentSlideIndex = (safeSlideIndex + delta + count) % count
+    }
+}
+
+private struct WatchTileFolderSheet: View {
+    @ObservedObject var client: CompanionClientEngine
+    let pageIndex: Int
+    let slotIndex: Int
+    @Environment(\.dismiss) private var dismiss
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
+    private var folderContext: (page: BarPage, folder: TileFolder)? {
+        guard client.profile.pages.indices.contains(pageIndex) else { return nil }
+        let page = client.profile.pages[pageIndex]
+        guard page.slots.indices.contains(slotIndex),
+              case .folder(let folder) = page.slots[slotIndex]?.kind else { return nil }
+        return (page, folder)
+    }
+
+    var body: some View {
+        List {
+            if let ctx = folderContext {
+                let origin = SlotCoordinate(pageID: ctx.page.id, slotIndex: slotIndex)
+                Section("\(ctx.folder.emoji) \(ctx.folder.displayTitle(in: lang))") {
+                    if ctx.folder.children.isEmpty {
+                        Text(L10n.tr("暂无子动作", "No Child Actions", language: lang))
+                            .font(.caption)
+                            .foregroundStyle(palette.secondaryText)
+                    } else {
+                        ForEach(ctx.folder.children) { child in
+                            Button {
+                                CompanionFeedbackHaptics.tap(
+                                    enabled: client.profile.settings.hapticFeedbackEnabled,
+                                    intensity: .medium
+                                )
+                                if client.connectionState.isConnected {
+                                    client.triggerBarItem(child, from: origin)
+                                } else {
+                                    client.recordOfflineTileFailure(
+                                        slot: origin,
+                                        title: client.profile.displayTitle(for: child, in: lang),
+                                        detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                                    )
+                                }
+                                dismiss()
+                            } label: {
+                                HStack {
+                                    Text(client.profile.displayTitle(for: child, in: lang))
+                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(palette.primaryText)
+                                        .lineLimit(1)
+                                    Spacer()
+                                    if let ago = client.lastTriggeredText(for: child) {
+                                        Text(ago)
+                                            .font(.caption2.monospacedDigit())
+                                            .foregroundStyle(palette.secondaryText)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

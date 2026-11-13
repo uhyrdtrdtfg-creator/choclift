@@ -66,6 +66,8 @@ public final class MacNotchPanelController {
     private var localMouseMoveMonitor: Any?
     private var globalMouseDownMonitor: Any?
     private var localMouseDownMonitor: Any?
+    private var globalMouseUpMonitor: Any?
+    private var localMouseUpMonitor: Any?
     private var globalKeyDownMonitor: Any?
     private var localKeyDownMonitor: Any?
 
@@ -74,6 +76,8 @@ public final class MacNotchPanelController {
 
     private var dwellWakeupTask: Task<Void, Never>?
     private var visibleWatchdogTask: Task<Void, Never>?
+    private var clickDismissTask: Task<Void, Never>?
+    private var isCompletingClickDismissal: Bool = false
 
     private var escapeEventHandlerRef: EventHandlerRef?
     private var escapeHotKeyRef: EventHotKeyRef?
@@ -96,6 +100,9 @@ public final class MacNotchPanelController {
         dwellWakeupTask = nil
         visibleWatchdogTask?.cancel()
         visibleWatchdogTask = nil
+        clickDismissTask?.cancel()
+        clickDismissTask = nil
+        isCompletingClickDismissal = false
 
         unregisterTemporaryEscapeHotKey()
         if let handler = escapeEventHandlerRef {
@@ -107,6 +114,8 @@ public final class MacNotchPanelController {
         if let m = localMouseMoveMonitor { NSEvent.removeMonitor(m); localMouseMoveMonitor = nil }
         if let m = globalMouseDownMonitor { NSEvent.removeMonitor(m); globalMouseDownMonitor = nil }
         if let m = localMouseDownMonitor { NSEvent.removeMonitor(m); localMouseDownMonitor = nil }
+        if let m = globalMouseUpMonitor { NSEvent.removeMonitor(m); globalMouseUpMonitor = nil }
+        if let m = localMouseUpMonitor { NSEvent.removeMonitor(m); localMouseUpMonitor = nil }
         if let m = globalKeyDownMonitor { NSEvent.removeMonitor(m); globalKeyDownMonitor = nil }
         if let m = localKeyDownMonitor { NSEvent.removeMonitor(m); localKeyDownMonitor = nil }
 
@@ -143,6 +152,8 @@ public final class MacNotchPanelController {
     }
 
     public func dismissPanelImmediately() {
+        isCompletingClickDismissal = false
+        presentation.pressedSlotIndex = nil
         let transition = stateMachine.dismissImmediately(suppressUntilTriggerExit: true)
         if transition == .hide || isPanelVisible {
             hidePanel(animated: true)
@@ -176,8 +187,52 @@ public final class MacNotchPanelController {
         }
         localMouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: clickMask) { [weak self] event in
             guard let self, self.isPanelVisible else { return event }
-            if let panel = self.panel, event.window !== panel {
-                self.dismissPanelImmediately()
+            let mouse = NSEvent.mouseLocation
+            let insidePanelWindow = (self.panel != nil && event.window === self.panel)
+            let insideSettledFrame = self.settledPanelFrame.map {
+                NotchPanelLayout.rectContainsInclusive($0, point: mouse, edgeSlop: 2)
+            } ?? false
+
+            if insidePanelWindow || insideSettledFrame {
+                if event.type == .leftMouseDown, !self.isCompletingClickDismissal {
+                    let pointInWindow: CGPoint
+                    if insidePanelWindow {
+                        pointInWindow = event.locationInWindow
+                    } else if let frame = self.settledPanelFrame {
+                        pointInWindow = CGPoint(x: mouse.x - frame.origin.x, y: mouse.y - frame.origin.y)
+                    } else {
+                        pointInWindow = event.locationInWindow
+                    }
+                    self.presentation.pressedSlotIndex = MacNotchPanelView.hitTestSlotIndex(at: pointInWindow)
+                }
+                return event
+            }
+
+            self.dismissPanelImmediately()
+            return event
+        }
+
+        let mouseUpMask: NSEvent.EventTypeMask = [.leftMouseUp, .rightMouseUp, .otherMouseUp]
+        globalMouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseUpMask) { [weak self] _ in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if !self.isCompletingClickDismissal {
+                    self.presentation.pressedSlotIndex = nil
+                    if self.isPanelVisible {
+                        self.evaluateCurrentPointer()
+                    }
+                }
+            }
+        }
+        localMouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseUpMask) { [weak self] event in
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if !self.isCompletingClickDismissal {
+                    self.presentation.pressedSlotIndex = nil
+                    if self.isPanelVisible {
+                        self.evaluateCurrentPointer()
+                    }
+                }
             }
             return event
         }
@@ -321,7 +376,7 @@ public final class MacNotchPanelController {
             isPanelEnabled: coordinator.notchPanelEnabled,
             isLeftEdgeEnabled: coordinator.leftEdgePanelEnabled,
             isFullScreenSuppressed: fullScreenSuppressed,
-            isMouseButtonPressed: mouseButtonsPressed,
+            isMouseButtonPressed: mouseButtonsPressed || isCompletingClickDismissal,
             currentPanelFrame: settledPanelFrame,
             now: now
         )
@@ -378,12 +433,22 @@ public final class MacNotchPanelController {
             if presentation.hoveredSlotIndex != nil {
                 presentation.hoveredSlotIndex = nil
             }
+            if !isCompletingClickDismissal, presentation.pressedSlotIndex != nil {
+                presentation.pressedSlotIndex = nil
+            }
             return
         }
+        guard !isCompletingClickDismissal else { return }
+
         let localPoint = CGPoint(x: globalPointer.x - frame.origin.x, y: globalPointer.y - frame.origin.y)
         let hitSlot = MacNotchPanelView.hitTestSlotIndex(at: localPoint)
         if presentation.hoveredSlotIndex != hitSlot {
             presentation.hoveredSlotIndex = hitSlot
+        }
+        if NSEvent.pressedMouseButtons != 0,
+           let pressed = presentation.pressedSlotIndex,
+           pressed != hitSlot {
+            presentation.pressedSlotIndex = nil
         }
     }
 
@@ -404,8 +469,11 @@ public final class MacNotchPanelController {
         let rootView = MacNotchPanelView(
             coordinator: coordinator,
             presentation: presentation,
-            onTriggerItem: { [weak self] item in
-                self?.handleTileTriggered(item)
+            onTriggerSlot: { [weak self] slotIndex, item in
+                self?.handleSlotTriggered(slotIndex: slotIndex, item: item)
+            },
+            onSlotPressChanged: { [weak self] slotIndex, isPressed in
+                self?.handleSlotPressChanged(slotIndex: slotIndex, isPressed: isPressed)
             },
             onOpenStudio: { [weak self] in
                 self?.openStudioWindow()
@@ -430,7 +498,10 @@ public final class MacNotchPanelController {
 
         visibilityGeneration &+= 1
         let capturedGen = visibilityGeneration
+        isCompletingClickDismissal = false
         presentation.anchor = anchor
+        presentation.pressedSlotIndex = nil
+        presentation.openFolderSlotIndex = nil
         presentation.inlineFeedback = nil
 
         let targetSize = MacNotchPanelView.windowSize
@@ -468,13 +539,18 @@ public final class MacNotchPanelController {
         visibleWatchdogTask = nil
         unregisterTemporaryEscapeHotKey()
 
+        isCompletingClickDismissal = false
         presentation.hoveredSlotIndex = nil
+        presentation.pressedSlotIndex = nil
         settledPanelFrame = nil
         isPanelVisible = false
         visibilityGeneration &+= 1
         let capturedGen = visibilityGeneration
 
         guard let panel, panel.isVisible else { return }
+        if panel.isKeyWindow {
+            panel.resignKey()
+        }
 
         if !animated {
             panel.alphaValue = 0
@@ -503,21 +579,46 @@ public final class MacNotchPanelController {
     }
 
     private func orderOutImmediately() {
+        isCompletingClickDismissal = false
         isPanelVisible = false
         settledPanelFrame = nil
         presentation.hoveredSlotIndex = nil
+        presentation.pressedSlotIndex = nil
         visibilityGeneration &+= 1
+        if panel?.isKeyWindow == true {
+            panel?.resignKey()
+        }
         panel?.alphaValue = 0
         panel?.orderOut(nil)
     }
 
     // MARK: - Actions
 
-    private func handleTileTriggered(_ item: BarItem) {
-        guard let coordinator else { return }
+    private func handleSlotPressChanged(slotIndex: Int, isPressed: Bool) {
+        if isPressed {
+            presentation.pressedSlotIndex = slotIndex
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      !self.isCompletingClickDismissal,
+                      self.presentation.pressedSlotIndex == slotIndex else {
+                    return
+                }
+                self.presentation.pressedSlotIndex = nil
+            }
+        }
+    }
+
+    private func handleSlotTriggered(slotIndex: Int, item: BarItem?) {
+        guard let coordinator, !isCompletingClickDismissal else { return }
         let sourceName = L10n.tr("Mac 悬浮栏", "Mac Notch Bar", language: coordinator.lang)
 
-        let shouldDismissBeforeAction: Bool = {
+        isCompletingClickDismissal = true
+        presentation.pressedSlotIndex = slotIndex
+        presentation.hoveredSlotIndex = slotIndex
+
+        let shouldOrderOutImmediately: Bool = {
+            guard let item else { return false }
             if case .systemAction(let action, _, _) = item.kind {
                 switch action {
                 case .screenshotInteractive, .missionControl, .showDesktop, .lockScreen, .toggleFullscreen:
@@ -529,37 +630,40 @@ public final class MacNotchPanelController {
             return false
         }()
 
-        if shouldDismissBeforeAction {
-            _ = stateMachine.dismissImmediately(suppressUntilTriggerExit: true)
-            orderOutImmediately()
-            unregisterTemporaryEscapeHotKey()
-            visibleWatchdogTask?.cancel()
-            visibleWatchdogTask = nil
-        }
+        clickDismissTask?.cancel()
+        clickDismissTask = Task { @MainActor [weak self, weak coordinator] in
+            try? await Task.sleep(nanoseconds: 110_000_000)
+            guard !Task.isCancelled else { return }
 
-        Task { @MainActor [weak self, weak coordinator] in
+            if let self {
+                self.isCompletingClickDismissal = false
+                self.presentation.pressedSlotIndex = nil
+                _ = self.stateMachine.dismissImmediately(suppressUntilTriggerExit: true)
+                if shouldOrderOutImmediately {
+                    self.unregisterTemporaryEscapeHotKey()
+                    self.visibleWatchdogTask?.cancel()
+                    self.visibleWatchdogTask = nil
+                    self.orderOutImmediately()
+                } else if self.isPanelVisible {
+                    self.hidePanel(animated: true)
+                }
+            }
+
             guard let coordinator else { return }
-            let feedback = await coordinator.triggerBarItem(item, triggeredBy: sourceName)
-            if !shouldDismissBeforeAction {
-                let label = feedback.success ? "✓ \(item.displayTitle(in: coordinator.lang))" : feedback.detail
-                self?.presentation.flashFeedback(label)
+            if let item {
+                _ = await coordinator.triggerBarItem(item, triggeredBy: sourceName)
+            } else {
+                let target = PendingMacSlotEditorTarget(
+                    pageIndex: coordinator.selectedPageIndex,
+                    slotIndex: slotIndex
+                )
+                coordinator.openMainStudioWindow(selectingSection: .chocolateBar, editingSlot: target)
             }
         }
     }
 
     private func openStudioWindow() {
-        guard let coordinator else { return }
-        dismissPanelImmediately()
-        coordinator.selectedSection = .chocolateBar
-        NSApp.activate(ignoringOtherApps: true)
-
-        if let studioWin = NSApp.windows.first(where: { win in
-            !(win is NSPanel) && (win.identifier?.rawValue.contains("studio-main") == true || win.title == "choclift")
-        }) {
-            studioWin.makeKeyAndOrderFront(nil)
-        } else {
-            NSWorkspace.shared.open(Bundle.main.bundleURL)
-        }
+        coordinator?.openMainStudioWindow(selectingSection: .chocolateBar)
     }
 
     // MARK: - Screen Metrics & Full-Screen Video / Space Detection

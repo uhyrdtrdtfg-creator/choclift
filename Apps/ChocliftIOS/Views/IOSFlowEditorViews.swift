@@ -23,19 +23,33 @@ public struct IOSFlowsManagerSheet: View {
 
     public var body: some View {
         NavigationStack {
-            IOSFlowsListContent(
-                client: client,
-                targetSlot: nil,
-                onSelectForSlot: nil,
-                onRequestEdit: { session in
-                    editingSession = session
-                },
-                onRequestPlaceInSlot: { flow in
-                    selectedPageIndex = min(max(0, defaultPageIndex), max(0, client.profile.pages.count - 1))
-                    selectedSlotIndex = firstEmptySlot(in: selectedPageIndex) ?? 0
-                    placingFlow = flow
+            VStack(spacing: 0) {
+                if client.controlStripState.shouldShowDisplayPicker {
+                    HStack(spacing: 8) {
+                        Text(L10n.tr("贴靠与分屏目标屏幕", "Target Display for Snap & Split", language: lang))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(palette.secondaryText)
+                        Spacer()
+                        IOSDisplayTargetPickerMenu(client: client, compact: false)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
                 }
-            )
+
+                IOSFlowsListContent(
+                    client: client,
+                    targetSlot: nil,
+                    onSelectForSlot: nil,
+                    onRequestEdit: { session in
+                        editingSession = session
+                    },
+                    onRequestPlaceInSlot: { flow in
+                        selectedPageIndex = min(max(0, defaultPageIndex), max(0, client.profile.pages.count - 1))
+                        selectedSlotIndex = firstEmptySlot(in: selectedPageIndex) ?? 0
+                        placingFlow = flow
+                    }
+                )
+            }
             .background(
                 LinearGradient(
                     colors: [palette.backgroundTop, palette.backgroundBottom],
@@ -307,6 +321,18 @@ public struct IOSFlowsSlotTabView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
 
+            if client.controlStripState.shouldShowDisplayPicker {
+                HStack(spacing: 8) {
+                    Text(L10n.tr("目标屏幕", "Target Display", language: lang))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(palette.secondaryText)
+                    Spacer()
+                    IOSDisplayTargetPickerMenu(client: client, compact: false)
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+            }
+
             IOSFlowsListContent(
                 client: client,
                 targetSlot: (pageIndex, slotIndex),
@@ -358,6 +384,8 @@ private struct IOSFlowsListContent: View {
     let onSelectForSlot: ((ActionFlow) -> Void)?
     let onRequestEdit: (IOSFlowEditSession) -> Void
     let onRequestPlaceInSlot: ((ActionFlow) -> Void)?
+
+    @State private var flowConfirmGate = DestructiveActionConfirmGate()
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -472,6 +500,32 @@ private struct IOSFlowsListContent: View {
 
                         Spacer(minLength: 4)
 
+                        if client.connectionState.isConnected,
+                           flowConfirmGate.isArmed(
+                               targetID: flow.id.uuidString,
+                               at: ProcessInfo.processInfo.systemUptime
+                           ) {
+                            Button {
+                                let decision = flowConfirmGate.registerTap(
+                                    targetID: flow.id.uuidString,
+                                    isDestructive: flow.requiresDestructiveConfirmation,
+                                    at: ProcessInfo.processInfo.systemUptime
+                                )
+                                if decision == .confirmedRun || decision == .runImmediately {
+                                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                    client.triggerFlow(id: flow.id)
+                                }
+                            } label: {
+                                Text(L10n.tr("再点确认", "Tap Again", language: lang))
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(palette.emphasisForeground)
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 5)
+                                    .background(palette.statusFailure, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+
                         Menu {
                             if let onSelectForSlot {
                                 Button {
@@ -491,7 +545,23 @@ private struct IOSFlowsListContent: View {
 
                             if client.connectionState.isConnected {
                                 Button {
-                                    client.triggerFlow(id: flow.id)
+                                    let decision = flowConfirmGate.registerTap(
+                                        targetID: flow.id.uuidString,
+                                        isDestructive: flow.requiresDestructiveConfirmation,
+                                        at: ProcessInfo.processInfo.systemUptime
+                                    )
+                                    switch decision {
+                                    case .requireSecondTap:
+                                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                        let delay = CompanionInteractionPolicy.destructiveConfirmWindowSeconds + 0.05
+                                        Task { @MainActor in
+                                            try? await Task.sleep(for: .seconds(delay))
+                                            flowConfirmGate.expireIfNeeded(at: ProcessInfo.processInfo.systemUptime)
+                                        }
+                                    case .runImmediately, .confirmedRun:
+                                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                        client.triggerFlow(id: flow.id)
+                                    }
                                 } label: {
                                     Label(L10n.tr("立即在 Mac 上运行", "Run on Mac Now", language: lang), systemImage: "play.fill")
                                 }

@@ -96,6 +96,7 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public var profile: ChocliftWorkspaceProfile = ChocliftDefaults.makeDefaultProfile()
     @Published public private(set) var recentApps: [RecentAppEntry] = []
     @Published public private(set) var frontmostBundleID: String?
+    @Published public private(set) var frontmostAppName: String?
     @Published public private(set) var isEditingTextOnMac: Bool = false
     @Published public private(set) var focusedMacAppName: String?
     @Published public private(set) var isMacAccessibilityGranted: Bool = true
@@ -104,6 +105,17 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var macCatalogShortcuts: [InstalledShortcutSummary] = []
     @Published public private(set) var orcaStatus: OrcaTaskStatusSnapshot?
     @Published public private(set) var controlStripState: ControlStripState = ControlStripState()
+    @Published public private(set) var clipboardPreview: ClipboardPreviewSnapshot = .empty
+    @Published public private(set) var calendarSnapshot: NextCalendarEventSnapshot = .initial
+    @Published public private(set) var latestScreenshotPreview: ScreenshotCaptureResult?
+    @Published public private(set) var isCapturingScreenshot: Bool = false
+    @Published public private(set) var frontmostWindows: FrontmostAppWindowSnapshot = .empty
+    @Published public private(set) var activeTileFeedback: TileActionFeedbackBanner?
+    @Published public private(set) var recentlyTriggeredTiles: [RecentlyTriggeredTileEntry] = []
+    @Published public private(set) var maintenanceConfirmController = Round08MaintenanceConfirmController()
+    @Published public private(set) var lockScreenConfirmController = Round09LockScreenConfirmController()
+    @Published public private(set) var hapticQuietHours: HapticQuietHoursSettings = .disabled
+    @Published public private(set) var observedClipboardPreviewTexts: Set<String> = []
     @Published public var lastFeedback: CompanionFeedbackToast?
 
     public let deviceID: String
@@ -122,6 +134,7 @@ public final class CompanionClientEngine: ObservableObject {
     public var heartbeatTimeoutSeconds: TimeInterval = 15.0
     public var maxAutoReconnectAttempts: Int = 3
     public var pinGlitchRecoveryWindowSeconds: TimeInterval = 6.0
+    public var tileFeedbackDurationSeconds: TimeInterval = TileActionFeedbackBanner.defaultDisplayDurationSeconds
 
     /// True if the user tapped Disconnect/Cancel during the current app launch; never persisted across launches.
     public var isAutoConnectSuppressedForCurrentLaunch: Bool {
@@ -130,6 +143,8 @@ public final class CompanionClientEngine: ObservableObject {
 
     private let storageDefaults: UserDefaults
     private let savedMacsKey: String
+    private let recentlyTriggeredTilesKey: String
+    private let hapticQuietHoursKey: String
     private let networkQueue = DispatchQueue(label: "com.choclift.client.network", qos: .userInteractive)
 
     private var browser: NWBrowser?
@@ -167,6 +182,11 @@ public final class CompanionClientEngine: ObservableObject {
     private var heartbeatTask: Task<Void, Never>?
     private var pinGlitchExpiryTask: Task<Void, Never>?
     private var pinSubmissionWatchdogTask: Task<Void, Never>?
+    private var tileFeedbackTracker = TileActionFeedbackTracker()
+    private var tileFeedbackExpiryTask: Task<Void, Never>?
+    private var maintenanceConfirmExpiryTask: Task<Void, Never>?
+    private var lockScreenConfirmExpiryTask: Task<Void, Never>?
+    private var connectedClipboardMacID: String?
 
     public init(
         deviceID: String,
@@ -180,7 +200,11 @@ public final class CompanionClientEngine: ObservableObject {
         self.platform = platform
         self.storageDefaults = userDefaults
         self.savedMacsKey = "\(storageKeyPrefix).savedMacs"
+        self.recentlyTriggeredTilesKey = "\(storageKeyPrefix).recentlyTriggeredTiles"
+        self.hapticQuietHoursKey = "\(storageKeyPrefix).hapticQuietHours"
         loadSavedCredentials()
+        loadRecentlyTriggeredTiles()
+        loadHapticQuietHours()
     }
 
     // MARK: - Discovery
@@ -490,7 +514,53 @@ public final class CompanionClientEngine: ObservableObject {
         if saved.lastBluetoothPeripheralID != nil && isBluetoothPoweredOn {
             return true
         }
+        if candidateMacID == saved.macID && activeEndpoint != nil {
+            return true
+        }
         return false
+    }
+
+    public var preferredSavedMacForReconnect: SavedMacCredential? {
+        guard !savedMacs.isEmpty else { return nil }
+        if let candidateMacID,
+           let current = savedMacs.first(where: { $0.macID == candidateMacID }),
+           canReconnectSavedMac(current) {
+            return current
+        }
+        if let reachable = savedMacs.first(where: { canReconnectSavedMac($0) }) {
+            return reachable
+        }
+        return savedMacs.first
+    }
+
+    /// True when the companion is disconnected and has a saved Mac credential so tapping the status banner
+    /// reconnects directly with the saved auth token instead of prompting for pairing/PIN.
+    public var canOneTapReconnectFromBanner: Bool {
+        guard connectionState == .disconnected else { return false }
+        return preferredSavedMacForReconnect != nil
+    }
+
+    /// Reconnects to the saved Mac using the stored auth token (never re-asking for a PIN when still paired).
+    @discardableResult
+    public func reconnectFromDisconnectedBanner() -> Bool {
+        guard connectionState == .disconnected,
+              let saved = preferredSavedMacForReconnect else {
+            return false
+        }
+        intentionalDisconnect = false
+        consecutiveReconnectFailures = 0
+        lastConnectionIssue = nil
+        rejectedAutoProbePeripheralIDs.removeAll()
+        if !isBrowsingActive {
+            startBrowsing()
+        }
+        if canReconnectSavedMac(saved) {
+            reconnectSavedMac(saved)
+            return true
+        }
+        candidateMacID = saved.macID
+        autoConnectIfAppropriate()
+        return true
     }
 
     public func reconnectSavedMac(_ saved: SavedMacCredential) {
@@ -519,12 +589,22 @@ public final class CompanionClientEngine: ObservableObject {
             connectToHost(host: host, port: port, targetName: saved.macName)
             return
         }
-        if let peripheralID = saved.lastBluetoothPeripheralID {
-            _ = connectKnownBluetoothPeripheral(
-                id: peripheralID,
-                targetName: saved.macName,
-                macID: saved.macID
-            )
+        if let peripheralID = saved.lastBluetoothPeripheralID,
+           connectKnownBluetoothPeripheral(
+               id: peripheralID,
+               targetName: saved.macName,
+               macID: saved.macID
+           ) {
+            return
+        }
+        if candidateMacID == saved.macID, let endpoint = activeEndpoint {
+            intentionalDisconnect = false
+            isSavedMacProbeConnect = false
+            probeTargetMacID = nil
+            clearPINGlitchState()
+            wifiPreferenceTask?.cancel()
+            reconnectTask?.cancel()
+            openConnection(to: endpoint, targetName: saved.macName, preservePINState: false)
         }
     }
 
@@ -1322,6 +1402,22 @@ public final class CompanionClientEngine: ObservableObject {
 
         activeLink = nil
         orcaStatus = nil
+        clipboardPreview = .empty
+        calendarSnapshot = .initial
+        frontmostWindows = .empty
+        latestScreenshotPreview = nil
+        isCapturingScreenshot = false
+        var disconnectedStrip = controlStripState
+        disconnectedStrip.isKeepMacAwakeEnabled = false
+        disconnectedStrip.macBattery = nil
+        disconnectedStrip.privacyCapture = .inactive
+        disconnectedStrip.wifiSSID = nil
+        disconnectedStrip.ejectableExternalVolumeCount = 0
+        disconnectedStrip.frontmostAppName = nil
+        controlStripState = disconnectedStrip
+        disarmMaintenanceConfirmation()
+        disarmLockMacScreenConfirmation()
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         lastConnectionIssue = nil
         accumulator.reset()
         retriedTokenMacIDs.removeAll()
@@ -1432,6 +1528,20 @@ public final class CompanionClientEngine: ObservableObject {
             clearPINGlitchState()
             activeLink = nil
             orcaStatus = nil
+            clipboardPreview = .empty
+            calendarSnapshot = .initial
+            frontmostWindows = .empty
+            latestScreenshotPreview = nil
+            isCapturingScreenshot = false
+            var disconnectedStrip = controlStripState
+            disconnectedStrip.isKeepMacAwakeEnabled = false
+            disconnectedStrip.macBattery = nil
+            disconnectedStrip.privacyCapture = .inactive
+            disconnectedStrip.wifiSSID = nil
+            disconnectedStrip.ejectableExternalVolumeCount = 0
+            controlStripState = disconnectedStrip
+            disarmMaintenanceConfirmation()
+            tileFeedbackTracker.clearPendingWithoutFeedback()
             connectionState = .disconnected
             return
         }
@@ -1486,6 +1596,23 @@ public final class CompanionClientEngine: ObservableObject {
         let target = activeTargetName
         activeLink = nil
         orcaStatus = nil
+        clipboardPreview = .empty
+        calendarSnapshot = .initial
+        frontmostWindows = .empty
+        isCapturingScreenshot = false
+        var disconnectedStrip = controlStripState
+        disconnectedStrip.isKeepMacAwakeEnabled = false
+        disconnectedStrip.macBattery = nil
+        disconnectedStrip.privacyCapture = .inactive
+        disconnectedStrip.wifiSSID = nil
+        disconnectedStrip.ejectableExternalVolumeCount = 0
+        disconnectedStrip.frontmostAppName = nil
+        controlStripState = disconnectedStrip
+        disarmMaintenanceConfirmation()
+        disarmLockMacScreenConfirmation()
+        if let failedBanner = tileFeedbackTracker.failPendingOnDisconnect() {
+            publishTileFeedback(failedBanner)
+        }
         connectionState = .disconnected
         if wasConnectedOrConnecting {
             lastConnectionIssue = L10n.tr(
@@ -1660,30 +1787,149 @@ public final class CompanionClientEngine: ObservableObject {
         }
     }
 
-    public func triggerBarItem(_ item: BarItem) {
+    public func triggerBarItem(
+        _ item: BarItem,
+        from slotOrigin: SlotCoordinate? = nil,
+        triggeredAt: Date = Date()
+    ) {
+        // Folders open locally on the companion and never send `.folder` directly over the wire.
+        guard !item.isFolder else { return }
+        let resolvedSlot = slotOrigin ?? locateSlot(for: item.id)
+        if let resolvedSlot {
+            tileFeedbackTracker.recordTileTriggered(slot: resolvedSlot)
+        } else {
+            tileFeedbackTracker.clearPendingWithoutFeedback()
+        }
+        recordRecentlyTriggeredTile(item, from: resolvedSlot, triggeredAt: triggeredAt)
         send(.triggerBarItem(item))
     }
 
+    public func recordOfflineTileFailure(
+        slot: SlotCoordinate?,
+        title: String,
+        detail: String,
+        triggeredAt: Date = Date()
+    ) {
+        if let slot {
+            publishTileFeedback(tileFeedbackTracker.recordImmediateOutcome(slot: slot, outcome: .failure))
+            if let slotItem = profile.barItem(at: slot), !slotItem.isFolder {
+                recordRecentlyTriggeredTile(slotItem, from: slot, triggeredAt: triggeredAt)
+            }
+        } else {
+            tileFeedbackTracker.clearPendingWithoutFeedback()
+        }
+        lastFeedback = CompanionFeedbackToast(success: false, title: title, detail: detail)
+    }
+
+    public func recordRecentlyTriggeredTile(
+        _ item: BarItem,
+        from slotOrigin: SlotCoordinate? = nil,
+        triggeredAt: Date = Date()
+    ) {
+        guard !item.isFolder else { return }
+        if item.isSlotReference, profile.resolveBarItem(item, from: slotOrigin).isMissing {
+            return
+        }
+        let resolvedTitle = profile.displayTitle(for: item, from: slotOrigin, in: profile.settings.language)
+        var list = RecentlyTriggeredTileList(entries: recentlyTriggeredTiles)
+        list.record(id: item.id, title: resolvedTitle, triggeredAt: triggeredAt)
+        recentlyTriggeredTiles = list.entries
+        persistRecentlyTriggeredTiles()
+    }
+
+    /// Resolves when `item` last ran using ONLY `recentlyTriggeredTiles` (never clipboard text).
+    public func lastTriggeredDate(for item: BarItem?, from slotOrigin: SlotCoordinate? = nil) -> Date? {
+        guard let item else { return nil }
+        let list = RecentlyTriggeredTileList(entries: recentlyTriggeredTiles)
+        var candidateDates: [Date] = []
+        if let direct = list.lastTriggeredDate(for: item.id) {
+            candidateDates.append(direct)
+        }
+        switch item.kind {
+        case .slotReference:
+            if let resolved = profile.resolveBarItem(item, from: slotOrigin).resolvedItem,
+               let targetDate = list.lastTriggeredDate(for: resolved.id) {
+                candidateDates.append(targetDate)
+            }
+        case .folder(let folder):
+            for child in folder.children {
+                if let childDate = list.lastTriggeredDate(for: child.id) {
+                    candidateDates.append(childDate)
+                }
+            }
+        default:
+            break
+        }
+        return candidateDates.max()
+    }
+
+    /// Formats a compact relative age string (such as `"2m"`) for `item` from `recentlyTriggeredTiles`.
+    public func lastTriggeredText(
+        for item: BarItem?,
+        from slotOrigin: SlotCoordinate? = nil,
+        now: Date = Date()
+    ) -> String? {
+        LastTriggeredTimeFormatter.compactRelativeString(
+            since: lastTriggeredDate(for: item, from: slotOrigin),
+            now: now
+        )
+    }
+
+    public func clearRecentlyTriggeredTiles() {
+        recentlyTriggeredTiles = []
+        persistRecentlyTriggeredTiles()
+    }
+
+    public func tileOutcome(for slot: SlotCoordinate?) -> TileActionOutcome? {
+        guard let slot else { return nil }
+        return tileFeedbackTracker.outcome(for: slot)
+    }
+
     public func triggerFlow(id: UUID) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.triggerFlow(flowID: id))
     }
 
     public func activateRecentApp(_ entry: RecentAppEntry) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.activateRecentApp(bundleIdentifier: entry.bundleIdentifier, appPath: entry.appPath))
     }
 
     public func togglePinRecentApp(_ entry: RecentAppEntry) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.setRecentAppPinned(bundleIdentifier: entry.bundleIdentifier, isPinned: !entry.isPinned))
     }
 
     public func quitOrHideApp(bundleIdentifier: String, shouldQuit: Bool) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.quitOrHideApp(bundleIdentifier: bundleIdentifier, shouldQuit: shouldQuit))
     }
 
     public func insertText(_ text: String) {
         let clamped = TextSnippet.clampBody(text)
         guard !clamped.isEmpty else { return }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.insertEmoji(clamped))
+    }
+
+    @discardableResult
+    public func insertSnippet(_ text: String, mode: SnippetInsertMode = .focusedFieldInsert) -> Bool {
+        let clamped = TextSnippet.clampBody(text)
+        guard !clamped.isEmpty else { return false }
+        // Typing mode is only available when a field is focused; if no field is focused, do nothing.
+        if mode == .typeKeys {
+            guard SnippetInsertPolicy.isModeAvailable(.typeKeys, isFieldFocused: isEditingTextOnMac) else {
+                return false
+            }
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.insertSnippet(text: clamped, mode: mode))
+        return true
+    }
+
+    @discardableResult
+    public func triggerSnippet(_ snippet: TextSnippet) -> Bool {
+        insertSnippet(snippet.body, mode: snippet.insertMode)
     }
 
     public func insertEmoji(_ emoji: String) {
@@ -1691,10 +1937,12 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     public func performGesture(_ gesture: TouchGestureType) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.performGesture(gesture))
     }
 
     public func performQuickAction(_ action: SystemQuickAction) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.performQuickAction(action))
     }
 
@@ -1729,8 +1977,549 @@ public final class CompanionClientEngine: ObservableObject {
         setMicMuted(!controlStripState.isMicMuted)
     }
 
+    public func undoLastWindowMove() {
+        guard controlStripState.canUndoWindowMove else { return }
+        var next = controlStripState
+        next.canUndoWindowMove = false
+        controlStripState = next
+        send(.undoLastWindowMove)
+    }
+
+    public func requestCompanionDashboard() {
+        send(.requestCompanionDashboard)
+    }
+
+    public func pasteMacClipboard() {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.pasteMacClipboard)
+    }
+
+    public func captureMainDisplayScreenshot() {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        isCapturingScreenshot = true
+        send(.captureMainDisplayScreenshot)
+    }
+
+    public func dismissScreenshotPreview() {
+        latestScreenshotPreview = nil
+    }
+
+    public func setTargetDisplay(displayID: UInt32?) {
+        var next = controlStripState
+        next.selectedTargetDisplayID = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: displayID,
+            connectedDisplays: next.connectedDisplays
+        )
+        controlStripState = next
+        send(.setTargetDisplay(displayID: next.effectiveTargetDisplayID))
+    }
+
+    public func openCalendarOnMac() {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.openCalendarApp)
+    }
+
+    public func triggerSoundboardClip(id: UUID) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.triggerSoundboardClip(soundID: id))
+    }
+
+    public func stopSoundboardPlayback() {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.stopSoundboardPlayback)
+    }
+
+    public func setSoundboardVolume(_ level: Double) {
+        let clamped = ControlStripLevel.clamp(level)
+        var nextStrip = controlStripState
+        nextStrip.soundboardVolume = clamped
+        controlStripState = nextStrip
+        profile.soundboardVolume = clamped
+        send(.setSoundboardVolume(level: clamped))
+    }
+
+    public func setKeepMacAwake(_ isEnabled: Bool) {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            var next = controlStripState
+            next.isKeepMacAwakeEnabled = false
+            controlStripState = next
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("保持 Mac 唤醒", "Keep Mac Awake", language: lang),
+                detail: L10n.tr("需连接 Mac 后才能开启防休眠", "Connect to your Mac to prevent idle sleep", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        var next = controlStripState
+        next.isKeepMacAwakeEnabled = isEnabled
+        controlStripState = next
+        send(.setKeepMacAwake(isEnabled))
+    }
+
+    public func toggleKeepMacAwake() {
+        setKeepMacAwake(!controlStripState.isKeepMacAwakeEnabled)
+    }
+
+    /// Requests switching the Mac's default CoreAudio output device without optimistically faking a switch locally.
+    public func selectAudioOutputDevice(id: String) {
+        let lang = profile.settings.language
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("音频输出", "Audio Output", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        guard controlStripState.canSwitchAudioOutput else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("音频输出只读", "Audio Output Read-Only", language: lang),
+                detail: L10n.tr(
+                    "当前 macOS 音频硬件不支持通过公开 API 切换默认输出设备。",
+                    "macOS reported the default audio output as read-only via public CoreAudio API.",
+                    language: lang
+                )
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.setAudioOutputDevice(deviceID: trimmed))
+    }
+
+    public func requestFrontmostAppWindows() {
+        guard connectionState.isConnected else { return }
+        send(.requestFrontmostAppWindows)
+    }
+
+    public func raiseFrontmostWindow(id: String) {
+        let lang = profile.settings.language
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("置顶窗口", "Raise Window", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.raiseFrontmostWindow(windowID: trimmed))
+    }
+
+    /// Puts the Mac display to sleep without locking the Mac or changing the Keep Mac Awake toggle.
+    public func sleepMacDisplay() {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("熄灭屏幕", "Sleep Display", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.sleepMacDisplay)
+    }
+
+    /// Shows or hides Finder desktop icons on the Mac (`com.apple.finder CreateDesktop`) and restarts Finder.
+    public func setFinderDesktopIconsVisible(_ visible: Bool) {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: FinderDesktopIconsToggleCopy.actionTitle(areIconsVisible: controlStripState.areFinderDesktopIconsVisible, language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.setFinderDesktopIconsVisible(visible))
+    }
+
+    public func toggleFinderDesktopIcons() {
+        setFinderDesktopIconsVisible(!controlStripState.areFinderDesktopIconsVisible)
+    }
+
+    // MARK: - Round 8 Two-Tap Maintenance Actions (Empty Trash & Eject External Disks)
+
+    public func isMaintenanceActionArmed(
+        _ action: Round08MaintenanceAction,
+        at now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Bool {
+        maintenanceConfirmController.isArmed(action, at: now)
+    }
+
+    public func disarmMaintenanceConfirmation() {
+        maintenanceConfirmExpiryTask?.cancel()
+        maintenanceConfirmExpiryTask = nil
+        if maintenanceConfirmController.gate.armedTargetID != nil {
+            maintenanceConfirmController.disarm()
+        }
+    }
+
+    /// Registers a tap on Empty Trash using the 3-second second-tap confirm gate.
+    /// Never sends `.emptyMacTrash` on the first tap.
+    @discardableResult
+    public func tapEmptyTrash(
+        at now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Round08MaintenanceTapOutcome {
+        handleMaintenanceTap(.emptyTrash, at: now)
+    }
+
+    /// Registers a tap on Eject External Disks using the 3-second second-tap confirm gate.
+    /// Stays completely quiet when `ejectableExternalVolumeCount <= 0` and never runs on the first tap.
+    @discardableResult
+    public func tapEjectExternalDisks(
+        at now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Round08MaintenanceTapOutcome {
+        handleMaintenanceTap(.ejectExternalDisks, at: now)
+    }
+
+    private func handleMaintenanceTap(
+        _ action: Round08MaintenanceAction,
+        at now: TimeInterval
+    ) -> Round08MaintenanceTapOutcome {
+        disarmLockMacScreenConfirmation()
+        maintenanceConfirmExpiryTask?.cancel()
+        maintenanceConfirmExpiryTask = nil
+
+        let ejectableCount = connectionState.isConnected ? controlStripState.ejectableExternalVolumeCount : 0
+        let outcome = maintenanceConfirmController.registerTap(
+            action: action,
+            ejectableVolumeCount: ejectableCount,
+            at: now
+        )
+
+        switch outcome {
+        case .quietNothingToEject:
+            return .quietNothingToEject
+
+        case .requireSecondTap(let expiresAt):
+            let delay = maintenanceConfirmController.confirmationWindowSeconds + 0.05
+            maintenanceConfirmExpiryTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard let self, !Task.isCancelled else { return }
+                self.maintenanceConfirmController.expireIfNeeded(at: expiresAt + 0.01)
+            }
+            return .requireSecondTap(expiresAt: expiresAt)
+
+        case .confirmedExecute:
+            let lang = profile.settings.language
+            guard connectionState.isConnected else {
+                lastFeedback = CompanionFeedbackToast(
+                    success: false,
+                    title: action.title(ejectableCount: ejectableCount, compact: false, in: lang),
+                    detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                )
+                return .confirmedExecute
+            }
+            tileFeedbackTracker.clearPendingWithoutFeedback()
+        switch action {
+        case .emptyTrash:
+            send(.emptyMacTrash)
+        case .ejectExternalDisks:
+            send(.ejectExternalDisks)
+        }
+        return .confirmedExecute
+        }
+    }
+
+    // MARK: - Round 9: Lock Screen (Two-Tap 3s Confirm), Hide Other Windows, Pinned Clipboard & Strip Frontmost App
+
+    public func isLockMacScreenArmed(
+        at now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Bool {
+        lockScreenConfirmController.isArmed(at: now)
+    }
+
+    public func disarmLockMacScreenConfirmation() {
+        lockScreenConfirmExpiryTask?.cancel()
+        lockScreenConfirmExpiryTask = nil
+        if lockScreenConfirmController.gate.armedTargetID != nil {
+            lockScreenConfirmController.disarm()
+        }
+    }
+
+    /// Registers a tap on the Lock Screen button using the 3-second second-tap confirm gate.
+    /// Never runs or sends `.lockMacScreen` on the first tap, and stays completely separate from `.sleepMacDisplay`.
+    @discardableResult
+    public func tapLockMacScreen(
+        at now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Round09LockScreenTapOutcome {
+        disarmMaintenanceConfirmation()
+        lockScreenConfirmExpiryTask?.cancel()
+        lockScreenConfirmExpiryTask = nil
+
+        let outcome = lockScreenConfirmController.registerTap(at: now)
+        switch outcome {
+        case .requireSecondTap(let expiresAt):
+            let delay = lockScreenConfirmController.confirmationWindowSeconds + 0.05
+            lockScreenConfirmExpiryTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard let self, !Task.isCancelled else { return }
+                self.lockScreenConfirmController.expireIfNeeded(at: expiresAt + 0.01)
+            }
+            return .requireSecondTap(expiresAt: expiresAt)
+
+        case .confirmedExecute:
+            let lang = profile.settings.language
+            guard connectionState.isConnected else {
+                lastFeedback = CompanionFeedbackToast(
+                    success: false,
+                    title: Round09LockScreenConfirmController.title(compact: false, in: lang),
+                    detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                )
+                return .confirmedExecute
+            }
+            tileFeedbackTracker.clearPendingWithoutFeedback()
+            send(.lockMacScreen)
+            return .confirmedExecute
+        }
+    }
+
+    /// Hides every running Mac app except the frontmost one without quitting them.
+    /// Leaves the one-level window-move undo state untouched.
+    public func hideOtherWindows() {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: HideOtherWindowsPolicy.buttonTitle(compact: false, in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.hideOtherApplications)
+    }
+
+    /// Read-only frontmost Mac app name for the persistent strip badge (`nil` when disconnected).
+    public var resolvedStripFrontmostAppName: String? {
+        guard connectionState.isConnected else { return nil }
+        if let live = FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName) {
+            return live
+        }
+        if let stripName = FrontmostAppStripFormatter.sanitizedAppName(controlStripState.frontmostAppName) {
+            return stripName
+        }
+        if let bundleID = frontmostBundleID {
+            let resolved = profile.resolvedAppDisplayName(
+                forBundleIdentifier: bundleID,
+                preferredAppName: nil,
+                recentApps: recentApps,
+                catalogApps: macCatalogApps
+            )
+            return FrontmostAppStripFormatter.sanitizedAppName(resolved)
+        }
+        return nil
+    }
+
+    public var isCurrentClipboardPreviewPinned: Bool {
+        guard let text = clipboardPreview.previewText else { return false }
+        return profile.isClipboardTextPinned(text)
+    }
+
+    public var canPinCurrentClipboardPreview: Bool {
+        guard connectionState.isConnected,
+              let text = PinnedClipboardItem.sanitizedText(clipboardPreview.previewText) else {
+            return false
+        }
+        if profile.isClipboardTextPinned(text) {
+            return true
+        }
+        return profile.canPinMoreClipboardItems
+    }
+
+    /// Pins the text currently shown in the Mac clipboard preview (`<= 280` chars, max 8 pins)
+    /// and syncs through `ChocliftWorkspaceProfile`.
+    @discardableResult
+    public func pinCurrentClipboardPreview() -> Bool {
+        guard let safeText = PinnedClipboardItem.sanitizedText(clipboardPreview.previewText) else {
+            return false
+        }
+        recordObservedClipboardPreviewText(safeText)
+        return pinClipboardPreviewText(safeText)
+    }
+
+    /// Pins `text` ONLY if it already appeared in the Mac clipboard preview on this companion,
+    /// enforcing the 8-item cap and 280-character limit.
+    @discardableResult
+    public func pinClipboardPreviewText(_ text: String) -> Bool {
+        guard let safeText = PinnedClipboardItem.sanitizedText(text) else {
+            return false
+        }
+        var allowed = observedClipboardPreviewTexts
+        if let current = PinnedClipboardItem.sanitizedText(clipboardPreview.previewText) {
+            allowed.insert(current)
+        }
+        var next = profile
+        let wasAlreadyPinned = next.isClipboardTextPinned(safeText)
+        guard next.pinObservedClipboardText(safeText, observedPreviewTexts: allowed) else {
+            return false
+        }
+        if !wasAlreadyPinned {
+            pushUpdatedProfile(next)
+        }
+        return true
+    }
+
+    @discardableResult
+    public func unpinClipboardItem(id: UUID) -> Bool {
+        var next = profile
+        guard next.unpinClipboardItem(id: id) else { return false }
+        pushUpdatedProfile(next)
+        return true
+    }
+
+    @discardableResult
+    public func unpinClipboardItem(text: String) -> Bool {
+        var next = profile
+        guard next.unpinClipboardItem(text: text) else { return false }
+        pushUpdatedProfile(next)
+        return true
+    }
+
+    @discardableResult
+    public func togglePinCurrentClipboardPreview() -> Bool {
+        guard let text = PinnedClipboardItem.sanitizedText(clipboardPreview.previewText) else {
+            return false
+        }
+        if profile.isClipboardTextPinned(text) {
+            return unpinClipboardItem(text: text)
+        }
+        return pinCurrentClipboardPreview()
+    }
+
+    /// Inserts a pinned clipboard item on the Mac using the existing focused-field insertion path.
+    @discardableResult
+    public func insertPinnedClipboardItem(_ item: PinnedClipboardItem) -> Bool {
+        let lang = profile.settings.language
+        guard let safeText = PinnedClipboardItem.sanitizedText(item.text) else {
+            return false
+        }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("固定剪贴板", "Pinned Clipboard", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return false
+        }
+        return insertSnippet(safeText, mode: .focusedFieldInsert)
+    }
+
+    private func recordObservedClipboardPreviewText(_ text: String?) {
+        guard let safeText = PinnedClipboardItem.sanitizedText(text) else { return }
+        observedClipboardPreviewTexts.insert(safeText)
+    }
+
+    /// Sends Escape, Space, or an Arrow key to the frontmost Mac app through the existing input path.
+    public func sendCompactKey(_ key: CompanionCompactKey) {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: key.title(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.sendCompactKey(key))
+    }
+
+    @discardableResult
+    public func pinSlotToStrip(_ coordinate: SlotCoordinate) -> Bool {
+        var next = profile
+        guard next.pinSlotToStrip(coordinate) else { return false }
+        pushUpdatedProfile(next)
+        return true
+    }
+
+    @discardableResult
+    public func unpinSlotFromStrip(_ coordinate: SlotCoordinate) -> Bool {
+        var next = profile
+        guard next.unpinSlotFromStrip(coordinate) else { return false }
+        pushUpdatedProfile(next)
+        return true
+    }
+
+    @discardableResult
+    public func togglePinSlotToStrip(_ coordinate: SlotCoordinate) -> Bool {
+        if profile.isSlotPinnedToStrip(coordinate) {
+            return unpinSlotFromStrip(coordinate)
+        }
+        return pinSlotToStrip(coordinate)
+    }
+
+    // MARK: - Round 10 Page Reordering & Haptic Quiet Hours
+
+    public func canMovePage(at index: Int, direction: PageReorderDirection) -> Bool {
+        profile.canMovePage(at: index, direction: direction)
+    }
+
+    @discardableResult
+    public func movePage(at index: Int, direction: PageReorderDirection) -> Int? {
+        var next = profile
+        guard let updatedIndex = next.movePage(at: index, direction: direction) else {
+            return nil
+        }
+        pushUpdatedProfile(next)
+        return updatedIndex
+    }
+
+    @discardableResult
+    public func movePage(withID pageID: UUID, direction: PageReorderDirection) -> Int? {
+        var next = profile
+        guard let updatedIndex = next.movePage(withID: pageID, direction: direction) else {
+            return nil
+        }
+        pushUpdatedProfile(next)
+        return updatedIndex
+    }
+
+    public func setHapticQuietHours(_ settings: HapticQuietHoursSettings) {
+        hapticQuietHours = settings
+        persistHapticQuietHours()
+    }
+
+    public func setHapticQuietHoursEnabled(_ isEnabled: Bool) {
+        var next = hapticQuietHours
+        next.isEnabled = isEnabled
+        setHapticQuietHours(next)
+    }
+
+    public func setHapticQuietHoursWindow(startMinuteOfDay: Int, endMinuteOfDay: Int) {
+        let next = HapticQuietHoursSettings(
+            isEnabled: hapticQuietHours.isEnabled,
+            startMinuteOfDay: startMinuteOfDay,
+            endMinuteOfDay: endMinuteOfDay
+        )
+        setHapticQuietHours(next)
+    }
+
+    public func isHapticQuietTime(at date: Date = Date(), calendar: Calendar = .current) -> Bool {
+        hapticQuietHours.isQuietTime(at: date, calendar: calendar)
+    }
+
+    /// Returns whether success/failure outcome haptics may fire at `date` (false during quiet hours or when haptics are disabled).
+    public func shouldPlayOutcomeHaptics(at date: Date = Date(), calendar: Calendar = .current) -> Bool {
+        hapticQuietHours.shouldPlayOutcomeHaptics(
+            hapticFeedbackEnabled: profile.settings.hapticFeedbackEnabled,
+            at: date,
+            calendar: calendar
+        )
+    }
+
     public func pushUpdatedProfile(_ updated: ChocliftWorkspaceProfile) {
         var next = updated
+        next.prunePinnedStripSlots()
         next.bumpRevision()
         self.profile = next
         send(.updateProfile(next))
@@ -1864,17 +2653,41 @@ public final class CompanionClientEngine: ObservableObject {
                     updatedAt: Date()
                 )
             )
+            if connectedClipboardMacID != macID {
+                observedClipboardPreviewTexts.removeAll()
+                connectedClipboardMacID = macID
+            }
             profile = serverProfile
+            var initialStrip = controlStripState
+            initialStrip.soundboardVolume = serverProfile.soundboardVolume
+            controlStripState = initialStrip
             recentApps = serverRecents
             frontmostBundleID = frontmost
+            frontmostAppName = frontmost.map { bid in
+                serverProfile.resolvedAppDisplayName(
+                    forBundleIdentifier: bid,
+                    preferredAppName: serverRecents.first(where: {
+                        $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame
+                    })?.appName,
+                    recentApps: serverRecents,
+                    catalogApps: macCatalogApps
+                )
+            }
             isEditingTextOnMac = editingText
             focusedMacAppName = focusedApp
             isMacAccessibilityGranted = axTrusted
             orcaStatus = nil
+            clipboardPreview = .empty
+            frontmostWindows = .empty
+            isCapturingScreenshot = false
             connectionState = .connected(macID: macID, macName: macName)
             startHeartbeat(sessionID: currentSessionID)
             requestMissingIconsIfNeeded()
             send(.requestControlStripState)
+            send(.requestCompanionDashboard)
+            if platform != .appleWatch {
+                send(.requestFrontmostAppWindows)
+            }
 
         case .authFailed(let reason):
             connectWatchdogTask?.cancel()
@@ -1889,14 +2702,18 @@ public final class CompanionClientEngine: ObservableObject {
 
         case .profileUpdated(let updatedProfile):
             profile = updatedProfile
+            var nextStrip = controlStripState
+            nextStrip.soundboardVolume = updatedProfile.soundboardVolume
+            controlStripState = nextStrip
             requestMissingIconsIfNeeded()
 
         case .recentAppsUpdated(let entries):
             recentApps = entries
             requestMissingIconsIfNeeded()
 
-        case .frontmostAppChanged(let bundleID, _):
+        case .frontmostAppChanged(let bundleID, let appName):
             frontmostBundleID = bundleID
+            frontmostAppName = appName
 
         case .textFieldFocusChanged(let isEditingText, let appName):
             isEditingTextOnMac = isEditingText
@@ -1920,6 +2737,9 @@ public final class CompanionClientEngine: ObservableObject {
             }
 
         case .actionFeedback(let success, let title, let detail):
+            if let resolvedTileBanner = tileFeedbackTracker.resolvePending(success: success) {
+                publishTileFeedback(resolvedTileBanner)
+            }
             lastFeedback = CompanionFeedbackToast(success: success, title: title, detail: detail)
 
         case .orcaStatusUpdated(let snapshot):
@@ -1930,9 +2750,82 @@ public final class CompanionClientEngine: ObservableObject {
 
         case .controlStripStateUpdated(let state):
             controlStripState = state
+            profile.soundboardVolume = state.soundboardVolume
+            if state.ejectableExternalVolumeCount <= 0,
+               maintenanceConfirmController.gate.armedTargetID == Round08MaintenanceAction.ejectExternalDisks.rawValue {
+                disarmMaintenanceConfirmation()
+            }
+
+        case .clipboardPreviewUpdated(let snapshot):
+            guard platform != .appleWatch else {
+                clipboardPreview = .empty
+                return
+            }
+            clipboardPreview = snapshot
+            recordObservedClipboardPreviewText(snapshot.previewText)
+
+        case .screenshotCaptured(let result):
+            isCapturingScreenshot = false
+            let shotTitle = L10n.tr("主屏幕截图", "Main Display Screenshot", language: profile.settings.language)
+            if result.success {
+                if result.previewJPEGData != nil {
+                    latestScreenshotPreview = result
+                }
+                let savedDetail = result.fileName.map {
+                    L10n.tr("已保存到 Mac 桌面：\($0)", "Saved to Mac Desktop: \($0)", language: profile.settings.language)
+                } ?? L10n.tr("已保存到 Mac 桌面", "Saved to Mac Desktop", language: profile.settings.language)
+                lastFeedback = CompanionFeedbackToast(success: true, title: shotTitle, detail: savedDetail)
+            } else {
+                latestScreenshotPreview = nil
+                let errDetail = result.errorMessage ?? L10n.tr(
+                    "需要屏幕录制权限：请在系统设置 → 隐私与安全性 → 屏幕录制中开启 Choclift",
+                    "Screen Recording permission required — enable Choclift in System Settings → Privacy & Security → Screen Recording",
+                    language: profile.settings.language
+                )
+                lastFeedback = CompanionFeedbackToast(success: false, title: shotTitle, detail: errDetail)
+            }
+
+        case .calendarStatusUpdated(let snapshot):
+            calendarSnapshot = snapshot
+
+        case .frontmostWindowsUpdated(let snapshot):
+            frontmostWindows = snapshot
 
         case .unknownServerMessage:
-            break
+            if !connectionState.isConnected {
+                handleConnectionDropped(failedLink: activeLink ?? .wifi)
+            }
+        }
+    }
+
+    private func locateSlot(for itemID: UUID) -> SlotCoordinate? {
+        for page in profile.pages {
+            for (slotIndex, candidate) in page.slots.enumerated() {
+                if candidate?.id == itemID {
+                    return SlotCoordinate(pageID: page.id, slotIndex: slotIndex)
+                }
+                if case .folder(let folder) = candidate?.kind,
+                   folder.children.contains(where: { $0.id == itemID }) {
+                    return SlotCoordinate(pageID: page.id, slotIndex: slotIndex)
+                }
+            }
+        }
+        return nil
+    }
+
+    private func publishTileFeedback(_ banner: TileActionFeedbackBanner?) {
+        activeTileFeedback = banner
+        tileFeedbackExpiryTask?.cancel()
+        tileFeedbackExpiryTask = nil
+        guard let banner else { return }
+        let token = banner.token
+        let duration = max(0.05, tileFeedbackDurationSeconds)
+        tileFeedbackExpiryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(duration))
+            guard let self, !Task.isCancelled else { return }
+            if self.tileFeedbackTracker.expireFeedback(matchingToken: token) {
+                self.activeTileFeedback = nil
+            }
         }
     }
 
@@ -2016,6 +2909,37 @@ public final class CompanionClientEngine: ObservableObject {
     private func persistSavedCredentials() {
         if let data = try? JSONEncoder().encode(savedMacs) {
             storageDefaults.set(data, forKey: savedMacsKey)
+        }
+    }
+
+    private func loadRecentlyTriggeredTiles() {
+        guard let data = storageDefaults.data(forKey: recentlyTriggeredTilesKey),
+              let decoded = try? JSONDecoder().decode(RecentlyTriggeredTileList.self, from: data) else {
+            recentlyTriggeredTiles = []
+            return
+        }
+        recentlyTriggeredTiles = decoded.entries
+    }
+
+    private func persistRecentlyTriggeredTiles() {
+        let list = RecentlyTriggeredTileList(entries: recentlyTriggeredTiles)
+        if let data = try? JSONEncoder().encode(list) {
+            storageDefaults.set(data, forKey: recentlyTriggeredTilesKey)
+        }
+    }
+
+    private func loadHapticQuietHours() {
+        guard let data = storageDefaults.data(forKey: hapticQuietHoursKey),
+              let decoded = try? JSONDecoder().decode(HapticQuietHoursSettings.self, from: data) else {
+            hapticQuietHours = .disabled
+            return
+        }
+        hapticQuietHours = decoded
+    }
+
+    private func persistHapticQuietHours() {
+        if let data = try? JSONEncoder().encode(hapticQuietHours) {
+            storageDefaults.set(data, forKey: hapticQuietHoursKey)
         }
     }
 }

@@ -235,6 +235,14 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
         }
     }
 
+    public var requiresDestructiveConfirmation: Bool {
+        guard isEnabled else { return false }
+        if case .systemAction(let action, _, _) = kind {
+            return action.requiresDestructiveConfirmation
+        }
+        return false
+    }
+
     public func displayTitle(in lang: AppLanguage = .system) -> String {
         switch kind {
         case .launchOrActivateApp(let bundleID, let appName, _):
@@ -358,6 +366,10 @@ public struct ActionFlow: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     public var enabledStepCount: Int {
         steps.filter(\.isEnabled).count
+    }
+
+    public var requiresDestructiveConfirmation: Bool {
+        steps.contains(where: \.requiresDestructiveConfirmation)
     }
 
     public var referencedBundleIdentifiers: Set<String> {

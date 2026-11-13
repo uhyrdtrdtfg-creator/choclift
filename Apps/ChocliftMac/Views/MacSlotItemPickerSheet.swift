@@ -7,9 +7,12 @@ public struct MacSlotItemPickerSheet: View {
     public enum PickerTab: String, CaseIterable, Identifiable {
         case apps
         case flows
+        case sounds
         case shortcuts
         case website
         case actions
+        case folder
+        case reference
 
         public var id: String { rawValue }
 
@@ -17,9 +20,12 @@ public struct MacSlotItemPickerSheet: View {
             switch self {
             case .apps: return "app.badge"
             case .flows: return "arrow.triangle.branch"
+            case .sounds: return "speaker.wave.2.bubble.left.fill"
             case .shortcuts: return "bolt.fill"
             case .website: return "safari.fill"
             case .actions: return "macwindow.badge.plus"
+            case .folder: return "folder.fill"
+            case .reference: return "link"
             }
         }
 
@@ -27,9 +33,12 @@ public struct MacSlotItemPickerSheet: View {
             switch self {
             case .apps: return L10n.tr("应用", "Apps", language: lang)
             case .flows: return L10n.tr("动作流", "Flows", language: lang)
+            case .sounds: return L10n.tr("音效", "Sounds", language: lang)
             case .shortcuts: return L10n.tr("快捷指令", "Shortcuts", language: lang)
             case .website: return L10n.tr("网页", "Website", language: lang)
             case .actions: return L10n.tr("系统动作", "Actions", language: lang)
+            case .folder: return L10n.tr("文件夹", "Folder", language: lang)
+            case .reference: return L10n.tr("引用槽位", "Reference", language: lang)
             }
         }
     }
@@ -38,11 +47,13 @@ public struct MacSlotItemPickerSheet: View {
     let pageIndex: Int
     let slotIndex: Int
     let existingItem: BarItem?
+    let onEditOriginalSlot: ((Int, Int) -> Void)?
     @Environment(\.dismiss) private var dismiss
 
     @State private var activeTab: PickerTab = .apps
     @State private var appSearchText: String = ""
     @State private var highlightedAppIndex: Int = 0
+    @State private var soundSearchText: String = ""
 
     // Shortcut draft
     @State private var shortcutSearchText: String = ""
@@ -56,6 +67,12 @@ public struct MacSlotItemPickerSheet: View {
     @State private var websiteEmoji: String = "🌐"
     @State private var websiteColorHex: String = "#FFF1EC"
     @State private var websiteSwitchExistingTab: Bool = true
+
+    // Folder draft (max 1 folder per page, up to 8 child actions)
+    @State private var folderTitle: String = ""
+    @State private var folderEmoji: String = TileFolder.defaultEmoji
+    @State private var folderColorHex: String = TileFolder.defaultBackgroundHex
+    @State private var folderChildren: [BarItem] = []
 
     // Action flow editor sheet
     @State private var flowEditorSession: SlotFlowEditorSession?
@@ -99,17 +116,29 @@ public struct MacSlotItemPickerSheet: View {
         coordinator: MacAppCoordinator,
         pageIndex: Int,
         slotIndex: Int,
-        existingItem: BarItem?
+        existingItem: BarItem?,
+        onEditOriginalSlot: ((Int, Int) -> Void)? = nil
     ) {
         self.coordinator = coordinator
         self.pageIndex = pageIndex
         self.slotIndex = slotIndex
         self.existingItem = existingItem
+        self.onEditOriginalSlot = onEditOriginalSlot
+    }
+
+    private var currentSlotCoordinate: SlotCoordinate? {
+        guard coordinator.profile.pages.indices.contains(pageIndex) else { return nil }
+        return SlotCoordinate(pageID: coordinator.profile.pages[pageIndex].id, slotIndex: slotIndex)
     }
 
     public var body: some View {
         VStack(spacing: 0) {
             headerBar
+
+            if let existingItem, existingItem.isSlotReference {
+                Divider()
+                referenceOriginCallout(for: existingItem)
+            }
 
             Divider()
 
@@ -119,12 +148,18 @@ public struct MacSlotItemPickerSheet: View {
                     appsPickerBody
                 case .flows:
                     flowsPickerBody
+                case .sounds:
+                    soundsPickerBody
                 case .shortcuts:
                     shortcutsPickerBody
                 case .website:
                     websitePickerBody
                 case .actions:
                     actionsPickerBody
+                case .folder:
+                    folderPickerBody
+                case .reference:
+                    referencePickerBody
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -133,7 +168,7 @@ public struct MacSlotItemPickerSheet: View {
 
             footerBar
         }
-        .frame(width: 680, height: 560)
+        .frame(width: 720, height: 575)
         .background(
             LinearGradient(
                 colors: [palette.backgroundTop, palette.backgroundBottom],
@@ -903,7 +938,7 @@ public struct MacSlotItemPickerSheet: View {
             ),
             (
                 L10n.tr("桌面与系统控制", "Workspace & System", language: lang),
-                [.missionControl, .showDesktop, .screenshotInteractive, .openEmojiPicker, .lockScreen]
+                [.missionControl, .showDesktop, .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp]
             )
         ]
 
@@ -935,11 +970,22 @@ public struct MacSlotItemPickerSheet: View {
                                             .foregroundStyle(palette.primaryText)
                                             .frame(width: 32, height: 32)
                                             .background(ChocSwatch.resolvedTileColor(hex: action.accentHex), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                        Text(action.title(in: lang))
-                                            .font(.callout.weight(.medium))
-                                            .foregroundStyle(palette.primaryText)
-                                            .lineLimit(2)
-                                            .multilineTextAlignment(.leading)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(action.sentKeyboardShortcut != nil ? action.compactTitle(in: lang) : action.title(in: lang))
+                                                .font(.callout.weight(.medium))
+                                                .foregroundStyle(palette.primaryText)
+                                                .lineLimit(2)
+                                                .multilineTextAlignment(.leading)
+                                            if let shortcut = action.sentKeyboardShortcut {
+                                                Text(shortcut)
+                                                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                                                    .foregroundStyle(palette.secondaryText)
+                                                    .padding(.horizontal, 6)
+                                                    .padding(.vertical, 1.5)
+                                                    .background(palette.tileFillBottom, in: Capsule())
+                                                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
+                                            }
+                                        }
                                         Spacer(minLength: 0)
                                         if isCurrent {
                                             Image(systemName: "checkmark.circle.fill")
@@ -968,7 +1014,11 @@ public struct MacSlotItemPickerSheet: View {
     }
 
     private var footerBar: some View {
-        HStack {
+        let isPinned = coordinator.profile.isSlotPinnedToStrip(pageIndex: pageIndex, slotIndex: slotIndex)
+        let pinCount = coordinator.profile.activePinnedStripCount
+        let canPin = isPinned || coordinator.profile.canPinMoreSlotsToStrip
+
+        return HStack(spacing: 12) {
             if existingItem != nil {
                 Button(role: .destructive) {
                     coordinator.setSlotItem(nil, pageIndex: pageIndex, slotIndex: slotIndex)
@@ -977,6 +1027,24 @@ public struct MacSlotItemPickerSheet: View {
                     Label(L10n.tr("清空此槽位", "Clear Slot", language: lang), systemImage: "trash")
                         .foregroundStyle(palette.statusFailure)
                 }
+
+                Button {
+                    _ = coordinator.togglePinSlotToStrip(pageIndex: pageIndex, slotIndex: slotIndex)
+                } label: {
+                    Label(
+                        isPinned
+                            ? L10n.tr("取消固定到控制条", "Unpin from Strip", language: lang)
+                            : L10n.tr(
+                                "固定到控制条 (\(pinCount)/\(PinnedStripSlots.maxPinnedCount))",
+                                "Pin to Strip (\(pinCount)/\(PinnedStripSlots.maxPinnedCount))",
+                                language: lang
+                            ),
+                        systemImage: isPinned ? "pin.slash.fill" : "pin.fill"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .tint(isPinned ? palette.accentEmphasis : palette.accent)
+                .disabled(!canPin)
             }
 
             Spacer()
@@ -1062,6 +1130,529 @@ public struct MacSlotItemPickerSheet: View {
         }
     }
 
+    // MARK: - Sounds & Reference Picker Bodies (Round 3)
+
+    @ViewBuilder
+    private func referenceOriginCallout(for referenceItem: BarItem) -> some View {
+        let resolution = coordinator.profile.resolveBarItem(referenceItem, from: currentSlotCoordinate)
+
+        HStack(spacing: 10) {
+            Image(systemName: "arrow.turn.up.right")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(palette.accent)
+
+            switch resolution {
+            case .resolved(_, let origPageIdx, let origPageTitle, let origPageEmoji, let origSlotIdx, let origItem):
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(
+                        L10n.tr(
+                            "引用自：\(origPageEmoji) \(origPageTitle) · #\(origSlotIdx + 1)（\(coordinator.profile.displayTitle(for: origItem, in: lang))）",
+                            "Points to: \(origPageEmoji) \(origPageTitle) · #\(origSlotIdx + 1) (\(coordinator.profile.displayTitle(for: origItem, in: lang)))",
+                            language: lang
+                        )
+                    )
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(palette.primaryText)
+
+                    Text(L10n.tr("触发此槽位将直接运行原槽位，不复制动作数据。", "Triggering runs the original slot directly without duplicating action data.", language: lang))
+                        .font(.caption2)
+                        .foregroundStyle(palette.secondaryText)
+                }
+
+                Spacer()
+
+                if let onEditOriginalSlot {
+                    Button {
+                        dismiss()
+                        DispatchQueue.main.async {
+                            onEditOriginalSlot(origPageIdx, origSlotIdx)
+                        }
+                    } label: {
+                        Label(L10n.tr("编辑原槽位", "Edit Original Slot", language: lang), systemImage: "square.and.pencil")
+                            .font(.caption.bold())
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(palette.accent)
+                }
+
+            case .missing:
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L10n.tr("所引用的原槽位已被移除", "Original Referenced Slot Was Removed", language: lang))
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(palette.primaryText)
+                    Text(L10n.tr("当前处于静默空置状态，点按不会执行任何动作。可在下方重新选择引用目标或清空。", "This reference stays quiet and runs nothing. Pick another slot below or clear it.", language: lang))
+                        .font(.caption2)
+                        .foregroundStyle(palette.secondaryText)
+                }
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+        .background(palette.barSurface.opacity(0.92))
+    }
+
+    private var soundsPickerBody: some View {
+        let filteredSounds = SoundboardSearch.filter(coordinator.profile.soundboardClips, query: soundSearchText)
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(palette.secondaryText)
+                    TextField(
+                        L10n.tr("搜索音效名称…", "Search sound names…", language: lang),
+                        text: $soundSearchText
+                    )
+                    .textFieldStyle(.plain)
+                    if !soundSearchText.isEmpty {
+                        Button {
+                            soundSearchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(palette.secondaryText)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 32)
+                .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+
+                Text("\(coordinator.profile.soundboardClips.count)/\(SoundboardClip.maxBoardCount)")
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(palette.secondaryText)
+
+                Spacer()
+
+                Button {
+                    coordinator.importBuiltInMacSounds()
+                } label: {
+                    Label(L10n.tr("导入系统音效", "System Sounds", language: lang), systemImage: "waveform.badge.plus")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(!coordinator.profile.canAddMoreSoundboardClips)
+
+                Button {
+                    coordinator.chooseAndAddLocalSoundFiles()
+                } label: {
+                    Label(L10n.tr("添加本机音频…", "Add Local Audio…", language: lang), systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(palette.accent)
+                .controlSize(.small)
+                .disabled(!coordinator.profile.canAddMoreSoundboardClips)
+            }
+
+            if coordinator.profile.soundboardClips.isEmpty {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "speaker.wave.2.bubble.left.fill")
+                        .font(.system(size: 30))
+                        .foregroundStyle(palette.accent)
+                    Text(L10n.tr("音效板尚无音频", "No Sounds on Board Yet", language: lang))
+                        .font(.headline)
+                        .foregroundStyle(palette.primaryText)
+                    Text(L10n.tr("添加 Mac 上的短音效（≤ 8 秒，上限 24 个）后即可放入此槽位，Apple Watch 也可一键触发。", "Add short local Mac sounds (≤ 8s, max 24) to place on a slot for iPhone, iPad, and Apple Watch.", language: lang))
+                        .font(.caption)
+                        .foregroundStyle(palette.secondaryText)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 420)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 9) {
+                        ForEach(filteredSounds) { clip in
+                            let isCurrent = (existingItem?.soundID == clip.id)
+                            HStack(spacing: 10) {
+                                Button {
+                                    coordinator.assignSoundClipToSlot(clip, pageIndex: pageIndex, slotIndex: slotIndex)
+                                    dismiss()
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Text(clip.emoji)
+                                            .font(.system(size: 22))
+                                            .frame(width: 34, height: 34)
+                                            .background(ChocSwatch.resolvedTileColor(hex: clip.backgroundHex, fallbackHex: "#ECFAEE"), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(clip.name)
+                                                .font(.callout.weight(.semibold))
+                                                .foregroundStyle(palette.primaryText)
+                                                .lineLimit(1)
+                                            Text(clip.formattedDuration)
+                                                .font(.caption2.monospacedDigit())
+                                                .foregroundStyle(palette.secondaryText)
+                                        }
+                                        Spacer()
+                                        if isCurrent {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(palette.accent)
+                                        }
+                                    }
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+
+                                Button {
+                                    _ = coordinator.playSoundClip(id: clip.id)
+                                } label: {
+                                    Image(systemName: "play.circle.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundStyle(palette.accent)
+                                }
+                                .buttonStyle(.plain)
+                                .help(L10n.tr("试听", "Preview Sound", language: lang))
+                            }
+                            .padding(9)
+                            .background(
+                                isCurrent ? palette.tileFillTop : palette.barSurface,
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(isCurrent ? palette.accent : palette.subtleCardStroke, lineWidth: isCurrent ? 1.5 : 1)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        .padding(18)
+    }
+
+    private var referencePickerBody: some View {
+        let candidates = coordinator.profile.availableReferenceTargets(excluding: currentSlotCoordinate)
+        let currentRefCoord = existingItem?.slotReferenceCoordinate
+
+        return VStack(alignment: .leading, spacing: 12) {
+            Text(
+                L10n.tr(
+                    "选择另一个已配置的槽位建立引用。触发引用会运行原槽位；若原槽位被删除，引用将保持静默空置且不执行任何操作。",
+                    "Point this slot at another existing slot instead of copying its action. Triggering runs the original; if the original is deleted, this slot shows a quiet missing state.",
+                    language: lang
+                )
+            )
+            .font(.caption)
+            .foregroundStyle(palette.secondaryText)
+
+            if candidates.isEmpty {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "link")
+                        .font(.system(size: 28))
+                        .foregroundStyle(palette.secondaryText)
+                    Text(L10n.tr("暂无可引用的其他槽位", "No Other Occupied Slots to Reference", language: lang))
+                        .font(.headline)
+                        .foregroundStyle(palette.primaryText)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 9) {
+                        ForEach(candidates, id: \.item.id) { candidate in
+                            let coord = SlotCoordinate(pageID: candidate.page.id, slotIndex: candidate.slotIndex)
+                            let isCurrent = (currentRefCoord == coord)
+                            let title = coordinator.profile.displayTitle(for: candidate.item, from: coord, in: lang)
+
+                            Button {
+                                let refItem = BarItem(
+                                    id: existingItem?.id ?? UUID(),
+                                    kind: .slotReference(
+                                        targetPageID: candidate.page.id,
+                                        targetSlotIndex: candidate.slotIndex
+                                    )
+                                )
+                                coordinator.setSlotItem(refItem, pageIndex: pageIndex, slotIndex: slotIndex)
+                                dismiss()
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "arrow.turn.up.right")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(palette.accent)
+                                        .frame(width: 30, height: 30)
+                                        .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(title)
+                                            .font(.callout.weight(.semibold))
+                                            .foregroundStyle(palette.primaryText)
+                                            .lineLimit(1)
+                                        Text("\(candidate.page.iconEmoji) \(candidate.page.title) · #\(candidate.slotIndex + 1)")
+                                            .font(.caption2)
+                                            .foregroundStyle(palette.secondaryText)
+                                            .lineLimit(1)
+                                    }
+
+                                    Spacer()
+
+                                    if isCurrent {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(palette.accent)
+                                    }
+                                }
+                                .padding(10)
+                                .background(
+                                    isCurrent ? palette.tileFillTop : palette.barSurface,
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .strokeBorder(isCurrent ? palette.accent : palette.subtleCardStroke, lineWidth: isCurrent ? 1.5 : 1)
+                                )
+                                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(18)
+    }
+
+    // MARK: - Tab 7: Tile Folder (1 Per Page, Up to 8 Child Actions)
+
+    private var canPlaceFolderInCurrentSlot: Bool {
+        guard coordinator.profile.pages.indices.contains(pageIndex) else { return false }
+        return coordinator.profile.pages[pageIndex].canPlaceFolder(at: slotIndex)
+    }
+
+    private var folderPickerBody: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if !canPlaceFolderInCurrentSlot,
+               coordinator.profile.pages.indices.contains(pageIndex),
+               let existingFolderIdx = coordinator.profile.pages[pageIndex].folderSlotIndex {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "folder.badge.exclamationmark")
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(palette.accent)
+                    Text(L10n.tr("每页最多放置 1 个文件夹磁贴", "One Folder Per Page", language: lang))
+                        .font(.headline)
+                        .foregroundStyle(palette.primaryText)
+                    Text(
+                        L10n.tr(
+                            "当前页槽位 #\(existingFolderIdx + 1) 已有一个文件夹。这不会增加新页面。",
+                            "Slot #\(existingFolderIdx + 1) on this page already holds a folder. Folders do not add pages.",
+                            language: lang
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+                    if let onEditOriginalSlot {
+                        Button {
+                            dismiss()
+                            onEditOriginalSlot(pageIndex, existingFolderIdx)
+                        } label: {
+                            Text(L10n.tr("打开槽位 #\(existingFolderIdx + 1)", "Open Slot #\(existingFolderIdx + 1)", language: lang))
+                                .font(.caption.weight(.bold))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(palette.accent, in: Capsule())
+                                .foregroundStyle(palette.accentForeground)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                HStack(spacing: 10) {
+                    TextField(L10n.tr("图标", "Icon", language: lang), text: $folderEmoji)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 56)
+
+                    TextField(L10n.tr("文件夹名称（如：媒体工具）", "Folder Name (e.g. Media Tools)", language: lang), text: $folderTitle)
+                        .textFieldStyle(.roundedBorder)
+
+                    HStack(spacing: 5) {
+                        ForEach(Array(ChocSwatch.tileColors.prefix(6)), id: \.self) { hex in
+                            Button {
+                                folderColorHex = hex
+                            } label: {
+                                Circle()
+                                    .fill(Color(hex: hex))
+                                    .frame(width: 20, height: 20)
+                                    .overlay(
+                                        Circle()
+                                            .strokeBorder(
+                                                folderColorHex.caseInsensitiveCompare(hex) == .orderedSame
+                                                    ? palette.accent
+                                                    : palette.subtleCardStroke,
+                                                lineWidth: folderColorHex.caseInsensitiveCompare(hex) == .orderedSame ? 2 : 1
+                                            )
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Button {
+                        let folderPayload = TileFolder(
+                            title: folderTitle,
+                            emoji: folderEmoji,
+                            backgroundHex: folderColorHex,
+                            children: folderChildren
+                        )
+                        let item = BarItem(
+                            id: existingItem?.id ?? UUID(),
+                            kind: .folder(folderPayload)
+                        )
+                        coordinator.setSlotItem(item, pageIndex: pageIndex, slotIndex: slotIndex)
+                        dismiss()
+                    } label: {
+                        Text(L10n.tr("保存文件夹", "Save Folder", language: lang))
+                            .font(.callout.weight(.bold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(palette.accent, in: Capsule())
+                            .foregroundStyle(palette.accentForeground)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                HStack {
+                    Text(
+                        L10n.tr(
+                            "文件夹内动作（\(folderChildren.count)/\(TileFolder.maxChildren)）",
+                            "Folder Actions (\(folderChildren.count)/\(TileFolder.maxChildren))",
+                            language: lang
+                        )
+                    )
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(palette.primaryText)
+
+                    Spacer()
+
+                    Menu {
+                        Section(L10n.tr("常用系统动作", "System Actions", language: lang)) {
+                            ForEach(SystemQuickAction.allCases) { action in
+                                Button(action.title(in: lang)) {
+                                    guard folderChildren.count < TileFolder.maxChildren else { return }
+                                    folderChildren.append(BarItem(kind: .systemAction(action: action)))
+                                }
+                            }
+                        }
+                        if !coordinator.installedApps.isEmpty {
+                            Section(L10n.tr("已安装应用", "Installed Apps", language: lang)) {
+                                ForEach(coordinator.installedApps.prefix(20)) { app in
+                                    Button(app.appName) {
+                                        guard folderChildren.count < TileFolder.maxChildren else { return }
+                                        folderChildren.append(
+                                            BarItem(
+                                                kind: .macApp(
+                                                    bundleIdentifier: app.bundleIdentifier,
+                                                    appName: app.appName,
+                                                    appPath: app.appPath
+                                                )
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if !coordinator.installedShortcuts.isEmpty {
+                            Section(L10n.tr("快捷指令", "Shortcuts", language: lang)) {
+                                ForEach(coordinator.installedShortcuts.prefix(15)) { shortcut in
+                                    Button(shortcut.name) {
+                                        guard folderChildren.count < TileFolder.maxChildren else { return }
+                                        folderChildren.append(
+                                            BarItem(
+                                                kind: .shortcut(
+                                                    shortcutName: shortcut.name,
+                                                    emoji: "⚡️",
+                                                    backgroundHex: "#FFF6E3"
+                                                )
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Label(
+                            L10n.tr("添加子动作", "Add Child Action", language: lang),
+                            systemImage: "plus.circle.fill"
+                        )
+                        .font(.caption.weight(.bold))
+                    }
+                    .disabled(folderChildren.count >= TileFolder.maxChildren)
+                }
+
+                if folderChildren.isEmpty {
+                    VStack(spacing: 8) {
+                        Spacer()
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 26))
+                            .foregroundStyle(palette.secondaryText)
+                        Text(L10n.tr("点击右上角「添加子动作」，最多添加 8 个动作", "Use \"Add Child Action\" to add up to 8 actions", language: lang))
+                            .font(.caption)
+                            .foregroundStyle(palette.secondaryText)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 9) {
+                            ForEach(Array(folderChildren.enumerated()), id: \.element.id) { idx, child in
+                                HStack(spacing: 8) {
+                                    Text("#\(idx + 1)")
+                                        .font(.caption2.monospacedDigit().weight(.bold))
+                                        .foregroundStyle(palette.secondaryText)
+
+                                    Text(coordinator.profile.displayTitle(for: child, in: lang))
+                                        .font(.callout.weight(.semibold))
+                                        .foregroundStyle(palette.primaryText)
+                                        .lineLimit(1)
+
+                                    Spacer()
+
+                                    Button {
+                                        guard idx > 0 else { return }
+                                        folderChildren.swapAt(idx, idx - 1)
+                                    } label: {
+                                        Image(systemName: "chevron.left")
+                                            .font(.caption2.weight(.bold))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(idx == 0)
+
+                                    Button {
+                                        guard idx + 1 < folderChildren.count else { return }
+                                        folderChildren.swapAt(idx, idx + 1)
+                                    } label: {
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption2.weight(.bold))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(idx + 1 >= folderChildren.count)
+
+                                    Button {
+                                        folderChildren.remove(at: idx)
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .foregroundStyle(palette.statusFailure)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(10)
+                                .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(18)
+    }
+
     private func hydrateFromExisting() {
         guard let existingItem else { return }
         switch existingItem.kind {
@@ -1084,6 +1675,16 @@ public struct MacSlotItemPickerSheet: View {
             activeTab = .actions
         case .flow:
             activeTab = .flows
+        case .soundboard:
+            activeTab = .sounds
+        case .folder(let folder):
+            activeTab = .folder
+            folderTitle = folder.title
+            folderEmoji = folder.emoji
+            folderColorHex = folder.backgroundHex
+            folderChildren = folder.children
+        case .slotReference:
+            activeTab = .reference
         }
     }
 }

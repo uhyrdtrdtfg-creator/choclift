@@ -82,6 +82,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case volumeDown = "volume_down"
     case volumeMute = "volume_mute"
     case lockScreen = "lock_screen"
+    case quitApp = "quit_app"
     case openEmojiPicker = "open_emoji_picker"
 
     public var id: String { rawValue }
@@ -109,6 +110,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .volumeDown: return "speaker.wave.1.fill"
         case .volumeMute: return "speaker.slash.fill"
         case .lockScreen: return "lock.display"
+        case .quitApp: return "xmark.octagon.fill"
         case .openEmojiPicker: return "face.smiling.inverse"
         }
     }
@@ -119,7 +121,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return "#EDF6FF"
         case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
             return "#F3EEFF"
-        case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .openEmojiPicker:
+        case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker:
             return "#FFF1EC"
         case .mediaPlayPause, .mediaNext, .mediaPrevious, .volumeUp, .volumeDown, .volumeMute:
             return "#ECFAEE"
@@ -135,15 +137,59 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         }
     }
 
+    public var isUndoableWindowMove: Bool {
+        switch self {
+        case .maximizeWindow, .snapWindowLeft, .snapWindowRight:
+            return true
+        default:
+            return false
+        }
+    }
+
+    public var requiresDestructiveConfirmation: Bool {
+        switch self {
+        case .lockScreen, .quitApp:
+            return true
+        default:
+            return false
+        }
+    }
+
     public var targetsApplication: Bool {
         if isWindowAction {
             return true
         }
         switch self {
-        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
+        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp:
             return true
         default:
             return false
+        }
+    }
+
+    /// Keyboard shortcut string ONLY when Mac execution actually synthesizes a keyboard shortcut.
+    /// Window AX frames, process launches, NSRunningApplication.terminate(), and NX media keys return `nil`.
+    public var sentKeyboardShortcut: String? {
+        switch self {
+        case .copySelection:
+            return "⌘C"
+        case .pasteClipboard:
+            return "⌘V"
+        case .cutSelection:
+            return "⌘X"
+        case .undoAction:
+            return "⌘Z"
+        case .redoAction:
+            return "⇧⌘Z"
+        case .lockScreen:
+            return "⌃⌘Q"
+        case .openEmojiPicker:
+            return "⌃⌘Space"
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
+             .centerWindow, .toggleFullscreen, .missionControl, .showDesktop,
+             .screenshotInteractive, .mediaPlayPause, .mediaNext, .mediaPrevious,
+             .volumeUp, .volumeDown, .volumeMute, .quitApp:
+            return nil
         }
     }
 
@@ -155,11 +201,11 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .snapWindowRight: return L10n.tr("窗口贴靠右半屏", "Snap Window Right", language: lang)
         case .centerWindow: return L10n.tr("窗口居中", "Center Window", language: lang)
         case .toggleFullscreen: return L10n.tr("切换全屏", "Toggle Fullscreen", language: lang)
-        case .copySelection: return L10n.tr("复制 (⌘C)", "Copy (⌘C)", language: lang)
-        case .pasteClipboard: return L10n.tr("粘贴 (⌘V)", "Paste (⌘V)", language: lang)
-        case .cutSelection: return L10n.tr("剪切 (⌘X)", "Cut (⌘X)", language: lang)
-        case .undoAction: return L10n.tr("撤销 (⌘Z)", "Undo (⌘Z)", language: lang)
-        case .redoAction: return L10n.tr("重做 (⇧⌘Z)", "Redo (⇧⌘Z)", language: lang)
+        case .copySelection: return L10n.tr("复制", "Copy", language: lang)
+        case .pasteClipboard: return L10n.tr("粘贴", "Paste", language: lang)
+        case .cutSelection: return L10n.tr("剪切", "Cut", language: lang)
+        case .undoAction: return L10n.tr("撤销", "Undo", language: lang)
+        case .redoAction: return L10n.tr("重做", "Redo", language: lang)
         case .missionControl: return L10n.tr("调度中心", "Mission Control", language: lang)
         case .showDesktop: return L10n.tr("显示桌面", "Show Desktop", language: lang)
         case .screenshotInteractive: return L10n.tr("区域截图", "Area Screenshot", language: lang)
@@ -170,6 +216,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .volumeDown: return L10n.tr("音量减小", "Volume Down", language: lang)
         case .volumeMute: return L10n.tr("静音切换", "Mute Toggle", language: lang)
         case .lockScreen: return L10n.tr("锁定屏幕", "Lock Screen", language: lang)
+        case .quitApp: return L10n.tr("退出当前应用", "Quit Application", language: lang)
         case .openEmojiPicker: return L10n.tr("系统表情面板", "macOS Emoji Panel", language: lang)
         }
     }
@@ -197,8 +244,14 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .volumeDown: return L10n.tr("音量-", "Vol -", language: lang)
         case .volumeMute: return L10n.tr("静音", "Mute", language: lang)
         case .lockScreen: return L10n.tr("锁屏", "Lock", language: lang)
+        case .quitApp: return L10n.tr("退出", "Quit", language: lang)
         case .openEmojiPicker: return L10n.tr("表情框", "Emoji", language: lang)
         }
+    }
+
+    /// Only `.volumeUp`, `.volumeDown`, and `.mediaNext` repeat while held down.
+    public var supportsHoldToRepeat: Bool {
+        HoldToRepeatPolicy.supportsHoldToRepeat(self)
     }
 }
 
@@ -235,6 +288,19 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
         backgroundHex: String = "#ECFAFE",
         stepCountSnapshot: Int = 0
     )
+    case soundboard(
+        soundID: UUID,
+        titleSnapshot: String,
+        emoji: String = "🔊",
+        backgroundHex: String = "#ECFAEE"
+    )
+    /// Points at another Chocolate Bar slot without copying or duplicating its action payload.
+    case slotReference(
+        targetPageID: UUID,
+        targetSlotIndex: Int
+    )
+    /// Opens up to 8 concrete child actions without adding a new `BarPage` (at most 1 folder per page).
+    case folder(TileFolder)
 
     private enum CodingKeys: String, CodingKey {
         case macApp
@@ -242,6 +308,9 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
         case website
         case systemAction
         case flow
+        case soundboard
+        case slotReference
+        case folder
     }
 
     private enum MacAppKeys: String, CodingKey {
@@ -277,6 +346,18 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
         case emoji
         case backgroundHex
         case stepCountSnapshot
+    }
+
+    private enum SoundboardKeys: String, CodingKey {
+        case soundID
+        case titleSnapshot
+        case emoji
+        case backgroundHex
+    }
+
+    private enum SlotReferenceKeys: String, CodingKey {
+        case targetPageID
+        case targetSlotIndex
     }
 
     public init(from decoder: Decoder) throws {
@@ -341,6 +422,29 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
                 backgroundHex: backgroundHex,
                 stepCountSnapshot: stepCountSnapshot
             )
+        } else if container.contains(.soundboard) {
+            let nested = try container.nestedContainer(keyedBy: SoundboardKeys.self, forKey: .soundboard)
+            let soundID = try nested.decode(UUID.self, forKey: .soundID)
+            let titleSnapshot = try nested.decodeIfPresent(String.self, forKey: .titleSnapshot) ?? ""
+            let emoji = try nested.decodeIfPresent(String.self, forKey: .emoji) ?? "🔊"
+            let backgroundHex = try nested.decodeIfPresent(String.self, forKey: .backgroundHex) ?? "#ECFAEE"
+            self = .soundboard(
+                soundID: soundID,
+                titleSnapshot: titleSnapshot,
+                emoji: emoji,
+                backgroundHex: backgroundHex
+            )
+        } else if container.contains(.slotReference) {
+            let nested = try container.nestedContainer(keyedBy: SlotReferenceKeys.self, forKey: .slotReference)
+            let targetPageID = try nested.decode(UUID.self, forKey: .targetPageID)
+            let targetSlotIndex = try nested.decode(Int.self, forKey: .targetSlotIndex)
+            self = .slotReference(
+                targetPageID: targetPageID,
+                targetSlotIndex: targetSlotIndex
+            )
+        } else if container.contains(.folder) {
+            let decodedFolder = try container.decode(TileFolder.self, forKey: .folder)
+            self = .folder(decodedFolder)
         } else {
             throw DecodingError.dataCorrupted(
                 DecodingError.Context(
@@ -388,6 +492,21 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
             try nested.encode(emoji, forKey: .emoji)
             try nested.encode(backgroundHex, forKey: .backgroundHex)
             try nested.encode(stepCountSnapshot, forKey: .stepCountSnapshot)
+
+        case .soundboard(let soundID, let titleSnapshot, let emoji, let backgroundHex):
+            var nested = container.nestedContainer(keyedBy: SoundboardKeys.self, forKey: .soundboard)
+            try nested.encode(soundID, forKey: .soundID)
+            try nested.encode(titleSnapshot, forKey: .titleSnapshot)
+            try nested.encode(emoji, forKey: .emoji)
+            try nested.encode(backgroundHex, forKey: .backgroundHex)
+
+        case .slotReference(let targetPageID, let targetSlotIndex):
+            var nested = container.nestedContainer(keyedBy: SlotReferenceKeys.self, forKey: .slotReference)
+            try nested.encode(targetPageID, forKey: .targetPageID)
+            try nested.encode(targetSlotIndex, forKey: .targetSlotIndex)
+
+        case .folder(let folder):
+            try container.encode(folder, forKey: .folder)
         }
     }
 }
@@ -398,7 +517,18 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     public init(id: UUID = UUID(), kind: BarItemKind) {
         self.id = id
-        self.kind = kind
+        if case .folder(let folder) = kind {
+            self.kind = .folder(
+                TileFolder(
+                    title: folder.title,
+                    emoji: folder.emoji,
+                    backgroundHex: folder.backgroundHex,
+                    children: folder.children
+                )
+            )
+        } else {
+            self.kind = kind
+        }
     }
 
     public func displayTitle(in lang: AppLanguage = .system) -> String {
@@ -417,6 +547,13 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
         case .flow(_, let titleSnapshot, _, _, _):
             let trimmed = titleSnapshot.trimmingCharacters(in: .whitespacesAndNewlines)
             return trimmed.isEmpty ? L10n.tr("动作流", "Action Flow", language: lang) : trimmed
+        case .soundboard(_, let titleSnapshot, _, _):
+            let trimmed = titleSnapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? L10n.tr("音效", "Sound", language: lang) : trimmed
+        case .slotReference(_, let targetSlotIndex):
+            return L10n.tr("引用 #\(targetSlotIndex + 1)", "Ref #\(targetSlotIndex + 1)", language: lang)
+        case .folder(let folder):
+            return folder.displayTitle(in: lang)
         }
     }
 
@@ -432,6 +569,61 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
             return id
         }
         return nil
+    }
+
+    public var soundID: UUID? {
+        if case .soundboard(let id, _, _, _) = kind {
+            return id
+        }
+        return nil
+    }
+
+    public var slotReferenceCoordinate: SlotCoordinate? {
+        if case .slotReference(let targetPageID, let targetSlotIndex) = kind {
+            return SlotCoordinate(pageID: targetPageID, slotIndex: targetSlotIndex)
+        }
+        return nil
+    }
+
+    public var isSlotReference: Bool {
+        slotReferenceCoordinate != nil
+    }
+
+    public var folder: TileFolder? {
+        if case .folder(let folder) = kind {
+            return folder
+        }
+        return nil
+    }
+
+    public var isFolder: Bool {
+        folder != nil
+    }
+
+    public func supportsHoldToRepeat(
+        in profile: ChocliftWorkspaceProfile? = nil,
+        from origin: SlotCoordinate? = nil
+    ) -> Bool {
+        HoldToRepeatPolicy.supportsHoldToRepeat(self, in: profile, from: origin)
+    }
+
+    public func requiresDestructiveConfirmation(in profile: ChocliftWorkspaceProfile, from origin: SlotCoordinate? = nil) -> Bool {
+        switch kind {
+        case .systemAction(let action, _, _):
+            return action.requiresDestructiveConfirmation
+        case .flow(let flowID, _, _, _, _):
+            return profile.flow(withID: flowID)?.requiresDestructiveConfirmation ?? false
+        case .slotReference:
+            guard case .resolved(let pageID, _, _, _, let slotIdx, let resolved) = profile.resolveBarItem(self, from: origin) else {
+                return false
+            }
+            return resolved.requiresDestructiveConfirmation(
+                in: profile,
+                from: SlotCoordinate(pageID: pageID, slotIndex: slotIdx)
+            )
+        case .macApp, .shortcut, .website, .soundboard, .folder:
+            return false
+        }
     }
 }
 
@@ -500,10 +692,69 @@ public struct BarPage: Codable, Equatable, Hashable, Identifiable, Sendable {
         try container.encode(Self.normalizeSlots(slots), forKey: .slots)
     }
 
-    private static func normalizeSlots(_ slots: [BarItem?]) -> [BarItem?] {
+    /// Returns the index of the single folder tile on this page, if any.
+    public var folderSlotIndex: Int? {
+        slots.firstIndex(where: { $0?.isFolder == true })
+    }
+
+    public var containsFolder: Bool {
+        folderSlotIndex != nil
+    }
+
+    /// Enforces the 1-folder-per-page rule: returns `true` if `slotIndex` is valid and either no folder
+    /// exists on this page yet or the existing folder already occupies `slotIndex`.
+    public func canPlaceFolder(at slotIndex: Int) -> Bool {
+        guard (0..<Self.slotsPerPage).contains(slotIndex) else { return false }
+        if let existingFolderIdx = folderSlotIndex {
+            return existingFolderIdx == slotIndex
+        }
+        return true
+    }
+
+    /// Assigns `item` into `slotIndex`, rejecting a second folder tile on the same page (`maxFoldersPerPage == 1`).
+    @discardableResult
+    public mutating func setSlot(_ item: BarItem?, at slotIndex: Int) -> Bool {
+        var normalized = Self.normalizeSlots(slots)
+        guard normalized.indices.contains(slotIndex) else { return false }
+        if let item, let folder = item.folder {
+            if let existingFolderIdx = normalized.firstIndex(where: { $0?.isFolder == true }),
+               existingFolderIdx != slotIndex {
+                return false
+            }
+            let sanitizedFolder = TileFolder(
+                title: folder.title,
+                emoji: folder.emoji,
+                backgroundHex: folder.backgroundHex,
+                children: folder.children
+            )
+            normalized[slotIndex] = BarItem(id: item.id, kind: .folder(sanitizedFolder))
+        } else {
+            normalized[slotIndex] = item
+        }
+        slots = Self.normalizeSlots(normalized)
+        return true
+    }
+
+    public static func normalizeSlots(_ slots: [BarItem?]) -> [BarItem?] {
         var normalized = Array(slots.prefix(Self.slotsPerPage))
         while normalized.count < Self.slotsPerPage {
             normalized.append(nil)
+        }
+        var folderCount = 0
+        for idx in normalized.indices {
+            guard let item = normalized[idx], let folder = item.folder else { continue }
+            if folderCount >= TileFolder.maxFoldersPerPage {
+                normalized[idx] = nil
+                continue
+            }
+            folderCount += 1
+            let sanitizedFolder = TileFolder(
+                title: folder.title,
+                emoji: folder.emoji,
+                backgroundHex: folder.backgroundHex,
+                children: folder.children
+            )
+            normalized[idx] = BarItem(id: item.id, kind: .folder(sanitizedFolder))
         }
         return normalized
     }
@@ -553,12 +804,14 @@ public struct TextSnippet: Codable, Equatable, Hashable, Identifiable, Sendable 
     public var id: UUID
     public var title: String
     public var body: String
+    public var insertMode: SnippetInsertMode
     public var updatedAt: Date
 
     private enum CodingKeys: String, CodingKey {
         case id
         case title
         case body
+        case insertMode
         case updatedAt
     }
 
@@ -566,11 +819,13 @@ public struct TextSnippet: Codable, Equatable, Hashable, Identifiable, Sendable 
         id: UUID = UUID(),
         title: String,
         body: String,
+        insertMode: SnippetInsertMode = .focusedFieldInsert,
         updatedAt: Date = Date()
     ) {
         self.id = id
         self.title = Self.clampTitle(title)
         self.body = Self.clampBody(body)
+        self.insertMode = insertMode
         self.updatedAt = updatedAt
     }
 
@@ -581,6 +836,7 @@ public struct TextSnippet: Codable, Equatable, Hashable, Identifiable, Sendable 
         let rawBody = try container.decode(String.self, forKey: .body)
         self.title = Self.clampTitle(rawTitle)
         self.body = Self.clampBody(rawBody)
+        self.insertMode = try container.decodeIfPresent(SnippetInsertMode.self, forKey: .insertMode) ?? .focusedFieldInsert
         self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
     }
 
@@ -589,6 +845,7 @@ public struct TextSnippet: Codable, Equatable, Hashable, Identifiable, Sendable 
         try container.encode(id, forKey: .id)
         try container.encode(Self.clampTitle(title), forKey: .title)
         try container.encode(Self.clampBody(body), forKey: .body)
+        try container.encode(insertMode, forKey: .insertMode)
         try container.encode(updatedAt, forKey: .updatedAt)
     }
 
@@ -810,6 +1067,10 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     /// At most one page is bound per bundle identifier; multiple bundle identifiers may map to one page.
     public var appDeckBindings: [String: UUID]
     public var snippets: [TextSnippet]
+    public var soundboardClips: [SoundboardClip]
+    public var soundboardVolume: Double
+    public var pinnedStripSlots: [SlotCoordinate]
+    public var pinnedClipboardItems: [PinnedClipboardItem]
 
     private enum CodingKeys: String, CodingKey {
         case revision
@@ -822,6 +1083,10 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         case flows
         case appDeckBindings
         case snippets
+        case soundboardClips
+        case soundboardVolume
+        case pinnedStripSlots
+        case pinnedClipboardItems
     }
 
     public init(
@@ -834,7 +1099,11 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         pinnedTimeTravelBundleIDs: [String] = [],
         flows: [ActionFlow] = [],
         appDeckBindings: [String: UUID] = [:],
-        snippets: [TextSnippet] = []
+        snippets: [TextSnippet] = [],
+        soundboardClips: [SoundboardClip] = [],
+        soundboardVolume: Double = SoundboardClip.defaultVolume,
+        pinnedStripSlots: [SlotCoordinate] = [],
+        pinnedClipboardItems: [PinnedClipboardItem] = []
     ) {
         self.revision = revision
         self.updatedAt = updatedAt
@@ -846,13 +1115,18 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.flows = flows
         self.appDeckBindings = Self.sanitizeAppDeckBindings(appDeckBindings)
         self.snippets = Array(snippets.prefix(TextSnippet.maxLibraryCount))
+        self.soundboardClips = SoundboardCatalogValidator.sanitizeBoard(soundboardClips)
+        self.soundboardVolume = ControlStripLevel.clamp(soundboardVolume)
+        self.pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
+        self.pinnedClipboardItems = PinnedClipboardShelf.sanitize(pinnedClipboardItems)
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.revision = try container.decodeIfPresent(Int.self, forKey: .revision) ?? 1
         self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
-        self.pages = try container.decodeIfPresent([BarPage].self, forKey: .pages) ?? ChocliftDefaults.makeDefaultPages()
+        let decodedPages = try container.decodeIfPresent([BarPage].self, forKey: .pages) ?? ChocliftDefaults.makeDefaultPages()
+        self.pages = decodedPages
         self.emojiSlides = try container.decodeIfPresent([EmojiSlide].self, forKey: .emojiSlides) ?? ChocliftDefaults.makeDefaultEmojiSlides()
         self.gestureConfig = try container.decodeIfPresent(GestureConfiguration.self, forKey: .gestureConfig) ?? ChocliftDefaults.makeDefaultGestureConfiguration()
         self.settings = try container.decodeIfPresent(CompanionSettings.self, forKey: .settings) ?? CompanionSettings()
@@ -871,7 +1145,28 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         }
         let decodedSnippets = try container.decodeIfPresent([TextSnippet].self, forKey: .snippets) ?? []
         self.snippets = Array(decodedSnippets.prefix(TextSnippet.maxLibraryCount))
+        let decodedClips = try container.decodeIfPresent([SoundboardClip].self, forKey: .soundboardClips) ?? []
+        self.soundboardClips = SoundboardCatalogValidator.sanitizeBoard(decodedClips)
+        let decodedSBVolume = try container.decodeIfPresent(Double.self, forKey: .soundboardVolume) ?? SoundboardClip.defaultVolume
+        self.soundboardVolume = ControlStripLevel.clamp(decodedSBVolume)
+        let decodedPinnedSlots = try container.decodeIfPresent([SlotCoordinate].self, forKey: .pinnedStripSlots) ?? []
+        self.pinnedStripSlots = PinnedStripSlots.sanitize(decodedPinnedSlots, in: decodedPages)
+        if var unkeyed = try? container.nestedUnkeyedContainer(forKey: .pinnedClipboardItems) {
+            var parsedPins: [PinnedClipboardItem] = []
+            while !unkeyed.isAtEnd {
+                if let item = try? unkeyed.decode(PinnedClipboardItem.self) {
+                    parsedPins.append(item)
+                } else {
+                    _ = try? unkeyed.decode(IgnoredJSONElement.self)
+                }
+            }
+            self.pinnedClipboardItems = PinnedClipboardShelf.sanitize(parsedPins)
+        } else {
+            self.pinnedClipboardItems = []
+        }
     }
+
+    private struct IgnoredJSONElement: Decodable {}
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -885,6 +1180,13 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         try container.encode(flows, forKey: .flows)
         try container.encode(appDeckBindings, forKey: .appDeckBindings)
         try container.encode(Array(snippets.prefix(TextSnippet.maxLibraryCount)), forKey: .snippets)
+        try container.encode(SoundboardCatalogValidator.sanitizeBoard(soundboardClips), forKey: .soundboardClips)
+        try container.encode(ControlStripLevel.clamp(soundboardVolume), forKey: .soundboardVolume)
+        try container.encode(PinnedStripSlots.sanitize(pinnedStripSlots, in: pages), forKey: .pinnedStripSlots)
+        let sanitizedClipboardPins = PinnedClipboardShelf.sanitize(pinnedClipboardItems)
+        if !sanitizedClipboardPins.isEmpty {
+            try container.encode(sanitizedClipboardPins, forKey: .pinnedClipboardItems)
+        }
     }
 
     private static func sanitizeAppDeckBindings(_ bindings: [String: UUID]) -> [String: UUID] {
@@ -993,9 +1295,14 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     /// Best-effort display name for a bundle identifier on companion devices using synced metadata.
     public func resolvedAppDisplayName(
         forBundleIdentifier bundleIdentifier: String,
+        preferredAppName: String? = nil,
         recentApps: [RecentAppEntry] = [],
         catalogApps: [InstalledAppSummary] = []
     ) -> String {
+        if let preferred = preferredAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !preferred.isEmpty {
+            return preferred
+        }
         let trimmed = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         if let recent = recentApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(trimmed) == .orderedSame }),
            !recent.appName.isEmpty {
@@ -1011,6 +1318,15 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                    bid.caseInsensitiveCompare(trimmed) == .orderedSame,
                    !appName.isEmpty {
                     return appName
+                }
+                if let folder = slot.folder {
+                    for child in folder.children {
+                        if case .macApp(let bid, let appName, _, _) = child.kind,
+                           bid.caseInsensitiveCompare(trimmed) == .orderedSame,
+                           !appName.isEmpty {
+                            return appName
+                        }
+                    }
                 }
             }
         }
@@ -1062,6 +1378,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
             id: snippet.id,
             title: TextSnippet.resolvedTitle(title: snippet.title, body: clampedBody, language: settings.language),
             body: clampedBody,
+            insertMode: snippet.insertMode,
             updatedAt: snippet.updatedAt
         )
         if let idx = snippets.firstIndex(where: { $0.id == normalized.id }) {
@@ -1072,6 +1389,16 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
             return false
         }
         snippets.append(normalized)
+        return true
+    }
+
+    @discardableResult
+    public mutating func setSnippetInsertMode(id: UUID, mode: SnippetInsertMode) -> Bool {
+        guard let idx = snippets.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        snippets[idx].insertMode = mode
+        snippets[idx].updatedAt = Date()
         return true
     }
 
@@ -1134,8 +1461,18 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                 if pages[pIdx].slots[sIdx]?.flowID == id {
                     pages[pIdx].slots[sIdx] = nil
                     removedFromSlot = true
+                } else if let slot = pages[pIdx].slots[sIdx], var folder = slot.folder {
+                    let beforeChildren = folder.children.count
+                    folder.children.removeAll { $0.flowID == id }
+                    if folder.children.count != beforeChildren {
+                        pages[pIdx].slots[sIdx] = BarItem(id: slot.id, kind: .folder(folder))
+                        removedFromSlot = true
+                    }
                 }
             }
+        }
+        if removedFromSlot {
+            pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
         }
         return flows.count != beforeCount || removedFromSlot
     }
@@ -1162,18 +1499,525 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     private mutating func syncFlowBarItems(for flow: ActionFlow) {
         for pIdx in pages.indices {
             for sIdx in pages[pIdx].slots.indices {
-                guard let existing = pages[pIdx].slots[sIdx],
-                      existing.flowID == flow.id else { continue }
-                pages[pIdx].slots[sIdx] = makeBarItem(for: flow, id: existing.id)
+                guard let existing = pages[pIdx].slots[sIdx] else { continue }
+                if existing.flowID == flow.id {
+                    pages[pIdx].slots[sIdx] = makeBarItem(for: flow, id: existing.id)
+                } else if var folder = existing.folder {
+                    var changed = false
+                    for cIdx in folder.children.indices where folder.children[cIdx].flowID == flow.id {
+                        folder.children[cIdx] = makeBarItem(for: flow, id: folder.children[cIdx].id)
+                        changed = true
+                    }
+                    if changed {
+                        pages[pIdx].slots[sIdx] = BarItem(id: existing.id, kind: .folder(folder))
+                    }
+                }
             }
         }
+    }
+
+    // MARK: - Local Soundboard Profile Helpers (Round 3)
+
+    public var canAddMoreSoundboardClips: Bool {
+        soundboardClips.count < SoundboardClip.maxBoardCount
+    }
+
+    public func soundboardClip(withID id: UUID) -> SoundboardClip? {
+        soundboardClips.first(where: { $0.id == id })
+    }
+
+    public func makeBarItem(for clip: SoundboardClip, id: UUID = UUID()) -> BarItem {
+        BarItem(
+            id: id,
+            kind: .soundboard(
+                soundID: clip.id,
+                titleSnapshot: clip.name,
+                emoji: clip.emoji,
+                backgroundHex: clip.backgroundHex
+            )
+        )
+    }
+
+    @discardableResult
+    public mutating func addSoundboardClip(_ clip: SoundboardClip) -> Result<SoundboardClip, SoundboardValidationError> {
+        let validation = SoundboardCatalogValidator.validateAddition(
+            filePath: clip.filePath,
+            durationSeconds: clip.durationSeconds,
+            existingClips: soundboardClips
+        )
+        switch validation {
+        case .failure(let error):
+            return .failure(error)
+        case .success:
+            soundboardClips.append(clip)
+            syncSoundboardBarItems(for: clip)
+            return .success(clip)
+        }
+    }
+
+    @discardableResult
+    public mutating func updateSoundboardClip(
+        id: UUID,
+        name: String? = nil,
+        emoji: String? = nil,
+        backgroundHex: String? = nil
+    ) -> Bool {
+        guard let idx = soundboardClips.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        var updated = soundboardClips[idx]
+        if let name {
+            updated.name = SoundboardClip.sanitizeName(name, fallback: updated.name)
+        }
+        if let emoji {
+            let trimmed = emoji.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                updated.emoji = String(trimmed.prefix(2))
+            }
+        }
+        if let backgroundHex, !backgroundHex.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            updated.backgroundHex = backgroundHex
+        }
+        soundboardClips[idx] = updated
+        syncSoundboardBarItems(for: updated)
+        return true
+    }
+
+    @discardableResult
+    public mutating func deleteSoundboardClip(id: UUID) -> Bool {
+        let beforeCount = soundboardClips.count
+        soundboardClips.removeAll { $0.id == id }
+        var removedFromSlot = false
+        for pIdx in pages.indices {
+            for sIdx in pages[pIdx].slots.indices {
+                if pages[pIdx].slots[sIdx]?.soundID == id {
+                    pages[pIdx].slots[sIdx] = nil
+                    removedFromSlot = true
+                } else if let slot = pages[pIdx].slots[sIdx], var folder = slot.folder {
+                    let beforeChildren = folder.children.count
+                    folder.children.removeAll { $0.soundID == id }
+                    if folder.children.count != beforeChildren {
+                        pages[pIdx].slots[sIdx] = BarItem(id: slot.id, kind: .folder(folder))
+                        removedFromSlot = true
+                    }
+                }
+            }
+        }
+        if removedFromSlot {
+            pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
+        }
+        return soundboardClips.count != beforeCount || removedFromSlot
+    }
+
+    private mutating func syncSoundboardBarItems(for clip: SoundboardClip) {
+        for pIdx in pages.indices {
+            for sIdx in pages[pIdx].slots.indices {
+                guard let existing = pages[pIdx].slots[sIdx] else { continue }
+                if existing.soundID == clip.id {
+                    pages[pIdx].slots[sIdx] = makeBarItem(for: clip, id: existing.id)
+                } else if var folder = existing.folder {
+                    var changed = false
+                    for cIdx in folder.children.indices where folder.children[cIdx].soundID == clip.id {
+                        folder.children[cIdx] = makeBarItem(for: clip, id: folder.children[cIdx].id)
+                        changed = true
+                    }
+                    if changed {
+                        pages[pIdx].slots[sIdx] = BarItem(id: existing.id, kind: .folder(folder))
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Slot Reference Resolution & Editing Helpers (Round 3)
+
+    /// Resolves a `.slotReference` (or concrete `BarItem`) against this profile, safely detecting
+    /// deleted pages, cleared/missing slots, out-of-bounds indices, self-references, and cycles.
+    public func resolveBarItem(_ item: BarItem, from origin: SlotCoordinate? = nil) -> SlotReferenceResolution {
+        switch item.kind {
+        case .slotReference(let targetPageID, let targetSlotIndex):
+            return resolveSlotReference(
+                targetPageID: targetPageID,
+                targetSlotIndex: targetSlotIndex,
+                from: origin
+            )
+        default:
+            if let origin,
+               let pIdx = pages.firstIndex(where: { $0.id == origin.pageID }) {
+                let page = pages[pIdx]
+                return .resolved(
+                    pageID: page.id,
+                    pageIndex: pIdx,
+                    pageTitle: page.title,
+                    pageEmoji: page.iconEmoji,
+                    slotIndex: origin.slotIndex,
+                    item: item
+                )
+            }
+            return .resolved(
+                pageID: origin?.pageID ?? UUID(),
+                pageIndex: 0,
+                pageTitle: "",
+                pageEmoji: "🍫",
+                slotIndex: origin?.slotIndex ?? 0,
+                item: item
+            )
+        }
+    }
+
+    public func resolveSlotReference(
+        targetPageID: UUID,
+        targetSlotIndex: Int,
+        from origin: SlotCoordinate? = nil
+    ) -> SlotReferenceResolution {
+        var visited = Set<SlotCoordinate>()
+        if let origin {
+            visited.insert(origin)
+        }
+        var currentCoord = SlotCoordinate(pageID: targetPageID, slotIndex: targetSlotIndex)
+
+        for _ in 0..<16 {
+            guard !visited.contains(currentCoord) else {
+                return .missing
+            }
+            visited.insert(currentCoord)
+
+            guard let pageIdx = pages.firstIndex(where: { $0.id == currentCoord.pageID }) else {
+                return .missing
+            }
+            let page = pages[pageIdx]
+            guard page.slots.indices.contains(currentCoord.slotIndex),
+                  let slotItem = page.slots[currentCoord.slotIndex] else {
+                return .missing
+            }
+
+            if case .slotReference(let nextPageID, let nextSlotIndex) = slotItem.kind {
+                currentCoord = SlotCoordinate(pageID: nextPageID, slotIndex: nextSlotIndex)
+                continue
+            }
+
+            if slotItem.isFolder {
+                return .missing
+            }
+
+            return .resolved(
+                pageID: page.id,
+                pageIndex: pageIdx,
+                pageTitle: page.title,
+                pageEmoji: page.iconEmoji,
+                slotIndex: currentCoord.slotIndex,
+                item: slotItem
+            )
+        }
+
+        return .missing
+    }
+
+    public func displayTitle(
+        for item: BarItem,
+        from origin: SlotCoordinate? = nil,
+        in lang: AppLanguage = .system
+    ) -> String {
+        switch item.kind {
+        case .slotReference:
+            switch resolveBarItem(item, from: origin) {
+            case .resolved(_, _, _, _, _, let resolved):
+                return displayTitle(for: resolved, in: lang)
+            case .missing:
+                return L10n.tr("原槽位已移除", "Original Missing", language: lang)
+            }
+        case .soundboard(let soundID, _, _, _):
+            if let clip = soundboardClip(withID: soundID) {
+                return clip.name
+            }
+            return item.displayTitle(in: lang)
+        case .flow(let flowID, _, _, _, _):
+            if let flow = flow(withID: flowID) {
+                return flow.name
+            }
+            return item.displayTitle(in: lang)
+        default:
+            return item.displayTitle(in: lang)
+        }
+    }
+
+    /// Returns concrete occupied slots that can be pointed at from `excluding` without creating cycles.
+    public func availableReferenceTargets(
+        excluding origin: SlotCoordinate? = nil
+    ) -> [(pageIndex: Int, page: BarPage, slotIndex: Int, item: BarItem)] {
+        var candidates: [(pageIndex: Int, page: BarPage, slotIndex: Int, item: BarItem)] = []
+        for (pIdx, page) in pages.enumerated() {
+            for (sIdx, maybeItem) in page.slots.enumerated() {
+                guard let item = maybeItem else { continue }
+                let coord = SlotCoordinate(pageID: page.id, slotIndex: sIdx)
+                if coord == origin { continue }
+                // Prefer pointing directly at concrete non-reference, non-folder slots so references stay 1-hop & never bypass the 1-folder-per-page rule.
+                if item.isSlotReference || item.isFolder { continue }
+                candidates.append((pageIndex: pIdx, page: page, slotIndex: sIdx, item: item))
+            }
+        }
+        return candidates
+    }
+
+    /// Swaps two slots on `pageIndex` and keeps any `.slotReference` pointing to those coordinates aligned.
+    public mutating func swapSlots(pageIndex: Int, fromSlot: Int, toSlot: Int) {
+        guard pages.indices.contains(pageIndex),
+              pages[pageIndex].slots.indices.contains(fromSlot),
+              pages[pageIndex].slots.indices.contains(toSlot),
+              fromSlot != toSlot else { return }
+        let pageID = pages[pageIndex].id
+        pages[pageIndex].slots.swapAt(fromSlot, toSlot)
+
+        for pIdx in pages.indices {
+            for sIdx in pages[pIdx].slots.indices {
+                guard let slot = pages[pIdx].slots[sIdx],
+                      case .slotReference(let targetPageID, let targetSlotIndex) = slot.kind,
+                      targetPageID == pageID else { continue }
+                let remappedSlot: Int?
+                if targetSlotIndex == fromSlot {
+                    remappedSlot = toSlot
+                } else if targetSlotIndex == toSlot {
+                    remappedSlot = fromSlot
+                } else {
+                    remappedSlot = nil
+                }
+                if let remappedSlot {
+                    pages[pIdx].slots[sIdx] = BarItem(
+                        id: slot.id,
+                        kind: .slotReference(targetPageID: pageID, targetSlotIndex: remappedSlot)
+                    )
+                }
+            }
+        }
+
+        pinnedStripSlots = PinnedStripSlots.remapAfterSwap(
+            coordinates: pinnedStripSlots,
+            pageID: pageID,
+            fromSlot: fromSlot,
+            toSlot: toSlot,
+            in: pages
+        )
+    }
+
+    // MARK: - Persistent Strip Pinned Tiles & Tile Lookup Helpers (Round 5)
+
+    public var activePinnedStripSlots: [SlotCoordinate] {
+        PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
+    }
+
+    public var activePinnedStripCount: Int {
+        activePinnedStripSlots.count
+    }
+
+    public var canPinMoreSlotsToStrip: Bool {
+        activePinnedStripCount < PinnedStripSlots.maxPinnedCount
+    }
+
+    public func isSlotPinnedToStrip(_ coordinate: SlotCoordinate) -> Bool {
+        activePinnedStripSlots.contains(coordinate)
+    }
+
+    public func isSlotPinnedToStrip(pageIndex: Int, slotIndex: Int) -> Bool {
+        guard pages.indices.contains(pageIndex) else { return false }
+        return isSlotPinnedToStrip(SlotCoordinate(pageID: pages[pageIndex].id, slotIndex: slotIndex))
+    }
+
+    @discardableResult
+    public mutating func pinSlotToStrip(_ coordinate: SlotCoordinate) -> Bool {
+        let outcome = PinnedStripSlots.pin(coordinate, into: pinnedStripSlots, in: pages)
+        pinnedStripSlots = outcome.updated
+        return outcome.didPin
+    }
+
+    @discardableResult
+    public mutating func unpinSlotFromStrip(_ coordinate: SlotCoordinate) -> Bool {
+        let outcome = PinnedStripSlots.unpin(coordinate, from: pinnedStripSlots, in: pages)
+        pinnedStripSlots = outcome.updated
+        return outcome.didUnpin
+    }
+
+    @discardableResult
+    public mutating func togglePinSlotToStrip(_ coordinate: SlotCoordinate) -> Bool {
+        if isSlotPinnedToStrip(coordinate) {
+            return unpinSlotFromStrip(coordinate)
+        }
+        return pinSlotToStrip(coordinate)
+    }
+
+    public mutating func prunePinnedStripSlots() {
+        pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
+    }
+
+    public func resolvedPinnedStripSlots() -> [ResolvedPinnedStripSlot] {
+        PinnedStripSlots.resolve(pinnedStripSlots, in: pages)
+    }
+
+    // MARK: - Pinned Clipboard Items Helpers (Round 9 — Max 8 Items, <= 280 Chars)
+
+    public var activePinnedClipboardItems: [PinnedClipboardItem] {
+        PinnedClipboardShelf.sanitize(pinnedClipboardItems)
+    }
+
+    public var canPinMoreClipboardItems: Bool {
+        activePinnedClipboardItems.count < PinnedClipboardItem.maxPinnedCount
+    }
+
+    public func isClipboardTextPinned(_ text: String?) -> Bool {
+        guard let safe = PinnedClipboardItem.sanitizedText(text) else { return false }
+        return activePinnedClipboardItems.contains { $0.text == safe }
+    }
+
+    @discardableResult
+    public mutating func pinClipboardPreview(
+        _ snapshot: ClipboardPreviewSnapshot,
+        id: UUID = UUID(),
+        pinnedAt: Date = Date()
+    ) -> Bool {
+        let outcome = PinnedClipboardShelf.pin(
+            preview: snapshot,
+            into: pinnedClipboardItems,
+            id: id,
+            pinnedAt: pinnedAt
+        )
+        pinnedClipboardItems = outcome.updated
+        return outcome.didPin
+    }
+
+    @discardableResult
+    public mutating func pinObservedClipboardText(
+        _ text: String,
+        observedPreviewTexts: Set<String>,
+        id: UUID = UUID(),
+        pinnedAt: Date = Date()
+    ) -> Bool {
+        let outcome = PinnedClipboardShelf.pinObservedPreviewText(
+            text,
+            observedPreviewTexts: observedPreviewTexts,
+            into: pinnedClipboardItems,
+            id: id,
+            pinnedAt: pinnedAt
+        )
+        pinnedClipboardItems = outcome.updated
+        return outcome.didPin
+    }
+
+    @discardableResult
+    public mutating func unpinClipboardItem(id: UUID) -> Bool {
+        let outcome = PinnedClipboardShelf.unpin(id: id, from: pinnedClipboardItems)
+        pinnedClipboardItems = outcome.updated
+        return outcome.didUnpin
+    }
+
+    @discardableResult
+    public mutating func unpinClipboardItem(text: String) -> Bool {
+        let outcome = PinnedClipboardShelf.unpin(text: text, from: pinnedClipboardItems)
+        pinnedClipboardItems = outcome.updated
+        return outcome.didUnpin
+    }
+
+    public mutating func sanitizePinnedClipboardItems(allowedTexts: Set<String>? = nil) {
+        pinnedClipboardItems = PinnedClipboardShelf.sanitize(
+            pinnedClipboardItems,
+            allowedTexts: allowedTexts
+        )
+    }
+
+    public func barItem(at coordinate: SlotCoordinate) -> BarItem? {
+        guard let page = pages.first(where: { $0.id == coordinate.pageID }),
+              page.slots.indices.contains(coordinate.slotIndex) else {
+            return nil
+        }
+        return page.slots[coordinate.slotIndex]
+    }
+
+    public func locateBarItem(
+        withID tileID: UUID
+    ) -> (pageIndex: Int, slotIndex: Int, coordinate: SlotCoordinate, item: BarItem)? {
+        for (pIdx, page) in pages.enumerated() {
+            for (sIdx, maybeItem) in page.slots.enumerated() {
+                guard let item = maybeItem else { continue }
+                let coord = SlotCoordinate(pageID: page.id, slotIndex: sIdx)
+                if item.id == tileID {
+                    return (pageIndex: pIdx, slotIndex: sIdx, coordinate: coord, item: item)
+                }
+                if let folder = item.folder,
+                   let child = folder.children.first(where: { $0.id == tileID }) {
+                    return (pageIndex: pIdx, slotIndex: sIdx, coordinate: coord, item: child)
+                }
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Slot Assignment & Page Reordering Helpers (Round 10)
+
+    /// Assigns `item` into `pages[pageIndex].slots[slotIndex]`, enforcing `<= 1` folder tile per page
+    /// (`TileFolder.maxFoldersPerPage == 1`) and `<= 8` non-folder child actions per folder.
+    @discardableResult
+    public mutating func setSlotItem(_ item: BarItem?, pageIndex: Int, slotIndex: Int) -> Bool {
+        guard pages.indices.contains(pageIndex) else { return false }
+        guard pages[pageIndex].setSlot(item, at: slotIndex) else { return false }
+        if item == nil {
+            pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
+        }
+        return true
+    }
+
+    public func canMovePage(at index: Int, direction: PageReorderDirection) -> Bool {
+        guard pages.indices.contains(index) else { return false }
+        let target = index + direction.indexDelta
+        return pages.indices.contains(target)
+    }
+
+    /// Reorders `pages[sourceIndex]` to `destinationIndex`, normalizing `BarPage.index` (`0..<pages.count`)
+    /// while preserving every `BarPage.id`, `appDeckBindings` (`[String: UUID]`), `pinnedStripSlots`,
+    /// and `.slotReference` coordinates. Does not alter the 8-page limit (`BarPage.maxPages == 8`).
+    @discardableResult
+    public mutating func movePage(from sourceIndex: Int, to destinationIndex: Int) -> Int? {
+        guard pages.indices.contains(sourceIndex),
+              pages.indices.contains(destinationIndex),
+              sourceIndex != destinationIndex else {
+            return nil
+        }
+        let moving = pages.remove(at: sourceIndex)
+        pages.insert(moving, at: destinationIndex)
+        for idx in pages.indices {
+            pages[idx].index = idx
+        }
+        return pages.firstIndex(where: { $0.id == moving.id })
+    }
+
+    @discardableResult
+    public mutating func movePage(at index: Int, direction: PageReorderDirection) -> Int? {
+        let target = index + direction.indexDelta
+        return movePage(from: index, to: target)
+    }
+
+    @discardableResult
+    public mutating func movePage(withID pageID: UUID, direction: PageReorderDirection) -> Int? {
+        guard let currentIndex = pages.firstIndex(where: { $0.id == pageID }) else { return nil }
+        return movePage(at: currentIndex, direction: direction)
     }
 
     public var referencedAppBundleIdentifiers: Set<String> {
         var result = Set<String>()
         for page in pages {
-            for slot in page.slots.compactMap({ $0 }) {
+            for (slotIdx, maybeSlot) in page.slots.enumerated() {
+                guard let slot = maybeSlot else { continue }
                 if let bundleID = slot.bundleIdentifier {
+                    result.insert(bundleID)
+                } else if let folder = slot.folder {
+                    for child in folder.children {
+                        if let bundleID = child.bundleIdentifier {
+                            result.insert(bundleID)
+                        }
+                    }
+                } else if slot.isSlotReference,
+                          case .resolved(_, _, _, _, _, let resolved) = resolveBarItem(
+                              slot,
+                              from: SlotCoordinate(pageID: page.id, slotIndex: slotIdx)
+                          ),
+                          let bundleID = resolved.bundleIdentifier {
                     result.insert(bundleID)
                 }
             }

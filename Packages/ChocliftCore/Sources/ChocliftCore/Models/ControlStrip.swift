@@ -82,24 +82,35 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
     public var artist: String?
     public var appName: String?
     public var isPlaying: Bool
+    /// System-reported playback elapsed time in seconds (`nil` when unavailable).
+    public var elapsedSeconds: Double?
+    /// System-reported track duration in seconds (`nil` when missing or non-positive).
+    public var durationSeconds: Double?
 
     private enum CodingKeys: String, CodingKey {
         case title
         case artist
         case appName
         case isPlaying
+        case elapsedSeconds
+        case durationSeconds
     }
 
     public init(
         title: String? = nil,
         artist: String? = nil,
         appName: String? = nil,
-        isPlaying: Bool = false
+        isPlaying: Bool = false,
+        elapsedSeconds: Double? = nil,
+        durationSeconds: Double? = nil
     ) {
         self.title = Self.clean(title)
         self.artist = Self.clean(artist)
         self.appName = Self.clean(appName)
         self.isPlaying = isPlaying
+        let validDuration = Self.cleanDuration(durationSeconds)
+        self.durationSeconds = validDuration
+        self.elapsedSeconds = Self.cleanElapsed(elapsedSeconds, cappedBy: validDuration)
     }
 
     public init(from decoder: Decoder) throws {
@@ -108,6 +119,11 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         self.artist = Self.clean(try container.decodeIfPresent(String.self, forKey: .artist))
         self.appName = Self.clean(try container.decodeIfPresent(String.self, forKey: .appName))
         self.isPlaying = try container.decodeIfPresent(Bool.self, forKey: .isPlaying) ?? false
+        let rawDuration = try container.decodeIfPresent(Double.self, forKey: .durationSeconds)
+        let rawElapsed = try container.decodeIfPresent(Double.self, forKey: .elapsedSeconds)
+        let validDuration = Self.cleanDuration(rawDuration)
+        self.durationSeconds = validDuration
+        self.elapsedSeconds = Self.cleanElapsed(rawElapsed, cappedBy: validDuration)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -116,6 +132,10 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         try container.encodeIfPresent(artist, forKey: .artist)
         try container.encodeIfPresent(appName, forKey: .appName)
         try container.encode(isPlaying, forKey: .isPlaying)
+        let validDuration = Self.cleanDuration(durationSeconds)
+        let validElapsed = Self.cleanElapsed(elapsedSeconds, cappedBy: validDuration)
+        try container.encodeIfPresent(validElapsed, forKey: .elapsedSeconds)
+        try container.encodeIfPresent(validDuration, forKey: .durationSeconds)
     }
 
     /// Track title if available, otherwise the active media app name.
@@ -141,6 +161,15 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         return nil
     }
 
+    /// Read-only `"elapsed / duration"` string when both `elapsedSeconds` and `durationSeconds` (`> 0`)
+    /// are provided by macOS; `nil` whenever duration is missing so the Now Playing row shows title only.
+    public var formattedProgressText: String? {
+        NowPlayingProgressFormatter.formattedProgress(
+            elapsedSeconds: elapsedSeconds,
+            durationSeconds: durationSeconds
+        )
+    }
+
     public var hasActiveMedia: Bool {
         primaryDisplayText != nil
     }
@@ -152,6 +181,24 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         }
         return trimmed
     }
+
+    private static func cleanDuration(_ raw: Double?) -> Double? {
+        guard let raw, raw.isFinite, !raw.isNaN, raw > 0 else {
+            return nil
+        }
+        return raw
+    }
+
+    private static func cleanElapsed(_ raw: Double?, cappedBy duration: Double?) -> Double? {
+        guard let raw, raw.isFinite, !raw.isNaN else {
+            return nil
+        }
+        let nonNegative = max(0.0, raw)
+        if let duration {
+            return min(nonNegative, duration)
+        }
+        return nonNegative
+    }
 }
 
 public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
@@ -161,6 +208,31 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
     public var isBrightnessAvailable: Bool
     public var isMicMuted: Bool
     public var nowPlaying: NowPlayingStatus?
+    public var canUndoWindowMove: Bool
+    public var connectedDisplays: [MacDisplayInfo]
+    public var selectedTargetDisplayID: UInt32?
+    /// Soundboard-only playback level on Mac speakers (`0.0 ... 1.0`), independent of system hardware volume.
+    public var soundboardVolume: Double
+    /// True while the Mac is holding an active `IOPMAssertion` preventing idle system sleep for connected companions.
+    public var isKeepMacAwakeEnabled: Bool
+    /// Current Mac audio output devices enumerated via public CoreAudio APIs.
+    public var audioOutputDevices: [MacAudioOutputDevice]
+    /// UID of the Mac's current default audio output device, if reported by CoreAudio.
+    public var selectedAudioOutputDeviceID: String?
+    /// True when CoreAudio reports `kAudioHardwarePropertyDefaultOutputDevice` as settable on this Mac.
+    public var canSwitchAudioOutput: Bool
+    /// Read-only Mac battery percentage/charging state or AC power-adapter state (`nil` before first Mac sync).
+    public var macBattery: MacBatteryStatus?
+    /// True when Finder's `CreateDesktop` preference is enabled so desktop icons are shown on the Mac.
+    public var areFinderDesktopIconsVisible: Bool
+    /// Read-only Mac camera/microphone active capture status and app names when exposed by macOS.
+    public var privacyCapture: MacPrivacyCaptureStatus
+    /// Current Mac Wi-Fi SSID only (`nil` when unavailable; formatted as `"Wi-Fi"` with no name).
+    public var wifiSSID: String?
+    /// Count of mounted external volumes eligible for ejection (excludes startup and fixed internal volumes).
+    public var ejectableExternalVolumeCount: Int
+    /// Read-only display name of the frontmost Mac app (`nil` before sync or when none).
+    public var frontmostAppName: String?
 
     private enum CodingKeys: String, CodingKey {
         case volume
@@ -169,6 +241,20 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         case isBrightnessAvailable
         case isMicMuted
         case nowPlaying
+        case canUndoWindowMove
+        case connectedDisplays
+        case selectedTargetDisplayID
+        case soundboardVolume
+        case isKeepMacAwakeEnabled
+        case audioOutputDevices
+        case selectedAudioOutputDeviceID
+        case canSwitchAudioOutput
+        case macBattery
+        case areFinderDesktopIconsVisible
+        case privacyCapture
+        case wifiSSID
+        case ejectableExternalVolumeCount
+        case frontmostAppName
     }
 
     public init(
@@ -177,7 +263,21 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         brightness: Double = 0.75,
         isBrightnessAvailable: Bool = true,
         isMicMuted: Bool = false,
-        nowPlaying: NowPlayingStatus? = nil
+        nowPlaying: NowPlayingStatus? = nil,
+        canUndoWindowMove: Bool = false,
+        connectedDisplays: [MacDisplayInfo] = [],
+        selectedTargetDisplayID: UInt32? = nil,
+        soundboardVolume: Double = SoundboardClip.defaultVolume,
+        isKeepMacAwakeEnabled: Bool = false,
+        audioOutputDevices: [MacAudioOutputDevice] = [],
+        selectedAudioOutputDeviceID: String? = nil,
+        canSwitchAudioOutput: Bool = true,
+        macBattery: MacBatteryStatus? = nil,
+        areFinderDesktopIconsVisible: Bool = true,
+        privacyCapture: MacPrivacyCaptureStatus = .inactive,
+        wifiSSID: String? = nil,
+        ejectableExternalVolumeCount: Int = 0,
+        frontmostAppName: String? = nil
     ) {
         self.volume = ControlStripLevel.clamp(volume)
         self.isVolumeMuted = isVolumeMuted
@@ -185,12 +285,30 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.isBrightnessAvailable = isBrightnessAvailable
         self.isMicMuted = isMicMuted
         self.nowPlaying = (nowPlaying?.hasActiveMedia == true) ? nowPlaying : nil
+        self.canUndoWindowMove = canUndoWindowMove
+        self.connectedDisplays = connectedDisplays
+        self.selectedTargetDisplayID = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: selectedTargetDisplayID,
+            connectedDisplays: connectedDisplays
+        )
+        self.soundboardVolume = ControlStripLevel.clamp(soundboardVolume)
+        self.isKeepMacAwakeEnabled = isKeepMacAwakeEnabled
+        self.audioOutputDevices = audioOutputDevices
+        self.selectedAudioOutputDeviceID = Self.cleanAudioID(selectedAudioOutputDeviceID)
+        self.canSwitchAudioOutput = canSwitchAudioOutput
+        self.macBattery = macBattery
+        self.areFinderDesktopIconsVisible = areFinderDesktopIconsVisible
+        self.privacyCapture = privacyCapture
+        self.wifiSSID = MacWiFiStatusFormatter.sanitizedSSID(wifiSSID)
+        self.ejectableExternalVolumeCount = max(0, ejectableExternalVolumeCount)
+        self.frontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName)
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let decodedVolume = try container.decodeIfPresent(Double.self, forKey: .volume) ?? 0.5
         let decodedBrightness = try container.decodeIfPresent(Double.self, forKey: .brightness) ?? 0.75
+        let decodedSBVolume = try container.decodeIfPresent(Double.self, forKey: .soundboardVolume) ?? SoundboardClip.defaultVolume
         self.volume = ControlStripLevel.clamp(decodedVolume)
         self.isVolumeMuted = try container.decodeIfPresent(Bool.self, forKey: .isVolumeMuted) ?? false
         self.brightness = ControlStripLevel.clamp(decodedBrightness)
@@ -198,6 +316,32 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.isMicMuted = try container.decodeIfPresent(Bool.self, forKey: .isMicMuted) ?? false
         let decodedNP = try container.decodeIfPresent(NowPlayingStatus.self, forKey: .nowPlaying)
         self.nowPlaying = (decodedNP?.hasActiveMedia == true) ? decodedNP : nil
+        self.canUndoWindowMove = try container.decodeIfPresent(Bool.self, forKey: .canUndoWindowMove) ?? false
+        let displays = try container.decodeIfPresent([MacDisplayInfo].self, forKey: .connectedDisplays) ?? []
+        let rawSelectedID = try container.decodeIfPresent(UInt32.self, forKey: .selectedTargetDisplayID)
+        self.connectedDisplays = displays
+        self.selectedTargetDisplayID = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: rawSelectedID,
+            connectedDisplays: displays
+        )
+        self.soundboardVolume = ControlStripLevel.clamp(decodedSBVolume)
+        self.isKeepMacAwakeEnabled = try container.decodeIfPresent(Bool.self, forKey: .isKeepMacAwakeEnabled) ?? false
+        self.audioOutputDevices = try container.decodeIfPresent([MacAudioOutputDevice].self, forKey: .audioOutputDevices) ?? []
+        self.selectedAudioOutputDeviceID = Self.cleanAudioID(
+            try container.decodeIfPresent(String.self, forKey: .selectedAudioOutputDeviceID)
+        )
+        self.canSwitchAudioOutput = try container.decodeIfPresent(Bool.self, forKey: .canSwitchAudioOutput) ?? true
+        self.macBattery = try container.decodeIfPresent(MacBatteryStatus.self, forKey: .macBattery)
+        self.areFinderDesktopIconsVisible = try container.decodeIfPresent(Bool.self, forKey: .areFinderDesktopIconsVisible) ?? true
+        self.privacyCapture = try container.decodeIfPresent(MacPrivacyCaptureStatus.self, forKey: .privacyCapture) ?? .inactive
+        self.wifiSSID = MacWiFiStatusFormatter.sanitizedSSID(
+            try container.decodeIfPresent(String.self, forKey: .wifiSSID)
+        )
+        let rawEjectableCount = try container.decodeIfPresent(Int.self, forKey: .ejectableExternalVolumeCount) ?? 0
+        self.ejectableExternalVolumeCount = max(0, rawEjectableCount)
+        self.frontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(
+            try container.decodeIfPresent(String.self, forKey: .frontmostAppName)
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -208,22 +352,124 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         try container.encode(isBrightnessAvailable, forKey: .isBrightnessAvailable)
         try container.encode(isMicMuted, forKey: .isMicMuted)
         try container.encodeIfPresent(nowPlaying, forKey: .nowPlaying)
+        try container.encode(canUndoWindowMove, forKey: .canUndoWindowMove)
+        if !connectedDisplays.isEmpty {
+            try container.encode(connectedDisplays, forKey: .connectedDisplays)
+        }
+        let resolvedSelected = DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: selectedTargetDisplayID,
+            connectedDisplays: connectedDisplays
+        )
+        try container.encodeIfPresent(resolvedSelected, forKey: .selectedTargetDisplayID)
+        try container.encode(ControlStripLevel.clamp(soundboardVolume), forKey: .soundboardVolume)
+        try container.encode(isKeepMacAwakeEnabled, forKey: .isKeepMacAwakeEnabled)
+        if !audioOutputDevices.isEmpty {
+            try container.encode(audioOutputDevices, forKey: .audioOutputDevices)
+        }
+        try container.encodeIfPresent(Self.cleanAudioID(selectedAudioOutputDeviceID), forKey: .selectedAudioOutputDeviceID)
+        try container.encode(canSwitchAudioOutput, forKey: .canSwitchAudioOutput)
+        try container.encodeIfPresent(macBattery, forKey: .macBattery)
+        try container.encode(areFinderDesktopIconsVisible, forKey: .areFinderDesktopIconsVisible)
+        if privacyCapture != .inactive {
+            try container.encode(privacyCapture, forKey: .privacyCapture)
+        }
+        try container.encodeIfPresent(MacWiFiStatusFormatter.sanitizedSSID(wifiSSID), forKey: .wifiSSID)
+        if ejectableExternalVolumeCount > 0 {
+            try container.encode(max(0, ejectableExternalVolumeCount), forKey: .ejectableExternalVolumeCount)
+        }
+        try container.encodeIfPresent(FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName), forKey: .frontmostAppName)
+    }
+
+    /// Current Wi-Fi SSID string, or `"Wi-Fi"` with no network name when unavailable.
+    public var wifiDisplayLabel: String {
+        MacWiFiStatusFormatter.displayText(ssid: wifiSSID)
+    }
+
+    /// True when at least one eligible external volume is mounted on the Mac.
+    public var hasEjectableExternalDisks: Bool {
+        ejectableExternalVolumeCount > 0
+    }
+
+    /// Explicit reason line shown on the companion strip ONLY while Choclift's keep-awake assertion is on (`nil` when off).
+    public func awakeReasonLine(in language: AppLanguage = .system) -> String? {
+        MacAwakeReasonFormatter.reasonLine(
+            isAssertionActive: isKeepMacAwakeEnabled,
+            language: language
+        )
+    }
+
+    public var currentAudioOutputDevice: MacAudioOutputDevice? {
+        if let selectedID = Self.cleanAudioID(selectedAudioOutputDeviceID),
+           let matched = audioOutputDevices.first(where: { $0.id == selectedID }) {
+            return matched
+        }
+        return audioOutputDevices.first
+    }
+
+    public func currentAudioOutputLabel(in language: AppLanguage = .system) -> String {
+        if let device = currentAudioOutputDevice {
+            return device.name
+        }
+        return L10n.tr("系统音频输出", "System Output", language: language)
+    }
+
+    private static func cleanAudioID(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
+
+    public var shouldShowDisplayPicker: Bool {
+        DisplaySnapTargetResolver.shouldShowPicker(for: connectedDisplays)
+    }
+
+    public var effectiveTargetDisplayID: UInt32? {
+        DisplaySnapTargetResolver.resolvedTargetDisplayID(
+            selectedDisplayID: selectedTargetDisplayID,
+            connectedDisplays: connectedDisplays
+        )
+    }
+
+    public func selectedDisplayLabel(in language: AppLanguage = .system) -> String {
+        if let targetID = effectiveTargetDisplayID,
+           let matched = connectedDisplays.first(where: { $0.displayID == targetID }) {
+            return matched.name
+        }
+        return L10n.tr("当前窗口屏幕", "Active Window Display", language: language)
     }
 
     public func hasMeaningfulDifference(from other: ControlStripState, tolerance: Double = 0.004) -> Bool {
         if isVolumeMuted != other.isVolumeMuted ||
             isBrightnessAvailable != other.isBrightnessAvailable ||
             isMicMuted != other.isMicMuted ||
-            nowPlaying != other.nowPlaying {
+            nowPlaying != other.nowPlaying ||
+            canUndoWindowMove != other.canUndoWindowMove ||
+            connectedDisplays != other.connectedDisplays ||
+            effectiveTargetDisplayID != other.effectiveTargetDisplayID ||
+            isKeepMacAwakeEnabled != other.isKeepMacAwakeEnabled ||
+            audioOutputDevices != other.audioOutputDevices ||
+            Self.cleanAudioID(selectedAudioOutputDeviceID) != Self.cleanAudioID(other.selectedAudioOutputDeviceID) ||
+            canSwitchAudioOutput != other.canSwitchAudioOutput ||
+            macBattery != other.macBattery ||
+            areFinderDesktopIconsVisible != other.areFinderDesktopIconsVisible ||
+            privacyCapture != other.privacyCapture ||
+            MacWiFiStatusFormatter.sanitizedSSID(wifiSSID) != MacWiFiStatusFormatter.sanitizedSSID(other.wifiSSID) ||
+            max(0, ejectableExternalVolumeCount) != max(0, other.ejectableExternalVolumeCount) ||
+            FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName) != FrontmostAppStripFormatter.sanitizedAppName(other.frontmostAppName) {
             return true
         }
         if (volume <= 0.001) != (other.volume <= 0.001) ||
             (volume >= 0.999) != (other.volume >= 0.999) ||
             (brightness <= 0.001) != (other.brightness <= 0.001) ||
-            (brightness >= 0.999) != (other.brightness >= 0.999) {
+            (brightness >= 0.999) != (other.brightness >= 0.999) ||
+            (soundboardVolume <= 0.001) != (other.soundboardVolume <= 0.001) ||
+            (soundboardVolume >= 0.999) != (other.soundboardVolume >= 0.999) {
             return true
         }
         return abs(volume - other.volume) >= tolerance ||
-            abs(brightness - other.brightness) >= tolerance
+            abs(brightness - other.brightness) >= tolerance ||
+            abs(soundboardVolume - other.soundboardVolume) >= tolerance
     }
 }

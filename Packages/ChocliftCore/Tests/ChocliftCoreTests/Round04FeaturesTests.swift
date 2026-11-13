@@ -1,0 +1,530 @@
+import XCTest
+@testable import ChocliftCore
+
+final class Round04FeaturesTests: XCTestCase {
+
+    // MARK: - 1. Pure Mac Awake Assertion State Machine
+
+    func testAwakeAssertionStateMachineEndsWhenLastCompanionDisconnects() {
+        var machine = MacAwakeAssertionStateMachine()
+        XCTAssertFalse(machine.isToggleEnabled)
+        XCTAssertEqual(machine.connectedCompanionCount, 0)
+        XCTAssertFalse(machine.shouldHoldAssertion)
+
+        // Enabling while 0 companions are connected must NOT hold an assertion
+        XCTAssertFalse(machine.setToggleEnabled(true))
+        XCTAssertFalse(machine.isToggleEnabled)
+        XCTAssertFalse(machine.shouldHoldAssertion)
+
+        // Connect two companions (iPhone + iPad)
+        XCTAssertFalse(machine.deviceConnected("iphone-1"))
+        XCTAssertFalse(machine.deviceConnected("ipad-2"))
+        XCTAssertEqual(machine.connectedCompanionCount, 2)
+        XCTAssertFalse(machine.shouldHoldAssertion)
+
+        // Turning phone toggle ON while companions are connected holds the assertion
+        XCTAssertTrue(machine.setToggleEnabled(true))
+        XCTAssertTrue(machine.isToggleEnabled)
+        XCTAssertTrue(machine.shouldHoldAssertion)
+
+        // Turning phone toggle OFF immediately ends the assertion
+        XCTAssertFalse(machine.setToggleEnabled(false))
+        XCTAssertFalse(machine.isToggleEnabled)
+        XCTAssertFalse(machine.shouldHoldAssertion)
+
+        // Turn toggle back ON
+        XCTAssertTrue(machine.setToggleEnabled(true))
+        XCTAssertTrue(machine.shouldHoldAssertion)
+
+        // Disconnecting one companion while another remains connected keeps the assertion active
+        XCTAssertTrue(machine.deviceDisconnected("iphone-1"))
+        XCTAssertEqual(machine.connectedCompanionCount, 1)
+        XCTAssertTrue(machine.shouldHoldAssertion)
+
+        // Disconnecting the LAST companion immediately ends the assertion and clears the toggle
+        XCTAssertFalse(machine.deviceDisconnected("ipad-2"))
+        XCTAssertEqual(machine.connectedCompanionCount, 0)
+        XCTAssertFalse(machine.isToggleEnabled)
+        XCTAssertFalse(machine.shouldHoldAssertion)
+
+        // Reconnecting later does NOT silently re-assert sleep prevention until toggled on again
+        XCTAssertFalse(machine.updateConnectedDevices(["iphone-1"]))
+        XCTAssertFalse(machine.isToggleEnabled)
+        XCTAssertFalse(machine.shouldHoldAssertion)
+    }
+
+    // MARK: - 2. Frontmost App Window List Cap at 12
+
+    func testFrontmostWindowSnapshotCapsWindowListAt12() throws {
+        XCTAssertEqual(FrontmostAppWindowSnapshot.maxWindows, 12)
+
+        // 0 windows
+        let empty = FrontmostAppWindowSnapshot(bundleIdentifier: "com.apple.Safari", appName: "Safari", windows: [])
+        XCTAssertTrue(empty.windows.isEmpty)
+        XCTAssertEqual(empty.totalWindowCount, 0)
+        XCTAssertFalse(empty.isCapped)
+
+        // Exactly 12 windows -> preserved without capping indicator
+        let twelveItems = (0..<12).map { idx in
+            MacFrontmostWindowItem(id: "win-\(idx)", title: "Tab \(idx + 1)", index: idx, isMainOrFocused: idx == 0)
+        }
+        let exactTwelve = FrontmostAppWindowSnapshot(
+            bundleIdentifier: "com.apple.Safari",
+            appName: "Safari",
+            windows: twelveItems
+        )
+        XCTAssertEqual(exactTwelve.windows.count, 12)
+        XCTAssertEqual(exactTwelve.totalWindowCount, 12)
+        XCTAssertFalse(exactTwelve.isCapped)
+
+        // 13 windows -> capped at 12, totalWindowCount preserved at 13
+        let thirteenItems = (0..<13).map { idx in
+            MacFrontmostWindowItem(id: "win-\(idx)", title: "Window \(idx + 1)", index: idx)
+        }
+        let cappedThirteen = FrontmostAppWindowSnapshot(
+            bundleIdentifier: "com.apple.dt.Xcode",
+            appName: "Xcode",
+            windows: thirteenItems
+        )
+        XCTAssertEqual(cappedThirteen.windows.count, 12)
+        XCTAssertEqual(cappedThirteen.windows.map(\.index), Array(0..<12))
+        XCTAssertEqual(cappedThirteen.totalWindowCount, 13)
+        XCTAssertTrue(cappedThirteen.isCapped)
+
+        // 25 windows -> capped at 12
+        let twentyFiveItems = (0..<25).map { idx in
+            MacFrontmostWindowItem(id: "win-\(idx)", title: "Doc \(idx + 1)", index: idx)
+        }
+        let cappedTwentyFive = FrontmostAppWindowSnapshot(
+            bundleIdentifier: "com.apple.TextEdit",
+            appName: "TextEdit",
+            windows: twentyFiveItems
+        )
+        XCTAssertEqual(cappedTwentyFive.windows.count, 12)
+        XCTAssertEqual(cappedTwentyFive.totalWindowCount, 25)
+        XCTAssertTrue(cappedTwentyFive.isCapped)
+
+        // Wire JSON decode defense: if a raw JSON payload carries 18 windows, decoding clamps to 12
+        struct RawUnboundedSnapshot: Encodable {
+            let bundleIdentifier: String
+            let appName: String
+            let windows: [MacFrontmostWindowItem]
+            let totalWindowCount: Int
+            let isAccessibilityTrusted: Bool
+        }
+        let eighteenItems = (0..<18).map { idx in
+            MacFrontmostWindowItem(id: "raw-\(idx)", title: "Raw \(idx + 1)", index: idx)
+        }
+        let rawData = try JSONEncoder().encode(
+            RawUnboundedSnapshot(
+                bundleIdentifier: "com.apple.Terminal",
+                appName: "Terminal",
+                windows: eighteenItems,
+                totalWindowCount: 18,
+                isAccessibilityTrusted: true
+            )
+        )
+        let decoded = try JSONDecoder().decode(FrontmostAppWindowSnapshot.self, from: rawData)
+        XCTAssertEqual(decoded.windows.count, 12)
+        XCTAssertEqual(decoded.totalWindowCount, 18)
+        XCTAssertTrue(decoded.isCapped)
+    }
+
+    // MARK: - 3. Audio Output ControlStrip Round-Trip & Non-Faked Read-Only Behavior
+
+    @MainActor
+    func testAudioOutputControlStripRoundTripAndReadOnlyNeverFakesSwitch() throws {
+        // Legacy ControlStripState JSON without Round 4 keys decodes with safe defaults
+        let legacyJSON = Data(#"{"volume":0.5,"isVolumeMuted":false,"brightness":0.8,"isBrightnessAvailable":true,"isMicMuted":false,"canUndoWindowMove":false}"#.utf8)
+        let decodedLegacy = try JSONDecoder().decode(ControlStripState.self, from: legacyJSON)
+        XCTAssertFalse(decodedLegacy.isKeepMacAwakeEnabled)
+        XCTAssertTrue(decodedLegacy.audioOutputDevices.isEmpty)
+        XCTAssertNil(decodedLegacy.selectedAudioOutputDeviceID)
+        XCTAssertTrue(decodedLegacy.canSwitchAudioOutput)
+
+        // Round-trip with multiple CoreAudio output devices and read-only flag
+        let builtIn = MacAudioOutputDevice(
+            id: "BuiltInSpeakerDevice",
+            audioObjectID: 48,
+            name: "MacBook Pro Speakers",
+            transportKind: .builtIn
+        )
+        let headphones = MacAudioOutputDevice(
+            id: "AA-BB-CC-AirPods",
+            audioObjectID: 92,
+            name: "AirPods Pro",
+            transportKind: .bluetooth
+        )
+        let state = ControlStripState(
+            volume: 0.65,
+            isVolumeMuted: false,
+            brightness: 0.70,
+            isBrightnessAvailable: true,
+            isMicMuted: false,
+            isKeepMacAwakeEnabled: true,
+            audioOutputDevices: [builtIn, headphones],
+            selectedAudioOutputDeviceID: builtIn.id,
+            canSwitchAudioOutput: false
+        )
+        let encoded = try JSONEncoder().encode(state)
+        let decoded = try JSONDecoder().decode(ControlStripState.self, from: encoded)
+        XCTAssertEqual(decoded, state)
+        XCTAssertEqual(decoded.currentAudioOutputDevice, builtIn)
+        XCTAssertFalse(decoded.canSwitchAudioOutput)
+    }
+
+    // MARK: - 4. Tile Action Feedback Tracker & Auto-Expiry Without Second Toast
+
+    func testTileActionFeedbackTrackerPureLifecycle() {
+        var tracker = TileActionFeedbackTracker()
+        let pageID = UUID()
+        let slot0 = SlotCoordinate(pageID: pageID, slotIndex: 0)
+        let slot1 = SlotCoordinate(pageID: pageID, slotIndex: 1)
+
+        tracker.recordTileTriggered(slot: slot0)
+        XCTAssertEqual(tracker.pendingSlot, slot0)
+        XCTAssertNil(tracker.outcome(for: slot0))
+
+        let banner1 = tracker.resolvePending(success: true)
+        XCTAssertNotNil(banner1)
+        XCTAssertEqual(tracker.outcome(for: slot0), .success)
+        XCTAssertNil(tracker.outcome(for: slot1))
+
+        // Triggering a second slot supersedes the first slot's feedback when resolved
+        tracker.recordTileTriggered(slot: slot1)
+        let banner2 = tracker.resolvePending(success: false)
+        XCTAssertNotNil(banner2)
+        XCTAssertNil(tracker.outcome(for: slot0))
+        XCTAssertEqual(tracker.outcome(for: slot1), .failure)
+
+        // Stale token from banner1 must NOT expire banner2
+        if let token1 = banner1?.token {
+            XCTAssertFalse(tracker.expireFeedback(matchingToken: token1))
+        }
+        XCTAssertEqual(tracker.outcome(for: slot1), .failure)
+
+        // Matching token expires banner2 back to normal
+        if let token2 = banner2?.token {
+            XCTAssertTrue(tracker.expireFeedback(matchingToken: token2))
+        }
+        XCTAssertNil(tracker.outcome(for: slot1))
+    }
+
+    // MARK: - 5. End-to-End Round 4 Loopback + Pre-Auth vs Post-Auth Unknown Frame Invariant
+
+    #if os(macOS)
+    @MainActor
+    func testRound04LoopbackKeepAwakeAudioSwitchWindowRaiseTileFlashAndUnknownFramePolicy() async throws {
+        let suiteName = "com.choclift.tests.round04.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let delegate = Round04WireTestDelegate()
+        let server = MacServerEngine(macID: "mac-r4", macName: "Studio Mac R4")
+        server.delegate = delegate
+        delegate.server = server
+        defer { server.stop() }
+
+        // 1. Pre-auth unknown client frame MUST disconnect immediately
+        let preAuthServerEnd = server.acceptInMemoryCompanion()
+        let (preAuthProxy, preAuthRawClient) = InMemoryCompanionPipe.pair()
+        var preAuthClosed = false
+        var preAuthReceivedFrames: [ServerMessage] = []
+        var preAuthAccumulator = WireStreamAccumulator()
+        preAuthProxy.onPayload = { preAuthServerEnd.send($0) }
+        preAuthServerEnd.onPayload = { chunk in
+            preAuthProxy.send(chunk)
+        }
+        preAuthServerEnd.onClosed = {
+            preAuthProxy.cancel()
+        }
+        preAuthRawClient.onPayload = { chunk in
+            if let frames = try? preAuthAccumulator.appendAndExtractPayloads(chunk) {
+                for f in frames {
+                    if let msg = try? WireFrameCodec.decodePayload(ServerMessage.self, from: f) {
+                        preAuthReceivedFrames.append(msg)
+                    }
+                }
+            }
+        }
+        preAuthRawClient.onClosed = {
+            preAuthClosed = true
+        }
+        preAuthProxy.start()
+        preAuthServerEnd.start()
+        preAuthRawClient.start()
+
+        let unknownPayload = Data(#"{"futureRound99ClientFeature":{"flag":true}}"#.utf8)
+        var unknownLenBE = UInt32(unknownPayload.count).bigEndian
+        var unknownRawFrame = Data(capacity: 4 + unknownPayload.count)
+        withUnsafeBytes(of: &unknownLenBE) { unknownRawFrame.append(contentsOf: $0) }
+        unknownRawFrame.append(unknownPayload)
+
+        preAuthRawClient.send(unknownRawFrame)
+        for _ in 0..<40 where !preAuthClosed {
+            try await Task.sleep(for: .milliseconds(15))
+        }
+        XCTAssertTrue(preAuthClosed, "Unknown pre-auth client frame must disconnect the unauthenticated session")
+        XCTAssertTrue(
+            preAuthReceivedFrames.contains(where: {
+                if case .authFailed = $0 { return true }
+                return false
+            })
+        )
+
+        // 2. Pair iPhone + iPad and verify Keep Mac Awake ends when LAST companion disconnects
+        let phoneServerEnd = server.acceptInMemoryCompanion()
+        let (phoneProxy, phoneClientEnd) = InMemoryCompanionPipe.pair()
+        phoneProxy.onPayload = { phoneServerEnd.send($0) }
+        phoneServerEnd.onPayload = { phoneProxy.send($0) }
+        phoneProxy.start()
+        phoneServerEnd.start()
+
+        let phone = CompanionClientEngine(
+            deviceID: "iphone-r4",
+            deviceName: "iPhone R4",
+            platform: .iPhone,
+            userDefaults: defaults,
+            storageKeyPrefix: "iphone-r4"
+        )
+        phone.tileFeedbackDurationSeconds = 0.12
+        defer { phone.disconnect() }
+
+        phone.connectInMemoryBluetooth(to: phoneClientEnd, targetName: "Studio Mac R4")
+        for _ in 0..<50 {
+            if case .awaitingPIN = phone.connectionState { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        phone.submitPIN(server.currentPIN)
+        for _ in 0..<50 where !phone.connectionState.isConnected {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(phone.connectionState.isConnected)
+
+        let padServerEnd = server.acceptInMemoryCompanion()
+        let (padProxy, padClientEnd) = InMemoryCompanionPipe.pair()
+        padProxy.onPayload = { padServerEnd.send($0) }
+        padServerEnd.onPayload = { padProxy.send($0) }
+        padProxy.start()
+        padServerEnd.start()
+
+        let ipad = CompanionClientEngine(
+            deviceID: "ipad-r4",
+            deviceName: "iPad R4",
+            platform: .iPad,
+            userDefaults: defaults,
+            storageKeyPrefix: "ipad-r4"
+        )
+        defer { ipad.disconnect() }
+
+        ipad.connectInMemoryBluetooth(to: padClientEnd, targetName: "Studio Mac R4")
+        for _ in 0..<50 {
+            if case .awaitingPIN = ipad.connectionState { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        ipad.submitPIN(server.currentPIN)
+        for _ in 0..<50 where !ipad.connectionState.isConnected {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(ipad.connectionState.isConnected)
+
+        // Enable Keep Mac Awake from iPhone
+        phone.setKeepMacAwake(true)
+        for _ in 0..<50 where !delegate.awakeMachine.shouldHoldAssertion || !ipad.controlStripState.isKeepMacAwakeEnabled {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(delegate.awakeMachine.shouldHoldAssertion)
+        XCTAssertTrue(phone.controlStripState.isKeepMacAwakeEnabled)
+        XCTAssertTrue(ipad.controlStripState.isKeepMacAwakeEnabled)
+
+        // Disconnect iPad first -> iPhone is still connected, so awake assertion stays active
+        ipad.disconnect()
+        padClientEnd.cancel()
+        padServerEnd.cancel()
+        for _ in 0..<50 where server.connectedDeviceCount != 1 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(delegate.awakeMachine.shouldHoldAssertion)
+
+        // Disconnect iPhone (the LAST companion) -> awake assertion ends immediately
+        phone.disconnect()
+        phoneClientEnd.cancel()
+        phoneServerEnd.cancel()
+        for _ in 0..<50 where server.connectedDeviceCount != 0 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertFalse(delegate.awakeMachine.shouldHoldAssertion)
+        XCTAssertFalse(phone.controlStripState.isKeepMacAwakeEnabled)
+
+        // 3. Reconnect iPhone using saved auth token and verify Audio Output switch, 12-window cap + raise, tile flash, and post-auth unknown frame tolerance
+        let phoneServerEnd2 = server.acceptInMemoryCompanion()
+        let (phoneProxy2, phoneClientEnd2) = InMemoryCompanionPipe.pair()
+        phoneProxy2.onPayload = { phoneServerEnd2.send($0) }
+        phoneServerEnd2.onPayload = { phoneProxy2.send($0) }
+        phoneProxy2.start()
+        phoneServerEnd2.start()
+
+        phone.connectInMemoryBluetooth(to: phoneClientEnd2, targetName: "Studio Mac R4", macID: "mac-r4")
+        for _ in 0..<60 where !phone.connectionState.isConnected {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(phone.connectionState.isConnected)
+
+        // Wait for initial frontmostWindows snapshot (delegate has 15 windows -> capped at 12)
+        for _ in 0..<50 where phone.frontmostWindows.windows.isEmpty {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(phone.frontmostWindows.windows.count, 12)
+        XCTAssertEqual(phone.frontmostWindows.totalWindowCount, 15)
+        XCTAssertTrue(phone.frontmostWindows.isCapped)
+
+        // Tap window #3 to raise
+        phone.raiseFrontmostWindow(id: "win-3")
+        for _ in 0..<50 where delegate.raisedWindowIDs.isEmpty {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(delegate.raisedWindowIDs, ["win-3"])
+
+        // Switch audio output device (verify phone does NOT fake switch prior to Mac confirmation)
+        for _ in 0..<50 where phone.controlStripState.audioOutputDevices.count < 2 {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(phone.controlStripState.selectedAudioOutputDeviceID, "built-in-spk")
+        phone.selectAudioOutputDevice(id: "usb-dac")
+        // Immediately after call (before async server reply), phone has NOT faked the selection
+        XCTAssertEqual(phone.controlStripState.selectedAudioOutputDeviceID, "built-in-spk")
+        for _ in 0..<50 where phone.controlStripState.selectedAudioOutputDeviceID != "usb-dac" {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(phone.controlStripState.selectedAudioOutputDeviceID, "usb-dac")
+
+        // Trigger a tile on Page 0 Slot 0 -> flashes .success briefly, then returns to nil
+        let page0 = phone.profile.pages[0]
+        let slot0Coord = SlotCoordinate(pageID: page0.id, slotIndex: 0)
+        let slot1Coord = SlotCoordinate(pageID: page0.id, slotIndex: 1)
+        let slot0Item = try XCTUnwrap(page0.slots[0])
+
+        phone.triggerBarItem(slot0Item, from: slot0Coord)
+        for _ in 0..<50 where phone.tileOutcome(for: slot0Coord) == nil {
+            try await Task.sleep(for: .milliseconds(15))
+        }
+        XCTAssertEqual(phone.tileOutcome(for: slot0Coord), .success)
+        XCTAssertNil(phone.tileOutcome(for: slot1Coord))
+
+        // Wait for brief flash to auto-expire back to normal
+        for _ in 0..<50 where phone.tileOutcome(for: slot0Coord) != nil {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertNil(phone.tileOutcome(for: slot0Coord))
+
+        // Post-auth unknown client frame AND post-auth unknown server frame stay non-fatal
+        phoneProxy2.send(unknownRawFrame)
+        let unknownServerPayload = Data(#"{"futureRound99ServerEvent":{"ok":1}}"#.utf8)
+        var sLenBE = UInt32(unknownServerPayload.count).bigEndian
+        var unknownServerFrame = Data(capacity: 4 + unknownServerPayload.count)
+        withUnsafeBytes(of: &sLenBE) { unknownServerFrame.append(contentsOf: $0) }
+        unknownServerFrame.append(unknownServerPayload)
+        phoneProxy2.send(unknownServerFrame)
+
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(phone.connectionState.isConnected, "Unknown post-auth frames must remain non-fatal")
+        XCTAssertEqual(server.connectedDeviceCount, 1)
+    }
+    #endif
+}
+
+#if os(macOS)
+@MainActor
+private final class Round04WireTestDelegate: MacServerEngineDelegate {
+    weak var server: MacServerEngine?
+    var profile: ChocliftWorkspaceProfile = ChocliftDefaults.makeDefaultProfile()
+    var awakeMachine = MacAwakeAssertionStateMachine()
+    var raisedWindowIDs: [String] = []
+
+    var controlStripState = ControlStripState(
+        volume: 0.6,
+        isVolumeMuted: false,
+        brightness: 0.75,
+        isBrightnessAvailable: true,
+        isMicMuted: false,
+        isKeepMacAwakeEnabled: false,
+        audioOutputDevices: [
+            MacAudioOutputDevice(id: "built-in-spk", audioObjectID: 41, name: "Mac Studio Speakers", transportKind: .builtIn),
+            MacAudioOutputDevice(id: "usb-dac", audioObjectID: 77, name: "USB Studio DAC", transportKind: .usb)
+        ],
+        selectedAudioOutputDeviceID: "built-in-spk",
+        canSwitchAudioOutput: true
+    )
+
+    func serverCurrentProfile() -> ChocliftWorkspaceProfile { profile }
+    func serverCurrentRecentApps() -> [RecentAppEntry] { [] }
+    func serverFrontmostBundleID() -> String? { "com.apple.Safari" }
+    func serverTextInputState() -> (isEditing: Bool, appName: String?) { (false, nil) }
+    func serverIsAccessibilityGranted() -> Bool { true }
+    func serverCurrentOrcaStatus() -> OrcaTaskStatusSnapshot? { nil }
+    func serverIcons(for bundleIDs: [String]) -> [String: Data] { [:] }
+
+    func serverDidUpdatePairedDevices(_ devices: [PairedDeviceRecord]) {
+        let connected = Set(devices.filter(\.isCurrentlyConnected).map(\.deviceID))
+        let holding = awakeMachine.updateConnectedDevices(connected)
+        if controlStripState.isKeepMacAwakeEnabled != holding {
+            controlStripState.isKeepMacAwakeEnabled = holding
+            server?.broadcastControlStripState(controlStripState)
+        }
+    }
+
+    func serverDidReceiveAuthenticatedMessage(
+        _ message: ClientMessage,
+        from device: PairedDeviceRecord,
+        reply: @escaping @MainActor (ServerMessage) -> Void
+    ) {
+        switch message {
+        case .requestControlStripState:
+            reply(.controlStripStateUpdated(controlStripState))
+
+        case .setKeepMacAwake(let enabled):
+            _ = awakeMachine.deviceConnected(device.deviceID)
+            let holding = awakeMachine.setToggleEnabled(enabled)
+            controlStripState.isKeepMacAwakeEnabled = holding
+            server?.broadcastControlStripState(controlStripState)
+            reply(.actionFeedback(success: true, title: "Keep Mac Awake", detail: holding ? "On" : "Off"))
+
+        case .setAudioOutputDevice(let deviceID):
+            guard controlStripState.canSwitchAudioOutput,
+                  let matched = controlStripState.audioOutputDevices.first(where: { $0.id == deviceID }) else {
+                reply(.actionFeedback(success: false, title: "Audio Output", detail: "Cannot switch"))
+                return
+            }
+            controlStripState.selectedAudioOutputDeviceID = matched.id
+            server?.broadcastControlStripState(controlStripState)
+            reply(.actionFeedback(success: true, title: matched.name, detail: "Switched"))
+
+        case .requestFrontmostAppWindows:
+            let fifteenWindows = (0..<15).map { idx in
+                MacFrontmostWindowItem(
+                    id: "win-\(idx)",
+                    title: "Safari Window \(idx + 1)",
+                    index: idx,
+                    isMainOrFocused: idx == 0
+                )
+            }
+            let snapshot = FrontmostAppWindowSnapshot(
+                bundleIdentifier: "com.apple.Safari",
+                appName: "Safari",
+                windows: fifteenWindows
+            )
+            reply(.frontmostWindowsUpdated(snapshot))
+
+        case .raiseFrontmostWindow(let windowID):
+            raisedWindowIDs.append(windowID)
+            reply(.actionFeedback(success: true, title: "Raised", detail: windowID))
+
+        case .triggerBarItem(let item):
+            reply(.actionFeedback(success: true, title: item.displayTitle(), detail: "OK"))
+
+        default:
+            break
+        }
+    }
+}
+#endif
