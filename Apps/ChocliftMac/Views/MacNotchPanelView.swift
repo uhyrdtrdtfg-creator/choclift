@@ -356,30 +356,37 @@ public struct MacNotchPanelView: View {
         isPressed: Bool
     ) -> some View {
         if let item {
+            let origin = SlotCoordinate(pageID: currentPage.id, slotIndex: slotIndex)
+            let isBrokenRef = item.isSlotReference && coordinator.profile.resolveBarItem(item, from: origin).isMissing
+
             Button {
+                guard !isBrokenRef else { return }
                 onTriggerSlot(slotIndex, item)
             } label: {
                 ChocBarTileCard(
                     item: item,
                     iconData: iconData,
                     isFrontmostApp: isFrontmost,
-                    isPressed: isPressed,
+                    isPressed: isPressed && !isBrokenRef,
                     isAwaitingConfirmation: false,
                     palette: palette,
                     language: lang,
-                    compact: true
+                    compact: true,
+                    profile: coordinator.profile,
+                    slotOrigin: origin,
+                    iconLookup: { coordinator.catalogService.iconData(forBundleID: $0) }
                 )
             }
             .buttonStyle(
                 NotchTileButtonStyle(
                     slotIndex: slotIndex,
                     isHovered: isHovered,
-                    isExternallyPressed: isPressed,
+                    isExternallyPressed: isPressed && !isBrokenRef,
                     accent: palette.accent,
                     onPressChanged: onSlotPressChanged
                 )
             )
-            .accessibilityLabel(item.displayTitle(in: lang))
+            .accessibilityLabel(coordinator.profile.displayTitle(for: item, from: origin, in: lang))
         } else {
             Button {
                 onTriggerSlot(slotIndex, nil)

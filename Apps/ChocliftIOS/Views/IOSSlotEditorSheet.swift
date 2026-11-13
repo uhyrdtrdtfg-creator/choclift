@@ -5,19 +5,48 @@ public struct IOSSlotEditorSheet: View {
     public enum EditorTab: String, CaseIterable, Identifiable {
         case apps
         case flows
+        case sounds
+        case reference
         case shortcuts
         case website
         case actions
+
         public var id: String { rawValue }
+
+        public var sfSymbol: String {
+            switch self {
+            case .apps: return "app.badge"
+            case .flows: return "arrow.triangle.branch"
+            case .sounds: return "speaker.wave.2.bubble.left.fill"
+            case .reference: return "arrow.turn.up.right"
+            case .shortcuts: return "bolt.fill"
+            case .website: return "globe"
+            case .actions: return "command.square.fill"
+            }
+        }
+
+        public func title(in lang: AppLanguage) -> String {
+            switch self {
+            case .apps: return L10n.tr("应用", "Apps", language: lang)
+            case .flows: return L10n.tr("动作流", "Flows", language: lang)
+            case .sounds: return L10n.tr("音效", "Sounds", language: lang)
+            case .reference: return L10n.tr("引用", "Reference", language: lang)
+            case .shortcuts: return L10n.tr("指令", "Shortcuts", language: lang)
+            case .website: return L10n.tr("网页", "Web", language: lang)
+            case .actions: return L10n.tr("动作", "Actions", language: lang)
+            }
+        }
     }
 
     @ObservedObject var client: CompanionClientEngine
     let pageIndex: Int
     let slotIndex: Int
+    var onEditOriginalSlot: ((Int, Int) -> Void)?
     @Environment(\.dismiss) private var dismiss
 
     @State private var tab: EditorTab = .apps
     @State private var searchQuery: String = ""
+    @State private var soundSearchQuery: String = ""
     @State private var isWaitingForCatalog: Bool = false
 
     @State private var shortcutName: String = ""
@@ -33,24 +62,42 @@ public struct IOSSlotEditorSheet: View {
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
-    public init(client: CompanionClientEngine, pageIndex: Int, slotIndex: Int) {
+    private var currentSlotOrigin: SlotCoordinate? {
+        guard client.profile.pages.indices.contains(pageIndex) else { return nil }
+        return SlotCoordinate(pageID: client.profile.pages[pageIndex].id, slotIndex: slotIndex)
+    }
+
+    private var existingItem: BarItem? {
+        guard client.profile.pages.indices.contains(pageIndex),
+              client.profile.pages[pageIndex].slots.indices.contains(slotIndex) else {
+            return nil
+        }
+        return client.profile.pages[pageIndex].slots[slotIndex]
+    }
+
+    public init(
+        client: CompanionClientEngine,
+        pageIndex: Int,
+        slotIndex: Int,
+        onEditOriginalSlot: ((Int, Int) -> Void)? = nil
+    ) {
         self.client = client
         self.pageIndex = pageIndex
         self.slotIndex = slotIndex
+        self.onEditOriginalSlot = onEditOriginalSlot
     }
 
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("", selection: $tab) {
-                    Text(L10n.tr("应用", "Apps", language: lang)).tag(EditorTab.apps)
-                    Text(L10n.tr("动作流", "Flows", language: lang)).tag(EditorTab.flows)
-                    Text(L10n.tr("指令", "Shortcuts", language: lang)).tag(EditorTab.shortcuts)
-                    Text(L10n.tr("网页", "Web", language: lang)).tag(EditorTab.website)
-                    Text(L10n.tr("动作", "Actions", language: lang)).tag(EditorTab.actions)
+                if let existing = existingItem, existing.isSlotReference {
+                    referenceOriginCallout(for: existing)
+                        .padding(.horizontal, 14)
+                        .padding(.top, 10)
                 }
-                .pickerStyle(.segmented)
-                .padding(12)
+
+                editorTabStrip
+                    .padding(.vertical, 10)
 
                 Group {
                     switch tab {
@@ -64,6 +111,10 @@ public struct IOSSlotEditorSheet: View {
                         ) { flow in
                             assignFlow(flow)
                         }
+                    case .sounds:
+                        soundboardClipsPicker
+                    case .reference:
+                        referenceTargetPicker
                     case .shortcuts:
                         shortcutsForm
                     case .website:
@@ -90,19 +141,25 @@ public struct IOSSlotEditorSheet: View {
                         .foregroundStyle(palette.secondaryText)
                         .accessibilityIdentifier("ios-slot-editor-cancel")
                 }
-                if client.profile.pages.indices.contains(pageIndex),
-                   client.profile.pages[pageIndex].slots[slotIndex] != nil {
+                if existingItem != nil {
                     ToolbarItem(placement: .destructiveAction) {
                         Button(L10n.tr("清空", "Clear", language: lang), role: .destructive) {
                             assignItem(nil)
                         }
                         .foregroundStyle(palette.statusFailure)
+                        .accessibilityIdentifier("ios-slot-editor-clear")
                     }
                 }
             }
             .onAppear {
                 hydrateExisting()
                 requestCatalogWithTimeout()
+            }
+            .onChange(of: pageIndex) { _, _ in
+                hydrateExisting()
+            }
+            .onChange(of: slotIndex) { _, _ in
+                hydrateExisting()
             }
             .onChange(of: client.macCatalogApps) { _, updated in
                 if !updated.isEmpty {
@@ -112,6 +169,136 @@ public struct IOSSlotEditorSheet: View {
         }
         .tint(palette.accent)
         .preferredColorScheme(.light)
+    }
+
+    private var editorTabStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
+                ForEach(EditorTab.allCases) { candidate in
+                    let isSelected = (tab == candidate)
+                    Button {
+                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                        tab = candidate
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: candidate.sfSymbol)
+                                .font(.system(size: 11.5, weight: .bold))
+                            Text(candidate.title(in: lang))
+                                .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(height: 36)
+                        .background(isSelected ? palette.accent : palette.tileFillBottom, in: Capsule())
+                        .foregroundStyle(isSelected ? palette.accentForeground : palette.primaryText)
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(isSelected ? .clear : palette.subtleCardStroke, lineWidth: 1)
+                        )
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("ios-slot-editor-tab-\(candidate.rawValue)")
+                }
+            }
+            .padding(.horizontal, 14)
+        }
+    }
+
+    @ViewBuilder
+    private func referenceOriginCallout(for referenceItem: BarItem) -> some View {
+        let resolution = client.profile.resolveBarItem(referenceItem, from: currentSlotOrigin)
+        switch resolution {
+        case .resolved(_, let origPageIdx, let origPageTitle, let origPageEmoji, let origSlotIdx, let targetItem):
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.turn.up.right")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(palette.accent)
+                    .frame(width: 32, height: 32)
+                    .background(palette.accent.opacity(0.14), in: Circle())
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(
+                        L10n.tr(
+                            "引用槽位：\(origPageEmoji) \(origPageTitle) · #\(origSlotIdx + 1)",
+                            "Points to \(origPageEmoji) \(origPageTitle) · #\(origSlotIdx + 1)",
+                            language: lang
+                        )
+                    )
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+
+                    Text(
+                        L10n.tr(
+                            "原动作：\(client.profile.displayTitle(for: targetItem, in: lang))（不复制载荷）",
+                            "Original: \(client.profile.displayTitle(for: targetItem, in: lang)) (no copied payload)",
+                            language: lang
+                        )
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(palette.secondaryText)
+                    .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+
+                if let onEditOriginalSlot {
+                    Button {
+                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                        onEditOriginalSlot(origPageIdx, origSlotIdx)
+                    } label: {
+                        Text(L10n.tr("编辑原槽位", "Edit Original", language: lang))
+                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(palette.accentForeground)
+                            .padding(.horizontal, 11)
+                            .frame(height: 32)
+                            .background(palette.accent, in: Capsule())
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("ios-slot-edit-original-button")
+                }
+            }
+            .padding(10)
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(palette.accent.opacity(0.45), lineWidth: 1)
+            )
+
+        case .missing:
+            HStack(spacing: 10) {
+                Image(systemName: "link.badge.plus")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(width: 30, height: 30)
+                    .background(palette.tileFillBottom, in: Circle())
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L10n.tr("原槽位已被移除", "Original Slot Was Deleted", language: lang))
+                        .font(.system(.caption, design: .rounded, weight: .bold))
+                        .foregroundStyle(palette.primaryText)
+
+                    Text(
+                        L10n.tr(
+                            "点按此引用不会执行任何操作。可在下方重新选择引用目标，或清空此槽位。",
+                            "Tapping this reference does nothing. Pick a new target below or clear this slot.",
+                            language: lang
+                        )
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(palette.secondaryText)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .background(palette.barSurface.opacity(0.9), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(palette.subtleCardStroke, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            )
+            .accessibilityIdentifier("ios-slot-missing-reference-banner")
+        }
     }
 
     private func requestCatalogWithTimeout() {
@@ -128,6 +315,214 @@ public struct IOSSlotEditorSheet: View {
             isWaitingForCatalog = false
         }
     }
+
+    // MARK: - Sounds Tab (Local Mac Soundboard Clips)
+
+    private var soundboardClipsPicker: some View {
+        let allClips = client.profile.soundboardClips
+        let filtered = SoundboardSearch.filter(allClips, query: soundSearchQuery)
+        let currentSoundID = existingItem?.soundID
+
+        return VStack(spacing: 10) {
+            if !allClips.isEmpty {
+                TextField(
+                    L10n.tr("搜索音效名称…", "Search sound names…", language: lang),
+                    text: $soundSearchQuery
+                )
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .padding(.horizontal, 14)
+                .accessibilityIdentifier("ios-slot-sound-search")
+            }
+
+            if allClips.isEmpty {
+                Spacer()
+                VStack(spacing: 10) {
+                    Image(systemName: "speaker.wave.2.bubble.left")
+                        .font(.system(size: 32))
+                        .foregroundStyle(palette.secondaryText)
+                    Text(L10n.tr("暂无本机音效", "No Soundboard Clips Yet", language: lang))
+                        .font(.headline)
+                        .foregroundStyle(palette.primaryText)
+                    Text(
+                        L10n.tr(
+                            "请先在 Mac 端 Choclift「音效板」添加本机短音频（≤ 8 秒，最多 24 个），同步后即可放入任意槽位。",
+                            "Add local Mac audio clips (≤ 8s, max 24) in Choclift on your Mac first, then assign them to any slot here.",
+                            language: lang
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+                }
+                Spacer()
+            } else if filtered.isEmpty {
+                Spacer()
+                VStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.title2)
+                        .foregroundStyle(palette.secondaryText)
+                    Text(
+                        L10n.tr(
+                            "没有匹配「\(soundSearchQuery)」的音效",
+                            "No sounds matching \"\(soundSearchQuery)\"",
+                            language: lang
+                        )
+                    )
+                    .font(.subheadline.bold())
+                    .foregroundStyle(palette.primaryText)
+                    Button(L10n.tr("清空搜索", "Clear Search", language: lang)) {
+                        soundSearchQuery = ""
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(palette.accent)
+                }
+                Spacer()
+            } else {
+                List(filtered) { clip in
+                    Button {
+                        let existingID = existingItem?.id ?? UUID()
+                        assignItem(client.profile.makeBarItem(for: clip, id: existingID))
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(clip.emoji)
+                                .font(.system(size: 20))
+                                .frame(width: 36, height: 36)
+                                .background(
+                                    ChocSwatch.resolvedTileColor(hex: clip.backgroundHex, fallbackHex: "#ECFAEE"),
+                                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                )
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(clip.name)
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(palette.primaryText)
+                                Text(L10n.tr("Mac 扬声器播放 · \(clip.formattedDuration)", "Mac speakers · \(clip.formattedDuration)", language: lang))
+                                    .font(.caption2)
+                                    .foregroundStyle(palette.secondaryText)
+                            }
+
+                            Spacer()
+
+                            if currentSoundID == clip.id {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(palette.accent)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .listRowBackground(palette.barSurface)
+                }
+                .scrollContentBackground(.hidden)
+            }
+        }
+    }
+
+    // MARK: - Reference Slot Tab (Zero Duplicated Action Payload)
+
+    private var referenceTargetPicker: some View {
+        let candidates = client.profile.availableReferenceTargets(excluding: currentSlotOrigin)
+        let currentRef = existingItem?.slotReferenceCoordinate
+
+        return Group {
+            if candidates.isEmpty {
+                VStack(spacing: 10) {
+                    Spacer()
+                    Image(systemName: "arrow.turn.up.right")
+                        .font(.system(size: 32))
+                        .foregroundStyle(palette.secondaryText)
+                    Text(L10n.tr("暂无可引用的其他槽位", "No Other Occupied Slots Yet", language: lang))
+                        .font(.headline)
+                        .foregroundStyle(palette.primaryText)
+                    Text(
+                        L10n.tr(
+                            "先在其他槽位放置应用、快捷指令、动作流或系统动作，即可在此直接指向它而不复制载荷。",
+                            "Configure another slot first, then point this slot at it without duplicating its action payload.",
+                            language: lang
+                        )
+                    )
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+                    Spacer()
+                }
+            } else {
+                List {
+                    Section {
+                        ForEach(Array(candidates.enumerated()), id: \.offset) { _, candidate in
+                            let targetCoord = SlotCoordinate(pageID: candidate.page.id, slotIndex: candidate.slotIndex)
+                            let isSelected = (currentRef == targetCoord)
+                            let targetTitle = client.profile.displayTitle(for: candidate.item, in: lang)
+
+                            Button {
+                                let existingID = existingItem?.id ?? UUID()
+                                assignItem(
+                                    BarItem(
+                                        id: existingID,
+                                        kind: .slotReference(
+                                            targetPageID: candidate.page.id,
+                                            targetSlotIndex: candidate.slotIndex
+                                        )
+                                    )
+                                )
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "arrow.turn.up.right")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(palette.accent)
+                                        .frame(width: 32, height: 32)
+                                        .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(targetTitle)
+                                            .font(.body.weight(.semibold))
+                                            .foregroundStyle(palette.primaryText)
+                                        Text("\(candidate.page.iconEmoji) \(candidate.page.title) · #\(candidate.slotIndex + 1)")
+                                            .font(.caption2)
+                                            .foregroundStyle(palette.secondaryText)
+                                    }
+
+                                    Spacer()
+
+                                    if case .systemAction(let act, _, _) = candidate.item.kind,
+                                       let shortcut = act.sentKeyboardShortcut {
+                                        Text(shortcut)
+                                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(palette.secondaryText)
+                                            .padding(.horizontal, 7)
+                                            .padding(.vertical, 3)
+                                            .background(palette.tileFillBottom, in: Capsule())
+                                    }
+
+                                    if isSelected {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(palette.accent)
+                                    }
+                                }
+                                .padding(.vertical, 2)
+                            }
+                            .listRowBackground(palette.barSurface)
+                            .accessibilityIdentifier("ios-ref-candidate-\(candidate.pageIndex)-\(candidate.slotIndex)")
+                        }
+                    } header: {
+                        Text(
+                            L10n.tr(
+                                "指向已有槽位（触发时运行原槽位，原槽位删除后保持静默）",
+                                "Point at an existing slot (runs original; stays quiet if original is deleted)",
+                                language: lang
+                            )
+                        )
+                    }
+                }
+                .scrollContentBackground(.hidden)
+            }
+        }
+    }
+
+    // MARK: - Mac Apps Tab
 
     private var macAppsList: some View {
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -153,7 +548,7 @@ public struct IOSSlotEditorSheet: View {
                     Text(L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang))
                         .font(.headline)
                         .foregroundStyle(palette.primaryText)
-                    Text(L10n.tr("连接 Mac 后可浏览全部本机应用；离线时仍可切换到上方「快捷指令」「网页」或「系统动作」先行配置。", "Connect to your Mac to browse installed apps, or switch to Shortcuts, Website, or Actions above while offline.", language: lang))
+                    Text(L10n.tr("连接 Mac 后可浏览全部本机应用；离线时仍可切换到上方「音效」「引用」「快捷指令」「网页」或「动作」先行配置。", "Connect to your Mac to browse installed apps, or switch to Sounds, Reference, Shortcuts, Web, or Actions above while offline.", language: lang))
                         .font(.caption)
                         .foregroundStyle(palette.secondaryText)
                         .multilineTextAlignment(.center)
@@ -351,9 +746,25 @@ public struct IOSSlotEditorSheet: View {
                                     .foregroundStyle(palette.primaryText)
                                     .frame(width: 32, height: 32)
                                     .background(ChocSwatch.resolvedTileColor(hex: act.accentHex), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
                                 Text(act.title(in: lang))
                                     .font(.body.weight(.medium))
                                     .foregroundStyle(palette.primaryText)
+
+                                Spacer()
+
+                                if let shortcut = act.sentKeyboardShortcut {
+                                    Text(shortcut)
+                                        .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(palette.secondaryText)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(palette.tileFillBottom, in: Capsule())
+                                        .overlay(
+                                            Capsule()
+                                                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                                        )
+                                }
                             }
                             .padding(.vertical, 2)
                         }
@@ -375,7 +786,7 @@ public struct IOSSlotEditorSheet: View {
                     } label: {
                         ZStack {
                             Circle()
-                                .fill(Color(hex: hex))
+                                .fill(ChocSwatch.resolvedTileColor(hex: hex))
                                 .frame(width: 32, height: 32)
                                 .overlay(
                                     Circle()
@@ -440,6 +851,10 @@ public struct IOSSlotEditorSheet: View {
             tab = .actions
         case .flow:
             tab = .flows
+        case .soundboard:
+            tab = .sounds
+        case .slotReference:
+            tab = .reference
         }
     }
 }

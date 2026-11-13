@@ -848,7 +848,7 @@ public final class MacServerEngine: ObservableObject {
             }
 
             switch message {
-            case .requestControlStripState, .setControlLevel, .setMicMuted, .undoLastWindowMove, .setTargetDisplay:
+            case .requestControlStripState, .setControlLevel, .setMicMuted, .undoLastWindowMove, .setTargetDisplay, .setSoundboardVolume:
                 session.supportsControlStrip = true
             case .requestCompanionDashboard, .pasteMacClipboard, .captureMainDisplayScreenshot, .openCalendarApp:
                 session.supportsCompanionDashboard = true

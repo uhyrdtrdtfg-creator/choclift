@@ -977,6 +977,8 @@ public struct MacMainWindowView: View {
                         ChocolateBarStudioView(coordinator: coordinator)
                     case .flows:
                         ActionFlowsStudioView(coordinator: coordinator)
+                    case .soundboard:
+                        SoundboardStudioView(coordinator: coordinator)
                     case .emojiBar:
                         EmojiBarStudioView(coordinator: coordinator)
                     case .timeTravel:

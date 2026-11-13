@@ -326,14 +326,17 @@ public struct WatchChocolateBarView: View {
                     ForEach(0..<BarPage.slotsPerPage, id: \.self) { slotIdx in
                         let item = activePage.slots[slotIdx]
                         let key = "\(safePageIndex)-\(slotIdx)"
-                        let iconData = item?.bundleIdentifier.flatMap {
+                        let slotOrigin = SlotCoordinate(pageID: activePage.id, slotIndex: slotIdx)
+                        let effectiveItem = item.flatMap { client.profile.resolveBarItem($0, from: slotOrigin).resolvedItem }
+                        let iconData = effectiveItem?.bundleIdentifier.flatMap {
                             client.appIconsByBundleID[$0] ?? BundledAppIcons.pngData(for: $0)
                         }
-                        let isFrontmost = (item?.bundleIdentifier != nil && item?.bundleIdentifier == client.frontmostBundleID)
+                        let isFrontmost = (effectiveItem?.bundleIdentifier != nil && effectiveItem?.bundleIdentifier == client.frontmostBundleID)
 
                         watchSlotButton(
                             pageIndex: safePageIndex,
                             slotIndex: slotIdx,
+                            slotOrigin: slotOrigin,
                             key: key,
                             item: item,
                             iconData: iconData,
@@ -678,13 +681,14 @@ public struct WatchChocolateBarView: View {
     private func watchSlotButton(
         pageIndex: Int,
         slotIndex: Int,
+        slotOrigin: SlotCoordinate,
         key: String,
         item: BarItem?,
         iconData: Data?,
         isFrontmost: Bool
     ) -> some View {
         let isPressed = (pressedSlotKey == key)
-        let isDestructive = item?.requiresDestructiveConfirmation(in: client.profile) ?? false
+        let isDestructive = item?.requiresDestructiveConfirmation(in: client.profile, from: slotOrigin) ?? false
         let isAwaitingConfirm = isDestructive && confirmGate.isArmed(
             targetID: key,
             at: ProcessInfo.processInfo.systemUptime
@@ -693,6 +697,11 @@ public struct WatchChocolateBarView: View {
         return Button {
             ChocPressFeedback.completeTap(key: key, pressedKey: $pressedSlotKey)
             if let item {
+                if item.isSlotReference,
+                   client.profile.resolveBarItem(item, from: slotOrigin).isMissing {
+                    confirmGate.disarm()
+                    return
+                }
                 let now = ProcessInfo.processInfo.systemUptime
                 let decision = confirmGate.registerTap(
                     targetID: key,
@@ -713,7 +722,7 @@ public struct WatchChocolateBarView: View {
                     } else {
                         client.lastFeedback = CompanionFeedbackToast(
                             success: false,
-                            title: item.displayTitle(in: lang),
+                            title: client.profile.displayTitle(for: item, from: slotOrigin, in: lang),
                             detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
                         )
                     }
@@ -735,7 +744,12 @@ public struct WatchChocolateBarView: View {
                 isAwaitingConfirmation: isAwaitingConfirm,
                 palette: palette,
                 language: lang,
-                compact: true
+                compact: true,
+                profile: client.profile,
+                slotOrigin: slotOrigin,
+                iconLookup: { bundleID in
+                    client.appIconsByBundleID[bundleID] ?? BundledAppIcons.pngData(for: bundleID)
+                }
             )
             .scaleEffect(isPressed ? 0.93 : 1.0)
         }
@@ -876,15 +890,48 @@ private struct WatchSlotQuickAssignSheet: View {
                 }
             }
 
+            if !client.profile.soundboardClips.isEmpty {
+                Section(L10n.tr("本机音效 (Sounds)", "Soundboard", language: lang)) {
+                    ForEach(client.profile.soundboardClips) { clip in
+                        Button {
+                            assign(client.profile.makeBarItem(for: clip))
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(clip.emoji)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(clip.name)
+                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        .foregroundStyle(palette.primaryText)
+                                        .lineLimit(1)
+                                    Text(clip.formattedDuration)
+                                        .font(.caption2.monospacedDigit())
+                                        .foregroundStyle(palette.secondaryText)
+                                }
+                            }
+                            .frame(minHeight: 38)
+                        }
+                        .listRowBackground(palette.barSurface)
+                    }
+                }
+            }
+
             Section(L10n.tr("系统快捷动作", "Quick Actions", language: lang)) {
                 ForEach(SystemQuickAction.allCases) { action in
                     Button {
                         assign(BarItem(kind: .systemAction(action: action)))
                     } label: {
-                        Label(action.compactTitle(in: lang), systemImage: action.sfSymbol)
-                            .font(.system(size: 13, weight: .medium, design: .rounded))
-                            .foregroundStyle(palette.primaryText)
-                            .frame(minHeight: 38)
+                        HStack(spacing: 6) {
+                            Label(action.compactTitle(in: lang), systemImage: action.sfSymbol)
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundStyle(palette.primaryText)
+                            Spacer(minLength: 2)
+                            if let shortcut = action.sentKeyboardShortcut {
+                                Text(shortcut)
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(palette.secondaryText)
+                            }
+                        }
+                        .frame(minHeight: 38)
                     }
                     .listRowBackground(palette.barSurface)
                 }

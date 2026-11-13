@@ -13,6 +13,7 @@ public final class MacSystemControlService {
     public var onStateChanged: ((ControlStripState) -> Void)?
     public var canUndoWindowMoveProvider: (() -> Bool)?
     public var displayTopologyProvider: (() -> (displays: [MacDisplayInfo], selectedDisplayID: UInt32?))?
+    public var soundboardVolumeProvider: (() -> Double)?
     public private(set) var currentState: ControlStripState
 
     private struct RegisteredAudioListener {
@@ -150,6 +151,8 @@ public final class MacSystemControlService {
             selectedDisplayID: currentState.selectedTargetDisplayID
         )
 
+        let sbVolume = ControlStripLevel.clamp(soundboardVolumeProvider?() ?? currentState.soundboardVolume)
+
         return ControlStripState(
             volume: volume,
             isVolumeMuted: isOutputMuted,
@@ -159,8 +162,18 @@ public final class MacSystemControlService {
             nowPlaying: nowPlaying,
             canUndoWindowMove: canUndoWindow,
             connectedDisplays: topology.displays,
-            selectedTargetDisplayID: topology.selectedDisplayID
+            selectedTargetDisplayID: topology.selectedDisplayID,
+            soundboardVolume: sbVolume
         )
+    }
+
+    public func syncSoundboardVolume(_ volume: Double) {
+        let clamped = ControlStripLevel.clamp(volume)
+        guard abs(currentState.soundboardVolume - clamped) >= 0.001 else { return }
+        var updated = currentState
+        updated.soundboardVolume = clamped
+        currentState = updated
+        onStateChanged?(updated)
     }
 
     public func syncWindowUndoAvailability() {

@@ -38,6 +38,9 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case captureMainDisplayScreenshot
     case setTargetDisplay(displayID: UInt32?)
     case openCalendarApp
+    case triggerSoundboardClip(soundID: UUID)
+    case stopSoundboardPlayback
+    case setSoundboardVolume(level: Double)
     case unknownClientMessage
 }
 

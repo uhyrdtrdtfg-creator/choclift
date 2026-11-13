@@ -164,6 +164,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
     public var canUndoWindowMove: Bool
     public var connectedDisplays: [MacDisplayInfo]
     public var selectedTargetDisplayID: UInt32?
+    /// Soundboard-only playback level on Mac speakers (`0.0 ... 1.0`), independent of system hardware volume.
+    public var soundboardVolume: Double
 
     private enum CodingKeys: String, CodingKey {
         case volume
@@ -175,6 +177,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         case canUndoWindowMove
         case connectedDisplays
         case selectedTargetDisplayID
+        case soundboardVolume
     }
 
     public init(
@@ -186,7 +189,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         nowPlaying: NowPlayingStatus? = nil,
         canUndoWindowMove: Bool = false,
         connectedDisplays: [MacDisplayInfo] = [],
-        selectedTargetDisplayID: UInt32? = nil
+        selectedTargetDisplayID: UInt32? = nil,
+        soundboardVolume: Double = SoundboardClip.defaultVolume
     ) {
         self.volume = ControlStripLevel.clamp(volume)
         self.isVolumeMuted = isVolumeMuted
@@ -200,12 +204,14 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             selectedDisplayID: selectedTargetDisplayID,
             connectedDisplays: connectedDisplays
         )
+        self.soundboardVolume = ControlStripLevel.clamp(soundboardVolume)
     }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let decodedVolume = try container.decodeIfPresent(Double.self, forKey: .volume) ?? 0.5
         let decodedBrightness = try container.decodeIfPresent(Double.self, forKey: .brightness) ?? 0.75
+        let decodedSBVolume = try container.decodeIfPresent(Double.self, forKey: .soundboardVolume) ?? SoundboardClip.defaultVolume
         self.volume = ControlStripLevel.clamp(decodedVolume)
         self.isVolumeMuted = try container.decodeIfPresent(Bool.self, forKey: .isVolumeMuted) ?? false
         self.brightness = ControlStripLevel.clamp(decodedBrightness)
@@ -221,6 +227,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             selectedDisplayID: rawSelectedID,
             connectedDisplays: displays
         )
+        self.soundboardVolume = ControlStripLevel.clamp(decodedSBVolume)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -240,6 +247,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             connectedDisplays: connectedDisplays
         )
         try container.encodeIfPresent(resolvedSelected, forKey: .selectedTargetDisplayID)
+        try container.encode(ControlStripLevel.clamp(soundboardVolume), forKey: .soundboardVolume)
     }
 
     public var shouldShowDisplayPicker: Bool {
@@ -274,10 +282,13 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         if (volume <= 0.001) != (other.volume <= 0.001) ||
             (volume >= 0.999) != (other.volume >= 0.999) ||
             (brightness <= 0.001) != (other.brightness <= 0.001) ||
-            (brightness >= 0.999) != (other.brightness >= 0.999) {
+            (brightness >= 0.999) != (other.brightness >= 0.999) ||
+            (soundboardVolume <= 0.001) != (other.soundboardVolume <= 0.001) ||
+            (soundboardVolume >= 0.999) != (other.soundboardVolume >= 0.999) {
             return true
         }
         return abs(volume - other.volume) >= tolerance ||
-            abs(brightness - other.brightness) >= tolerance
+            abs(brightness - other.brightness) >= tolerance ||
+            abs(soundboardVolume - other.soundboardVolume) >= tolerance
     }
 }

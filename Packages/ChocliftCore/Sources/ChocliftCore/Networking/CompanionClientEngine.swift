@@ -1784,6 +1784,23 @@ public final class CompanionClientEngine: ObservableObject {
         send(.openCalendarApp)
     }
 
+    public func triggerSoundboardClip(id: UUID) {
+        send(.triggerSoundboardClip(soundID: id))
+    }
+
+    public func stopSoundboardPlayback() {
+        send(.stopSoundboardPlayback)
+    }
+
+    public func setSoundboardVolume(_ level: Double) {
+        let clamped = ControlStripLevel.clamp(level)
+        var nextStrip = controlStripState
+        nextStrip.soundboardVolume = clamped
+        controlStripState = nextStrip
+        profile.soundboardVolume = clamped
+        send(.setSoundboardVolume(level: clamped))
+    }
+
     public func pushUpdatedProfile(_ updated: ChocliftWorkspaceProfile) {
         var next = updated
         next.bumpRevision()
@@ -1920,6 +1937,9 @@ public final class CompanionClientEngine: ObservableObject {
                 )
             )
             profile = serverProfile
+            var initialStrip = controlStripState
+            initialStrip.soundboardVolume = serverProfile.soundboardVolume
+            controlStripState = initialStrip
             recentApps = serverRecents
             frontmostBundleID = frontmost
             frontmostAppName = frontmost.flatMap { bid in
@@ -1950,6 +1970,9 @@ public final class CompanionClientEngine: ObservableObject {
 
         case .profileUpdated(let updatedProfile):
             profile = updatedProfile
+            var nextStrip = controlStripState
+            nextStrip.soundboardVolume = updatedProfile.soundboardVolume
+            controlStripState = nextStrip
             requestMissingIconsIfNeeded()
 
         case .recentAppsUpdated(let entries):
@@ -1992,6 +2015,7 @@ public final class CompanionClientEngine: ObservableObject {
 
         case .controlStripStateUpdated(let state):
             controlStripState = state
+            profile.soundboardVolume = state.soundboardVolume
 
         case .clipboardPreviewUpdated(let snapshot):
             guard platform != .appleWatch else {

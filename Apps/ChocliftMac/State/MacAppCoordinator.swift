@@ -7,6 +7,7 @@ import SwiftUI
 public enum MacStudioSection: String, CaseIterable, Identifiable {
     case chocolateBar
     case flows
+    case soundboard
     case emojiBar
     case timeTravel
     case gestures
@@ -18,6 +19,7 @@ public enum MacStudioSection: String, CaseIterable, Identifiable {
         switch self {
         case .chocolateBar: return "square.grid.2x2.fill"
         case .flows: return "arrow.triangle.branch"
+        case .soundboard: return "speaker.wave.2.bubble.left.fill"
         case .emojiBar: return "face.smiling.inverse"
         case .timeTravel: return "clock.arrow.circlepath"
         case .gestures: return "hand.draw.fill"
@@ -29,6 +31,7 @@ public enum MacStudioSection: String, CaseIterable, Identifiable {
         switch self {
         case .chocolateBar: return L10n.tr("巧克力栏", "Chocolate Bar", language: lang)
         case .flows: return L10n.tr("动作流", "Flows", language: lang)
+        case .soundboard: return L10n.tr("音效板", "Soundboard", language: lang)
         case .emojiBar: return L10n.tr("表情栏", "Emoji Bar", language: lang)
         case .timeTravel: return L10n.tr("时间旅行", "Time Travel", language: lang)
         case .gestures: return L10n.tr("触控手势", "Gestures", language: lang)
@@ -93,6 +96,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     public let clipboardService: MacClipboardMonitorService
     public let screenshotService: MacMainDisplayScreenshotService
     public let calendarService: MacCalendarEventService
+    public let soundboardService: MacSoundboardService
 
     private let appSupportDirectory: URL
     private let profileFileURL: URL
@@ -153,6 +157,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.clipboardService = MacClipboardMonitorService()
         self.screenshotService = MacMainDisplayScreenshotService()
         self.calendarService = MacCalendarEventService()
+        self.soundboardService = MacSoundboardService()
         self.timeTravel = MacTimeTravelMonitor()
         self.server = MacServerEngine(
             macID: persistedMacID,
@@ -209,6 +214,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 displays: self.windowService.currentConnectedDisplays(),
                 selectedDisplayID: self.windowService.selectedTargetDisplayID
             )
+        }
+        systemControlService.soundboardVolumeProvider = { [weak self] in
+            self?.profile.soundboardVolume ?? SoundboardClip.defaultVolume
         }
         windowService.onUndoAvailabilityChanged = { [weak self] in
             guard let self else { return }
@@ -372,6 +380,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             try? data.write(to: profileFileURL, options: .atomic)
         }
 
+        soundboardService.updateActivePlaybackVolume(next.soundboardVolume)
+        systemControlService.syncSoundboardVolume(next.soundboardVolume)
+
         timeTravel.updateFilters(
             pinned: next.pinnedTimeTravelBundleIDs,
             excluded: next.settings.excludedTimeTravelBundleIDs
@@ -379,6 +390,30 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         server.broadcast(.profileUpdated(next), excludingDeviceID: broadcastOriginDeviceID)
         server.pushMissingIconsToAllSessions(bundleIDs: next.referencedAppBundleIdentifiers)
+    }
+
+    private func sanitizeCompanionProfileUpdate(_ incoming: ChocliftWorkspaceProfile) -> ChocliftWorkspaceProfile {
+        var merged = incoming
+        // Companion devices never upload audio or define arbitrary local Mac file paths.
+        // Reconcile incoming soundboardClips against Mac's validated clips by UUID.
+        let authoritativeByID = Dictionary(uniqueKeysWithValues: profile.soundboardClips.map { ($0.id, $0) })
+        var reconciled: [SoundboardClip] = []
+        for candidate in incoming.soundboardClips {
+            guard let trusted = authoritativeByID[candidate.id] else { continue }
+            reconciled.append(
+                SoundboardClip(
+                    id: trusted.id,
+                    name: candidate.name,
+                    filePath: trusted.filePath,
+                    durationSeconds: trusted.durationSeconds,
+                    emoji: candidate.emoji,
+                    backgroundHex: candidate.backgroundHex,
+                    createdAt: trusted.createdAt
+                )
+            )
+        }
+        merged.soundboardClips = SoundboardCatalogValidator.sanitizeBoard(reconciled)
+        return merged
     }
 
     public func saveFlow(_ flow: ActionFlow) {
@@ -417,6 +452,151 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         }
     }
 
+    // MARK: - Local Soundboard & Soundboard Volume Actions (Round 3)
+
+    public func setSoundboardVolume(_ level: Double, broadcastExcludingDeviceID: String? = nil) {
+        let clamped = ControlStripLevel.clamp(level)
+        soundboardService.updateActivePlaybackVolume(clamped)
+        if abs(profile.soundboardVolume - clamped) >= 0.001 {
+            profile.soundboardVolume = clamped
+            if let data = try? JSONEncoder().encode(profile) {
+                try? data.write(to: profileFileURL, options: .atomic)
+            }
+        }
+        systemControlService.syncSoundboardVolume(clamped)
+        server.broadcastControlStripState(
+            systemControlService.currentState,
+            excludingDeviceID: broadcastExcludingDeviceID
+        )
+    }
+
+    @discardableResult
+    public func addSoundFilesFromURLs(_ urls: [URL]) -> (added: [SoundboardClip], errors: [String]) {
+        guard !urls.isEmpty else { return ([], []) }
+        var workingClips = profile.soundboardClips
+        var newlyAdded: [SoundboardClip] = []
+        var rejectionMessages: [String] = []
+
+        for url in urls {
+            switch soundboardService.prepareCandidateClip(from: url, existingClips: workingClips) {
+            case .success(let clip):
+                workingClips.append(clip)
+                newlyAdded.append(clip)
+            case .failure(let err):
+                let fileName = url.lastPathComponent
+                rejectionMessages.append("\(fileName): \(err.localizedDescription(in: lang))")
+                if case .boardFull = err {
+                    break
+                }
+            }
+        }
+
+        if !newlyAdded.isEmpty {
+            mutateProfile { draft in
+                for clip in newlyAdded {
+                    _ = draft.addSoundboardClip(clip)
+                }
+            }
+        }
+
+        if let firstError = rejectionMessages.first {
+            flashBanner(firstError)
+        } else if !newlyAdded.isEmpty {
+            flashBanner(
+                L10n.tr(
+                    "已添加 \(newlyAdded.count) 个本地音效（\(profile.soundboardClips.count)/\(SoundboardClip.maxBoardCount)）",
+                    "Added \(newlyAdded.count) local sound(s) (\(profile.soundboardClips.count)/\(SoundboardClip.maxBoardCount))",
+                    language: lang
+                )
+            )
+        }
+
+        return (newlyAdded, rejectionMessages)
+    }
+
+    public func chooseAndAddLocalSoundFiles() {
+        let urls = soundboardService.presentOpenPanelForLocalSounds()
+        guard !urls.isEmpty else { return }
+        _ = addSoundFilesFromURLs(urls)
+    }
+
+    public func importBuiltInMacSounds() {
+        let urls = soundboardService.discoverBuiltInSystemSoundURLs()
+        guard !urls.isEmpty else {
+            flashBanner(L10n.tr("未找到系统自带音效目录", "No built-in macOS sounds found", language: lang))
+            return
+        }
+        let remainingSlots = max(0, SoundboardClip.maxBoardCount - profile.soundboardClips.count)
+        guard remainingSlots > 0 else {
+            flashBanner(SoundboardValidationError.boardFull(limit: SoundboardClip.maxBoardCount).localizedDescription(in: lang))
+            return
+        }
+        _ = addSoundFilesFromURLs(urls)
+    }
+
+    public func updateSoundClip(
+        id: UUID,
+        name: String? = nil,
+        emoji: String? = nil,
+        backgroundHex: String? = nil
+    ) {
+        mutateProfile { draft in
+            _ = draft.updateSoundboardClip(id: id, name: name, emoji: emoji, backgroundHex: backgroundHex)
+        }
+    }
+
+    public func deleteSoundClip(id: UUID) {
+        if soundboardService.activeSoundID == id {
+            soundboardService.stopAll()
+        }
+        mutateProfile { draft in
+            _ = draft.deleteSoundboardClip(id: id)
+        }
+    }
+
+    public func assignSoundClipToSlot(_ clip: SoundboardClip, pageIndex: Int, slotIndex: Int) {
+        guard profile.pages.indices.contains(pageIndex),
+              profile.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
+        mutateProfile { draft in
+            let existingID = draft.pages[pageIndex].slots[slotIndex]?.id ?? UUID()
+            draft.pages[pageIndex].slots[slotIndex] = draft.makeBarItem(for: clip, id: existingID)
+        }
+    }
+
+    @discardableResult
+    public func playSoundClip(
+        id: UUID,
+        fallbackName: String? = nil,
+        triggeredBy deviceName: String = "Mac Studio"
+    ) -> (success: Bool, title: String, detail: String) {
+        guard let clip = profile.soundboardClip(withID: id) else {
+            let label = (fallbackName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+                ? fallbackName!
+                : L10n.tr("音效", "Sound", language: lang)
+            let missingMsg = L10n.tr(
+                "未找到音效「\(label)」，可能已从音效板移除",
+                "Sound \"\(label)\" is no longer on the soundboard",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: missingMsg, isSuccess: false)
+            return (false, label, missingMsg)
+        }
+
+        let res = soundboardService.play(
+            clip: clip,
+            soundboardVolume: profile.soundboardVolume,
+            language: lang
+        )
+        recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
+        return (res.success, clip.name, res.message)
+    }
+
+    public func stopSoundboardPlayback(triggeredBy deviceName: String = "Mac Studio") {
+        soundboardService.stopAll()
+        let msg = L10n.tr("已停止音效播放", "Stopped soundboard playback", language: lang)
+        recordActivity(deviceName: deviceName, summary: msg, isSuccess: true)
+    }
+
     public func setSlotItem(_ item: BarItem?, pageIndex: Int, slotIndex: Int) {
         guard profile.pages.indices.contains(pageIndex),
               profile.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
@@ -431,7 +611,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
               profile.pages[pageIndex].slots.indices.contains(fromSlot),
               profile.pages[pageIndex].slots.indices.contains(toSlot) else { return }
         mutateProfile { draft in
-            draft.pages[pageIndex].slots.swapAt(fromSlot, toSlot)
+            draft.swapSlots(pageIndex: pageIndex, fromSlot: fromSlot, toSlot: toSlot)
         }
     }
 
@@ -447,6 +627,20 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             let item = BarItem(kind: .macApp(bundleIdentifier: bundleID, appName: appName, appPath: url.path))
             setSlotItem(item, pageIndex: pageIndex, slotIndex: slotIndex)
             return true
+        } else if url.isFileURL && SoundboardCatalogValidator.isSupportedAudioPath(url.path) {
+            let normalized = SoundboardCatalogValidator.normalizedFileKey(url.path)
+            if let existingClip = profile.soundboardClips.first(where: {
+                SoundboardCatalogValidator.normalizedFileKey($0.filePath) == normalized
+            }) {
+                assignSoundClipToSlot(existingClip, pageIndex: pageIndex, slotIndex: slotIndex)
+                return true
+            }
+            let outcome = addSoundFilesFromURLs([url])
+            if let addedClip = outcome.added.first {
+                assignSoundClipToSlot(addedClip, pageIndex: pageIndex, slotIndex: slotIndex)
+                return true
+            }
+            return false
         } else if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
             let host = url.host()?.replacingOccurrences(of: "www.", with: "") ?? url.absoluteString
             let item = BarItem(
@@ -565,6 +759,23 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 triggeredBy: deviceName
             )
             return (flowResult.success, flowResult.title, flowResult.detail)
+
+        case .soundboard(let soundID, let titleSnapshot, _, _):
+            let soundResult = playSoundClip(
+                id: soundID,
+                fallbackName: titleSnapshot,
+                triggeredBy: deviceName
+            )
+            return soundResult
+
+        case .slotReference:
+            switch profile.resolveBarItem(item) {
+            case .resolved(_, _, _, _, _, let resolvedItem):
+                return await triggerBarItem(resolvedItem, triggeredBy: deviceName)
+            case .missing:
+                // Quiet missing state: do not run anything and do not raise a failure toast.
+                return (true, "", "")
+            }
         }
     }
 
@@ -755,6 +966,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         case .triggerBarItem(let item):
             Task { @MainActor in
                 let feedback = await triggerBarItem(item, triggeredBy: device.deviceName)
+                guard !feedback.title.isEmpty || !feedback.detail.isEmpty else { return }
                 reply(.actionFeedback(success: feedback.success, title: feedback.title, detail: feedback.detail))
             }
 
@@ -945,8 +1157,29 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 ))
             }
 
+        case .triggerSoundboardClip(let soundID):
+            let result = playSoundClip(id: soundID, triggeredBy: device.deviceName)
+            reply(.actionFeedback(
+                success: result.success,
+                title: result.title,
+                detail: result.detail
+            ))
+
+        case .stopSoundboardPlayback:
+            stopSoundboardPlayback(triggeredBy: device.deviceName)
+            reply(.actionFeedback(
+                success: true,
+                title: L10n.tr("音效板", "Soundboard", language: lang),
+                detail: L10n.tr("已停止播放", "Playback stopped", language: lang)
+            ))
+
+        case .setSoundboardVolume(let level):
+            setSoundboardVolume(level, broadcastExcludingDeviceID: device.deviceID)
+
         case .updateProfile(let updatedProfile):
-            applyAndSaveProfile(updatedProfile, broadcastOriginDeviceID: device.deviceID)
+            let safeProfile = sanitizeCompanionProfileUpdate(updatedProfile)
+            let originToExclude = (safeProfile.soundboardClips == updatedProfile.soundboardClips) ? device.deviceID : nil
+            applyAndSaveProfile(safeProfile, broadcastOriginDeviceID: originToExclude)
             recordActivity(
                 deviceName: device.deviceName,
                 summary: L10n.tr("已同步来自 \(device.deviceName) 的布局修改", "Synced layout edit from \(device.deviceName)", language: lang),

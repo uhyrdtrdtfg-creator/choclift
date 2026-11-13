@@ -525,6 +525,9 @@ public struct ChocBarTileCard: View {
     public let palette: ChocPalette
     public let language: AppLanguage
     public let compact: Bool
+    public let profile: ChocliftWorkspaceProfile?
+    public let slotOrigin: SlotCoordinate?
+    public let iconLookup: ((String) -> Data?)?
 
     public init(
         item: BarItem?,
@@ -534,7 +537,10 @@ public struct ChocBarTileCard: View {
         isAwaitingConfirmation: Bool = false,
         palette: ChocPalette,
         language: AppLanguage = .system,
-        compact: Bool = false
+        compact: Bool = false,
+        profile: ChocliftWorkspaceProfile? = nil,
+        slotOrigin: SlotCoordinate? = nil,
+        iconLookup: ((String) -> Data?)? = nil
     ) {
         self.item = item
         self.iconData = iconData
@@ -544,6 +550,9 @@ public struct ChocBarTileCard: View {
         self.palette = palette
         self.language = language
         self.compact = compact
+        self.profile = profile
+        self.slotOrigin = slotOrigin
+        self.iconLookup = iconLookup
     }
 
     public var body: some View {
@@ -586,8 +595,59 @@ public struct ChocBarTileCard: View {
         }
     }
 
+    private func resolvedIconData(for targetItem: BarItem) -> Data? {
+        if let iconData {
+            return iconData
+        }
+        if let bid = targetItem.bundleIdentifier {
+            if let lookedUp = iconLookup?(bid) {
+                return lookedUp
+            }
+            return BundledAppIcons.pngData(for: bid)
+        }
+        return nil
+    }
+
     @ViewBuilder
     private func filledTile(for item: BarItem, side: CGFloat, corner: CGFloat) -> some View {
+        let isMicro = side < 68
+
+        switch item.kind {
+        case .slotReference:
+            if let profile,
+               case .resolved(_, _, _, _, _, let targetItem) = profile.resolveBarItem(item, from: slotOrigin) {
+                ZStack {
+                    concreteTile(for: targetItem, side: side, corner: corner)
+
+                    VStack {
+                        HStack {
+                            HStack(spacing: 2) {
+                                Image(systemName: "arrow.turn.up.right")
+                                    .font(.system(size: max(7.5, side * 0.082), weight: .bold))
+                            }
+                            .foregroundStyle(palette.secondaryText)
+                            .padding(.horizontal, isMicro ? 4 : 5)
+                            .padding(.vertical, 2.5)
+                            .background(palette.barSurface.opacity(0.92), in: Capsule())
+                            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
+                            .padding(isMicro ? 4 : 6)
+
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                }
+            } else {
+                quietMissingReferenceTile(side: side, corner: corner)
+            }
+
+        default:
+            concreteTile(for: item, side: side, corner: corner)
+        }
+    }
+
+    @ViewBuilder
+    private func concreteTile(for item: BarItem, side: CGFloat, corner: CGFloat) -> some View {
         let isMicro = side < 68
 
         switch item.kind {
@@ -604,7 +664,7 @@ public struct ChocBarTileCard: View {
 
                 VStack(spacing: isMicro ? 3 : (compact ? 4 : 6)) {
                     DataImageView(
-                        pngData: iconData ?? BundledAppIcons.pngData(for: item.bundleIdentifier ?? ""),
+                        pngData: resolvedIconData(for: item),
                         fallbackSymbol: fallbackSymbol,
                         tint: palette.secondaryText
                     )
@@ -708,6 +768,7 @@ public struct ChocBarTileCard: View {
 
         case .systemAction(let action, let customTitle, let customHex):
             let base = ChocSwatch.resolvedTileColor(hex: customHex ?? action.accentHex, fallbackHex: "#EDF6FF")
+            let shortcutText = action.sentKeyboardShortcut
             ZStack {
                 moldedBaseShape(
                     corner: corner,
@@ -718,12 +779,36 @@ public struct ChocBarTileCard: View {
                     shadowColor: palette.primaryText.opacity(0.06)
                 )
 
+                if let shortcutText {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            Text(shortcutText)
+                                .font(.system(size: max(7.5, side * 0.085), weight: .bold, design: .monospaced))
+                                .foregroundStyle(palette.primaryText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.75)
+                                .padding(.horizontal, isMicro ? 4 : 5.5)
+                                .padding(.vertical, 2)
+                                .background(palette.barSurface.opacity(0.92), in: Capsule())
+                                .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
+                                .padding(isMicro ? 4 : 6)
+                        }
+                        Spacer()
+                    }
+                }
+
                 VStack(spacing: isMicro ? 3 : (compact ? 4 : 6)) {
                     Image(systemName: action.sfSymbol)
-                        .font(.system(size: side * (isMicro ? 0.25 : 0.27), weight: .semibold))
+                        .font(.system(size: side * (isMicro ? 0.24 : 0.26), weight: .semibold))
                         .foregroundStyle(palette.accent)
 
-                    let defaultActionLabel = isMicro ? action.compactTitle(in: language) : action.title(in: language)
+                    let defaultActionLabel: String = {
+                        if shortcutText != nil || isMicro {
+                            return action.compactTitle(in: language)
+                        }
+                        return action.title(in: language)
+                    }()
                     Text((customTitle?.isEmpty == false ? customTitle! : defaultActionLabel))
                         .font(.system(size: max(10.5, side * 0.11), weight: .semibold, design: .rounded))
                         .foregroundStyle(palette.primaryText)
@@ -734,8 +819,13 @@ public struct ChocBarTileCard: View {
                 }
             }
 
-        case .flow(_, _, let emoji, let backgroundHex, let stepCountSnapshot):
-            let base = ChocSwatch.resolvedTileColor(hex: backgroundHex, fallbackHex: "#ECFAFE")
+        case .flow(let flowID, _, let emoji, let backgroundHex, let stepCountSnapshot):
+            let liveFlow = profile?.flow(withID: flowID)
+            let resolvedEmoji = liveFlow?.emoji ?? emoji
+            let resolvedHex = liveFlow?.backgroundHex ?? backgroundHex
+            let resolvedStepCount = liveFlow?.enabledStepCount ?? stepCountSnapshot
+            let resolvedTitle = liveFlow?.name ?? item.displayTitle(in: language)
+            let base = ChocSwatch.resolvedTileColor(hex: resolvedHex, fallbackHex: "#ECFAFE")
             ZStack {
                 moldedBaseShape(
                     corner: corner,
@@ -752,8 +842,8 @@ public struct ChocBarTileCard: View {
                         HStack(spacing: 2) {
                             Image(systemName: "arrow.triangle.branch")
                                 .font(.system(size: max(8, side * 0.085), weight: .bold))
-                            if stepCountSnapshot > 0 && side >= 54 {
-                                Text("\(stepCountSnapshot)")
+                            if resolvedStepCount > 0 && side >= 54 {
+                                Text("\(resolvedStepCount)")
                                     .font(.system(size: max(8, side * 0.085), weight: .heavy, design: .rounded))
                             }
                         }
@@ -767,10 +857,10 @@ public struct ChocBarTileCard: View {
                 }
 
                 VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
-                    Text(emoji.isEmpty ? "⚡️" : emoji)
+                    Text(resolvedEmoji.isEmpty ? "⚡️" : resolvedEmoji)
                         .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
 
-                    Text(item.displayTitle(in: language))
+                    Text(resolvedTitle)
                         .font(.system(size: max(10.5, side * 0.112), weight: .bold, design: .rounded))
                         .foregroundStyle(palette.primaryText)
                         .multilineTextAlignment(.center)
@@ -778,6 +868,82 @@ public struct ChocBarTileCard: View {
                         .minimumScaleFactor(0.8)
                         .padding(.horizontal, isMicro ? 5 : 7)
                 }
+            }
+
+        case .soundboard(let soundID, _, let emoji, let backgroundHex):
+            let liveClip = profile?.soundboardClip(withID: soundID)
+            let resolvedEmoji = liveClip?.emoji ?? emoji
+            let resolvedHex = liveClip?.backgroundHex ?? backgroundHex
+            let resolvedTitle = liveClip?.name ?? item.displayTitle(in: language)
+            let base = ChocSwatch.resolvedTileColor(hex: resolvedHex, fallbackHex: "#ECFAEE")
+            ZStack {
+                moldedBaseShape(
+                    corner: corner,
+                    top: palette.tileFillTop,
+                    bottom: base,
+                    borderColor: palette.tileBorderHighlight,
+                    borderWidth: 1.15,
+                    shadowColor: palette.primaryText.opacity(0.06)
+                )
+
+                VStack {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: max(8, side * 0.088), weight: .bold))
+                            .foregroundStyle(palette.accent)
+                            .padding(.horizontal, isMicro ? 4 : 5)
+                            .padding(.vertical, 2)
+                            .background(palette.accent.opacity(0.12), in: Capsule())
+                            .padding(isMicro ? 4 : 6)
+                    }
+                    Spacer()
+                }
+
+                VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
+                    Text(resolvedEmoji.isEmpty ? "🔊" : resolvedEmoji)
+                        .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
+
+                    Text(resolvedTitle)
+                        .font(.system(size: max(10.5, side * 0.112), weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(isMicro ? 1 : 2)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, isMicro ? 5 : 7)
+                }
+            }
+
+        case .slotReference:
+            quietMissingReferenceTile(side: side, corner: corner)
+        }
+    }
+
+    private func quietMissingReferenceTile(side: CGFloat, corner: CGFloat) -> some View {
+        let isMicro = side < 68
+        return ZStack {
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .fill(palette.barSurface.opacity(0.84))
+                .overlay(
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .strokeBorder(
+                            palette.subtleCardStroke,
+                            style: StrokeStyle(lineWidth: 1.2, dash: [4, 3])
+                        )
+                )
+
+            VStack(spacing: isMicro ? 3 : 5) {
+                Image(systemName: "link")
+                    .font(.system(size: side * (isMicro ? 0.22 : 0.24), weight: .semibold))
+                    .foregroundStyle(palette.secondaryText.opacity(0.72))
+
+                Text(L10n.tr("原槽位已空", "Target Missing", language: language))
+                    .font(.system(size: max(9.5, side * 0.105), weight: .medium, design: .rounded))
+                    .foregroundStyle(palette.secondaryText.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(isMicro ? 1 : 2)
+                    .minimumScaleFactor(0.75)
+                    .padding(.horizontal, isMicro ? 4 : 6)
             }
         }
     }

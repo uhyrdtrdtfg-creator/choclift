@@ -340,14 +340,17 @@ public struct IOSChocolateBarSurfaceView: View {
                             let slotIdx = row * colCount + col
                             let item = page.slots[slotIdx]
                             let key = "\(pageOffset)-\(slotIdx)"
-                            let iconData = item?.bundleIdentifier.flatMap {
+                            let slotOrigin = SlotCoordinate(pageID: page.id, slotIndex: slotIdx)
+                            let effectiveItem = item.flatMap { client.profile.resolveBarItem($0, from: slotOrigin).resolvedItem }
+                            let iconData = effectiveItem?.bundleIdentifier.flatMap {
                                 client.appIconsByBundleID[$0] ?? BundledAppIcons.pngData(for: $0)
                             }
-                            let isFrontmost = (item?.bundleIdentifier != nil && item?.bundleIdentifier == client.frontmostBundleID)
+                            let isFrontmost = (effectiveItem?.bundleIdentifier != nil && effectiveItem?.bundleIdentifier == client.frontmostBundleID)
 
                             tileButton(
                                 pageIndex: pageOffset,
                                 slotIndex: slotIdx,
+                                slotOrigin: slotOrigin,
                                 key: key,
                                 item: item,
                                 iconData: iconData,
@@ -367,6 +370,7 @@ public struct IOSChocolateBarSurfaceView: View {
     private func tileButton(
         pageIndex: Int,
         slotIndex: Int,
+        slotOrigin: SlotCoordinate,
         key: String,
         item: BarItem?,
         iconData: Data?,
@@ -382,6 +386,7 @@ public struct IOSChocolateBarSurfaceView: View {
             handleTileShortTap(
                 pageIndex: pageIndex,
                 slotIndex: slotIndex,
+                slotOrigin: slotOrigin,
                 key: key,
                 item: item
             )
@@ -394,7 +399,12 @@ public struct IOSChocolateBarSurfaceView: View {
                 isAwaitingConfirmation: isAwaitingConfirm,
                 palette: palette,
                 language: lang,
-                compact: true
+                compact: true,
+                profile: client.profile,
+                slotOrigin: slotOrigin,
+                iconLookup: { bundleID in
+                    client.appIconsByBundleID[bundleID] ?? BundledAppIcons.pngData(for: bundleID)
+                }
             )
             .scaleEffect(isPressed ? 0.94 : 1.0)
         }
@@ -425,7 +435,7 @@ public struct IOSChocolateBarSurfaceView: View {
         )
         .accessibilityIdentifier("ios-slot-\(pageIndex)-\(slotIndex)")
         .accessibilityLabel(
-            item?.displayTitle(in: lang)
+            item.map { client.profile.displayTitle(for: $0, from: slotOrigin, in: lang) }
                 ?? L10n.tr("空槽位 \(slotIndex + 1)", "Empty Slot \(slotIndex + 1)", language: lang)
         )
     }
@@ -433,6 +443,7 @@ public struct IOSChocolateBarSurfaceView: View {
     private func handleTileShortTap(
         pageIndex: Int,
         slotIndex: Int,
+        slotOrigin: SlotCoordinate,
         key: String,
         item: BarItem?
     ) {
@@ -454,22 +465,29 @@ public struct IOSChocolateBarSurfaceView: View {
             return
         }
 
+        // If a reference tile's target slot was deleted, stay quiet and do not run anything.
+        if item.isSlotReference,
+           client.profile.resolveBarItem(item, from: slotOrigin).isMissing {
+            confirmGate.disarm()
+            return
+        }
+
         let now = ProcessInfo.processInfo.systemUptime
-        let isDestructive = item.requiresDestructiveConfirmation(in: client.profile)
+        let isDestructive = item.requiresDestructiveConfirmation(in: client.profile, from: slotOrigin)
         let decision = confirmGate.registerTap(
             targetID: key,
             isDestructive: isDestructive,
             at: now
         )
+        let resolvedTitle = client.profile.displayTitle(for: item, from: slotOrigin, in: lang)
 
         switch decision {
         case .requireSecondTap:
             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-            let title = item.displayTitle(in: lang)
             onPromptHUD?(
                 L10n.tr(
-                    "3 秒内再点一次确认：\(title)",
-                    "Tap again within 3s: \(title)",
+                    "3 秒内再点一次确认：\(resolvedTitle)",
+                    "Tap again within 3s: \(resolvedTitle)",
                     language: lang
                 )
             )
@@ -488,7 +506,7 @@ public struct IOSChocolateBarSurfaceView: View {
             } else {
                 client.lastFeedback = CompanionFeedbackToast(
                     success: false,
-                    title: item.displayTitle(in: lang),
+                    title: resolvedTitle,
                     detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
                 )
             }

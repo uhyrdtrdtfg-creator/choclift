@@ -55,7 +55,11 @@ public struct ChocolateBarStudioView: View {
                 coordinator: coordinator,
                 pageIndex: target.pageIndex,
                 slotIndex: target.slotIndex,
-                existingItem: existing
+                existingItem: existing,
+                onEditOriginalSlot: { origPageIndex, origSlotIndex in
+                    coordinator.selectedPageIndex = origPageIndex
+                    editingSlot = EditingSlotTarget(pageIndex: origPageIndex, slotIndex: origSlotIndex)
+                }
             )
         }
     }
@@ -605,6 +609,11 @@ public struct ChocolateBarStudioView: View {
         isFrontmost: Bool
     ) -> some View {
         let isHovered = (hoveredSlotIndex == slotIndex)
+        let origin = SlotCoordinate(pageID: currentPage.id, slotIndex: slotIndex)
+        let isBrokenReference: Bool = {
+            guard let item, item.isSlotReference else { return false }
+            return coordinator.profile.resolveBarItem(item, from: origin).isMissing
+        }()
 
         return ZStack(alignment: .topTrailing) {
             Button {
@@ -615,7 +624,10 @@ public struct ChocolateBarStudioView: View {
                     iconData: iconData,
                     isFrontmostApp: isFrontmost,
                     palette: palette,
-                    language: lang
+                    language: lang,
+                    profile: coordinator.profile,
+                    slotOrigin: origin,
+                    iconLookup: { coordinator.catalogService.iconData(forBundleID: $0) }
                 )
                 .scaleEffect(isHovered ? 1.02 : 1.0)
                 .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isHovered)
@@ -624,18 +636,20 @@ public struct ChocolateBarStudioView: View {
 
             if let item, isHovered {
                 HStack(spacing: 4) {
-                    Button {
-                        coordinator.executeBarItem(item, triggeredBy: "Mac Studio")
-                    } label: {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(palette.primaryText)
-                            .frame(width: 22, height: 22)
-                            .background(palette.backgroundBottom.opacity(0.86), in: Circle())
-                            .contentShape(Circle())
+                    if !isBrokenReference {
+                        Button {
+                            coordinator.executeBarItem(item, triggeredBy: "Mac Studio")
+                        } label: {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(palette.primaryText)
+                                .frame(width: 22, height: 22)
+                                .background(palette.backgroundBottom.opacity(0.86), in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(L10n.tr("立即在 Mac 上测试运行", "Test Trigger on Mac", language: lang))
                     }
-                    .buttonStyle(.plain)
-                    .help(L10n.tr("立即在 Mac 上测试运行", "Test Trigger on Mac", language: lang))
 
                     Button {
                         coordinator.setSlotItem(nil, pageIndex: pageIndex, slotIndex: slotIndex)

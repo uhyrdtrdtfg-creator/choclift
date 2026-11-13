@@ -4,6 +4,7 @@ import UIKit
 
 public enum IOSActiveSurfaceMode: String, CaseIterable, Identifiable {
     case chocolateBar
+    case soundboard
     case timeTravel
     case emojiBar
     case gesturePad
@@ -13,6 +14,7 @@ public enum IOSActiveSurfaceMode: String, CaseIterable, Identifiable {
     public var sfSymbol: String {
         switch self {
         case .chocolateBar: return "square.grid.2x2.fill"
+        case .soundboard: return "speaker.wave.2.bubble.left.fill"
         case .timeTravel: return "clock.arrow.circlepath"
         case .emojiBar: return "face.smiling.fill"
         case .gesturePad: return "hand.draw.fill"
@@ -22,6 +24,7 @@ public enum IOSActiveSurfaceMode: String, CaseIterable, Identifiable {
     public func shortTitle(in lang: AppLanguage) -> String {
         switch self {
         case .chocolateBar: return L10n.tr("巧栏", "Bar", language: lang)
+        case .soundboard: return L10n.tr("音效", "Sounds", language: lang)
         case .timeTravel: return L10n.tr("最近", "Recents", language: lang)
         case .emojiBar: return L10n.tr("表情", "Emoji", language: lang)
         case .gesturePad: return L10n.tr("手势", "Gestures", language: lang)
@@ -49,6 +52,8 @@ public struct IOSRootTouchBarView: View {
     @State private var currentEmojiSegment: IOSEmojiBarSegment = .emoji
     @State private var showPairingSheet: Bool = false
     @State private var showFlowsManagerSheet: Bool = false
+    @State private var showWorkspaceSearchSheet: Bool = false
+    @State private var showIPadSoundboardSheet: Bool = false
     @State private var editingSlot: IOSEditSlotSelection?
     @State private var hudToast: HUDToastBanner?
     @State private var hudDismissTask: Task<Void, Never>?
@@ -174,11 +179,28 @@ public struct IOSRootTouchBarView: View {
         .sheet(isPresented: $showFlowsManagerSheet) {
             IOSFlowsManagerSheet(client: client, defaultPageIndex: currentPageIndex)
         }
+        .sheet(isPresented: $showWorkspaceSearchSheet) {
+            IOSWorkspaceSearchSheet(client: client) { message in
+                flashHUD(message)
+            }
+        }
+        .sheet(isPresented: $showIPadSoundboardSheet) {
+            IOSSoundboardSheet(
+                client: client,
+                currentBarPageIndex: currentPageIndex
+            ) { message in
+                flashHUD(message)
+            }
+        }
         .sheet(item: $editingSlot) { selection in
             IOSSlotEditorSheet(
                 client: client,
                 pageIndex: selection.pageIndex,
-                slotIndex: selection.slotIndex
+                slotIndex: selection.slotIndex,
+                onEditOriginalSlot: { origPageIdx, origSlotIdx in
+                    deckFollower.selectManualPage(index: origPageIdx, in: client.profile)
+                    editingSlot = IOSEditSlotSelection(pageIndex: origPageIdx, slotIndex: origSlotIdx)
+                }
             )
         }
         .onAppear {
@@ -294,9 +316,11 @@ public struct IOSRootTouchBarView: View {
                 .padding(.bottom, 8)
             }
 
-            // Right-hand Vertical Control Rail — quiet link badge + generous 44pt mode targets
-            VStack(spacing: 6) {
+            // Right-hand Vertical Control Rail — quiet link badge + generous mode targets
+            VStack(spacing: 5) {
                 railConnectionStatusButton
+
+                railWorkspaceSearchButton
 
                 railFlowsManagerButton
 
@@ -306,7 +330,7 @@ public struct IOSRootTouchBarView: View {
 
                 Spacer(minLength: 2)
 
-                VStack(spacing: 7) {
+                VStack(spacing: 5) {
                     ForEach(IOSActiveSurfaceMode.allCases) { mode in
                         let selected = (activeMode == mode)
                         Button {
@@ -317,18 +341,18 @@ public struct IOSRootTouchBarView: View {
                             }
                         } label: {
                             Image(systemName: mode.sfSymbol)
-                                .font(.system(size: 16, weight: .bold))
+                                .font(.system(size: 15, weight: .bold))
                                 .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
-                                .frame(width: 44, height: 40)
+                                .frame(width: 44, height: 34)
                                 .background(
                                     selected ? palette.accent : palette.tileFillBottom.opacity(0.88),
-                                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                                 )
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
                                         .strokeBorder(selected ? .clear : palette.subtleCardStroke, lineWidth: 1)
                                 )
-                                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("ios-mode-\(mode.rawValue)")
@@ -336,7 +360,7 @@ public struct IOSRootTouchBarView: View {
                     }
                 }
             }
-            .padding(.vertical, 10)
+            .padding(.vertical, 8)
             .padding(.horizontal, 8)
             .background(palette.barSurface.opacity(0.92))
             .overlay(alignment: .leading) {
@@ -352,13 +376,15 @@ public struct IOSRootTouchBarView: View {
     private var iPhonePortraitTouchBar: some View {
         VStack(spacing: 8) {
             // Top Brand & Connection Status Header
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 ChocliftBrandIconView(size: 30)
                 Text("choclift")
                     .font(.system(.headline, design: .rounded, weight: .black))
                     .foregroundStyle(palette.primaryText)
 
-                Spacer(minLength: 6)
+                Spacer(minLength: 4)
+
+                workspaceQuickSearchButton
 
                 flowsQuickManagerButton
 
@@ -503,6 +529,38 @@ public struct IOSRootTouchBarView: View {
                 }
 
                 Spacer(minLength: 8)
+
+                Button {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    showWorkspaceSearchSheet = true
+                } label: {
+                    Label(L10n.tr("搜索", "Search", language: lang), systemImage: "magnifyingglass")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 38)
+                        .background(palette.tileFillTop.opacity(0.9), in: Capsule())
+                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ios-workspace-search-button")
+
+                Button {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    showIPadSoundboardSheet = true
+                } label: {
+                    Label(L10n.tr("音效板", "Sounds", language: lang), systemImage: "speaker.wave.2.bubble.left.fill")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundStyle(palette.primaryText)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 38)
+                        .background(palette.tileFillTop.opacity(0.9), in: Capsule())
+                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ios-mode-soundboard")
 
                 Button {
                     CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
@@ -701,6 +759,15 @@ public struct IOSRootTouchBarView: View {
             ) { slot in
                 editingSlot = slot
             }
+        case .soundboard:
+            IOSSoundboardSurfaceView(
+                client: client,
+                currentBarPageIndex: currentPageIndex,
+                isLandscape: isLandscape,
+                onPromptHUD: { message in
+                    flashHUD(message)
+                }
+            )
         case .timeTravel:
             IOSTimeTravelSurfaceView(
                 client: client,
@@ -728,6 +795,48 @@ public struct IOSRootTouchBarView: View {
         }
     }
 
+    private var railWorkspaceSearchButton: some View {
+        Button {
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            showWorkspaceSearchSheet = true
+        } label: {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13.5, weight: .bold))
+                .foregroundStyle(palette.primaryText)
+                .frame(width: 44, height: 32)
+                .background(
+                    palette.tileFillBottom.opacity(0.9),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("ios-workspace-search-button")
+        .accessibilityLabel(L10n.tr("搜索", "Search", language: lang))
+    }
+
+    private var workspaceQuickSearchButton: some View {
+        Button {
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            showWorkspaceSearchSheet = true
+        } label: {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13.5, weight: .bold))
+                .foregroundStyle(palette.primaryText)
+                .frame(width: 38, height: 38)
+                .background(palette.tileFillTop.opacity(0.9), in: Circle())
+                .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("ios-workspace-search-button")
+        .accessibilityLabel(L10n.tr("搜索", "Search", language: lang))
+    }
+
     /// Compact 44x44 rail button for iPhone landscape: shows Wi-Fi / BLE quietly when connected,
     /// and unmistakable state badges when connecting, failed, or unpaired.
     private var railFlowsManagerButton: some View {
@@ -738,7 +847,7 @@ public struct IOSRootTouchBarView: View {
             Image(systemName: "arrow.triangle.branch")
                 .font(.system(size: 13.5, weight: .bold))
                 .foregroundStyle(palette.accent)
-                .frame(width: 44, height: 34)
+                .frame(width: 44, height: 32)
                 .background(
                     palette.tileFillBottom.opacity(0.9),
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous)
