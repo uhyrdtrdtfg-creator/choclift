@@ -254,6 +254,37 @@ public final class MacAccessibilityAndWindowService {
         }
     }
 
+    public func raiseWindowMatchingTitleHint(_ hint: String?, forPID pid: pid_t) {
+        guard AXIsProcessTrusted() else { return }
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement],
+              !windows.isEmpty else {
+            return
+        }
+
+        let trimmedHint = hint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let matchedWindow: AXUIElement? = {
+            guard !trimmedHint.isEmpty else { return nil }
+            return windows.first { win in
+                var titleRef: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(win, kAXTitleAttribute as CFString, &titleRef) == .success,
+                      let title = titleRef as? String else {
+                    return false
+                }
+                return title.localizedCaseInsensitiveContains(trimmedHint)
+            }
+        }()
+
+        let targetWindow = matchedWindow ?? resolveTargetWindow(for: appElement) ?? windows.first
+        guard let targetWindow else { return }
+
+        _ = AXUIElementSetAttributeValue(targetWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+        _ = AXUIElementSetAttributeValue(targetWindow, kAXMainAttribute as CFString, kCFBooleanTrue)
+        _ = AXUIElementPerformAction(targetWindow, kAXRaiseAction as CFString)
+    }
+
     // MARK: - AX Geometry Helpers
 
     private func resolveTargetWindow(for appElement: AXUIElement) -> AXUIElement? {

@@ -27,6 +27,7 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case updateProfile(ChocliftWorkspaceProfile)
     case requestMacCatalog
     case requestIcons(bundleIdentifiers: [String])
+    case focusOrcaTask(dispatchID: String)
     case ping(timestamp: TimeInterval)
 }
 
@@ -64,6 +65,7 @@ public enum ServerMessage: Codable, Equatable, Sendable {
         title: String,
         detail: String?
     )
+    case orcaStatusUpdated(OrcaTaskStatusSnapshot)
     case pong(timestamp: TimeInterval)
 }
 

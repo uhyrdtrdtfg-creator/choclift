@@ -998,6 +998,12 @@ public struct MacMainWindowView: View {
             .ignoresSafeArea()
         )
         .tint(palette.accent)
+        .onAppear {
+            coordinator.setMacSurfaceVisible(.studioWindow, isVisible: true)
+        }
+        .onDisappear {
+            coordinator.setMacSurfaceVisible(.studioWindow, isVisible: false)
+        }
     }
 
     private var topNavigationHeader: some View {
@@ -1312,5 +1318,11 @@ public struct MacMenuBarPopoverView: View {
             )
         )
         .tint(palette.accent)
+        .onAppear {
+            coordinator.setMacSurfaceVisible(.menuBarPopover, isVisible: true)
+        }
+        .onDisappear {
+            coordinator.setMacSurfaceVisible(.menuBarPopover, isVisible: false)
+        }
     }
 }

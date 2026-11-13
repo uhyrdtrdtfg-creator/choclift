@@ -63,18 +63,31 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     @Published public private(set) var statusBannerMessage: String?
     @Published public private(set) var launchAtLoginEnabled: Bool = false
     @Published public private(set) var runningFlowID: UUID?
+    @Published public private(set) var orcaStatus: OrcaTaskStatusSnapshot?
+
+    public enum MacVisibleSurface: Hashable {
+        case studioWindow
+        case menuBarPopover
+    }
+
+    private static let orcaMinPollIntervalSeconds: TimeInterval = 5.0
 
     public let server: MacServerEngine
     public let timeTravel: MacTimeTravelMonitor
     public let windowService: MacAccessibilityAndWindowService
     public let inputService: MacInputAndMediaService
     public let catalogService: MacAppAndShortcutCatalogService
+    public let orcaStatusService: MacOrcaStatusService
 
     private let appSupportDirectory: URL
     private let profileFileURL: URL
     private let pairedDevicesFileURL: URL
     private var monitorTimerTask: Task<Void, Never>?
+    private var orcaPollTimerTask: Task<Void, Never>?
     private var pendingFlowQueueTask: Task<Void, Never>?
+    private var visibleMacSurfaces: Set<MacVisibleSurface> = []
+    private var lastOrcaPollStartedAt: Date = .distantPast
+    private var isPollingOrcaStatus: Bool = false
 
     public init() {
         let fm = FileManager.default
@@ -120,6 +133,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.windowService = winSvc
         self.inputService = MacInputAndMediaService(windowService: winSvc)
         self.catalogService = MacAppAndShortcutCatalogService()
+        self.orcaStatusService = MacOrcaStatusService()
         self.timeTravel = MacTimeTravelMonitor()
         self.server = MacServerEngine(
             macID: persistedMacID,
@@ -163,6 +177,71 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         refreshCatalog()
         startAccessibilityAndTextFocusLoop()
+        startOrcaStatusPollLoop()
+    }
+
+    public func setMacSurfaceVisible(_ surface: MacVisibleSurface, isVisible: Bool) {
+        if isVisible {
+            visibleMacSurfaces.insert(surface)
+            pollOrcaStatusIfEligible()
+        } else {
+            visibleMacSurfaces.remove(surface)
+        }
+    }
+
+    private var shouldPollOrcaStatus: Bool {
+        if server.connectedDeviceCount > 0 {
+            return true
+        }
+        if visibleMacSurfaces.contains(.menuBarPopover) {
+            return true
+        }
+        if visibleMacSurfaces.contains(.studioWindow) {
+            if let app = NSApp {
+                let anyStudioWindowVisible = app.windows.contains { win in
+                    win.isVisible && !win.isMiniaturized && win.frame.width >= 240 && win.frame.height >= 180
+                }
+                if anyStudioWindowVisible {
+                    return true
+                }
+            } else {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func startOrcaStatusPollLoop() {
+        orcaPollTimerTask?.cancel()
+        orcaPollTimerTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                self?.pollOrcaStatusIfEligible()
+                try? await Task.sleep(for: .seconds(1.0))
+            }
+        }
+    }
+
+    private func pollOrcaStatusIfEligible() {
+        guard shouldPollOrcaStatus, !isPollingOrcaStatus else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastOrcaPollStartedAt) >= Self.orcaMinPollIntervalSeconds else {
+            return
+        }
+        isPollingOrcaStatus = true
+        lastOrcaPollStartedAt = now
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.isPollingOrcaStatus = false }
+            let snapshot = await self.orcaStatusService.pollStatus()
+            if snapshot != self.orcaStatus {
+                self.orcaStatus = snapshot
+                self.server.broadcast(
+                    .orcaStatusUpdated(snapshot),
+                    minimumProtocolVersion: ChocliftDefaults.orcaStatusMinProtocolVersion
+                )
+            }
+        }
     }
 
     public func refreshCatalog() {
@@ -498,6 +577,10 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         isAccessibilityGranted
     }
 
+    public func serverCurrentOrcaStatus() -> OrcaTaskStatusSnapshot? {
+        orcaStatus
+    }
+
     public func serverIcons(for bundleIDs: [String]) -> [String: Data] {
         catalogService.iconsBatch(for: bundleIDs)
     }
@@ -505,6 +588,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     public func serverDidUpdatePairedDevices(_ devices: [PairedDeviceRecord]) {
         if let data = try? JSONEncoder().encode(devices) {
             try? data.write(to: pairedDevicesFileURL, options: .atomic)
+        }
+        if devices.contains(where: \.isCurrentlyConnected) {
+            pollOrcaStatusIfEligible()
         }
     }
 
@@ -620,6 +706,17 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 }
                 installedShortcuts = await catalogService.fetchInstalledShortcuts()
                 reply(.macCatalogSnapshot(apps: installedApps, shortcuts: installedShortcuts))
+            }
+
+        case .focusOrcaTask(let dispatchID):
+            Task { @MainActor in
+                let result = await orcaStatusService.focusTaskWindow(
+                    dispatchID: dispatchID,
+                    language: lang,
+                    windowService: windowService
+                )
+                recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
+                reply(.actionFeedback(success: result.success, title: "Orca", detail: result.message))
             }
 
         default:
