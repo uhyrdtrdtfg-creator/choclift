@@ -336,55 +336,59 @@ public struct IOSRootTouchBarView: View {
     }
 
     private func portraitWorkspace(isWide: Bool) -> some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                // Top Brand & Connection Status Header
-                HStack(spacing: 8) {
-                    ChocliftBrandIconView(size: 30)
-                    Text("choclift")
-                        .font(ChocType.title)
-                        .foregroundStyle(palette.primaryText)
-
-                    Spacer(minLength: 4)
-
-                    connectionStatusPillButton
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 10)
-
-
-                if client.connectionState.isConnected {
-                    IOSPersistentControlStripView(
-                        client: client,
-                        preferSingleRow: false,
-                        primarySurface: true,
-                        onMore: { showToolsSheet = true },
-                        onReconnect: { showPairingSheet = true },
-                        onPromptHUD: { flashHUD($0) },
-                        onEditSlot: { editingSlot = $0 }
-                    )
-                    .padding(.horizontal, 16)
-
-                }
-
+        VStack(spacing: 0) {
+            ScrollView {
                 VStack(spacing: 8) {
-                    if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
-                        portraitPageStepperBar
+                    // One line leaves the device name room to truncate.
+                    HStack(spacing: 8) {
+                        ChocliftBrandIconView(size: 30)
+                        Text(connectionDeviceName)
+                            .font(ChocType.caption)
+                            .foregroundStyle(palette.primaryText)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        connectionStatusPillButton
                     }
-                    activeMainContent(isLandscape: isWide)
-                }
-                .padding(.horizontal, 16)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
 
+
+                    if client.connectionState.isConnected {
+                        IOSPersistentControlStripView(
+                            client: client,
+                            preferSingleRow: false,
+                            primarySurface: true,
+                            onMore: { showToolsSheet = true },
+                            onReconnect: { showPairingSheet = true },
+                            onPromptHUD: { flashHUD($0) },
+                            onEditSlot: { editingSlot = $0 }
+                        )
+                        .padding(.horizontal, 20)
+
+                    }
+
+                    VStack(spacing: 8) {
+                        if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
+                            portraitPageStepperBar
+                        }
+                        activeMainContent(isLandscape: isWide)
+                    }
+                    .padding(.horizontal, 20)
+
+                }
+                .padding(.bottom, 12)
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // A layout sibling reserves the entire bar height, including on iPad.
+            // Clip the scroll viewport so badges cannot render through the dock.
+            .clipped()
             modeDock
         }
     }
 
     private var modeDock: some View {
         // Bottom Mode Switcher Dock (>= 44pt touch targets)
-        HStack(spacing: 8) {
+        HStack(spacing: 0) {
             ForEach(IOSActiveSurfaceMode.allCases) { mode in
                 let selected = (activeMode == mode)
                 Button {
@@ -401,35 +405,26 @@ public struct IOSRootTouchBarView: View {
                             .font(ChocType.micro)
                             .lineLimit(1)
                     }
-                    .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
+                    .foregroundStyle(selected ? palette.accent : palette.secondaryText)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 46)
-                    .background(
-                        selected ? palette.accent : palette.tileFillBottom.opacity(0.85),
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    )
-                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .frame(height: 56)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("ios-mode-\(mode.rawValue)")
             }
         }
-        .padding(6)
-        .background(palette.barSurface.opacity(0.94), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
-        )
-        .padding(.horizontal, 16)
-        .padding(.bottom, 10)
+        .padding(.horizontal, 20)
+        .background(palette.barSurface.ignoresSafeArea(edges: .bottom))
+        .overlay(alignment: .top) {
+            Rectangle().fill(palette.subtleCardStroke).frame(height: 1)
+        }
     }
 
     // MARK: - iPad Native Resizable Multi-Panel Workspace
 
     private func iPadExpandedWorkspace(size: CGSize) -> some View {
         portraitWorkspace(isWide: true)
-            .frame(maxWidth: 1100)
-            .frame(maxWidth: .infinity)
     }
 
     private var iPadTimeTravelDockStrip: some View {
@@ -691,52 +686,29 @@ public struct IOSRootTouchBarView: View {
         .accessibilityLabel(visualState.compactPillLabel(in: lang))
     }
 
-    /// Quiet capsule status button for iPhone portrait & iPad headers.
-    private var connectionStatusPillButton: some View {
-        let tint = visualState.tintColor(in: palette)
+    private var connectionDeviceName: String {
+        switch visualState {
+        case .connected(let name, _), .awaitingPIN(let name, _, _), .pairedStandby(let name, _):
+            return name
+        default:
+            return client.savedMacs.first?.macName ?? L10n.tr("连接 Mac", "Connect Mac", language: lang)
+        }
+    }
 
-        return Button {
+    private var connectionStatusPillButton: some View {
+        Button {
             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
             showPairingSheet = true
         } label: {
-            HStack(spacing: 6) {
-                if visualState.showsProgressSpinner {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                        .frame(width: 14, height: 14)
-                        .tint(tint)
-                } else if case .connected(_, let link) = visualState {
-                    Circle()
-                        .fill(palette.statusConnected)
-                        .frame(width: 7, height: 7)
-                    Image(systemName: link.sfSymbol)
-                        .font(ChocType.micro)
-                        .foregroundStyle(tint)
-                } else {
-                    Image(systemName: visualState.sfSymbol)
-                        .font(ChocType.micro)
-                        .foregroundStyle(tint)
-                }
-
-                Text(visualState.compactPillLabel(in: lang))
-                    .font(ChocType.caption)
-                    .foregroundStyle(palette.primaryText)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 12)
-            .frame(minHeight: 44)
-            .background(palette.tileFillTop.opacity(0.9), in: Capsule())
-            .overlay(
-                Capsule()
-                    .strokeBorder(
-                        visualState.isFailure ? palette.statusFailure.opacity(0.75) : palette.subtleCardStroke,
-                        lineWidth: 1
-                    )
-            )
-            .contentShape(Capsule())
+            Image(systemName: visualState.sfSymbol)
+                .font(ChocType.body)
+                .foregroundStyle(visualState.tintColor(in: palette))
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("ios-status-button")
+        .accessibilityLabel(visualState.compactPillLabel(in: lang))
     }
 
     /// Contextual status banner shown ONLY when not connected so Empty, Connecting, Failed, and Standby

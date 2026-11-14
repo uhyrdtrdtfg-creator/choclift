@@ -220,8 +220,8 @@ public struct IOSChocolateBarSurfaceView: View {
         guard page.slots.contains(where: { $0 != nil }) else { return 44 }
         let columns = tileColumnCount
         let rows = (visibleSlotCount(for: page) + columns - 1) / columns
-        let side = max(1, (tileRegionWidth - CGFloat(columns - 1) * 12) / CGFloat(columns))
-        return CGFloat(rows) * side + CGFloat(max(0, rows - 1)) * 12 + 20
+        let side = max(1, (tileRegionWidth - CGFloat(columns - 1) * 16) / CGFloat(columns))
+        return CGFloat(rows) * (min(side * 0.72, 96) + 4 + 14) + CGFloat(max(0, rows - 1)) * 16
     }
 
     private var barHorizontalPager: some View {
@@ -325,9 +325,9 @@ public struct IOSChocolateBarSurfaceView: View {
             .buttonStyle(.plain)
             .foregroundStyle(palette.accent)
         } else {
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: tileColumnCount)
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: tileColumnCount)
             TimelineView(.periodic(from: .now, by: 15.0)) { timeline in
-                LazyVGrid(columns: columns, spacing: 12) {
+                LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(0..<visibleSlotCount(for: page), id: \.self) { slotIdx in
                         let item = page.slots[slotIdx]
                         let key = "\(pageOffset)-\(slotIdx)"
@@ -342,12 +342,41 @@ public struct IOSChocolateBarSurfaceView: View {
                             key: key, item: item, effectiveItem: effectiveItem,
                             iconData: iconData, isFrontmost: isFrontmost, now: timeline.date
                         )
-                        .aspectRatio(1, contentMode: .fit)
+                        .frame(height: launcherCellHeight)
                     }
                 }
-                .padding(.vertical, 10)
+
             }
             .frame(maxHeight: .infinity, alignment: .top)
+        }
+    }
+
+    private var launcherIconSide: CGFloat {
+        let cellWidth = max(1, (tileRegionWidth - CGFloat(tileColumnCount - 1) * 16) / CGFloat(tileColumnCount))
+        return min(cellWidth * 0.72, 96)
+    }
+
+    private var launcherCellHeight: CGFloat { launcherIconSide + 4 + 14 }
+
+    @ViewBuilder
+    private func launcherArtwork(for item: BarItem?, iconData: Data?) -> some View {
+        if let item {
+            switch item.kind {
+            case .macApp(_, _, _, let symbol):
+                DataImageView(pngData: iconData, fallbackSymbol: symbol, tint: palette.secondaryText)
+            case .shortcut(_, let emoji, _), .website(_, _, let emoji, _, _),
+                 .flow(_, _, let emoji, _, _), .soundboard(_, _, let emoji, _):
+                Text(emoji).font(.system(size: launcherIconSide * 0.8))
+            case .systemAction(let action, _, _):
+                Image(systemName: action.sfSymbol)
+                    .resizable().scaledToFit().padding(12).foregroundStyle(palette.accent)
+            case .folder(let folder):
+                Text(folder.emoji).font(.system(size: launcherIconSide * 0.8))
+            case .slotReference:
+                Image(systemName: "arrow.turn.up.right").font(.largeTitle).foregroundStyle(palette.secondaryText)
+            }
+        } else {
+            Image(systemName: "plus").font(.largeTitle).foregroundStyle(palette.secondaryText)
         }
     }
 
@@ -368,7 +397,6 @@ public struct IOSChocolateBarSurfaceView: View {
             at: ProcessInfo.processInfo.systemUptime
         )
         let lastRunOutcome = client.tileOutcome(for: slotOrigin)
-        let lastTriggeredText = client.lastTriggeredText(for: item, from: slotOrigin, now: now)
         let repeatableAction: SystemQuickAction? = {
             guard let effectiveItem,
                   case .systemAction(let action, _, _) = effectiveItem.kind,
@@ -387,23 +415,29 @@ public struct IOSChocolateBarSurfaceView: View {
                 item: item
             )
         } label: {
-            ChocBarTileCard(
-                item: item,
-                iconData: iconData,
-                isFrontmostApp: isFrontmost,
-                isPressed: isPressed,
-                isAwaitingConfirmation: isAwaitingConfirm,
-                lastRunOutcome: lastRunOutcome,
-                palette: palette,
-                language: lang,
-                compact: true,
-                profile: client.profile,
-                slotOrigin: slotOrigin,
-                lastTriggeredText: lastTriggeredText,
-                iconLookup: { bundleID in
-                    client.appIconsByBundleID[bundleID] ?? BundledAppIcons.pngData(for: bundleID)
-                }
-            )
+            VStack(spacing: 4) {
+                launcherArtwork(for: effectiveItem, iconData: iconData)
+                    .frame(width: launcherIconSide, height: launcherIconSide)
+                    .overlay(alignment: .topTrailing) {
+                        if isAwaitingConfirm {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .foregroundStyle(palette.statusFailure)
+                        } else if let lastRunOutcome {
+                            Image(systemName: lastRunOutcome == .success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundStyle(lastRunOutcome == .success ? palette.statusConnected : palette.statusFailure)
+                        } else if isFrontmost {
+                            Circle().fill(palette.accent).frame(width: 6, height: 6)
+                        }
+                    }
+                Text(item.map { client.profile.displayTitle(for: $0, from: slotOrigin, in: lang) } ?? L10n.tr("添加", "Add", language: lang))
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                    .frame(height: 14)
+            }
+            .frame(maxWidth: .infinity)
+            .background(isPressed ? palette.accent.opacity(0.06) : .clear)
+            .contentShape(Rectangle())
             .scaleEffect(isPressed ? 0.94 : 1.0)
         }
         .buttonStyle(
