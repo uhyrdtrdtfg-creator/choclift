@@ -140,15 +140,29 @@ public struct MacAudioOutputDevice: Codable, Equatable, Hashable, Identifiable, 
     public var audioObjectID: UInt32
     public var name: String
     public var transportKind: MacAudioTransportKind
+    public var isSelectable: Bool
+    public var modelUID: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case audioObjectID
+        case name
+        case transportKind
+        case isSelectable
+        case modelUID
+    }
 
     public init(
         id: String,
         audioObjectID: UInt32,
         name: String,
-        transportKind: MacAudioTransportKind = .virtualOrOther
+        transportKind: MacAudioTransportKind = .virtualOrOther,
+        isSelectable: Bool = true,
+        modelUID: String? = nil
     ) {
         let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedModel = modelUID?.trimmingCharacters(in: .whitespacesAndNewlines)
         let resolvedName = trimmedName.isEmpty ? "Audio Output" : trimmedName
         self.id = trimmedID.isEmpty
             ? Self.fallbackID(transportKind: transportKind, name: resolvedName)
@@ -156,18 +170,369 @@ public struct MacAudioOutputDevice: Codable, Equatable, Hashable, Identifiable, 
         self.audioObjectID = audioObjectID
         self.name = resolvedName
         self.transportKind = transportKind
+        self.isSelectable = isSelectable
+        self.modelUID = (trimmedModel?.isEmpty == false) ? trimmedModel : nil
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rawID = try container.decode(String.self, forKey: .id)
+        let rawObjectID = try container.decode(UInt32.self, forKey: .audioObjectID)
+        let rawName = try container.decode(String.self, forKey: .name)
+        let rawTransport = try container.decode(MacAudioTransportKind.self, forKey: .transportKind)
+        let rawSelectable = try container.decodeIfPresent(Bool.self, forKey: .isSelectable) ?? true
+        let rawModel = try container.decodeIfPresent(String.self, forKey: .modelUID)
+        self.init(
+            id: rawID,
+            audioObjectID: rawObjectID,
+            name: rawName,
+            transportKind: rawTransport,
+            isSelectable: rawSelectable,
+            modelUID: rawModel
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(audioObjectID, forKey: .audioObjectID)
+        try container.encode(name, forKey: .name)
+        try container.encode(transportKind, forKey: .transportKind)
+        if !isSelectable {
+            try container.encode(false, forKey: .isSelectable)
+        }
+        if let modelUID, !modelUID.isEmpty {
+            try container.encode(modelUID, forKey: .modelUID)
+        }
+    }
+
+    public var isAirPlay: Bool {
+        transportKind == .airPlay
+    }
+
+    public var isHomePod: Bool {
+        if let model = modelUID?.lowercased(), model.hasPrefix("audioaccessory") {
+            return true
+        }
+        return name.localizedCaseInsensitiveContains("homepod")
+    }
+
+    public var sfSymbol: String {
+        guard transportKind == .airPlay else {
+            return transportKind.sfSymbol
+        }
+        let lowerModel = modelUID?.lowercased() ?? ""
+        if lowerModel.hasPrefix("audioaccessory5") || name.localizedCaseInsensitiveContains("homepod mini") {
+            return "homepodmini.fill"
+        }
+        if isHomePod {
+            return "homepod.fill"
+        }
+        if lowerModel.hasPrefix("appletv") {
+            return "appletv.fill"
+        }
+        return "airplayaudio"
+    }
+
+    public func transportSubtitle(in language: AppLanguage = .system) -> String {
+        guard transportKind == .airPlay else {
+            return transportKind.label(in: language)
+        }
+        let lowerModel = modelUID?.lowercased() ?? ""
+        if lowerModel.hasPrefix("audioaccessory5") || name.localizedCaseInsensitiveContains("homepod mini") {
+            return L10n.tr("HomePod mini · 隔空播放", "HomePod mini · AirPlay", language: language)
+        }
+        if isHomePod {
+            return L10n.tr("HomePod · 隔空播放", "HomePod · AirPlay", language: language)
+        }
+        if lowerModel.hasPrefix("appletv") {
+            return L10n.tr("Apple TV · 隔空播放", "Apple TV · AirPlay", language: language)
+        }
+        return transportKind.label(in: language)
+    }
+
+    public func selectionUnavailableReason(in language: AppLanguage = .system) -> String? {
+        guard !isSelectable else { return nil }
+        return L10n.tr(
+            "需在 macOS 控制中心 → 声音中连接隔空播放",
+            "Select in macOS Control Center → Sound to connect AirPlay",
+            language: language
+        )
     }
 
     /// Stable identity across `coreaudiod` restarts used ONLY when a device lacks `kAudioDevicePropertyDeviceUID`.
     public static func fallbackID(transportKind: MacAudioTransportKind, name: String) -> String {
-        let normalizedName = name
+        let normalizedName = normalizeDisplayNameKey(name)
+        let safeName = normalizedName.isEmpty ? "unnamed" : normalizedName
+        return "fallback:\(transportKind.rawValue):\(safeName)"
+    }
+
+    public static func normalizeDisplayNameKey(_ raw: String) -> String {
+        raw
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
             .joined(separator: " ")
-        let safeName = normalizedName.isEmpty ? "unnamed" : normalizedName
-        return "fallback:\(transportKind.rawValue):\(safeName)"
+    }
+}
+
+public struct MacDiscoveredAirPlayReceiver: Codable, Equatable, Hashable, Sendable {
+    public var deviceID: String
+    public var name: String
+    public var model: String?
+    public var groupID: String?
+    public var isGroupLeader: Bool
+    public var audioBoxObjectID: UInt32
+    public var audioDeviceObjectID: UInt32
+    public var isSelectableViaCoreAudio: Bool
+
+    public init(
+        deviceID: String,
+        name: String,
+        model: String? = nil,
+        groupID: String? = nil,
+        isGroupLeader: Bool = true,
+        audioBoxObjectID: UInt32 = 0,
+        audioDeviceObjectID: UInt32 = 0,
+        isSelectableViaCoreAudio: Bool = false
+    ) {
+        let cleanedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedModel = model?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedGroup = groupID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.deviceID = cleanedID
+        self.name = cleanedName.isEmpty ? "AirPlay Speaker" : cleanedName
+        self.model = (cleanedModel?.isEmpty == false) ? cleanedModel : nil
+        self.groupID = (cleanedGroup?.isEmpty == false) ? cleanedGroup : nil
+        self.isGroupLeader = isGroupLeader
+        self.audioBoxObjectID = audioBoxObjectID
+        self.audioDeviceObjectID = audioDeviceObjectID
+        self.isSelectableViaCoreAudio = isSelectableViaCoreAudio
+    }
+
+    public var normalizedDeviceKey: String {
+        Self.normalizeHardwareIdentifier(deviceID)
+    }
+
+    public var stableOutputID: String {
+        let normID = normalizedDeviceKey
+        let normName = MacAudioOutputDevice.normalizeDisplayNameKey(name)
+        if !normID.isEmpty {
+            if Self.isPlaceholderHardwareID(normID) {
+                let safeName = normName.isEmpty ? "speaker" : normName
+                return "airplay:\(normID):\(safeName)"
+            }
+            return "airplay:\(normID)"
+        }
+        let safeName = normName.isEmpty ? "speaker" : normName
+        return "airplay:name:\(safeName)"
+    }
+
+    public static func normalizeHardwareIdentifier(_ raw: String) -> String {
+        let allowed = CharacterSet.alphanumerics
+        let scalars = raw.unicodeScalars.filter { allowed.contains($0) }
+        return String(String.UnicodeScalarView(scalars)).lowercased()
+    }
+
+    public static func isPlaceholderHardwareID(_ normalizedLowerHex: String) -> Bool {
+        normalizedLowerHex == "000000000000" ||
+            normalizedLowerHex == "100000000000" ||
+            normalizedLowerHex == "ffffffffffff"
+    }
+}
+
+public struct MacAirPlayBonjourServiceEntry: Equatable, Hashable, Sendable {
+    public var serviceName: String
+    public var serviceType: String
+    public var txtRecord: [String: String]
+
+    public init(serviceName: String, serviceType: String, txtRecord: [String: String] = [:]) {
+        self.serviceName = serviceName
+        self.serviceType = serviceType
+        self.txtRecord = txtRecord
+    }
+}
+
+/// Pure parser converting `_raop._tcp` and `_airplay._tcp` Bonjour browse results into deduplicated
+/// audio-capable AirPlay receivers (HomePod, HomePod mini, stereo pairs, Apple TV, AirPlay speakers).
+public enum MacAirPlayBonjourParser {
+    /// Bit 9 (`0x200`) in the lower 32-bit `_airplay._tcp` `features` mask indicates AirPlay audio support.
+    private static let airPlayAudioFeatureMask: UInt64 = 0x200
+
+    public static func parseReceivers(
+        entries: [MacAirPlayBonjourServiceEntry],
+        localHardwareIdentifiers: Set<String> = []
+    ) -> [MacDiscoveredAirPlayReceiver] {
+        let normalizedLocalIDs = Set(localHardwareIdentifiers.map(MacDiscoveredAirPlayReceiver.normalizeHardwareIdentifier))
+
+        struct Candidate {
+            var rawDeviceID: String
+            var normalizedID: String
+            var name: String
+            var model: String?
+            var groupID: String?
+            var isGroupLeader: Bool
+            var supportsAudio: Bool
+        }
+
+        var byCompositeKey: [String: Candidate] = [:]
+
+        func compositeKey(normalizedID: String, name: String) -> String {
+            let nameKey = MacAudioOutputDevice.normalizeDisplayNameKey(name)
+            if normalizedID.isEmpty || MacDiscoveredAirPlayReceiver.isPlaceholderHardwareID(normalizedID) {
+                return "name:\(normalizedID):\(nameKey)"
+            }
+            return "id:\(normalizedID)"
+        }
+
+        for entry in entries {
+            let lowerType = entry.serviceType.lowercased()
+            let txt = entry.txtRecord
+
+            if lowerType.contains("_raop._tcp") {
+                let (parsedID, parsedName) = splitRAOPServiceName(entry.serviceName)
+                let cleanedName = parsedName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !cleanedName.isEmpty else { continue }
+                let normID = MacDiscoveredAirPlayReceiver.normalizeHardwareIdentifier(parsedID)
+                if !normID.isEmpty, normalizedLocalIDs.contains(normID) {
+                    continue
+                }
+                let model = txt["am"] ?? txt["model"]
+                let key = compositeKey(normalizedID: normID, name: cleanedName)
+                if var existing = byCompositeKey[key] {
+                    existing.supportsAudio = true
+                    if existing.model == nil, let model {
+                        existing.model = model
+                    }
+                    byCompositeKey[key] = existing
+                } else {
+                    byCompositeKey[key] = Candidate(
+                        rawDeviceID: parsedID,
+                        normalizedID: normID,
+                        name: cleanedName,
+                        model: model,
+                        groupID: nil,
+                        isGroupLeader: true,
+                        supportsAudio: true
+                    )
+                }
+            } else if lowerType.contains("_airplay._tcp") {
+                let cleanedName = entry.serviceName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !cleanedName.isEmpty else { continue }
+                let rawID = txt["deviceid"] ?? ""
+                let normID = MacDiscoveredAirPlayReceiver.normalizeHardwareIdentifier(rawID)
+                if !normID.isEmpty, normalizedLocalIDs.contains(normID) {
+                    continue
+                }
+                let model = txt["model"] ?? txt["am"]
+                let gid = txt["gid"]
+                let isLeader: Bool = {
+                    if let igl = txt["igl"] {
+                        return igl != "0"
+                    }
+                    return true
+                }()
+                let audioCapable = hasAirPlayAudioFeature(txt["features"]) ||
+                    (model?.lowercased().hasPrefix("audioaccessory") == true)
+
+                let key = compositeKey(normalizedID: normID, name: cleanedName)
+                if var existing = byCompositeKey[key] {
+                    if let model, !model.isEmpty {
+                        existing.model = model
+                    }
+                    if let gid, !gid.isEmpty {
+                        existing.groupID = gid
+                    }
+                    existing.isGroupLeader = isLeader
+                    existing.supportsAudio = existing.supportsAudio || audioCapable
+                    byCompositeKey[key] = existing
+                } else {
+                    byCompositeKey[key] = Candidate(
+                        rawDeviceID: rawID,
+                        normalizedID: normID,
+                        name: cleanedName,
+                        model: model,
+                        groupID: gid,
+                        isGroupLeader: isLeader,
+                        supportsAudio: audioCapable
+                    )
+                }
+            }
+        }
+
+        // Keep only audio-capable AirPlay receivers and deduplicate HomePod stereo pairs sharing (groupID, name)
+        var groupBest: [String: Candidate] = [:]
+        var ungrouped: [Candidate] = []
+
+        for candidate in byCompositeKey.values where candidate.supportsAudio {
+            if let gid = candidate.groupID?.trimmingCharacters(in: .whitespacesAndNewlines), !gid.isEmpty {
+                let pairKey = "\(gid.lowercased())|\(MacAudioOutputDevice.normalizeDisplayNameKey(candidate.name))"
+                if let current = groupBest[pairKey] {
+                    // Prefer group leader; tie-break deterministically by normalizedID so IDs stay stable
+                    if (!current.isGroupLeader && candidate.isGroupLeader) ||
+                        (current.isGroupLeader == candidate.isGroupLeader && candidate.normalizedID < current.normalizedID) {
+                        groupBest[pairKey] = candidate
+                    }
+                } else {
+                    groupBest[pairKey] = candidate
+                }
+            } else {
+                ungrouped.append(candidate)
+            }
+        }
+
+        let combined = ungrouped + Array(groupBest.values)
+        return combined
+            .map { cand in
+                MacDiscoveredAirPlayReceiver(
+                    deviceID: cand.rawDeviceID.isEmpty ? cand.normalizedID : cand.rawDeviceID,
+                    name: cand.name,
+                    model: cand.model,
+                    groupID: cand.groupID,
+                    isGroupLeader: cand.isGroupLeader,
+                    audioBoxObjectID: 0,
+                    audioDeviceObjectID: 0,
+                    isSelectableViaCoreAudio: false
+                )
+            }
+            .sorted { lhs, rhs in
+                let cmp = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+                if cmp != .orderedSame {
+                    return cmp == .orderedAscending
+                }
+                return lhs.stableOutputID < rhs.stableOutputID
+            }
+    }
+
+    public static func splitRAOPServiceName(_ raw: String) -> (deviceID: String, displayName: String) {
+        guard let atIndex = raw.firstIndex(of: "@") else {
+            return ("", raw)
+        }
+        let prefix = String(raw[..<atIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let suffix = String(raw[raw.index(after: atIndex)...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let isHexPrefix = prefix.count >= 6 && prefix.unicodeScalars.allSatisfy { scalar in
+            CharacterSet(charactersIn: "0123456789abcdefABCDEF:-").contains(scalar)
+        }
+        if isHexPrefix && !suffix.isEmpty {
+            return (prefix, suffix)
+        }
+        return ("", raw)
+    }
+
+    public static func hasAirPlayAudioFeature(_ rawFeatures: String?) -> Bool {
+        guard let raw = rawFeatures?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return false
+        }
+        let firstPart = raw.split(separator: ",").first.map(String.init) ?? raw
+        let cleaned = firstPart.lowercased().hasPrefix("0x")
+            ? String(firstPart.dropFirst(2))
+            : firstPart
+        guard let lowBits = UInt64(cleaned, radix: 16) else {
+            return false
+        }
+        return (lowBits & airPlayAudioFeatureMask) != 0
     }
 }
 
@@ -195,6 +560,9 @@ public struct MacAudioRawDeviceRecord: Equatable, Hashable, Sendable {
     public var transportKind: MacAudioTransportKind
     public var outputChannelCount: Int
     public var isHidden: Bool
+    public var isPrivateAggregate: Bool
+    public var canBeDefaultOutput: Bool
+    public var modelUID: String?
 
     public init(
         audioObjectID: UInt32,
@@ -202,16 +570,23 @@ public struct MacAudioRawDeviceRecord: Equatable, Hashable, Sendable {
         name: String,
         transportKind: MacAudioTransportKind,
         outputChannelCount: Int,
-        isHidden: Bool = false
+        isHidden: Bool = false,
+        isPrivateAggregate: Bool = false,
+        canBeDefaultOutput: Bool = true,
+        modelUID: String? = nil
     ) {
         let cleanedUID = uid?.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanedModel = modelUID?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.audioObjectID = audioObjectID
         self.uid = (cleanedUID?.isEmpty == false) ? cleanedUID : nil
         self.name = cleanedName.isEmpty ? "Audio Output" : cleanedName
         self.transportKind = transportKind
         self.outputChannelCount = max(0, outputChannelCount)
         self.isHidden = isHidden
+        self.isPrivateAggregate = isPrivateAggregate
+        self.canBeDefaultOutput = canBeDefaultOutput
+        self.modelUID = (cleanedModel?.isEmpty == false) ? cleanedModel : nil
     }
 }
 
@@ -307,10 +682,22 @@ public protocol MacAudioOutputHardwareDriver {
     func readDefaultDevice(for selector: MacAudioDefaultSelector) -> (objectID: UInt32, status: Int32)
     func writeDefaultDevice(_ objectID: UInt32, for selector: MacAudioDefaultSelector) -> Int32
     func readLiveDeviceRecords() -> [MacAudioRawDeviceRecord]
+    func readDiscoveredAirPlayReceivers() -> [MacDiscoveredAirPlayReceiver]
+    func acquireAirPlayBox(_ boxObjectID: UInt32) -> (deviceObjectID: UInt32?, status: Int32)
     func translateUIDToLiveObjectID(_ uid: String) -> UInt32?
     func readRunningOutputProcesses(excludingCurrentProcess: Bool) -> [MacAudioRunningProcessRecord]?
     func writeProcessOutputDevice(processObjectID: UInt32, targetDeviceObjectID: UInt32) -> Int32
     func isDeviceRunningOutputAudio(_ objectID: UInt32) -> Bool
+}
+
+public extension MacAudioOutputHardwareDriver {
+    func readDiscoveredAirPlayReceivers() -> [MacDiscoveredAirPlayReceiver] {
+        []
+    }
+
+    func acquireAirPlayBox(_ boxObjectID: UInt32) -> (deviceObjectID: UInt32?, status: Int32) {
+        (nil, -1)
+    }
 }
 
 public enum MacAudioOutputSwitchEngine {
@@ -319,12 +706,70 @@ public enum MacAudioOutputSwitchEngine {
         public let resolvedID: String
     }
 
+    private static let hiddenSystemUIDPrefixes: [String] = [
+        "cadefaultdeviceaggregate",
+        "com.apple.audio.cadefaultdeviceaggregate",
+        "com.apple.accessibility.",
+        "hureachablehearingaidsdeviceuid",
+        "tap-"
+    ]
+
+    /// Returns true when `record` represents a private/system aggregate or internal tap that macOS Sound menu hides.
+    public static func isSystemHiddenAggregate(_ record: MacAudioRawDeviceRecord) -> Bool {
+        if record.isPrivateAggregate {
+            return true
+        }
+        if let lowerUID = record.uid?.lowercased() {
+            for prefix in hiddenSystemUIDPrefixes where lowerUID.hasPrefix(prefix) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Mirrors macOS Sound menu visibility for CoreAudio device records:
+    /// - Always includes the live default output device if it has output channels (or is AirPlay) so the checkmark matches reality.
+    /// - Hides private/auto-aggregate devices (`CADefaultDeviceAggregate`, `isPrivateAggregate`, etc.).
+    /// - Omits `isHidden` devices UNLESS they are the live default OR an AirPlay receiver the system menu would show.
+    /// - Includes visible output devices (`outputChannelCount > 0` and `canBeDefaultOutput`) and visible AirPlay outputs.
+    public static func shouldIncludeCoreAudioRecord(
+        _ record: MacAudioRawDeviceRecord,
+        defaultOutputObjectID: UInt32
+    ) -> Bool {
+        guard record.audioObjectID != 0 else { return false }
+
+        let isLiveDefault = (defaultOutputObjectID != 0 && record.audioObjectID == defaultOutputObjectID)
+        if isLiveDefault {
+            return record.outputChannelCount > 0 || record.transportKind == .airPlay
+        }
+
+        if isSystemHiddenAggregate(record) {
+            return false
+        }
+
+        if record.isHidden {
+            return record.transportKind == .airPlay
+        }
+
+        if record.transportKind == .airPlay {
+            return true
+        }
+
+        return record.outputChannelCount > 0 && record.canBeDefaultOutput
+    }
+
+    public static func isCoreAudioRecordDirectlySelectable(_ record: MacAudioRawDeviceRecord) -> Bool {
+        record.audioObjectID != 0 && record.outputChannelCount > 0 && record.canBeDefaultOutput
+    }
+
     public static func enumerateSnapshot(using driver: MacAudioOutputHardwareDriver) -> MacAudioOutputSnapshot {
         let defaultOut = driver.readDefaultDevice(for: .defaultOutput).objectID
         let defaultSettable = driver.isSelectorSettable(.defaultOutput).isSettable
         let records = driver.readLiveDeviceRecords()
+        let airPlayReceivers = driver.readDiscoveredAirPlayReceivers()
         return enumerateSnapshot(
             records: records,
+            airPlayReceivers: airPlayReceivers,
             defaultOutputObjectID: defaultOut,
             isDefaultOutputSettable: defaultSettable
         )
@@ -332,6 +777,7 @@ public enum MacAudioOutputSwitchEngine {
 
     public static func enumerateSnapshot(
         records: [MacAudioRawDeviceRecord],
+        airPlayReceivers: [MacDiscoveredAirPlayReceiver] = [],
         defaultOutputObjectID: UInt32,
         isDefaultOutputSettable: Bool
     ) -> MacAudioOutputSnapshot {
@@ -339,16 +785,42 @@ public enum MacAudioOutputSwitchEngine {
         var indexByID: [String: Int] = [:]
         var fallbackBaseCounts: [String: Int] = [:]
         var resolvedSelectedID: String?
+        var consumedReceiverIndices = Set<Int>()
 
-        for record in records where record.audioObjectID != 0 && record.outputChannelCount > 0 {
-            // Include the current default output device even if CoreAudio marks it hidden,
-            // so the picker checkmark always matches the live output device.
-            if record.isHidden && record.audioObjectID != defaultOutputObjectID {
-                continue
+        func findMatchingAirPlayReceiverIndex(for record: MacAudioRawDeviceRecord) -> Int? {
+            guard record.transportKind == .airPlay else { return nil }
+            let recordNormUID = record.uid.map(MacDiscoveredAirPlayReceiver.normalizeHardwareIdentifier) ?? ""
+            let recordNameKey = MacAudioOutputDevice.normalizeDisplayNameKey(record.name)
+
+            if record.audioObjectID != 0,
+               let byObj = airPlayReceivers.firstIndex(where: { $0.audioDeviceObjectID == record.audioObjectID }) {
+                return byObj
+            }
+            if !recordNormUID.isEmpty,
+               !MacDiscoveredAirPlayReceiver.isPlaceholderHardwareID(recordNormUID),
+               let byUID = airPlayReceivers.firstIndex(where: { $0.normalizedDeviceKey == recordNormUID }) {
+                return byUID
+            }
+            if !recordNameKey.isEmpty,
+               let byName = airPlayReceivers.firstIndex(where: {
+                   MacAudioOutputDevice.normalizeDisplayNameKey($0.name) == recordNameKey
+               }) {
+                return byName
+            }
+            return nil
+        }
+
+        for record in records where shouldIncludeCoreAudioRecord(record, defaultOutputObjectID: defaultOutputObjectID) {
+            let matchedReceiverIndex = findMatchingAirPlayReceiverIndex(for: record)
+            let matchedReceiver = matchedReceiverIndex.map { airPlayReceivers[$0] }
+            if let matchedReceiverIndex {
+                consumedReceiverIndices.insert(matchedReceiverIndex)
             }
 
             let stableID: String
-            if let uid = record.uid {
+            if let matchedReceiver {
+                stableID = matchedReceiver.stableOutputID
+            } else if let uid = record.uid {
                 stableID = uid
             } else {
                 let base = MacAudioOutputDevice.fallbackID(
@@ -360,11 +832,18 @@ public enum MacAudioOutputSwitchEngine {
                 stableID = nextCount == 1 ? base : "\(base)#\(nextCount)"
             }
 
+            let canSelectDevice = isDefaultOutputSettable && (
+                isCoreAudioRecordDirectlySelectable(record) ||
+                (matchedReceiver?.isSelectableViaCoreAudio == true)
+            )
+
             let candidate = MacAudioOutputDevice(
                 id: stableID,
                 audioObjectID: record.audioObjectID,
                 name: record.name,
-                transportKind: record.transportKind
+                transportKind: record.transportKind,
+                isSelectable: canSelectDevice,
+                modelUID: matchedReceiver?.model ?? record.modelUID
             )
 
             if let existingIndex = indexByID[stableID] {
@@ -383,7 +862,32 @@ public enum MacAudioOutputSwitchEngine {
             }
         }
 
-        let canSwitch = isDefaultOutputSettable && !outputs.isEmpty
+        // Merge discovered AirPlay receivers (HomePod, HomePod mini, Apple TV, AirPlay speakers)
+        // that are not currently instantiated as CoreAudio device records.
+        for (idx, receiver) in airPlayReceivers.enumerated() where !consumedReceiverIndices.contains(idx) {
+            let stableID = receiver.stableOutputID
+            guard indexByID[stableID] == nil else { continue }
+
+            let canSelectReceiver = isDefaultOutputSettable && receiver.isSelectableViaCoreAudio
+            let device = MacAudioOutputDevice(
+                id: stableID,
+                audioObjectID: receiver.audioDeviceObjectID,
+                name: receiver.name,
+                transportKind: .airPlay,
+                isSelectable: canSelectReceiver,
+                modelUID: receiver.model
+            )
+            indexByID[stableID] = outputs.count
+            outputs.append(device)
+
+            if defaultOutputObjectID != 0 &&
+                receiver.audioDeviceObjectID != 0 &&
+                receiver.audioDeviceObjectID == defaultOutputObjectID {
+                resolvedSelectedID = stableID
+            }
+        }
+
+        let canSwitch = isDefaultOutputSettable && outputs.contains(where: \.isSelectable)
         return MacAudioOutputSnapshot(
             devices: outputs,
             selectedID: resolvedSelectedID,
@@ -391,31 +895,60 @@ public enum MacAudioOutputSwitchEngine {
         )
     }
 
-    /// Resolves `requestedID` against live hardware records:
+    /// Resolves `requestedID` against live hardware records (and optional AirPlay receivers):
     /// 1. Matches by non-empty CoreAudio UID first.
-    /// 2. Falls back to stable `transport+name` identity ONLY for devices whose UID is missing.
+    /// 2. Matches AirPlay `stableOutputID` when an AirPlay receiver is backed by a live CoreAudio device.
+    /// 3. Falls back to stable `transport+name` identity ONLY for devices whose UID is missing.
     /// Never matches by raw `AudioObjectID` so stale object IDs after `coreaudiod` restarts cannot hit the wrong device.
     public static func resolveTarget(
         requestedID: String,
         in records: [MacAudioRawDeviceRecord],
+        airPlayReceivers: [MacDiscoveredAirPlayReceiver] = [],
         defaultOutputObjectID: UInt32
     ) -> ResolvedTarget? {
         let trimmed = requestedID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         let visibleOutputRecords = records.filter { record in
-            record.audioObjectID != 0 &&
-            record.outputChannelCount > 0 &&
-            (!record.isHidden || record.audioObjectID == defaultOutputObjectID)
+            shouldIncludeCoreAudioRecord(record, defaultOutputObjectID: defaultOutputObjectID)
         }
 
         // 1. Exact UID match first (prefer live default object if duplicate UID entries exist)
         let uidMatches = visibleOutputRecords.filter { $0.uid == trimmed }
         if let matched = uidMatches.first(where: { $0.audioObjectID == defaultOutputObjectID }) ?? uidMatches.first {
-            return ResolvedTarget(record: matched, resolvedID: trimmed)
+            // Determine canonical snapshot ID (if merged with an AirPlay receiver, snapshot uses stableOutputID)
+            let snapshot = enumerateSnapshot(
+                records: records,
+                airPlayReceivers: airPlayReceivers,
+                defaultOutputObjectID: defaultOutputObjectID,
+                isDefaultOutputSettable: true
+            )
+            let canonicalID = snapshot.devices.first(where: { $0.audioObjectID == matched.audioObjectID })?.id ?? trimmed
+            return ResolvedTarget(record: matched, resolvedID: canonicalID)
         }
 
-        // 2. Stable transport+name fallback ONLY when UID is missing on the device
+        // 2. Match AirPlay stableOutputID against a live CoreAudio AirPlay record
+        if let matchedReceiver = airPlayReceivers.first(where: { $0.stableOutputID == trimmed }) {
+            let normKey = matchedReceiver.normalizedDeviceKey
+            let nameKey = MacAudioOutputDevice.normalizeDisplayNameKey(matchedReceiver.name)
+            let airPlayMatches = visibleOutputRecords.filter { record in
+                guard record.transportKind == .airPlay else { return false }
+                if matchedReceiver.audioDeviceObjectID != 0 && record.audioObjectID == matchedReceiver.audioDeviceObjectID {
+                    return true
+                }
+                if !normKey.isEmpty,
+                   let recUID = record.uid,
+                   MacDiscoveredAirPlayReceiver.normalizeHardwareIdentifier(recUID) == normKey {
+                    return true
+                }
+                return MacAudioOutputDevice.normalizeDisplayNameKey(record.name) == nameKey
+            }
+            if let matched = airPlayMatches.first(where: { $0.audioObjectID == defaultOutputObjectID }) ?? airPlayMatches.first {
+                return ResolvedTarget(record: matched, resolvedID: trimmed)
+            }
+        }
+
+        // 3. Stable transport+name fallback ONLY when UID is missing on the device
         var fallbackBaseCounts: [String: Int] = [:]
         for record in visibleOutputRecords where record.uid == nil {
             let base = MacAudioOutputDevice.fallbackID(
@@ -440,9 +973,11 @@ public enum MacAudioOutputSwitchEngine {
     ) -> MacAudioOutputSwitchResult {
         let settableCheck = driver.isSelectorSettable(.defaultOutput)
         let previousDefault = driver.readDefaultDevice(for: .defaultOutput)
-        let liveRecords = driver.readLiveDeviceRecords()
+        var liveRecords = driver.readLiveDeviceRecords()
+        let airPlayReceivers = driver.readDiscoveredAirPlayReceivers()
         let currentSnapshot = enumerateSnapshot(
             records: liveRecords,
+            airPlayReceivers: airPlayReceivers,
             defaultOutputObjectID: previousDefault.objectID,
             isDefaultOutputSettable: settableCheck.isSettable
         )
@@ -471,15 +1006,65 @@ public enum MacAudioOutputSwitchEngine {
             )
         }
 
-        guard let resolved = resolveTarget(
-            requestedID: requestedID,
+        let trimmedID = requestedID.trimmingCharacters(in: .whitespacesAndNewlines)
+        var resolved = resolveTarget(
+            requestedID: trimmedID,
             in: liveRecords,
+            airPlayReceivers: airPlayReceivers,
             defaultOutputObjectID: previousDefault.objectID
-        ) else {
+        )
+
+        // If target is an AirPlay receiver backed by an acquirable CoreAudio AudioBox (and not yet active in liveRecords),
+        // acquire the box via public CoreAudio API first so its AudioDevice becomes selectable.
+        if (resolved == nil || (resolved != nil && !isCoreAudioRecordDirectlySelectable(resolved!.record))),
+           let matchedReceiver = airPlayReceivers.first(where: { $0.stableOutputID == trimmedID || $0.deviceID == trimmedID }) {
+            if matchedReceiver.isSelectableViaCoreAudio, matchedReceiver.audioBoxObjectID != 0 {
+                let acquired = driver.acquireAirPlayBox(matchedReceiver.audioBoxObjectID)
+                liveRecords = driver.readLiveDeviceRecords()
+                resolved = resolveTarget(
+                    requestedID: trimmedID,
+                    in: liveRecords,
+                    airPlayReceivers: driver.readDiscoveredAirPlayReceivers(),
+                    defaultOutputObjectID: previousDefault.objectID
+                )
+                if resolved == nil, let devObjID = acquired.deviceObjectID, devObjID != 0,
+                   let byAcquiredObj = liveRecords.first(where: { $0.audioObjectID == devObjID }) {
+                    resolved = ResolvedTarget(record: byAcquiredObj, resolvedID: matchedReceiver.stableOutputID)
+                }
+            } else if resolved == nil || !isCoreAudioRecordDirectlySelectable(resolved!.record) {
+                return MacAudioOutputSwitchResult(
+                    success: false,
+                    title: matchedReceiver.name,
+                    detail: L10n.tr(
+                        "无法直接切换至“\(matchedReceiver.name)”：macOS 13 公开接口不支持发起新的系统级隔空播放连接，请在控制中心 → 声音中选择该设备。",
+                        "Cannot switch directly to “\(matchedReceiver.name)”: macOS 13 public APIs cannot initiate a new system-wide AirPlay connection. Select it in Control Center → Sound.",
+                        language: language
+                    ),
+                    snapshot: currentSnapshot,
+                    readBackDefaultOutputObjectID: previousDefault.objectID
+                )
+            }
+        }
+
+        guard let resolved else {
             return MacAudioOutputSwitchResult(
                 success: false,
                 title: L10n.tr("音频输出", "Audio Output", language: language),
                 detail: L10n.tr("未找到该输出设备，可能已断开连接。", "That audio output device is no longer connected.", language: language),
+                snapshot: currentSnapshot,
+                readBackDefaultOutputObjectID: previousDefault.objectID
+            )
+        }
+
+        if !isCoreAudioRecordDirectlySelectable(resolved.record) {
+            return MacAudioOutputSwitchResult(
+                success: false,
+                title: resolved.record.name,
+                detail: L10n.tr(
+                    "无法直接切换至“\(resolved.record.name)”：macOS 需通过控制中心 → 声音激活该隔空播放接收端。",
+                    "Cannot switch directly to “\(resolved.record.name)”: select it in macOS Control Center → Sound to activate AirPlay.",
+                    language: language
+                ),
                 snapshot: currentSnapshot,
                 readBackDefaultOutputObjectID: previousDefault.objectID
             )

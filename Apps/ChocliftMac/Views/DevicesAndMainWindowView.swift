@@ -1378,17 +1378,23 @@ public struct MacStudioAudioOutputMenu: View {
             } else {
                 ForEach(state.audioOutputDevices) { device in
                     let isSelected = (selectedID == device.id)
+                    let isRowEnabled = state.canSwitchAudioOutput && device.isSelectable
                     Button {
                         coordinator.selectAudioOutputDevice(id: device.id, triggeredBy: triggeredBy)
                     } label: {
                         HStack {
-                            Text(device.name)
+                            Image(systemName: device.sfSymbol)
+                            if let unavailableDetail = device.selectionUnavailableReason(in: lang) {
+                                Text("\(device.name) — \(unavailableDetail)")
+                            } else {
+                                Text(device.name)
+                            }
                             if isSelected {
                                 Image(systemName: "checkmark")
                             }
                         }
                     }
-                    .disabled(!state.canSwitchAudioOutput)
+                    .disabled(!isRowEnabled)
                 }
             }
         } label: {

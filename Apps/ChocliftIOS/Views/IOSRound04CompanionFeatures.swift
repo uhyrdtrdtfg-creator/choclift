@@ -379,17 +379,18 @@ public struct IOSAudioOutputPickerSheet: View {
         return VStack(spacing: 8) {
             ForEach(state.audioOutputDevices) { device in
                 let isSelected = (device.id == selectedID)
+                let isRowEnabled = state.canSwitchAudioOutput && device.isSelectable
                 Button {
-                    guard state.canSwitchAudioOutput else { return }
+                    guard isRowEnabled else { return }
                     CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
                     sheetFeedback = nil
                     awaitingSwitchFeedback = true
                     client.selectAudioOutputDevice(id: device.id)
                 } label: {
                     HStack(spacing: 12) {
-                        Image(systemName: device.transportKind.sfSymbol)
+                        Image(systemName: device.sfSymbol)
                             .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(isSelected ? palette.statusConnected : palette.accent)
+                            .foregroundStyle(isSelected ? palette.statusConnected : (isRowEnabled ? palette.accent : palette.secondaryText))
                             .frame(width: 34, height: 34)
                             .background(
                                 (isSelected ? palette.statusConnected.opacity(0.14) : palette.tileFillBottom),
@@ -399,12 +400,20 @@ public struct IOSAudioOutputPickerSheet: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(device.name)
                                 .font(.system(.subheadline, design: .rounded, weight: .bold))
-                                .foregroundStyle(palette.primaryText)
+                                .foregroundStyle(isRowEnabled || isSelected ? palette.primaryText : palette.secondaryText)
                                 .lineLimit(1)
 
-                            Text(device.transportKind.label(in: lang))
-                                .font(.caption2)
-                                .foregroundStyle(palette.secondaryText)
+                            if let unavailableDetail = device.selectionUnavailableReason(in: lang) {
+                                Text("\(device.transportSubtitle(in: lang)) · \(unavailableDetail)")
+                                    .font(.caption2)
+                                    .foregroundStyle(palette.secondaryText)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                            } else {
+                                Text(device.transportSubtitle(in: lang))
+                                    .font(.caption2)
+                                    .foregroundStyle(palette.secondaryText)
+                            }
                         }
 
                         Spacer(minLength: 8)
@@ -413,8 +422,8 @@ public struct IOSAudioOutputPickerSheet: View {
                             Image(systemName: "checkmark.circle.fill")
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundStyle(palette.statusConnected)
-                        } else if !state.canSwitchAudioOutput {
-                            Image(systemName: "lock")
+                        } else if !isRowEnabled {
+                            Image(systemName: device.isAirPlay ? "airplayaudio" : "lock")
                                 .font(.caption.bold())
                                 .foregroundStyle(palette.secondaryText.opacity(0.6))
                         }
@@ -422,6 +431,7 @@ public struct IOSAudioOutputPickerSheet: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
                     .frame(minHeight: 48)
+                    .opacity(isRowEnabled || isSelected ? 1.0 : 0.72)
                     .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -433,7 +443,7 @@ public struct IOSAudioOutputPickerSheet: View {
                     .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .disabled(!state.canSwitchAudioOutput)
+                .disabled(!isRowEnabled)
                 .accessibilityIdentifier("ios-audio-output-device-\(device.id)")
             }
         }

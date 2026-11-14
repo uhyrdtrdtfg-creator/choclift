@@ -686,6 +686,432 @@ final class Round04FeaturesTests: XCTestCase {
         XCTAssertEqual(server.connectedDeviceCount, 1)
     }
     #endif
+
+    // MARK: - 7. Spotify / Media Transport Router & Hold-to-Repeat
+
+    func testMediaTransportRouterChoosesSpotifyScriptMediaKeyOrFailureWithoutSpotifyInstalled() {
+        // Command mapping: play/pause/next/previous route through MacMediaTransportCommand; volume stays on HID media keys
+        XCTAssertEqual(MacMediaTransportCommand(systemAction: .mediaPlayPause), .playPause)
+        XCTAssertEqual(MacMediaTransportCommand(systemAction: .mediaNext), .nextTrack)
+        XCTAssertEqual(MacMediaTransportCommand(systemAction: .mediaPrevious), .previousTrack)
+        XCTAssertNil(MacMediaTransportCommand(systemAction: .volumeUp))
+        XCTAssertNil(MacMediaTransportCommand(systemAction: .volumeDown))
+        XCTAssertNil(MacMediaTransportCommand(systemAction: .volumeMute))
+
+        XCTAssertEqual(MacMediaTransportCommand.playPause.spotifyScriptVerb, "playpause")
+        XCTAssertEqual(MacMediaTransportCommand.nextTrack.spotifyScriptVerb, "next track")
+        XCTAssertEqual(MacMediaTransportCommand.previousTrack.spotifyScriptVerb, "previous track")
+
+        // Hold-to-repeat on mediaNext remains intact
+        XCTAssertTrue(HoldToRepeatPolicy.supportsHoldToRepeat(.mediaNext))
+        XCTAssertFalse(HoldToRepeatPolicy.supportsHoldToRepeat(.mediaPlayPause))
+        XCTAssertFalse(HoldToRepeatPolicy.supportsHoldToRepeat(.mediaPrevious))
+
+        // 1. Spotify is Now Playing and running -> spotifyScript
+        XCTAssertEqual(
+            MacMediaTransportRouter.chooseRoute(
+                nowPlayingBundleID: "com.spotify.client",
+                isSpotifyRunning: true
+            ),
+            .spotifyScript
+        )
+
+        // 2. Spotify is Now Playing, NOT running, and no other player is active -> clear failure (no fake success)
+        let notRunningRoute = MacMediaTransportRouter.chooseRoute(
+            nowPlayingBundleID: "com.spotify.client",
+            isSpotifyRunning: false,
+            hasOtherActiveMediaClient: false
+        )
+        XCTAssertEqual(notRunningRoute, .failure(.spotifyNotRunning))
+        XCTAssertTrue(
+            MacMediaTransportFailureReason.spotifyNotRunning.message(in: .english).contains("Spotify is not running")
+        )
+
+        // 3. No Now Playing session registered (common for Spotify on modern macOS) + Spotify running -> spotifyScript
+        XCTAssertEqual(
+            MacMediaTransportRouter.chooseRoute(
+                nowPlayingBundleID: nil,
+                isSpotifyRunning: true
+            ),
+            .spotifyScript
+        )
+
+        // 4. Music.app or Safari owns active Now Playing -> mediaKey
+        XCTAssertEqual(
+            MacMediaTransportRouter.chooseRoute(
+                nowPlayingBundleID: "com.apple.Music",
+                isSpotifyRunning: true,
+                isNowPlayingPlaying: true,
+                isSpotifyPlaying: false
+            ),
+            .mediaKey
+        )
+        XCTAssertEqual(
+            MacMediaTransportRouter.chooseRoute(
+                nowPlayingBundleID: "com.apple.Safari",
+                isSpotifyRunning: false,
+                isNowPlayingPlaying: true
+            ),
+            .mediaKey
+        )
+
+        // 5. Safari holds a paused Now Playing session while Spotify is actively playing or frontmost -> spotifyScript
+        XCTAssertEqual(
+            MacMediaTransportRouter.chooseRoute(
+                nowPlayingBundleID: "com.apple.Safari",
+                isSpotifyRunning: true,
+                isNowPlayingPlaying: false,
+                isSpotifyPlaying: true
+            ),
+            .spotifyScript
+        )
+        XCTAssertEqual(
+            MacMediaTransportRouter.chooseRoute(
+                nowPlayingBundleID: "com.apple.Safari",
+                isSpotifyRunning: true,
+                isNowPlayingPlaying: false,
+                isSpotifyPlaying: false,
+                frontmostBundleID: "com.spotify.client"
+            ),
+            .spotifyScript
+        )
+
+        // 6. Spotify is NOT running and no Now Playing / active audio player exists -> clear failure
+        let idleFailure = MacMediaTransportRouter.chooseRoute(
+            nowPlayingBundleID: nil,
+            isSpotifyRunning: false,
+            hasOtherActiveMediaClient: false
+        )
+        XCTAssertEqual(idleFailure, .failure(.noActiveMediaPlayer))
+
+        // 7. Spotify is NOT running, Now Playing is nil, but another app is actively outputting audio -> mediaKey
+        XCTAssertEqual(
+            MacMediaTransportRouter.chooseRoute(
+                nowPlayingBundleID: nil,
+                isSpotifyRunning: false,
+                hasOtherActiveMediaClient: true
+            ),
+            .mediaKey
+        )
+    }
+
+    // MARK: - 8. System Sound Menu Visibility & AirPlay / HomePod List Merger
+
+    func testHiddenDeviceOmittedUnlessLiveDefaultOrSystemMenuAirPlayReceiver() {
+        let builtIn = MacAudioRawDeviceRecord(
+            audioObjectID: 70,
+            uid: "BuiltInSpeakerDevice",
+            name: "MacBook Pro Speakers",
+            transportKind: .builtIn,
+            outputChannelCount: 2,
+            isHidden: false
+        )
+        let hiddenInternalOutput = MacAudioRawDeviceRecord(
+            audioObjectID: 88,
+            uid: "HiddenDiagnosticOutputUID",
+            name: "Hidden Internal Output",
+            transportKind: .virtualOrOther,
+            outputChannelCount: 2,
+            isHidden: true
+        )
+        let hiddenAirPlayReceiver = MacAudioRawDeviceRecord(
+            audioObjectID: 92,
+            uid: "82:1C:79:BC:CA:66-airplay",
+            name: "Bedroom HomePod",
+            transportKind: .airPlay,
+            outputChannelCount: 2,
+            isHidden: true,
+            modelUID: "AudioAccessory6,1"
+        )
+        let privateAutoAggregate = MacAudioRawDeviceRecord(
+            audioObjectID: 95,
+            uid: "CADefaultDeviceAggregate-12345-0",
+            name: "CADefaultDeviceAggregate",
+            transportKind: .virtualOrOther,
+            outputChannelCount: 2,
+            isHidden: false,
+            isPrivateAggregate: true
+        )
+        let accessibilitySpeech = MacAudioRawDeviceRecord(
+            audioObjectID: 56,
+            uid: "com.apple.accessibility.audioPlugin.AXSpeech.output",
+            name: "AXSpeech Output",
+            transportKind: .virtualOrOther,
+            outputChannelCount: 2,
+            isHidden: true
+        )
+        let userMultiOutputDevice = MacAudioRawDeviceRecord(
+            audioObjectID: 104,
+            uid: "~:AMS2_StackedOutput:0",
+            name: "Multi-Output Device",
+            transportKind: .virtualOrOther,
+            outputChannelCount: 2,
+            isHidden: false,
+            isPrivateAggregate: false
+        )
+
+        let records = [
+            builtIn,
+            hiddenInternalOutput,
+            hiddenAirPlayReceiver,
+            privateAutoAggregate,
+            accessibilitySpeech,
+            userMultiOutputDevice
+        ]
+
+        // Case A: Built-in speakers are the live default (70).
+        // - hiddenInternalOutput (88), privateAutoAggregate (95), and accessibilitySpeech (56) MUST be omitted.
+        // - hiddenAirPlayReceiver (92) and userMultiOutputDevice (104) MUST be included.
+        let snapshotWhenBuiltInDefault = MacAudioOutputSwitchEngine.enumerateSnapshot(
+            records: records,
+            airPlayReceivers: [],
+            defaultOutputObjectID: 70,
+            isDefaultOutputSettable: true
+        )
+        let idsWhenBuiltInDefault = snapshotWhenBuiltInDefault.devices.map(\.id)
+        XCTAssertEqual(
+            idsWhenBuiltInDefault,
+            ["BuiltInSpeakerDevice", "82:1C:79:BC:CA:66-airplay", "~:AMS2_StackedOutput:0"]
+        )
+        XCTAssertEqual(snapshotWhenBuiltInDefault.selectedID, "BuiltInSpeakerDevice")
+
+        // Case B: Hidden device (88) IS the live default output -> MUST be included so checkmark matches system state.
+        let snapshotWhenHiddenDefault = MacAudioOutputSwitchEngine.enumerateSnapshot(
+            records: records,
+            airPlayReceivers: [],
+            defaultOutputObjectID: 88,
+            isDefaultOutputSettable: true
+        )
+        let idsWhenHiddenDefault = snapshotWhenHiddenDefault.devices.map(\.id)
+        XCTAssertTrue(idsWhenHiddenDefault.contains("HiddenDiagnosticOutputUID"))
+        XCTAssertEqual(snapshotWhenHiddenDefault.selectedID, "HiddenDiagnosticOutputUID")
+        XCTAssertFalse(idsWhenHiddenDefault.contains("CADefaultDeviceAggregate-12345-0"))
+    }
+
+    func testAudioOutputListMergerIncludesHomePodAirPlaySurvivesCoreAudioRestartAndHandlesSelectionHonestly() throws {
+        let initialRecords: [MacAudioRawDeviceRecord] = [
+            MacAudioRawDeviceRecord(
+                audioObjectID: 70,
+                uid: "BuiltInSpeakerDevice",
+                name: "MacBook Pro Speakers",
+                transportKind: .builtIn,
+                outputChannelCount: 2
+            ),
+            MacAudioRawDeviceRecord(
+                audioObjectID: 84,
+                uid: "USB-DAC-01",
+                name: "USB Studio Headphones",
+                transportKind: .usb,
+                outputChannelCount: 2
+            )
+        ]
+
+        let idleHomePod = MacDiscoveredAirPlayReceiver(
+            deviceID: "82:1C:79:BC:CA:66",
+            name: "Living Room HomePod",
+            model: "AudioAccessory6,1",
+            groupID: "3D6ABC46-4B95-4E19-BBCA-87C5EF239C04",
+            isGroupLeader: true,
+            audioBoxObjectID: 0,
+            audioDeviceObjectID: 0,
+            isSelectableViaCoreAudio: false
+        )
+
+        let driver = MockAudioOutputHardwareDriver(
+            records: initialRecords,
+            defaultOutputObjectID: 70,
+            defaultSystemOutputObjectID: 70,
+            airPlayReceivers: [idleHomePod]
+        )
+
+        // 1. Merged snapshot includes CoreAudio outputs + injected HomePod AirPlay receiver
+        let initialSnapshot = MacAudioOutputSwitchEngine.enumerateSnapshot(using: driver)
+        XCTAssertEqual(initialSnapshot.devices.map(\.name), [
+            "MacBook Pro Speakers",
+            "USB Studio Headphones",
+            "Living Room HomePod"
+        ])
+        XCTAssertEqual(initialSnapshot.selectedID, "BuiltInSpeakerDevice")
+
+        let mergedHomePod = try XCTUnwrap(initialSnapshot.devices.first(where: { $0.name == "Living Room HomePod" }))
+        XCTAssertTrue(mergedHomePod.isAirPlay)
+        XCTAssertEqual(mergedHomePod.transportKind, .airPlay)
+        XCTAssertTrue(mergedHomePod.isHomePod)
+        XCTAssertEqual(mergedHomePod.sfSymbol, "homepod.fill")
+        XCTAssertEqual(mergedHomePod.id, "airplay:821c79bcca66")
+        XCTAssertFalse(mergedHomePod.isSelectable)
+        XCTAssertNotNil(mergedHomePod.selectionUnavailableReason(in: .english))
+
+        // 2. Simulate CoreAudio (`coreaudiod`) restart: all AudioObjectIDs change, stable IDs survive unchanged
+        driver.records = [
+            MacAudioRawDeviceRecord(
+                audioObjectID: 312,
+                uid: "BuiltInSpeakerDevice",
+                name: "MacBook Pro Speakers",
+                transportKind: .builtIn,
+                outputChannelCount: 2
+            ),
+            MacAudioRawDeviceRecord(
+                audioObjectID: 419,
+                uid: "USB-DAC-01",
+                name: "USB Studio Headphones",
+                transportKind: .usb,
+                outputChannelCount: 2
+            )
+        ]
+        driver.defaultOutputObjectID = 312
+        driver.defaultSystemOutputObjectID = 312
+
+        let postRestartSnapshot = MacAudioOutputSwitchEngine.enumerateSnapshot(using: driver)
+        XCTAssertEqual(postRestartSnapshot.devices.map(\.id), initialSnapshot.devices.map(\.id))
+        let postRestartHomePod = try XCTUnwrap(postRestartSnapshot.devices.first(where: { $0.isHomePod }))
+        XCTAssertEqual(postRestartHomePod.id, mergedHomePod.id)
+
+        // 3. Attempting to switch to an idle AirPlay receiver without a public selection path fails honestly
+        //    and NEVER pretends the switch happened.
+        let rejectedSwitch = MacAudioOutputSwitchEngine.performSwitch(
+            requestedID: mergedHomePod.id,
+            language: .english,
+            using: driver
+        )
+        XCTAssertFalse(rejectedSwitch.success)
+        XCTAssertTrue(rejectedSwitch.detail.contains("Control Center"))
+        XCTAssertEqual(rejectedSwitch.snapshot.selectedID, "BuiltInSpeakerDevice")
+        XCTAssertEqual(driver.defaultOutputObjectID, 312)
+
+        // 4. When CoreAudio exposes an acquirable AirPlay box / device for HomePod, selecting it picks HomePod,
+        //    updates the checkmark to match, and switching back to MacBook Pro Speakers restores built-in output.
+        driver.airPlayReceivers = [
+            MacDiscoveredAirPlayReceiver(
+                deviceID: "82:1C:79:BC:CA:66",
+                name: "Living Room HomePod",
+                model: "AudioAccessory6,1",
+                audioBoxObjectID: 501,
+                audioDeviceObjectID: 0,
+                isSelectableViaCoreAudio: true
+            )
+        ]
+        driver.onAcquireAirPlayBox = { [weak driver] boxID in
+            guard boxID == 501, let driver else { return (nil, -1) }
+            let airPlayDevice = MacAudioRawDeviceRecord(
+                audioObjectID: 610,
+                uid: "82:1C:79:BC:CA:66-airplay",
+                name: "Living Room HomePod",
+                transportKind: .airPlay,
+                outputChannelCount: 2,
+                isHidden: false,
+                modelUID: "AudioAccessory6,1"
+            )
+            driver.records.append(airPlayDevice)
+            driver.airPlayReceivers = [
+                MacDiscoveredAirPlayReceiver(
+                    deviceID: "82:1C:79:BC:CA:66",
+                    name: "Living Room HomePod",
+                    model: "AudioAccessory6,1",
+                    audioBoxObjectID: 501,
+                    audioDeviceObjectID: 610,
+                    isSelectableViaCoreAudio: true
+                )
+            ]
+            return (610, 0)
+        }
+
+        let selectableSnapshot = MacAudioOutputSwitchEngine.enumerateSnapshot(using: driver)
+        let selectableHomePod = try XCTUnwrap(selectableSnapshot.devices.first(where: { $0.id == mergedHomePod.id }))
+        XCTAssertTrue(selectableHomePod.isSelectable)
+
+        let homePodSwitch = MacAudioOutputSwitchEngine.performSwitch(
+            requestedID: mergedHomePod.id,
+            language: .english,
+            using: driver
+        )
+        XCTAssertTrue(homePodSwitch.success)
+        XCTAssertEqual(homePodSwitch.snapshot.selectedID, mergedHomePod.id)
+        XCTAssertEqual(driver.defaultOutputObjectID, 610)
+
+        let backToSpeakers = MacAudioOutputSwitchEngine.performSwitch(
+            requestedID: "BuiltInSpeakerDevice",
+            language: .english,
+            using: driver
+        )
+        XCTAssertTrue(backToSpeakers.success)
+        XCTAssertEqual(backToSpeakers.snapshot.selectedID, "BuiltInSpeakerDevice")
+        XCTAssertEqual(driver.defaultOutputObjectID, 312)
+    }
+
+    func testAirPlayBonjourParserExtractsHomePodDeduplicatesStereoPairsAndExcludesLocalMac() {
+        let entries: [MacAirPlayBonjourServiceEntry] = [
+            // HomePod 2nd-gen stereo pair ("主卧") advertising two units under the same gid
+            MacAirPlayBonjourServiceEntry(
+                serviceName: "821C79BCCA66@主卧",
+                serviceType: "_raop._tcp",
+                txtRecord: ["am": "AudioAccessory6,1"]
+            ),
+            MacAirPlayBonjourServiceEntry(
+                serviceName: "主卧",
+                serviceType: "_airplay._tcp",
+                txtRecord: [
+                    "deviceid": "82:1C:79:BC:CA:66",
+                    "model": "AudioAccessory6,1",
+                    "features": "0x4A7FCA00,0xBC354BD0",
+                    "gid": "3D6ABC46-4B95-4E19-BBCA-87C5EF239C04+271ACDAC-3DE0-48C3-B27D-D70758969C07",
+                    "igl": "1"
+                ]
+            ),
+            MacAirPlayBonjourServiceEntry(
+                serviceName: "主卧",
+                serviceType: "_airplay._tcp",
+                txtRecord: [
+                    "deviceid": "90:DD:5D:AA:BB:CC",
+                    "model": "AudioAccessory6,1",
+                    "features": "0x4A7FCA00,0xBC354BD0",
+                    "gid": "3D6ABC46-4B95-4E19-BBCA-87C5EF239C04+271ACDAC-3DE0-48C3-B27D-D70758969C07",
+                    "igl": "0"
+                ]
+            ),
+            // Two third-party AirPlay speakers sharing placeholder MAC 10:00:00:00:00:00 must NOT collide
+            MacAirPlayBonjourServiceEntry(
+                serviceName: "100000000000@Speaker One",
+                serviceType: "_raop._tcp",
+                txtRecord: ["am": "Shairport,1"]
+            ),
+            MacAirPlayBonjourServiceEntry(
+                serviceName: "100000000000@Speaker Two",
+                serviceType: "_raop._tcp",
+                txtRecord: ["am": "Shairport,1"]
+            ),
+            // Non-audio AirPlay screen-only endpoint (no 0x200 audio bit, no RAOP) must be excluded
+            MacAirPlayBonjourServiceEntry(
+                serviceName: "Projector Only",
+                serviceType: "_airplay._tcp",
+                txtRecord: [
+                    "deviceid": "AA:BB:CC:11:22:33",
+                    "model": "Projector1,1",
+                    "features": "0x1"
+                ]
+            ),
+            // Local Mac's own AirPlay Receiver service must be excluded
+            MacAirPlayBonjourServiceEntry(
+                serviceName: "AA:BB:CC:DD:EE:FF@This MacBook Pro",
+                serviceType: "_raop._tcp",
+                txtRecord: ["am": "Mac14,9"]
+            )
+        ]
+
+        let parsed = MacAirPlayBonjourParser.parseReceivers(
+            entries: entries,
+            localHardwareIdentifiers: ["aa:bb:cc:dd:ee:ff"]
+        )
+
+        XCTAssertEqual(parsed.map(\.name), ["Speaker One", "Speaker Two", "主卧"])
+        let homePod = parsed.first(where: { $0.name == "主卧" })
+        XCTAssertEqual(homePod?.model, "AudioAccessory6,1")
+        XCTAssertEqual(homePod?.stableOutputID, "airplay:821c79bcca66")
+
+        let speakerOne = parsed.first(where: { $0.name == "Speaker One" })
+        let speakerTwo = parsed.first(where: { $0.name == "Speaker Two" })
+        XCTAssertNotEqual(speakerOne?.stableOutputID, speakerTwo?.stableOutputID)
+    }
 }
 
 #if os(macOS)
@@ -786,6 +1212,7 @@ private final class Round04WireTestDelegate: MacServerEngineDelegate {
 
 private final class MockAudioOutputHardwareDriver: MacAudioOutputHardwareDriver {
     var records: [MacAudioRawDeviceRecord]
+    var airPlayReceivers: [MacDiscoveredAirPlayReceiver]
     var defaultOutputObjectID: UInt32
     var defaultSystemOutputObjectID: UInt32
     var hasDefaultSystemOutput: Bool
@@ -797,6 +1224,7 @@ private final class MockAudioOutputHardwareDriver: MacAudioOutputHardwareDriver 
     var runningProcesses: [MacAudioRunningProcessRecord]?
     var movedProcesses: [UInt32: UInt32] = [:]
     var runningDeviceIDs: Set<UInt32> = []
+    var onAcquireAirPlayBox: ((UInt32) -> (UInt32?, Int32))?
 
     init(
         records: [MacAudioRawDeviceRecord],
@@ -807,9 +1235,11 @@ private final class MockAudioOutputHardwareDriver: MacAudioOutputHardwareDriver 
         isDefaultSystemOutputSettable: Bool = true,
         forcedDefaultOutputWriteStatus: Int32? = nil,
         forcedSystemOutputWriteStatus: Int32? = nil,
-        runningProcesses: [MacAudioRunningProcessRecord]? = []
+        runningProcesses: [MacAudioRunningProcessRecord]? = [],
+        airPlayReceivers: [MacDiscoveredAirPlayReceiver] = []
     ) {
         self.records = records
+        self.airPlayReceivers = airPlayReceivers
         self.defaultOutputObjectID = defaultOutputObjectID
         self.defaultSystemOutputObjectID = defaultSystemOutputObjectID
         self.hasDefaultSystemOutput = hasDefaultSystemOutput
@@ -869,6 +1299,17 @@ private final class MockAudioOutputHardwareDriver: MacAudioOutputHardwareDriver 
 
     func readLiveDeviceRecords() -> [MacAudioRawDeviceRecord] {
         records
+    }
+
+    func readDiscoveredAirPlayReceivers() -> [MacDiscoveredAirPlayReceiver] {
+        airPlayReceivers
+    }
+
+    func acquireAirPlayBox(_ boxObjectID: UInt32) -> (deviceObjectID: UInt32?, status: Int32) {
+        if let onAcquireAirPlayBox {
+            return onAcquireAirPlayBox(boxObjectID)
+        }
+        return (nil, -1)
     }
 
     func translateUIDToLiveObjectID(_ uid: String) -> UInt32? {

@@ -243,6 +243,10 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             self?.timeTravel.frontmostAppName
         }
 
+        inputService.mediaTransportContextProvider = { [weak self] in
+            self?.systemControlService.currentMediaTransportContext() ?? MacMediaTransportContext()
+        }
+
         keepAwakeService.onAssertionStateChanged = { [weak self] isHolding in
             guard let self else { return }
             self.isKeepMacAwakeEnabled = isHolding

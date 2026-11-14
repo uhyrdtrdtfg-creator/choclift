@@ -1918,35 +1918,45 @@ public struct WatchAudioOutputPickerSheet: View {
             } else if isConnected {
                 ForEach(state.audioOutputDevices) { device in
                     let isSelected = (device.id == selectedID)
+                    let isRowEnabled = state.canSwitchAudioOutput && device.isSelectable
                     Button {
-                        guard state.canSwitchAudioOutput else { return }
+                        guard isRowEnabled else { return }
                         CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
                         sheetFeedback = nil
                         awaitingSwitchFeedback = true
                         client.selectAudioOutputDevice(id: device.id)
                     } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: device.transportKind.sfSymbol)
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(isSelected ? palette.statusConnected : palette.accent)
-                            Text(device.name)
-                                .font(.system(size: 12.5, weight: isSelected ? .bold : .medium, design: .rounded))
-                                .foregroundStyle(palette.primaryText)
-                                .lineLimit(2)
-                            Spacer(minLength: 4)
-                            if isSelected {
-                                Image(systemName: "checkmark")
-                                    .font(.caption.bold())
-                                    .foregroundStyle(palette.statusConnected)
-                            } else if !state.canSwitchAudioOutput {
-                                Image(systemName: "lock")
-                                    .font(.caption2.bold())
-                                    .foregroundStyle(palette.secondaryText.opacity(0.65))
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 7) {
+                                Image(systemName: device.sfSymbol)
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(isSelected ? palette.statusConnected : (isRowEnabled ? palette.accent : palette.secondaryText))
+                                Text(device.name)
+                                    .font(.system(size: 12.5, weight: isSelected ? .bold : .medium, design: .rounded))
+                                    .foregroundStyle(isRowEnabled || isSelected ? palette.primaryText : palette.secondaryText)
+                                    .lineLimit(2)
+                                Spacer(minLength: 4)
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(palette.statusConnected)
+                                } else if !isRowEnabled {
+                                    Image(systemName: device.isAirPlay ? "airplayaudio" : "lock")
+                                        .font(.caption2.bold())
+                                        .foregroundStyle(palette.secondaryText.opacity(0.65))
+                                }
+                            }
+                            if let unavailableDetail = device.selectionUnavailableReason(in: lang) {
+                                Text(unavailableDetail)
+                                    .font(.system(size: 9.5, weight: .regular, design: .rounded))
+                                    .foregroundStyle(palette.secondaryText)
+                                    .lineLimit(2)
                             }
                         }
                         .frame(minHeight: 38)
+                        .opacity(isRowEnabled || isSelected ? 1.0 : 0.72)
                     }
-                    .disabled(!state.canSwitchAudioOutput)
+                    .disabled(!isRowEnabled)
                     .listRowBackground(palette.barSurface)
                     .accessibilityIdentifier("watch-audio-output-device-\(device.id)")
                 }
