@@ -1,5 +1,6 @@
 import AppKit
 import AudioToolbox
+import AVFoundation
 import ChocliftCore
 import CoreAudio
 import CoreGraphics
@@ -10,6 +11,7 @@ import Foundation
 import IOKit
 import IOKit.graphics
 import IOKit.ps
+import Network
 
 @MainActor
 public final class MacSystemControlService {
@@ -55,9 +57,12 @@ public final class MacSystemControlService {
     private var savedPreMuteInputVolume: Float32 = 0.75
     private var distributedTracks: [String: CachedDistributedTrack] = [:]
     private var latestMediaRemoteStatus: NowPlayingStatus?
+    private var latestMediaRemoteBundleID: String?
+    private var latestMediaRemotePID: pid_t = 0
 
     private let displayBridge = DisplayBrightnessBridge()
     private let mediaRemoteBridge = MediaRemoteBridge()
+    private let airPlayRouteMonitor = MacAirPlayRouteMonitor()
 
     public init() {
         self.currentState = ControlStripState()
@@ -66,6 +71,10 @@ public final class MacSystemControlService {
 
     public func start() {
         stop()
+        airPlayRouteMonitor.onReceiversChanged = { [weak self] in
+            self?.refreshNow()
+        }
+        airPlayRouteMonitor.start()
         registerSystemAudioDeviceListeners()
         rebindActiveAudioDeviceListeners()
         registerNowPlayingObservers()
@@ -86,6 +95,9 @@ public final class MacSystemControlService {
         periodicPollTask = nil
         postActionRefreshTask?.cancel()
         postActionRefreshTask = nil
+
+        airPlayRouteMonitor.stop()
+        airPlayRouteMonitor.onReceiversChanged = nil
 
         removeAudioListeners(&deviceAudioListeners)
         removeAudioListeners(&systemAudioListeners)
@@ -113,9 +125,11 @@ public final class MacSystemControlService {
 
     public func refreshNow(completion: (@MainActor (ControlStripState) -> Void)? = nil) {
         if mediaRemoteBridge.isAvailable {
-            mediaRemoteBridge.fetchNowPlaying { [weak self] mrStatus in
+            mediaRemoteBridge.fetchNowPlaying { [weak self] payload in
                 guard let self else { return }
-                self.latestMediaRemoteStatus = mrStatus
+                self.latestMediaRemoteStatus = payload.status
+                self.latestMediaRemoteBundleID = payload.bundleIdentifier
+                self.latestMediaRemotePID = payload.pid
                 let resolved = self.applyRefreshedSnapshot()
                 completion?(resolved)
             }
@@ -169,7 +183,10 @@ public final class MacSystemControlService {
 
         let sbVolume = ControlStripLevel.clamp(soundboardVolumeProvider?() ?? currentState.soundboardVolume)
         let keepAwake = keepMacAwakeProvider?() ?? currentState.isKeepMacAwakeEnabled
-        let audioSnapshot = Self.enumerateAudioOutputDevices(defaultOutputID: outDevice)
+        let audioSnapshot = Self.enumerateAudioOutputDevices(
+            defaultOutputID: outDevice,
+            bonjourAirPlayReceivers: airPlayRouteMonitor.currentBonjourReceivers
+        )
         let batteryStatus = Self.readMacBatteryStatus()
         let finderIconsVisible = Self.readFinderDesktopIconsVisible()
         let privacyCapture = Self.readPrivacyCaptureStatus(defaultInputDeviceID: inDevice)
@@ -1057,7 +1074,9 @@ public final class MacSystemControlService {
         id: String,
         language: AppLanguage = .system
     ) -> MacAudioOutputSwitchResult {
-        let driver = CoreAudioHardwareOutputDriver()
+        let driver = CoreAudioHardwareOutputDriver(
+            bonjourAirPlayReceivers: airPlayRouteMonitor.currentBonjourReceivers
+        )
         let result = MacAudioOutputSwitchEngine.performSwitch(
             requestedID: id,
             language: language,
@@ -1289,13 +1308,16 @@ public final class MacSystemControlService {
     }
 
     private static func enumerateAudioOutputDevices(
-        defaultOutputID: AudioObjectID
+        defaultOutputID: AudioObjectID,
+        bonjourAirPlayReceivers: [MacDiscoveredAirPlayReceiver]
     ) -> (devices: [MacAudioOutputDevice], selectedID: String?, canSwitch: Bool) {
-        let driver = CoreAudioHardwareOutputDriver()
+        let driver = CoreAudioHardwareOutputDriver(bonjourAirPlayReceivers: bonjourAirPlayReceivers)
         let defaultSettable = driver.isSelectorSettable(.defaultOutput).isSettable
         let records = driver.readLiveDeviceRecords()
+        let airPlayReceivers = driver.readDiscoveredAirPlayReceivers()
         let snapshot = MacAudioOutputSwitchEngine.enumerateSnapshot(
             records: records,
+            airPlayReceivers: airPlayReceivers,
             defaultOutputObjectID: UInt32(defaultOutputID),
             isDefaultOutputSettable: defaultSettable
         )
@@ -1315,6 +1337,76 @@ public final class MacSystemControlService {
             return false
         }
         return hidden != 0
+    }
+
+    nonisolated fileprivate static func canAudioDeviceBeDefaultOutput(deviceID: AudioObjectID) -> Bool {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceCanBeDefaultDevice,
+            mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(deviceID, &addr) else { return true }
+        var canBeDefault: UInt32 = 1
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(deviceID, &addr, 0, nil, &size, &canBeDefault) == noErr else {
+            return true
+        }
+        return canBeDefault != 0
+    }
+
+    nonisolated fileprivate static func isPrivateOrAutoAggregateAudioDevice(deviceID: AudioObjectID) -> Bool {
+        var transportAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var rawTransport: UInt32 = 0
+        if AudioObjectHasProperty(deviceID, &transportAddr) {
+            var size = UInt32(MemoryLayout<UInt32>.size)
+            if AudioObjectGetPropertyData(deviceID, &transportAddr, 0, nil, &size, &rawTransport) == noErr,
+               rawTransport == kAudioDeviceTransportTypeAutoAggregate {
+                return true
+            }
+        }
+
+        var privAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioEndPointDevicePropertyIsPrivate,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        if AudioObjectHasProperty(deviceID, &privAddr) {
+            var isPriv: UInt32 = 0
+            var size = UInt32(MemoryLayout<UInt32>.size)
+            if AudioObjectGetPropertyData(deviceID, &privAddr, 0, nil, &size, &isPriv) == noErr,
+               isPriv != 0 {
+                return true
+            }
+        }
+
+        if rawTransport == kAudioDeviceTransportTypeAggregate {
+            var compAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioAggregateDevicePropertyComposition,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            if AudioObjectHasProperty(deviceID, &compAddr) {
+                var unmanagedDict: Unmanaged<CFDictionary>?
+                var size = UInt32(MemoryLayout<Unmanaged<CFDictionary>?>.size)
+                let status = withUnsafeMutablePointer(to: &unmanagedDict) { ptr in
+                    AudioObjectGetPropertyData(deviceID, &compAddr, 0, nil, &size, ptr)
+                }
+                if status == noErr, let cfDict = unmanagedDict?.takeRetainedValue() as? [String: Any] {
+                    if let privNum = cfDict[kAudioAggregateDeviceIsPrivateKey] as? NSNumber, privNum.intValue != 0 {
+                        return true
+                    }
+                    if let taps = cfDict[kAudioAggregateDeviceTapListKey] as? [Any], !taps.isEmpty {
+                        return true
+                    }
+                }
+            }
+        }
+
+        return false
     }
 
     nonisolated fileprivate static func outputChannelCount(deviceID: AudioObjectID) -> Int {
@@ -1403,6 +1495,9 @@ public final class MacSystemControlService {
             AudioObjectPropertySelector(MacAudioDefaultSelector.defaultSystemOutput.rawValue),
             kAudioHardwarePropertyDefaultInputDevice,
             kAudioHardwarePropertyDevices,
+            kAudioHardwarePropertyBoxList,
+            kAudioHardwarePropertyPlugInList,
+            kAudioHardwarePropertyTransportManagerList,
             Self.selectorServiceRestarted
         ]
         for selector in selectors {
@@ -1625,8 +1720,7 @@ public final class MacSystemControlService {
         applyRefreshedSnapshot()
     }
 
-    private func resolveBestNowPlaying() -> NowPlayingStatus? {
-        // 1. Prune distributed player entries for apps that have quit
+    private func pruneTerminatedNowPlayingSessions() {
         for (bundleID, _) in distributedTracks {
             let isAlive = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
                 .contains(where: { !$0.isTerminated })
@@ -1634,19 +1728,32 @@ public final class MacSystemControlService {
                 distributedTracks.removeValue(forKey: bundleID)
             }
         }
+        if latestMediaRemotePID > 0 {
+            let appAlive = NSRunningApplication(processIdentifier: latestMediaRemotePID)
+                .map { !$0.isTerminated } ?? false
+            if !appAlive {
+                latestMediaRemoteStatus = nil
+                latestMediaRemoteBundleID = nil
+                latestMediaRemotePID = 0
+            }
+        }
+    }
 
-        // 2. Actively playing MediaRemote session
+    private func resolveBestNowPlaying() -> NowPlayingStatus? {
+        pruneTerminatedNowPlayingSessions()
+
+        // 1. Actively playing MediaRemote session
         if let mr = latestMediaRemoteStatus, mr.hasActiveMedia, mr.isPlaying {
             return mr
         }
 
-        // 3. Actively playing Music / Spotify session from DistributedNotificationCenter
+        // 2. Actively playing Music / Spotify session from DistributedNotificationCenter
         let sortedDistributed = distributedTracks.values.sorted { $0.updatedAt > $1.updatedAt }
         if let playingDist = sortedDistributed.first(where: { $0.status.isPlaying && $0.status.hasActiveMedia }) {
             return playingDist.status
         }
 
-        // 4. CoreAudio active audio-output process fallback (gives exact app name when MediaRemote metadata is restricted)
+        // 3. CoreAudio active audio-output process fallback (gives exact app name when MediaRemote metadata is restricted)
         let outDevice = Self.defaultAudioDevice(isInput: false)
         if Self.isDeviceRunningAudio(deviceID: outDevice),
            let activeAudioAppName = Self.findActiveAudioOutputAppName() {
@@ -1658,7 +1765,7 @@ public final class MacSystemControlService {
             )
         }
 
-        // 5. Paused session with track metadata so the user can see what is paused and tap Play
+        // 4. Paused session with track metadata so the user can see what is paused and tap Play
         if let mr = latestMediaRemoteStatus, mr.hasActiveMedia {
             return mr
         }
@@ -1669,7 +1776,90 @@ public final class MacSystemControlService {
         return nil
     }
 
+    /// Computes live playback & app context for `MacMediaTransportRouter` when the user triggers Play/Pause/Next/Previous.
+    public func currentMediaTransportContext() -> MacMediaTransportContext {
+        pruneTerminatedNowPlayingSessions()
+
+        let spotifyID = MacMediaTransportRouter.spotifyBundleIdentifier
+        let spotifyRunning = NSRunningApplication.runningApplications(withBundleIdentifier: spotifyID)
+            .contains(where: { !$0.isTerminated })
+        let frontmostBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+
+        let activeOutputApps = Self.findActiveAudioOutputApps()
+        let spotifyAudioActive = activeOutputApps.contains {
+            $0.bundleID?.caseInsensitiveCompare(spotifyID) == .orderedSame
+        }
+        let spotifyDistributedPlaying = distributedTracks[spotifyID]?.status.isPlaying == true
+        let isSpotifyPlaying = spotifyRunning && (spotifyAudioActive || spotifyDistributedPlaying)
+
+        let nonSpotifyActiveAudioApps = activeOutputApps.filter {
+            $0.bundleID?.caseInsensitiveCompare(spotifyID) != .orderedSame
+        }
+        let sortedDistributed = distributedTracks.values.sorted { $0.updatedAt > $1.updatedAt }
+
+        var resolvedNowPlayingBundleID: String?
+        var resolvedIsNowPlayingPlaying = false
+
+        if let mr = latestMediaRemoteStatus, mr.hasActiveMedia, mr.isPlaying {
+            resolvedNowPlayingBundleID = latestMediaRemoteBundleID ?? nonSpotifyActiveAudioApps.first?.bundleID
+            resolvedIsNowPlayingPlaying = true
+        } else if let playingDist = sortedDistributed.first(where: { $0.status.isPlaying && $0.status.hasActiveMedia }) {
+            resolvedNowPlayingBundleID = playingDist.bundleIdentifier
+            resolvedIsNowPlayingPlaying = true
+        } else if let activeApp = activeOutputApps.first, let activeBundle = activeApp.bundleID {
+            resolvedNowPlayingBundleID = activeBundle
+            resolvedIsNowPlayingPlaying = true
+        } else if let mr = latestMediaRemoteStatus, mr.hasActiveMedia, let mrBundle = latestMediaRemoteBundleID {
+            resolvedNowPlayingBundleID = mrBundle
+            resolvedIsNowPlayingPlaying = false
+        } else if let pausedDist = sortedDistributed.first(where: { $0.status.hasActiveMedia }) {
+            resolvedNowPlayingBundleID = pausedDist.bundleIdentifier
+            resolvedIsNowPlayingPlaying = false
+        }
+
+        let hasNonSpotifyMediaRemote = (latestMediaRemoteStatus?.hasActiveMedia == true) &&
+            (latestMediaRemoteBundleID?.caseInsensitiveCompare(spotifyID) != .orderedSame)
+        let hasNonSpotifyDistributed = sortedDistributed.contains {
+            $0.status.hasActiveMedia && $0.bundleIdentifier.caseInsensitiveCompare(spotifyID) != .orderedSame
+        }
+        let hasOtherActiveClient = hasNonSpotifyMediaRemote ||
+            hasNonSpotifyDistributed ||
+            !nonSpotifyActiveAudioApps.isEmpty
+
+        return MacMediaTransportContext(
+            nowPlayingBundleID: resolvedNowPlayingBundleID,
+            isNowPlayingPlaying: resolvedIsNowPlayingPlaying,
+            isSpotifyRunning: spotifyRunning,
+            isSpotifyPlaying: isSpotifyPlaying,
+            frontmostBundleID: frontmostBundleID,
+            hasOtherActiveMediaClient: hasOtherActiveClient
+        )
+    }
+
+    private struct ActiveAudioOutputApp {
+        let name: String
+        let bundleID: String?
+        let isRegularApp: Bool
+    }
+
+    private static let ignoredSystemAudioBundleIDs: Set<String> = [
+        "com.apple.controlcenter",
+        "com.apple.powerchime",
+        "com.apple.systemuiserver",
+        "com.apple.loginwindow",
+        "com.apple.coreservices.uiagent",
+        "com.apple.accessibility.heard"
+    ]
+
     private static func findActiveAudioOutputAppName() -> String? {
+        let apps = findActiveAudioOutputApps()
+        if let regular = apps.first(where: \.isRegularApp) {
+            return regular.name
+        }
+        return apps.first?.name
+    }
+
+    private static func findActiveAudioOutputApps() -> [ActiveAudioOutputApp] {
         var listAddr = AudioObjectPropertyAddress(
             mSelector: selectorProcessObjectList,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -1679,17 +1869,18 @@ public final class MacSystemControlService {
         let sysObj = AudioObjectID(kAudioObjectSystemObject)
         guard AudioObjectGetPropertyDataSize(sysObj, &listAddr, 0, nil, &byteSize) == noErr,
               byteSize >= UInt32(MemoryLayout<AudioObjectID>.size) else {
-            return nil
+            return []
         }
 
         let count = Int(byteSize) / MemoryLayout<AudioObjectID>.size
         var objects = [AudioObjectID](repeating: 0, count: count)
         guard AudioObjectGetPropertyData(sysObj, &listAddr, 0, nil, &byteSize, &objects) == noErr else {
-            return nil
+            return []
         }
 
         let selfPID = ProcessInfo.processInfo.processIdentifier
-        var fallbackAppName: String?
+        var regularApps: [ActiveAudioOutputApp] = []
+        var otherApps: [ActiveAudioOutputApp] = []
 
         for procObj in objects {
             var isOut: UInt32 = 0
@@ -1717,20 +1908,34 @@ public final class MacSystemControlService {
                 continue
             }
 
-            if let resolved = resolveUserFacingAppName(forPID: pid) {
-                if resolved.isRegularApp {
-                    return resolved.name
+            if let resolved = resolveUserFacingAppInfo(forPID: pid) {
+                if let bid = resolved.bundleID?.lowercased(), ignoredSystemAudioBundleIDs.contains(bid) {
+                    continue
                 }
-                if fallbackAppName == nil {
-                    fallbackAppName = resolved.name
+                let item = ActiveAudioOutputApp(
+                    name: resolved.name,
+                    bundleID: resolved.bundleID,
+                    isRegularApp: resolved.isRegularApp
+                )
+                if resolved.isRegularApp {
+                    regularApps.append(item)
+                } else {
+                    otherApps.append(item)
                 }
             }
         }
 
-        return fallbackAppName
+        return regularApps + otherApps
     }
 
     nonisolated fileprivate static func resolveUserFacingAppName(forPID pid: pid_t) -> (name: String, isRegularApp: Bool)? {
+        guard let info = resolveUserFacingAppInfo(forPID: pid) else { return nil }
+        return (info.name, info.isRegularApp)
+    }
+
+    nonisolated fileprivate static func resolveUserFacingAppInfo(
+        forPID pid: pid_t
+    ) -> (name: String, bundleID: String?, isRegularApp: Bool)? {
         guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated else {
             return nil
         }
@@ -1738,7 +1943,7 @@ public final class MacSystemControlService {
         if app.activationPolicy == .regular,
            let name = app.localizedName?.trimmingCharacters(in: .whitespacesAndNewlines),
            !name.isEmpty {
-            return (name, true)
+            return (name, app.bundleIdentifier, true)
         }
 
         // Helper process inside a parent .app bundle (e.g., Google Chrome Helper, Arc Helper, FirefoxCP)
@@ -1751,7 +1956,7 @@ public final class MacSystemControlService {
                    let runningParent = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first(where: { !$0.isTerminated && $0.activationPolicy == .regular }),
                    let parentName = runningParent.localizedName,
                    !parentName.isEmpty {
-                    return (parentName, true)
+                    return (parentName, bundleID, true)
                 }
                 let next = cursor.deletingLastPathComponent()
                 if next.path == cursor.path { break }
@@ -1763,8 +1968,12 @@ public final class MacSystemControlService {
         if let bid = app.bundleIdentifier, bid.hasPrefix("com.apple.WebKit") {
             if let safari = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Safari").first(where: { !$0.isTerminated }),
                let safariName = safari.localizedName {
-                return (safariName, true)
+                return (safariName, "com.apple.Safari", true)
             }
+        }
+
+        if let name = app.localizedName?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            return (name, app.bundleIdentifier, false)
         }
 
         return nil
@@ -1774,7 +1983,11 @@ public final class MacSystemControlService {
 // MARK: - Live CoreAudio Hardware Output Driver (macOS 13+)
 
 public struct CoreAudioHardwareOutputDriver: MacAudioOutputHardwareDriver {
-    public init() {}
+    private let bonjourAirPlayReceivers: [MacDiscoveredAirPlayReceiver]
+
+    public init(bonjourAirPlayReceivers: [MacDiscoveredAirPlayReceiver] = []) {
+        self.bonjourAirPlayReceivers = bonjourAirPlayReceivers
+    }
 
     public func isSelectorAvailable(_ selector: MacAudioDefaultSelector) -> Bool {
         var addr = AudioObjectPropertyAddress(
@@ -1844,16 +2057,22 @@ public struct CoreAudioHardwareOutputDriver: MacAudioOutputHardwareDriver {
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
+        var rawIDs: [AudioObjectID] = []
         var byteSize: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(sysObj, &devicesAddr, 0, nil, &byteSize) == noErr,
-              byteSize >= UInt32(MemoryLayout<AudioObjectID>.size) else {
-            return []
+        if AudioObjectGetPropertyDataSize(sysObj, &devicesAddr, 0, nil, &byteSize) == noErr,
+           byteSize >= UInt32(MemoryLayout<AudioObjectID>.size) {
+            let count = Int(byteSize) / MemoryLayout<AudioObjectID>.size
+            var ids = [AudioObjectID](repeating: 0, count: count)
+            if AudioObjectGetPropertyData(sysObj, &devicesAddr, 0, nil, &byteSize, &ids) == noErr {
+                rawIDs = ids
+            }
         }
 
-        let count = Int(byteSize) / MemoryLayout<AudioObjectID>.size
-        var rawIDs = [AudioObjectID](repeating: 0, count: count)
-        guard AudioObjectGetPropertyData(sysObj, &devicesAddr, 0, nil, &byteSize, &rawIDs) == noErr else {
-            return []
+        // Also check system-owned AudioDevice objects so any hidden AirPlay AudioDevice omitted from
+        // kAudioHardwarePropertyDevices is still inspected by shouldIncludeCoreAudioRecord.
+        var seenIDs = Set(rawIDs)
+        for ownedDevID in Self.readOwnedAirPlayDeviceIDs() where seenIDs.insert(ownedDevID).inserted {
+            rawIDs.append(ownedDevID)
         }
 
         var records: [MacAudioRawDeviceRecord] = []
@@ -1865,12 +2084,18 @@ public struct CoreAudioHardwareOutputDriver: MacAudioOutputHardwareDriver {
                 deviceID: devID,
                 selector: kAudioDevicePropertyDeviceUID
             )
+            let modelUID = MacSystemControlService.readCFStringProperty(
+                deviceID: devID,
+                selector: kAudioDevicePropertyModelUID
+            )
             let name = MacSystemControlService.readCFStringProperty(
                 deviceID: devID,
                 selector: kAudioObjectPropertyName
             ) ?? "Audio Output"
             let transport = MacSystemControlService.readTransportKind(deviceID: devID)
             let hidden = MacSystemControlService.isAudioDeviceHidden(deviceID: devID)
+            let privateAgg = MacSystemControlService.isPrivateOrAutoAggregateAudioDevice(deviceID: devID)
+            let canBeDefault = MacSystemControlService.canAudioDeviceBeDefaultOutput(deviceID: devID)
 
             records.append(
                 MacAudioRawDeviceRecord(
@@ -1879,12 +2104,232 @@ public struct CoreAudioHardwareOutputDriver: MacAudioOutputHardwareDriver {
                     name: name,
                     transportKind: transport,
                     outputChannelCount: outChannels,
-                    isHidden: hidden
+                    isHidden: hidden,
+                    isPrivateAggregate: privateAgg,
+                    canBeDefaultOutput: canBeDefault,
+                    modelUID: modelUID
                 )
             )
         }
 
         return records
+    }
+
+    public func readDiscoveredAirPlayReceivers() -> [MacDiscoveredAirPlayReceiver] {
+        let boxReceivers = Self.readCoreAudioAirPlayBoxes()
+        guard !boxReceivers.isEmpty else {
+            return bonjourAirPlayReceivers
+        }
+
+        var merged = boxReceivers
+        for bonjour in bonjourAirPlayReceivers {
+            let normKey = bonjour.normalizedDeviceKey
+            let nameKey = MacAudioOutputDevice.normalizeDisplayNameKey(bonjour.name)
+            if let idx = merged.firstIndex(where: {
+                (!normKey.isEmpty && $0.normalizedDeviceKey == normKey) ||
+                MacAudioOutputDevice.normalizeDisplayNameKey($0.name) == nameKey
+            }) {
+                if merged[idx].model == nil, let model = bonjour.model {
+                    merged[idx].model = model
+                }
+                if merged[idx].groupID == nil, let gid = bonjour.groupID {
+                    merged[idx].groupID = gid
+                }
+            } else {
+                merged.append(bonjour)
+            }
+        }
+        return merged
+    }
+
+    public func acquireAirPlayBox(_ boxObjectID: UInt32) -> (deviceObjectID: UInt32?, status: Int32) {
+        let boxID = AudioObjectID(boxObjectID)
+        guard boxID != kAudioObjectUnknown else {
+            return (nil, kAudioHardwareBadObjectError)
+        }
+
+        var acquireAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioBoxPropertyAcquired,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(boxID, &acquireAddr) else {
+            return (nil, kAudioHardwareUnknownPropertyError)
+        }
+        var settable: DarwinBoolean = false
+        guard AudioObjectIsPropertySettable(boxID, &acquireAddr, &settable) == noErr, settable.boolValue else {
+            return (nil, kAudioHardwareUnsupportedOperationError)
+        }
+
+        var flag: UInt32 = 1
+        let status = AudioObjectSetPropertyData(
+            boxID,
+            &acquireAddr,
+            0,
+            nil,
+            UInt32(MemoryLayout<UInt32>.size),
+            &flag
+        )
+        guard status == noErr else {
+            return (nil, status)
+        }
+
+        for _ in 0..<24 {
+            if let devID = Self.firstBoxDeviceID(boxID: boxID), devID != kAudioObjectUnknown {
+                return (UInt32(devID), noErr)
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+
+        return (Self.firstBoxDeviceID(boxID: boxID).map { UInt32($0) }, noErr)
+    }
+
+    private static func readOwnedAirPlayDeviceIDs() -> [AudioObjectID] {
+        let sysObj = AudioObjectID(kAudioObjectSystemObject)
+        var ownedAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioObjectPropertyOwnedObjects,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(sysObj, &ownedAddr) else { return [] }
+        var byteSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(sysObj, &ownedAddr, 0, nil, &byteSize) == noErr,
+              byteSize >= UInt32(MemoryLayout<AudioObjectID>.size) else {
+            return []
+        }
+        let count = Int(byteSize) / MemoryLayout<AudioObjectID>.size
+        var owned = [AudioObjectID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(sysObj, &ownedAddr, 0, nil, &byteSize, &owned) == noErr else {
+            return []
+        }
+
+        var airPlayDevs: [AudioObjectID] = []
+        for objID in owned where objID != kAudioObjectUnknown {
+            var clsAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioObjectPropertyClass,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var cls: AudioClassID = 0
+            var clsSize = UInt32(MemoryLayout<AudioClassID>.size)
+            guard AudioObjectHasProperty(objID, &clsAddr),
+                  AudioObjectGetPropertyData(objID, &clsAddr, 0, nil, &clsSize, &cls) == noErr,
+                  cls == kAudioDeviceClassID else {
+                continue
+            }
+            if MacSystemControlService.readTransportKind(deviceID: objID) == .airPlay {
+                airPlayDevs.append(objID)
+            }
+        }
+        return airPlayDevs
+    }
+
+    private static func readCoreAudioAirPlayBoxes() -> [MacDiscoveredAirPlayReceiver] {
+        let sysObj = AudioObjectID(kAudioObjectSystemObject)
+        var boxListAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyBoxList,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(sysObj, &boxListAddr) else { return [] }
+        var byteSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(sysObj, &boxListAddr, 0, nil, &byteSize) == noErr,
+              byteSize >= UInt32(MemoryLayout<AudioObjectID>.size) else {
+            return []
+        }
+        let count = Int(byteSize) / MemoryLayout<AudioObjectID>.size
+        var boxIDs = [AudioObjectID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(sysObj, &boxListAddr, 0, nil, &byteSize, &boxIDs) == noErr else {
+            return []
+        }
+
+        var results: [MacDiscoveredAirPlayReceiver] = []
+        for boxID in boxIDs where boxID != kAudioObjectUnknown {
+            var tranAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioBoxPropertyTransportType,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var tran: UInt32 = 0
+            var u32Size = UInt32(MemoryLayout<UInt32>.size)
+            guard AudioObjectHasProperty(boxID, &tranAddr),
+                  AudioObjectGetPropertyData(boxID, &tranAddr, 0, nil, &u32Size, &tran) == noErr,
+                  tran == kAudioDeviceTransportTypeAirPlay else {
+                continue
+            }
+
+            var hasAudioAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioBoxPropertyHasAudio,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            if AudioObjectHasProperty(boxID, &hasAudioAddr) {
+                var hasAudio: UInt32 = 0
+                var haSize = UInt32(MemoryLayout<UInt32>.size)
+                if AudioObjectGetPropertyData(boxID, &hasAudioAddr, 0, nil, &haSize, &hasAudio) == noErr,
+                   hasAudio == 0 {
+                    continue
+                }
+            }
+
+            let boxUID = MacSystemControlService.readCFStringProperty(
+                deviceID: boxID,
+                selector: kAudioBoxPropertyBoxUID
+            ) ?? ""
+            let name = MacSystemControlService.readCFStringProperty(
+                deviceID: boxID,
+                selector: kAudioObjectPropertyName
+            ) ?? "AirPlay Speaker"
+            let model = MacSystemControlService.readCFStringProperty(
+                deviceID: boxID,
+                selector: kAudioDevicePropertyModelUID
+            )
+
+            var acqAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioBoxPropertyAcquired,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var isSettable: DarwinBoolean = false
+            let canAcquire = AudioObjectHasProperty(boxID, &acqAddr) &&
+                AudioObjectIsPropertySettable(boxID, &acqAddr, &isSettable) == noErr &&
+                isSettable.boolValue
+
+            let firstDev = firstBoxDeviceID(boxID: boxID) ?? AudioObjectID(kAudioObjectUnknown)
+
+            results.append(
+                MacDiscoveredAirPlayReceiver(
+                    deviceID: boxUID,
+                    name: name,
+                    model: model,
+                    audioBoxObjectID: UInt32(boxID),
+                    audioDeviceObjectID: UInt32(firstDev),
+                    isSelectableViaCoreAudio: canAcquire || (firstDev != kAudioObjectUnknown)
+                )
+            )
+        }
+        return results
+    }
+
+    private static func firstBoxDeviceID(boxID: AudioObjectID) -> AudioObjectID? {
+        var devListAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioBoxPropertyDeviceList,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(boxID, &devListAddr) else { return nil }
+        var byteSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(boxID, &devListAddr, 0, nil, &byteSize) == noErr,
+              byteSize >= UInt32(MemoryLayout<AudioObjectID>.size) else {
+            return nil
+        }
+        let count = Int(byteSize) / MemoryLayout<AudioObjectID>.size
+        var devs = [AudioObjectID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(boxID, &devListAddr, 0, nil, &byteSize, &devs) == noErr else {
+            return nil
+        }
+        return devs.first(where: { $0 != kAudioObjectUnknown && MacSystemControlService.outputChannelCount(deviceID: $0) > 0 })
+            ?? devs.first(where: { $0 != kAudioObjectUnknown })
     }
 
     public func translateUIDToLiveObjectID(_ uid: String) -> UInt32? {
@@ -2251,9 +2696,15 @@ private final class MediaRemoteBridge {
         registerFn(.main)
     }
 
-    func fetchNowPlaying(completion: @escaping @MainActor (NowPlayingStatus?) -> Void) {
+    struct NowPlayingFetchPayload {
+        let status: NowPlayingStatus?
+        let bundleIdentifier: String?
+        let pid: pid_t
+    }
+
+    func fetchNowPlaying(completion: @escaping @MainActor (NowPlayingFetchPayload) -> Void) {
         guard let getInfoFn, let getIsPlayingFn else {
-            Task { @MainActor in completion(nil) }
+            Task { @MainActor in completion(NowPlayingFetchPayload(status: nil, bundleIdentifier: nil, pid: 0)) }
             return
         }
 
@@ -2276,9 +2727,10 @@ private final class MediaRemoteBridge {
                 )
                 if let getPIDFn {
                     getPIDFn(.main) { pid in
-                        let appName: String? = (pid > 0)
-                            ? NSRunningApplication(processIdentifier: pid)?.localizedName
-                            : nil
+                        let resolvedApp = (pid > 0) ? MacSystemControlService.resolveUserFacingAppInfo(forPID: pid) : nil
+                        let runningApp = (pid > 0) ? NSRunningApplication(processIdentifier: pid) : nil
+                        let appName = resolvedApp?.name ?? runningApp?.localizedName
+                        let bundleID = resolvedApp?.bundleID ?? runningApp?.bundleIdentifier
                         let status = NowPlayingStatus(
                             title: title,
                             artist: artist,
@@ -2287,8 +2739,15 @@ private final class MediaRemoteBridge {
                             elapsedSeconds: timing.elapsedSeconds,
                             durationSeconds: timing.durationSeconds
                         )
+                        let activeStatus = status.hasActiveMedia ? status : nil
                         Task { @MainActor in
-                            completion(status.hasActiveMedia ? status : nil)
+                            completion(
+                                NowPlayingFetchPayload(
+                                    status: activeStatus,
+                                    bundleIdentifier: activeStatus != nil ? bundleID : nil,
+                                    pid: activeStatus != nil ? pid : 0
+                                )
+                            )
                         }
                     }
                 } else {
@@ -2300,8 +2759,9 @@ private final class MediaRemoteBridge {
                         elapsedSeconds: timing.elapsedSeconds,
                         durationSeconds: timing.durationSeconds
                     )
+                    let activeStatus = status.hasActiveMedia ? status : nil
                     Task { @MainActor in
-                        completion(status.hasActiveMedia ? status : nil)
+                        completion(NowPlayingFetchPayload(status: activeStatus, bundleIdentifier: nil, pid: 0))
                     }
                 }
             }
@@ -2349,5 +2809,153 @@ private final class MediaRemoteBridge {
         guard let sym = dlsym(handle, symbol) else { return nil }
         let cfStrPtr = sym.assumingMemoryBound(to: CFString?.self)
         return cfStrPtr.pointee as String?
+    }
+}
+
+// MARK: - Public macOS 13 AirPlay Receiver Discovery Monitor (NWBrowser + AVRouteDetector)
+
+@MainActor
+private final class MacAirPlayRouteMonitor {
+    var onReceiversChanged: (() -> Void)?
+    private(set) var currentBonjourReceivers: [MacDiscoveredAirPlayReceiver] = []
+
+    private var raopBrowser: NWBrowser?
+    private var airPlayBrowser: NWBrowser?
+    private let routeDetector = AVRouteDetector()
+    private var routeDetectorObserver: NSObjectProtocol?
+    private var latestRAOPEntries: [MacAirPlayBonjourServiceEntry] = []
+    private var latestAirPlayEntries: [MacAirPlayBonjourServiceEntry] = []
+    private let localHardwareIDs: Set<String>
+
+    init() {
+        self.localHardwareIDs = Self.readLocalInterfaceMACIdentifiers()
+    }
+
+    func start() {
+        stop()
+
+        routeDetectorObserver = NotificationCenter.default.addObserver(
+            forName: .AVRouteDetectorMultipleRoutesDetectedDidChange,
+            object: routeDetector,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.recomputeAndNotifyIfChanged(forceNotify: true)
+            }
+        }
+        routeDetector.isRouteDetectionEnabled = true
+
+        let raop = NWBrowser(for: .bonjourWithTXTRecord(type: "_raop._tcp", domain: nil), using: .tcp)
+        raop.browseResultsChangedHandler = { [weak self] results, _ in
+            let entries = Self.extractBonjourEntries(from: results, fallbackType: "_raop._tcp")
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.latestRAOPEntries = entries
+                self.recomputeAndNotifyIfChanged(forceNotify: false)
+            }
+        }
+        raop.start(queue: .main)
+        self.raopBrowser = raop
+
+        let airPlay = NWBrowser(for: .bonjourWithTXTRecord(type: "_airplay._tcp", domain: nil), using: .tcp)
+        airPlay.browseResultsChangedHandler = { [weak self] results, _ in
+            let entries = Self.extractBonjourEntries(from: results, fallbackType: "_airplay._tcp")
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.latestAirPlayEntries = entries
+                self.recomputeAndNotifyIfChanged(forceNotify: false)
+            }
+        }
+        airPlay.start(queue: .main)
+        self.airPlayBrowser = airPlay
+    }
+
+    func stop() {
+        raopBrowser?.cancel()
+        raopBrowser = nil
+        airPlayBrowser?.cancel()
+        airPlayBrowser = nil
+        latestRAOPEntries.removeAll()
+        latestAirPlayEntries.removeAll()
+
+        routeDetector.isRouteDetectionEnabled = false
+        if let routeDetectorObserver {
+            NotificationCenter.default.removeObserver(routeDetectorObserver)
+            self.routeDetectorObserver = nil
+        }
+    }
+
+    private func recomputeAndNotifyIfChanged(forceNotify: Bool) {
+        let combined = latestRAOPEntries + latestAirPlayEntries
+        let parsed = MacAirPlayBonjourParser.parseReceivers(
+            entries: combined,
+            localHardwareIdentifiers: localHardwareIDs
+        )
+        if parsed != currentBonjourReceivers {
+            currentBonjourReceivers = parsed
+            onReceiversChanged?()
+        } else if forceNotify {
+            onReceiversChanged?()
+        }
+    }
+
+    nonisolated private static func extractBonjourEntries(
+        from results: Set<NWBrowser.Result>,
+        fallbackType: String
+    ) -> [MacAirPlayBonjourServiceEntry] {
+        var entries: [MacAirPlayBonjourServiceEntry] = []
+        entries.reserveCapacity(results.count)
+
+        for result in results {
+            guard case let .service(name, type, _, _) = result.endpoint else {
+                continue
+            }
+            let txtDict: [String: String]
+            if case let .bonjour(txt) = result.metadata {
+                txtDict = txt.dictionary
+            } else {
+                txtDict = [:]
+            }
+            entries.append(
+                MacAirPlayBonjourServiceEntry(
+                    serviceName: name,
+                    serviceType: type.isEmpty ? fallbackType : type,
+                    txtRecord: txtDict
+                )
+            )
+        }
+
+        return entries
+    }
+
+    nonisolated static func readLocalInterfaceMACIdentifiers() -> Set<String> {
+        var identifiers = Set<String>()
+        var ifaddrPtr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddrPtr) == 0, let firstAddr = ifaddrPtr else {
+            return identifiers
+        }
+        defer { freeifaddrs(firstAddr) }
+
+        var cursor: UnsafeMutablePointer<ifaddrs>? = firstAddr
+        while let current = cursor {
+            defer { cursor = current.pointee.ifa_next }
+            guard let addr = current.pointee.ifa_addr,
+                  Int32(addr.pointee.sa_family) == AF_LINK else {
+                continue
+            }
+            let dl = UnsafeRawPointer(addr).assumingMemoryBound(to: sockaddr_dl.self).pointee
+            let addrLen = Int(dl.sdl_alen)
+            guard addrLen == 6 else { continue }
+            let nameLen = Int(dl.sdl_nlen)
+            let basePtr = UnsafeRawPointer(addr).advanced(by: MemoryLayout<sockaddr_dl>.offset(of: \.sdl_data)! + nameLen)
+            let bytes = UnsafeBufferPointer(start: basePtr.assumingMemoryBound(to: UInt8.self), count: addrLen)
+            if bytes.allSatisfy({ $0 == 0 }) {
+                continue
+            }
+            let hex = bytes.map { String(format: "%02x", $0) }.joined()
+            identifiers.insert(hex)
+        }
+        return identifiers
     }
 }

@@ -9,6 +9,10 @@ public final class MacInputAndMediaService {
     private let windowService: MacAccessibilityAndWindowService
     private var pendingClipboardSnapshot: [PasteboardItemSnapshot]?
     private var clipboardRestoreTask: Task<Void, Never>?
+    private var compiledPlayerScripts: [String: NSAppleScript] = [:]
+
+    /// Supplies live Now Playing / active audio client context from `MacSystemControlService`.
+    public var mediaTransportContextProvider: (() -> MacMediaTransportContext)?
 
     public init(windowService: MacAccessibilityAndWindowService) {
         self.windowService = windowService
@@ -330,27 +334,24 @@ public final class MacInputAndMediaService {
             return (true, L10n.tr("已启动区域截图（存至剪贴板）", "Started interactive screenshot to clipboard"))
 
         case .mediaPlayPause:
-            postMediaKey(keyType: 16) // NX_KEYTYPE_PLAY
-            return (true, L10n.tr("播放 / 暂停", "Media Play / Pause"))
+            return executeMediaTransportCommand(.playPause)
 
         case .mediaNext:
-            postMediaKey(keyType: 17) // NX_KEYTYPE_NEXT
-            return (true, L10n.tr("已切至下一曲", "Skipped to Next Track"))
+            return executeMediaTransportCommand(.nextTrack)
 
         case .mediaPrevious:
-            postMediaKey(keyType: 18) // NX_KEYTYPE_PREVIOUS
-            return (true, L10n.tr("已切至上一曲", "Returned to Previous Track"))
+            return executeMediaTransportCommand(.previousTrack)
 
         case .volumeUp:
-            postMediaKey(keyType: 0) // NX_KEYTYPE_SOUND_UP
+            _ = postMediaKey(keyType: 0) // NX_KEYTYPE_SOUND_UP
             return (true, L10n.tr("音量 +", "Volume Up"))
 
         case .volumeDown:
-            postMediaKey(keyType: 1) // NX_KEYTYPE_SOUND_DOWN
+            _ = postMediaKey(keyType: 1) // NX_KEYTYPE_SOUND_DOWN
             return (true, L10n.tr("音量 -", "Volume Down"))
 
         case .volumeMute:
-            postMediaKey(keyType: 7) // NX_KEYTYPE_MUTE
+            _ = postMediaKey(keyType: 7) // NX_KEYTYPE_MUTE
             return (true, L10n.tr("已切换静音", "Toggled Mute"))
 
         case .lockScreen:
@@ -521,8 +522,9 @@ public final class MacInputAndMediaService {
         keyUp.post(tap: .cghidEventTap)
     }
 
-    private func postMediaKey(keyType: Int32) {
-        func send(down: Bool) {
+    @discardableResult
+    private func postMediaKey(keyType: Int32) -> Bool {
+        func send(down: Bool) -> Bool {
             let flags = NSEvent.ModifierFlags(rawValue: down ? 0xA00 : 0xB00)
             let data1 = Int((keyType << 16) | ((down ? 0xA : 0xB) << 8))
             let event = NSEvent.otherEvent(
@@ -536,10 +538,152 @@ public final class MacInputAndMediaService {
                 data1: data1,
                 data2: -1
             )
-            event?.cgEvent?.post(tap: .cghidEventTap)
+            guard let cgEvent = event?.cgEvent else {
+                return false
+            }
+            cgEvent.post(tap: .cghidEventTap)
+            return true
         }
-        send(down: true)
-        send(down: false)
+        let downSent = send(down: true)
+        let upSent = send(down: false)
+        return downSent && upSent
+    }
+
+    private enum PlayerScriptOutcome {
+        case delivered
+        case notRunning
+        case failed(String)
+    }
+
+    private func executeMediaTransportCommand(
+        _ command: MacMediaTransportCommand,
+        language: AppLanguage = .system
+    ) -> (success: Bool, message: String) {
+        let context = mediaTransportContextProvider?() ?? Self.fallbackMediaTransportContext()
+        let route = MacMediaTransportRouter.chooseRoute(context: context)
+
+        switch route {
+        case .spotifyScript:
+            guard Self.isAppRunning(bundleID: MacMediaTransportRouter.spotifyBundleIdentifier) else {
+                if context.hasOtherActiveMediaClient, postMediaKey(keyType: Int32(command.hidMediaKeyType)) {
+                    return (true, command.successMessage(in: language))
+                }
+                return (false, MacMediaTransportFailureReason.spotifyNotRunning.message(in: language))
+            }
+
+            switch executePlayerAppleScript(
+                bundleID: MacMediaTransportRouter.spotifyBundleIdentifier,
+                verb: command.spotifyScriptVerb
+            ) {
+            case .delivered:
+                return (true, command.successMessage(in: language))
+            case .notRunning:
+                if context.hasOtherActiveMediaClient, postMediaKey(keyType: Int32(command.hidMediaKeyType)) {
+                    return (true, command.successMessage(in: language))
+                }
+                return (false, MacMediaTransportFailureReason.spotifyNotRunning.message(in: language))
+            case .failed(let errorMessage):
+                // Do not post an ignored HID media key to Spotify and claim fake success;
+                // only fall back to HID media key if another non-Spotify media client is actually active.
+                if context.hasOtherActiveMediaClient, postMediaKey(keyType: Int32(command.hidMediaKeyType)) {
+                    return (true, command.successMessage(in: language))
+                }
+                return (
+                    false,
+                    L10n.tr(
+                        "无法向 Spotify 发送指令：\(errorMessage)",
+                        "Could not deliver command to Spotify: \(errorMessage)",
+                        language: language
+                    )
+                )
+            }
+
+        case .mediaKey:
+            if context.nowPlayingBundleID?.caseInsensitiveCompare(MacMediaTransportRouter.musicBundleIdentifier) == .orderedSame,
+               Self.isAppRunning(bundleID: MacMediaTransportRouter.musicBundleIdentifier) {
+                if case .delivered = executePlayerAppleScript(
+                    bundleID: MacMediaTransportRouter.musicBundleIdentifier,
+                    verb: command.musicScriptVerb
+                ) {
+                    return (true, command.successMessage(in: language))
+                }
+            }
+            if postMediaKey(keyType: Int32(command.hidMediaKeyType)) {
+                return (true, command.successMessage(in: language))
+            }
+            return (
+                false,
+                L10n.tr("无法发送系统媒体按键事件", "Could not post system media key event", language: language)
+            )
+
+        case .failure(let reason):
+            return (false, reason.message(in: language))
+        }
+    }
+
+    /// Sends a background AppleEvent/AppleScript command (`playpause` / `next track` / `previous track`)
+    /// without activating the target app or stealing focus, and never launches the app if it is not running.
+    private func executePlayerAppleScript(bundleID: String, verb: String) -> PlayerScriptOutcome {
+        guard Self.isAppRunning(bundleID: bundleID) else {
+            return .notRunning
+        }
+
+        let cacheKey = "\(bundleID)|\(verb)"
+        let script: NSAppleScript
+        if let cached = compiledPlayerScripts[cacheKey] {
+            script = cached
+        } else {
+            let source = """
+            with timeout of 3 seconds
+                if application id "\(bundleID)" is running then
+                    tell application id "\(bundleID)" to \(verb)
+                    return "DELIVERED"
+                else
+                    return "NOT_RUNNING"
+                end if
+            end timeout
+            """
+            guard let created = NSAppleScript(source: source) else {
+                return .failed("AppleScript initialization failed")
+            }
+            compiledPlayerScripts[cacheKey] = created
+            script = created
+        }
+
+        var errorDict: NSDictionary?
+        let descriptor = script.executeAndReturnError(&errorDict)
+        if let errorDict {
+            let errNum = (errorDict[NSAppleScript.errorNumber] as? Int) ?? 0
+            if errNum == -600 {
+                return .notRunning
+            }
+            let reason = (errorDict[NSAppleScript.errorBriefMessage] as? String)
+                ?? (errorDict[NSAppleScript.errorMessage] as? String)
+                ?? "AppleEvent error (\(errNum))"
+            return .failed(reason)
+        }
+        if descriptor.stringValue == "NOT_RUNNING" {
+            return .notRunning
+        }
+        return .delivered
+    }
+
+    nonisolated private static func isAppRunning(bundleID: String) -> Bool {
+        NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            .contains(where: { !$0.isTerminated })
+    }
+
+    private static func fallbackMediaTransportContext() -> MacMediaTransportContext {
+        let spotifyRunning = isAppRunning(bundleID: MacMediaTransportRouter.spotifyBundleIdentifier)
+        let frontmostID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        return MacMediaTransportContext(
+            nowPlayingBundleID: nil,
+            isNowPlayingPlaying: false,
+            isSpotifyRunning: spotifyRunning,
+            isSpotifyPlaying: false,
+            frontmostBundleID: frontmostID,
+            hasOtherActiveMediaClient: false
+        )
     }
 
     private struct PasteboardItemSnapshot {

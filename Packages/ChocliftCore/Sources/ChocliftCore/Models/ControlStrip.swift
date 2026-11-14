@@ -497,3 +497,209 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             abs(soundboardVolume - other.soundboardVolume) >= tolerance
     }
 }
+
+// MARK: - Media Transport Command Router (Spotify / Now Playing / HID Media Key)
+
+public enum MacMediaTransportCommand: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
+    case playPause
+    case nextTrack
+    case previousTrack
+
+    public init?(systemAction: SystemQuickAction) {
+        switch systemAction {
+        case .mediaPlayPause:
+            self = .playPause
+        case .mediaNext:
+            self = .nextTrack
+        case .mediaPrevious:
+            self = .previousTrack
+        default:
+            return nil
+        }
+    }
+
+    public var spotifyScriptVerb: String {
+        switch self {
+        case .playPause:
+            return "playpause"
+        case .nextTrack:
+            return "next track"
+        case .previousTrack:
+            return "previous track"
+        }
+    }
+
+    public var musicScriptVerb: String {
+        switch self {
+        case .playPause:
+            return "playpause"
+        case .nextTrack:
+            return "next track"
+        case .previousTrack:
+            return "previous track"
+        }
+    }
+
+    /// `NX_KEYTYPE_PLAY` (16), `NX_KEYTYPE_NEXT` (17), `NX_KEYTYPE_PREVIOUS` (18).
+    public var hidMediaKeyType: Int {
+        switch self {
+        case .playPause:
+            return 16
+        case .nextTrack:
+            return 17
+        case .previousTrack:
+            return 18
+        }
+    }
+
+    public func successMessage(in language: AppLanguage = .system) -> String {
+        switch self {
+        case .playPause:
+            return L10n.tr("播放 / 暂停", "Media Play / Pause", language: language)
+        case .nextTrack:
+            return L10n.tr("已切至下一曲", "Skipped to Next Track", language: language)
+        case .previousTrack:
+            return L10n.tr("已切至上一曲", "Returned to Previous Track", language: language)
+        }
+    }
+}
+
+public enum MacMediaTransportFailureReason: String, Codable, Equatable, Hashable, Sendable {
+    case noActiveMediaPlayer
+    case spotifyNotRunning
+
+    public func message(in language: AppLanguage = .system) -> String {
+        switch self {
+        case .noActiveMediaPlayer:
+            return L10n.tr(
+                "当前没有正在运行或播放的媒体应用",
+                "No media player is currently running or playing",
+                language: language
+            )
+        case .spotifyNotRunning:
+            return L10n.tr(
+                "Spotify 当前未运行，且没有其他正在播放的媒体应用",
+                "Spotify is not running and no other media player is active",
+                language: language
+            )
+        }
+    }
+}
+
+public enum MacMediaTransportRoute: Equatable, Hashable, Sendable {
+    case spotifyScript
+    case mediaKey
+    case failure(MacMediaTransportFailureReason)
+}
+
+public struct MacMediaTransportContext: Equatable, Hashable, Sendable {
+    public var nowPlayingBundleID: String?
+    public var isNowPlayingPlaying: Bool
+    public var isSpotifyRunning: Bool
+    public var isSpotifyPlaying: Bool
+    public var frontmostBundleID: String?
+    public var hasOtherActiveMediaClient: Bool
+
+    public init(
+        nowPlayingBundleID: String? = nil,
+        isNowPlayingPlaying: Bool = true,
+        isSpotifyRunning: Bool = false,
+        isSpotifyPlaying: Bool = false,
+        frontmostBundleID: String? = nil,
+        hasOtherActiveMediaClient: Bool = false
+    ) {
+        self.nowPlayingBundleID = Self.normalizedBundleID(nowPlayingBundleID)
+        self.isNowPlayingPlaying = isNowPlayingPlaying
+        self.isSpotifyRunning = isSpotifyRunning
+        self.isSpotifyPlaying = isSpotifyPlaying
+        self.frontmostBundleID = Self.normalizedBundleID(frontmostBundleID)
+        self.hasOtherActiveMediaClient = hasOtherActiveMediaClient
+    }
+
+    public static func normalizedBundleID(_ raw: String?) -> String? {
+        guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        return trimmed
+    }
+}
+
+/// Pure, unit-testable router choosing between Spotify's background AppleEvent/AppleScript path,
+/// the system Now Playing HID media-key path, or an explicit failure when no player is active.
+public enum MacMediaTransportRouter {
+    public static let spotifyBundleIdentifier = "com.spotify.client"
+    public static let musicBundleIdentifier = "com.apple.Music"
+
+    public static func chooseRoute(
+        nowPlayingBundleID: String?,
+        isSpotifyRunning: Bool,
+        isNowPlayingPlaying: Bool = true,
+        isSpotifyPlaying: Bool = false,
+        frontmostBundleID: String? = nil,
+        hasOtherActiveMediaClient: Bool = false
+    ) -> MacMediaTransportRoute {
+        chooseRoute(
+            context: MacMediaTransportContext(
+                nowPlayingBundleID: nowPlayingBundleID,
+                isNowPlayingPlaying: isNowPlayingPlaying,
+                isSpotifyRunning: isSpotifyRunning,
+                isSpotifyPlaying: isSpotifyPlaying,
+                frontmostBundleID: frontmostBundleID,
+                hasOtherActiveMediaClient: hasOtherActiveMediaClient
+            )
+        )
+    }
+
+    public static func chooseRoute(context: MacMediaTransportContext) -> MacMediaTransportRoute {
+        let nowPlaying = context.nowPlayingBundleID
+        let frontmost = context.frontmostBundleID
+        let spotifyID = spotifyBundleIdentifier
+
+        // 1. Spotify explicitly owns the Now Playing session.
+        if nowPlaying?.caseInsensitiveCompare(spotifyID) == .orderedSame {
+            if context.isSpotifyRunning {
+                return .spotifyScript
+            }
+            if context.hasOtherActiveMediaClient {
+                return .mediaKey
+            }
+            return .failure(.spotifyNotRunning)
+        }
+
+        // 2. Spotify is actively outputting/playing audio while no other Now Playing client is actively playing
+        // (or Spotify is the frontmost player).
+        if context.isSpotifyRunning && context.isSpotifyPlaying {
+            if nowPlaying == nil || !context.isNowPlayingPlaying || frontmost?.caseInsensitiveCompare(spotifyID) == .orderedSame {
+                return .spotifyScript
+            }
+        }
+
+        // 3. Another client (e.g. Music, Safari, Chrome, Podcasts, VLC) owns Now Playing.
+        if nowPlaying != nil {
+            // If that session is paused and the user is actively in Spotify, control Spotify directly.
+            if !context.isNowPlayingPlaying &&
+                context.isSpotifyRunning &&
+                frontmost?.caseInsensitiveCompare(spotifyID) == .orderedSame {
+                return .spotifyScript
+            }
+            return .mediaKey
+        }
+
+        // 4. No Now Playing session is registered (Spotify on modern macOS frequently does not register with MediaRemote).
+        if context.isSpotifyRunning {
+            if context.hasOtherActiveMediaClient &&
+                !context.isSpotifyPlaying &&
+                frontmost?.caseInsensitiveCompare(spotifyID) != .orderedSame {
+                return .mediaKey
+            }
+            return .spotifyScript
+        }
+
+        if context.hasOtherActiveMediaClient {
+            return .mediaKey
+        }
+
+        return .failure(.noActiveMediaPlayer)
+    }
+}
