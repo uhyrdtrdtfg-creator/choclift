@@ -45,23 +45,18 @@ public struct IOSSoundboardSurfaceView: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: isLandscape ? 8 : 10) {
-            headerBar
-                .padding(.horizontal, 0)
-                .padding(.top, isLandscape ? 6 : 8)
-
-            soundboardVolumeCard
-                .padding(.horizontal, 0)
-
-            soundSearchField
-                .padding(.horizontal, 0)
-
+        Group {
             if allClips.isEmpty {
                 emptyBoardState
-            } else if filteredClips.isEmpty {
-                noMatchingSoundsState
             } else {
-                soundPadGrid
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        headerBar
+                        soundboardVolumeCard
+                        soundSearchField
+                        if filteredClips.isEmpty { noMatchingSoundsState } else { soundPadGrid }
+                    }
+                }
             }
         }
         .onAppear {
@@ -362,13 +357,12 @@ public struct IOSSoundboardSurfaceView: View {
     private var emptyBoardState: some View {
         VStack(spacing: 8) {
             Spacer(minLength: 6)
-            Image(systemName: "speaker.wave.2.bubble.left")
-                .font(ChocType.title)
+            Text(client.connectionState.isConnected
+                 ? L10n.tr("Mac 音效板暂为空。", "Your Mac soundboard is empty.", language: lang)
+                 : L10n.tr("连接 Mac 即可使用音效。", "Connect your Mac to use sounds.", language: lang))
+                .font(ChocType.body)
                 .foregroundStyle(palette.secondaryText)
-
-            Text(L10n.tr("Mac 音效板暂为空", "No Sounds on Your Mac Yet", language: lang))
-                .font(ChocType.body.weight(.semibold))
-                .foregroundStyle(palette.primaryText)
+                .multilineTextAlignment(.center)
 
             Button(L10n.tr("连接 Mac", "Connect Mac", language: lang)) {
                 onRequestPairing?()

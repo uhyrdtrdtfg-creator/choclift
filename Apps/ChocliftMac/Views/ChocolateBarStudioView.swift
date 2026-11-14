@@ -15,8 +15,9 @@ public struct ChocolateBarStudioView: View {
     @State private var selectedSlotIndex: Int?
     @State private var volumePreview: Double?
     @State private var editingSlot: EditingSlotTarget?
-    @State private var hoveredSlotIndex: Int?
+    @State private var hoveredSlotKey: String?
     @State private var draggedSlotIndex: Int?
+    @State private var draggedPageIndex: Int?
     @State private var showPageRenamePopover: Bool = false
 
     private var lang: AppLanguage { coordinator.lang }
@@ -535,17 +536,48 @@ public struct ChocolateBarStudioView: View {
     // MARK: - Realistic 2x4 Chocolate Touch Bar Frame
 
     private var chocolateHardwarePreview: some View {
-        let pageIdx = currentPage.index
-        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 16)], alignment: .leading, spacing: 16) {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                workspacePageGrid(currentPage)
+                ForEach(coordinator.profile.pages) { page in
+                    if page.id != currentPage.id && page.slots.contains(where: { $0 != nil }) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(page.title).font(ChocType.caption).foregroundStyle(palette.secondaryText)
+                            workspacePageGrid(page)
+                        }
+                    }
+                }
+                Text(L10n.tr("Mac 控制", "Mac Controls", language: lang))
+                    .font(ChocType.caption).foregroundStyle(palette.secondaryText)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 16)], spacing: 16) {
+                    ForEach(SystemQuickAction.allCases.filter { !$0.requiresDestructiveConfirmation }) { action in
+                        Button { _ = coordinator.performLocalQuickAction(action, triggeredBy: "Mac Studio") } label: {
+                            VStack(spacing: 2) {
+                                Image(systemName: action.sfSymbol).font(.system(size: 32))
+                                    .foregroundStyle(palette.accent).frame(height: 64)
+                                Text(action.compactTitle(in: lang)).font(ChocType.micro).foregroundStyle(palette.primaryText).lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 80)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.vertical, 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func workspacePageGrid(_ page: BarPage) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 16)], alignment: .leading, spacing: 16) {
             ForEach(0..<BarPage.slotsPerPage, id: \.self) { slotIdx in
-                let item = currentPage.slots[slotIdx]
-                slotCell(pageIndex: pageIdx, slotIndex: slotIdx, item: item,
+                let item = page.slots[slotIdx]
+                slotCell(pageIndex: page.index, slotIndex: slotIdx, item: item,
                          iconData: item?.bundleIdentifier.flatMap { coordinator.catalogService.iconData(forBundleID: $0) },
                          isFrontmost: item?.bundleIdentifier != nil && item?.bundleIdentifier == coordinator.timeTravel.frontmostBundleID)
                     .frame(height: 80)
             }
         }
-        .padding(16)
     }
 
     private func slotCell(
@@ -555,8 +587,9 @@ public struct ChocolateBarStudioView: View {
         iconData: Data?,
         isFrontmost: Bool
     ) -> some View {
-        let isHovered = (hoveredSlotIndex == slotIndex)
-        let origin = SlotCoordinate(pageID: currentPage.id, slotIndex: slotIndex)
+        let hoverKey = "\(pageIndex)-\(slotIndex)"
+        let isHovered = (hoveredSlotKey == hoverKey)
+        let origin = SlotCoordinate(pageID: coordinator.profile.pages[pageIndex].id, slotIndex: slotIndex)
         let isBrokenReference: Bool = {
             guard let item, item.isSlotReference else { return false }
             return coordinator.profile.resolveBarItem(item, from: origin).isMissing
@@ -564,6 +597,7 @@ public struct ChocolateBarStudioView: View {
 
         return ZStack(alignment: .topTrailing) {
             Button {
+                coordinator.selectedPageIndex = pageIndex
                 selectedSlotIndex = slotIndex
             } label: {
                 ChocBarTileCard(
@@ -580,7 +614,7 @@ public struct ChocolateBarStudioView: View {
                 .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isHovered)
             }
             .buttonStyle(.plain)
-            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(selectedSlotIndex == slotIndex ? palette.accent : .clear, lineWidth: 2))
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(selectedSlotIndex == slotIndex && coordinator.selectedPageIndex == pageIndex ? palette.accent : .clear, lineWidth: 2))
             .simultaneousGesture(TapGesture(count: 2).onEnded {
                 editingSlot = EditingSlotTarget(pageIndex: pageIndex, slotIndex: slotIndex)
             })
@@ -619,10 +653,11 @@ public struct ChocolateBarStudioView: View {
             }
         }
         .onHover { hovering in
-            hoveredSlotIndex = hovering ? slotIndex : (hoveredSlotIndex == slotIndex ? nil : hoveredSlotIndex)
+            hoveredSlotKey = hovering ? hoverKey : (hoveredSlotKey == hoverKey ? nil : hoveredSlotKey)
         }
         .onDrag {
             draggedSlotIndex = slotIndex
+            draggedPageIndex = pageIndex
             return NSItemProvider(object: "choclift-slot:\(slotIndex)" as NSString)
         }
         .onDrop(of: [.plainText, .fileURL, .url], isTargeted: nil) { providers in
@@ -669,7 +704,10 @@ public struct ChocolateBarStudioView: View {
 
     private func handleDrop(providers: [NSItemProvider], pageIndex: Int, targetSlot: Int) -> Bool {
         if let fromSlot = draggedSlotIndex {
+            let fromPage = draggedPageIndex
             draggedSlotIndex = nil
+            draggedPageIndex = nil
+            guard fromPage == pageIndex else { return false }
             coordinator.swapSlots(pageIndex: pageIndex, fromSlot: fromSlot, toSlot: targetSlot)
             return true
         }

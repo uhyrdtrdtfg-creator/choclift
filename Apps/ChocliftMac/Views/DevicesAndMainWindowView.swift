@@ -419,7 +419,7 @@ public struct DevicesAndSettingsView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 20)
+            .padding(.vertical, 16)
         }
     }
 
@@ -1336,7 +1336,7 @@ public struct MacMenuBarPopoverView: View {
             .foregroundStyle(palette.accentForeground)
 
         }
-        .padding(14)
+        .padding(16)
         .frame(width: 292)
         .background(
             LinearGradient(
@@ -1452,7 +1452,7 @@ struct MacStudioSystemStatusRow: View {
         .font(ChocType.caption)
         .foregroundStyle(palette.secondaryText)
         .lineLimit(1)
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14))
     }

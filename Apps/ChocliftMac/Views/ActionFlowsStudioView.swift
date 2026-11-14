@@ -273,60 +273,15 @@ public struct ActionFlowsStudioView: View {
     // MARK: - Empty State with Preset Examples
 
     private var emptyStudioPlaceholder: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             Spacer()
-
-            Image(systemName: "arrow.triangle.branch")
-                .font(ChocType.title)
-                .foregroundStyle(palette.accent)
-
-            Text(L10n.tr("创建可组合的 Mac 动作流", "Build Composable Mac Action Flows", language: lang))
-                .font(ChocType.title)
-                .foregroundStyle(palette.primaryText)
-
-            Text(
-                L10n.tr(
-                    "按顺序串行执行多个步骤；若某一步失败会自动停止并提示失败步骤，绝不会把窗口贴靠误作用到错误的应用上。",
-                    "Run ordered Mac steps sequentially. If any step fails, execution halts immediately with step-specific feedback instead of snapping the wrong app.",
-                    language: lang
-                )
-            )
-            .font(ChocType.body)
-            .foregroundStyle(palette.secondaryText)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: 520)
-
-            HStack(spacing: 12) {
-                Button {
-                    openNewBlankFlow()
-                } label: {
-                    Label(L10n.tr("新建空白动作流", "New Blank Flow", language: lang), systemImage: "plus")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(palette.accent)
-                .foregroundStyle(palette.accentForeground)
-
-                Button {
-                    openNewFocusMaximizeTemplate()
-                } label: {
-                    Label(
-                        L10n.tr("示例 1：打开等待前置并最大化", "Example 1: Open, Wait & Maximize", language: lang),
-                        systemImage: "arrow.up.left.and.arrow.down.right"
-                    )
-                }
-                .buttonStyle(.bordered)
-
-                Button {
-                    openNewSplitScreenTemplate()
-                } label: {
-                    Label(
-                        L10n.tr("示例 2：双应用左右分屏", "Example 2: Left & Right Split", language: lang),
-                        systemImage: "rectangle.split.2x1"
-                    )
-                }
-                .buttonStyle(.bordered)
+            Text(L10n.tr("创建动作流，按顺序执行 Mac 上的操作。", "Create a flow to run Mac actions in sequence.", language: lang))
+                .font(ChocType.body).foregroundStyle(palette.secondaryText)
+            Button { openNewBlankFlow() } label: {
+                Label(L10n.tr("新建动作流", "New Flow", language: lang), systemImage: "plus")
+                    .font(ChocType.body).frame(minHeight: 44)
             }
-
+            .buttonStyle(.borderedProminent).tint(palette.accent)
             Spacer()
         }
         .padding(16)

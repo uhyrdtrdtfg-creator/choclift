@@ -51,6 +51,7 @@ public struct IOSRootTouchBarView: View {
     @State private var currentEmojiSlideIndex: Int = 0
     @State private var currentEmojiSegment: IOSEmojiBarSegment = .emoji
     @State private var showToolsSheet = false
+    @State private var toolsQuery = ""
     @State private var showPairingSheet: Bool = false
     @State private var showFlowsManagerSheet: Bool = false
     @State private var showWorkspaceSearchSheet: Bool = false
@@ -161,35 +162,7 @@ public struct IOSRootTouchBarView: View {
         .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $showToolsSheet) {
             NavigationStack {
-                ScrollView {
-                    VStack(spacing: 20) {
-                        HStack {
-                            Button(L10n.tr("搜索", "Search", language: lang)) {
-                                showToolsSheet = false
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showWorkspaceSearchSheet = true }
-                            }
-                            Spacer()
-                            Button(L10n.tr("动作流", "Flows", language: lang)) {
-                                showToolsSheet = false
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showFlowsManagerSheet = true }
-                            }
-                        }
-                        .frame(minHeight: 44)
-                        .buttonStyle(.bordered)
-                        IOSPageReorderControls(client: client, activePageIndex: currentPageIndex, compact: false) { moveActiveBarPage($0) }
-                        IOSPersistentControlStripView(client: client, preferSingleRow: false, secondaryOnly: true, onPromptHUD: { flashHUD($0) })
-                        IOSCompanionBarRibbon(client: client, compact: false, onPromptHUD: { flashHUD($0) })
-                        IOSCompactKeyAndRecentsBar(client: client, showInlineRecentChips: true, onPromptHUD: { flashHUD($0) })
-                        IOSPinnedStripTilesRow(client: client, onPromptHUD: { flashHUD($0) }, onEditSlot: { selection in
-                            showToolsSheet = false
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { editingSlot = selection }
-                        })
-                        IOSFrontmostAppStripBadge(client: client)
-                        IOSPrivacyCaptureStripBadge(client: client)
-                        if client.orcaStatus != nil { IOSOrcaTaskStatusBar(client: client, compact: false) }
-                    }
-                    .padding(16)
-                }
+                toolsList
                 .background(palette.backgroundTop)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -334,44 +307,138 @@ public struct IOSRootTouchBarView: View {
 
     private func portraitWorkspace(isWide: Bool) -> some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(spacing: 12) {
-                    // The active page and navigation share one header.
-                    HStack(spacing: 8) {
-                        Button { showToolsSheet = true } label: {
-                            ChocliftBrandIconView(size: 30).frame(width: 44, height: 44)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(L10n.tr("更多控制", "More Controls", language: lang))
-                        Group {
-                            if activeMode == .chocolateBar || activeMode == .emojiBar {
-                                portraitPageStepperBar
-                            } else {
-                                Text(activeMode.shortTitle(in: lang)).font(ChocType.title)
-                            }
-                        }
-                            .foregroundStyle(palette.primaryText)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        connectionStatusPillButton
+            VStack(spacing: 12) {
+                // The active page and navigation share one header.
+                HStack(spacing: 8) {
+                    Button { showToolsSheet = true } label: {
+                        ChocliftBrandIconView(size: 30).frame(width: 44, height: 44)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
-
-
-                    VStack(spacing: 8) {
-                        activeMainContent(isLandscape: isWide)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L10n.tr("更多控制", "More Controls", language: lang))
+                    Group {
+                        if activeMode == .chocolateBar || activeMode == .emojiBar {
+                            portraitPageStepperBar
+                        } else {
+                            Text(activeMode.shortTitle(in: lang)).font(ChocType.title)
+                        }
                     }
-                    .padding(.horizontal, 16)
-
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    connectionStatusPillButton
                 }
-                .padding(.bottom, 12)
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+
+
+                activeMainContent(isLandscape: isWide)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, 16)
             }
+            .padding(.bottom, 16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             // A layout sibling reserves the entire bar height, including on iPad.
             // Clip the scroll viewport so badges cannot render through the dock.
             .clipped()
             modeDock
+        }
+    }
+
+    private var toolsList: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(palette.secondaryText)
+                    TextField(L10n.tr("搜索控制", "Search controls", language: lang), text: $toolsQuery)
+                        .font(ChocType.body)
+                }
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+                .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+
+                toolsSection(L10n.tr("页面与工作区", "Pages & Workspace", language: lang)) {
+                    HStack(spacing: 0) {
+                        ForEach([PageReorderDirection.left, .right], id: \.self) { direction in
+                            Button { moveActiveBarPage(direction) } label: {
+                                Label(direction == .left ? L10n.tr("左移", "Left", language: lang) : L10n.tr("右移", "Right", language: lang),
+                                      systemImage: direction == .left ? "arrow.left" : "arrow.right")
+                                    .font(ChocType.body)
+                                    .frame(maxWidth: .infinity, minHeight: 44)
+                            }
+                            .disabled(!client.canMovePage(at: currentPageIndex, direction: direction))
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    toolsRow(L10n.tr("动作流", "Flows", language: lang), "arrow.triangle.branch") {
+                        showToolsSheet = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showFlowsManagerSheet = true }
+                    }
+                    toolsRow(L10n.tr("搜索工作区", "Search Workspace", language: lang), "macwindow") {
+                        showToolsSheet = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showWorkspaceSearchSheet = true }
+                    }
+                }
+                toolsSection(L10n.tr("媒体与显示", "Media & Display", language: lang)) {
+                    ForEach([SystemQuickAction.mediaPlayPause, .mediaPrevious, .mediaNext, .volumeDown, .volumeUp]) { action in
+                        toolsRow(action.title(in: lang), action.sfSymbol) { client.performQuickAction(action) }
+                    }
+                    toolsRow(L10n.tr("降低亮度", "Brightness Down", language: lang), "sun.min") { client.setControlLevel(kind: .brightness, level: client.controlStripState.brightness - 0.1) }
+                    toolsRow(L10n.tr("提高亮度", "Brightness Up", language: lang), "sun.max") { client.setControlLevel(kind: .brightness, level: client.controlStripState.brightness + 0.1) }
+                    toolsRow(L10n.tr("麦克风静音", "Toggle Microphone Mute", language: lang), "mic.slash") { client.toggleMicMute() }
+                }
+                toolsSection(L10n.tr("日历与截屏", "Calendar & Screenshots", language: lang)) {
+                    toolsRow(L10n.tr("下个日程", "Next Event", language: lang), "calendar") { client.openCalendarOnMac() }
+                    toolsRow(L10n.tr("截屏", "Screenshot", language: lang), "camera.viewfinder") { client.captureMainDisplayScreenshot() }
+                }
+                toolsSection(L10n.tr("电源与安全", "Power & Security", language: lang)) {
+                    toolsRow(L10n.tr("保持唤醒", "Keep Awake", language: lang), "cup.and.saucer") { client.toggleKeepMacAwake() }
+                    toolsRow(L10n.tr("关闭显示器", "Sleep Display", language: lang), "moon") { client.sleepMacDisplay() }
+                    toolsRow(client.isLockMacScreenArmed() ? L10n.tr("再点一次锁定", "Tap Again to Lock", language: lang) : L10n.tr("锁定屏幕", "Lock Screen", language: lang), "lock") { _ = client.tapLockMacScreen() }
+                }
+                toolsSection(L10n.tr("桌面与窗口", "Desktop & Windows", language: lang)) {
+                    toolsRow(L10n.tr("显示桌面", "Show Desktop", language: lang), "macwindow") { client.performQuickAction(.showDesktop) }
+                    toolsRow(L10n.tr("桌面图标", "Toggle Desktop Icons", language: lang), "square.grid.2x2") { client.toggleFinderDesktopIcons() }
+                    toolsRow(L10n.tr("隐藏其他窗口", "Hide Other Windows", language: lang), "rectangle.on.rectangle") { client.hideOtherWindows() }
+                    toolsRow(L10n.tr("撤销窗口移动", "Undo Window Move", language: lang), "arrow.uturn.backward") { client.undoLastWindowMove() }
+                }
+                toolsSection(L10n.tr("编辑与剪贴板", "Editing & Clipboard", language: lang)) {
+                    toolsRow(L10n.tr("粘贴 Mac 剪贴板", "Paste Mac Clipboard", language: lang), "doc.on.clipboard") { client.pasteMacClipboard() }
+                    ForEach(CompanionCompactKey.allCases) { key in
+                        toolsRow(key.title(in: lang), key.sfSymbol) { client.sendCompactKey(key) }
+                    }
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    private func toolsSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(ChocType.caption).foregroundStyle(palette.secondaryText)
+            VStack(spacing: 0, content: content)
+                .frame(maxWidth: .infinity)
+                .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+        }
+    }
+
+    @ViewBuilder
+    private func toolsRow(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
+        if toolsQuery.isEmpty || title.localizedCaseInsensitiveContains(toolsQuery) {
+            Button(action: action) {
+                HStack(spacing: 12) {
+                    Image(systemName: symbol).foregroundStyle(palette.accent).frame(width: 22)
+                    Text(title).foregroundStyle(palette.primaryText)
+                    Spacer(minLength: 0)
+                }
+                .font(ChocType.body)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 
