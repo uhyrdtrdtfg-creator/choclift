@@ -501,7 +501,7 @@ public final class CompanionClientEngine: ObservableObject {
         } else if wifiPreferenceTask == nil {
             let remaining = max(0.05, 0.65 - elapsed)
             wifiPreferenceTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(remaining))
+                await MacServerEngine.sleepUntilCancelled(seconds: remaining)
                 guard let self, !Task.isCancelled else { return }
                 self.wifiPreferenceTask = nil
                 self.autoConnectIfAppropriate(allowBluetoothNow: true)
@@ -837,7 +837,7 @@ public final class CompanionClientEngine: ObservableObject {
         let bounded = max(0.1, timeoutSeconds)
         let upgradeSessionID = upgrade.sessionID
         upgrade.watchdogTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(bounded))
+            await MacServerEngine.sleepUntilCancelled(seconds: bounded)
             guard let self,
                   !Task.isCancelled,
                   let activeUpgrade = self.backgroundWiFiUpgrade,
@@ -2234,7 +2234,7 @@ public final class CompanionClientEngine: ObservableObject {
         connectWatchdogTask?.cancel()
         let bounded = max(0.2, timeoutSeconds)
         connectWatchdogTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(bounded))
+            await MacServerEngine.sleepUntilCancelled(seconds: bounded)
             guard let self, !Task.isCancelled, self.currentSessionID == sessionID else { return }
             let stillWaitingForHandshake: Bool = {
                 if case .connecting = self.connectionState {
@@ -2333,7 +2333,7 @@ public final class CompanionClientEngine: ObservableObject {
         heartbeatTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 let interval = max(0.05, self?.heartbeatIntervalSeconds ?? 5.0)
-                try? await Task.sleep(for: .seconds(interval))
+                await MacServerEngine.sleepUntilCancelled(seconds: interval)
                 guard let self,
                       !Task.isCancelled,
                       self.currentSessionID == sessionID,
@@ -2456,7 +2456,7 @@ public final class CompanionClientEngine: ObservableObject {
                 if pinGlitchExpiryTask == nil {
                     let remaining = max(0.05, deadline.timeIntervalSince(now))
                     pinGlitchExpiryTask = Task { @MainActor [weak self] in
-                        try? await Task.sleep(for: .seconds(remaining))
+                        await MacServerEngine.sleepUntilCancelled(seconds: remaining)
                         guard let self, !Task.isCancelled, self.pinGlitchState != nil else { return }
                         let lang = self.profile.settings.language
                         let target = self.activeTargetName
@@ -2597,7 +2597,7 @@ public final class CompanionClientEngine: ObservableObject {
 
         reconnectTask?.cancel()
         reconnectTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(max(0.02, delaySeconds)))
+            await MacServerEngine.sleepUntilCancelled(seconds: max(0.02, delaySeconds))
             guard let self, !Task.isCancelled, !self.intentionalDisconnect else { return }
             if preservePINState {
                 guard self.pinGlitchState != nil else { return }
@@ -2701,7 +2701,7 @@ public final class CompanionClientEngine: ObservableObject {
         let submittedSessionID = currentSessionID
         let pinTimeout = max(0.3, connectTimeoutSeconds)
         pinSubmissionWatchdogTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(pinTimeout))
+            await MacServerEngine.sleepUntilCancelled(seconds: pinTimeout)
             guard let self, !Task.isCancelled, self.currentSessionID == submittedSessionID else { return }
             guard case .awaitingPIN(let macID, let macName, let currentErr) = self.connectionState,
                   currentErr == nil else {
@@ -3005,7 +3005,7 @@ public final class CompanionClientEngine: ObservableObject {
     private func beginWindowCycleFeedbackTimeout() {
         windowCycleFeedbackTask?.cancel()
         windowCycleFeedbackTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2))
+            await MacServerEngine.sleepUntilCancelled(seconds: 2)
             guard let self, !Task.isCancelled else { return }
             self.lastFeedback = CompanionFeedbackToast(
                 success: false,
@@ -3463,7 +3463,7 @@ public final class CompanionClientEngine: ObservableObject {
         case .requireSecondTap(let expiresAt):
             let delay = maintenanceConfirmController.confirmationWindowSeconds + 0.05
             maintenanceConfirmExpiryTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(delay))
+                await MacServerEngine.sleepUntilCancelled(seconds: delay)
                 guard let self, !Task.isCancelled else { return }
                 self.maintenanceConfirmController.expireIfNeeded(at: expiresAt + 0.01)
             }
@@ -3521,7 +3521,7 @@ public final class CompanionClientEngine: ObservableObject {
         case .requireSecondTap(let expiresAt):
             let delay = lockScreenConfirmController.confirmationWindowSeconds + 0.05
             lockScreenConfirmExpiryTask = Task { @MainActor [weak self] in
-                try? await Task.sleep(for: .seconds(delay))
+                await MacServerEngine.sleepUntilCancelled(seconds: delay)
                 guard let self, !Task.isCancelled else { return }
                 self.lockScreenConfirmController.expireIfNeeded(at: expiresAt + 0.01)
             }
@@ -4172,11 +4172,7 @@ public final class CompanionClientEngine: ObservableObject {
         let token = banner.token
         let duration = max(0.05, tileFeedbackDurationSeconds)
         tileFeedbackExpiryTask = Task { @MainActor [weak self] in
-            do {
-                try await Task.sleep(for: .seconds(duration))
-            } catch {
-                return
-            }
+            await MacServerEngine.sleepUntilCancelled(seconds: duration)
             guard let self, !Task.isCancelled else { return }
             if self.tileFeedbackTracker.expireFeedback(matchingToken: token) {
                 self.activeTileFeedback = nil
