@@ -680,6 +680,23 @@ public struct ChocBarTileCard: View {
         }
     }
 
+    private func tileSymbolSize(side: CGFloat, micro: CGFloat, regular: CGFloat) -> CGFloat {
+        #if os(watchOS)
+        return side * (side < 68 ? micro : regular)
+        #else
+        return side * (side < 68 ? micro : max(regular, 0.55))
+        #endif
+    }
+
+    private func appIconSide(for side: CGFloat) -> CGFloat {
+        #if os(watchOS)
+        return side * (side < 68 ? 0.44 : 0.48)
+        #else
+        // Leave eight points around the artwork and room for the shared micro label.
+        return side < 68 ? side * 0.44 : min(side * 0.72, side - 38)
+        #endif
+    }
+
     private func resolvedIconData(for targetItem: BarItem) -> Data? {
         if let iconData {
             return iconData
@@ -753,7 +770,7 @@ public struct ChocBarTileCard: View {
                         fallbackSymbol: fallbackSymbol,
                         tint: palette.secondaryText
                     )
-                    .frame(width: side * (isMicro ? 0.44 : 0.48), height: side * (isMicro ? 0.44 : 0.48))
+                    .frame(width: appIconSide(for: side), height: appIconSide(for: side))
 
                     Text(appName)
                         .font(ChocType.tileName(side: side))
@@ -802,7 +819,7 @@ public struct ChocBarTileCard: View {
 
                 VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
                     Text(emoji.isEmpty ? "⚡️" : emoji)
-                        .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
+                        .font(.system(size: tileSymbolSize(side: side, micro: 0.30, regular: 0.32)))
 
                     Text(shortcutName)
                         .font(ChocType.tileName(side: side))
@@ -838,7 +855,7 @@ public struct ChocBarTileCard: View {
 
                 VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
                     Text(emoji.isEmpty ? "🌐" : emoji)
-                        .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
+                        .font(.system(size: tileSymbolSize(side: side, micro: 0.30, regular: 0.32)))
 
                     Text(title.isEmpty ? cleanHost(from: url) : title)
                         .font(ChocType.tileName(side: side))
@@ -881,7 +898,7 @@ public struct ChocBarTileCard: View {
 
                 VStack(spacing: isMicro ? 3 : (compact ? 4 : 6)) {
                     Image(systemName: action.sfSymbol)
-                        .font(.system(size: side * (isMicro ? 0.24 : 0.26), weight: .semibold))
+                        .font(.system(size: tileSymbolSize(side: side, micro: 0.24, regular: 0.26), weight: .semibold))
                         .foregroundStyle(palette.accent)
 
                     let defaultActionLabel: String = {
@@ -938,7 +955,7 @@ public struct ChocBarTileCard: View {
 
                 VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
                     Text(resolvedEmoji.isEmpty ? "⚡️" : resolvedEmoji)
-                        .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
+                        .font(.system(size: tileSymbolSize(side: side, micro: 0.30, regular: 0.32)))
 
                     Text(resolvedTitle)
                         .font(ChocType.tileName(side: side))
@@ -981,7 +998,7 @@ public struct ChocBarTileCard: View {
 
                 VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
                     Text(resolvedEmoji.isEmpty ? "🔊" : resolvedEmoji)
-                        .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
+                        .font(.system(size: tileSymbolSize(side: side, micro: 0.30, regular: 0.32)))
 
                     Text(resolvedTitle)
                         .font(ChocType.tileName(side: side))
@@ -1025,7 +1042,7 @@ public struct ChocBarTileCard: View {
 
                 VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
                     Text(folder.emoji.isEmpty ? TileFolder.defaultEmoji : folder.emoji)
-                        .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
+                        .font(.system(size: tileSymbolSize(side: side, micro: 0.30, regular: 0.32)))
 
                     Text(folder.displayTitle(in: language))
                         .font(ChocType.tileName(side: side))
@@ -1068,7 +1085,7 @@ public struct ChocBarTileCard: View {
 
             VStack(spacing: isMicro ? 3 : 5) {
                 Image(systemName: "link")
-                    .font(.system(size: side * (isMicro ? 0.22 : 0.24), weight: .semibold))
+                    .font(.system(size: tileSymbolSize(side: side, micro: 0.22, regular: 0.24), weight: .semibold))
                     .foregroundStyle(palette.secondaryText.opacity(0.72))
 
                 Text(L10n.tr("原槽位已空", "Target Missing", language: language))
