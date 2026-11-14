@@ -131,6 +131,7 @@ public struct IOSChocolateBarSurfaceView: View {
     let onEditSlot: (IOSEditSlotSelection) -> Void
 
     @State private var pressedKey: String?
+    @State private var tileRegionWidth: CGFloat = 0
     @State private var confirmGate = DestructiveActionConfirmGate()
     @State private var suppressedLongPressKey: String?
     @State private var openFolderSelection: IOSTileFolderSelection?
@@ -177,12 +178,6 @@ public struct IOSChocolateBarSurfaceView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            if !isFollowingFrontmostApp, let onFollowFrontmostApp {
-                manualPinnedHeader(onFollow: onFollowFrontmostApp)
-            } else if let bound = activeBoundDeckContext {
-                followingAppHeader(appName: bound.appName, page: bound.page)
-            }
-
             barHorizontalPager
         }
         .onChange(of: currentPageIndex) { _, _ in
@@ -210,14 +205,23 @@ public struct IOSChocolateBarSurfaceView: View {
         min(BarPage.slotsPerPage, (page.slots.lastIndex(where: { $0 != nil }).map { $0 + 2 } ?? 1))
     }
 
+    private var tileColumnCount: Int {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .pad ? 4 : 2
+        #else
+        isLandscape ? 4 : 2
+        #endif
+    }
+
     private var activeTileRegionHeight: CGFloat {
         guard !client.profile.pages.isEmpty else { return 44 }
         let index = min(max(0, currentPageIndex), client.profile.pages.count - 1)
         let page = client.profile.pages[index]
         guard page.slots.contains(where: { $0 != nil }) else { return 44 }
-        let columns = isLandscape ? 4 : 2
+        let columns = tileColumnCount
         let rows = (visibleSlotCount(for: page) + columns - 1) / columns
-        return CGFloat(rows) * 84 + CGFloat(max(0, rows - 1)) * 12 + 20
+        let side = max(1, (tileRegionWidth - CGFloat(columns - 1) * 12) / CGFloat(columns))
+        return CGFloat(rows) * side + CGFloat(max(0, rows - 1)) * 12 + 20
     }
 
     private var barHorizontalPager: some View {
@@ -241,6 +245,9 @@ public struct IOSChocolateBarSurfaceView: View {
                         .allowsHitTesting(pageOffset == safeIdx)
                         .accessibilityHidden(pageOffset != safeIdx)
                 }
+            }
+            .onChange(of: pageWidth, initial: true) { _, width in
+                tileRegionWidth = width
             }
             .offset(x: -CGFloat(safeIdx) * pageWidth + dragOffset)
             .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.88), value: activePageDragTranslation)
@@ -303,82 +310,6 @@ public struct IOSChocolateBarSurfaceView: View {
         return min(max(damped, -pageWidth * 0.92), pageWidth * 0.92)
     }
 
-    private func manualPinnedHeader(onFollow: @escaping () -> Void) -> some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 5) {
-                Image(systemName: "pin.fill")
-                    .font(ChocType.micro)
-                Text(L10n.tr("已固定当前页", "Page Pinned", language: lang))
-                    .font(ChocType.micro)
-                    .lineLimit(1)
-            }
-            .foregroundStyle(palette.secondaryText)
-
-            Spacer(minLength: 6)
-
-            Button {
-                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                onFollow()
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(ChocType.micro)
-                    Text(L10n.tr("跟随前台应用", "Follow Frontmost App", language: lang))
-                        .font(ChocType.caption)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 12)
-                .frame(minHeight: 32)
-                .background(palette.accent, in: Capsule())
-                .foregroundStyle(palette.accentForeground)
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("ios-follow-frontmost-app-button")
-        }
-        .padding(.horizontal, isLandscape ? 14 : 16)
-        .padding(.top, 8)
-    }
-
-    private func followingAppHeader(appName: String, page: BarPage) -> some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 5) {
-                Image(systemName: "macwindow")
-                    .font(ChocType.micro)
-                Text(
-                    L10n.tr(
-                        "正跟随 \(appName) · \(page.iconEmoji) \(page.title)",
-                        "Following \(appName) · \(page.iconEmoji) \(page.title)",
-                        language: lang
-                    )
-                )
-                .font(ChocType.micro)
-                .lineLimit(1)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(
-                palette.accent.opacity(isDeckSwitchHighlighted ? 0.24 : 0.14),
-                in: Capsule()
-            )
-            .overlay(
-                Capsule()
-                    .strokeBorder(
-                        isDeckSwitchHighlighted ? palette.accent : palette.accent.opacity(0.28),
-                        lineWidth: isDeckSwitchHighlighted ? 1.5 : 0.8
-                    )
-            )
-            .foregroundStyle(palette.accent)
-            .scaleEffect(isDeckSwitchHighlighted ? 1.03 : 1.0)
-            .animation(.spring(response: 0.26, dampingFraction: 0.78), value: isDeckSwitchHighlighted)
-            .accessibilityIdentifier("ios-following-app-header")
-
-            Spacer()
-        }
-        .padding(.horizontal, isLandscape ? 14 : 16)
-        .padding(.top, 8)
-    }
-
     @ViewBuilder
     private func pageGrid(for page: BarPage, pageOffset: Int) -> some View {
         if !page.slots.contains(where: { $0 != nil }) {
@@ -394,7 +325,7 @@ public struct IOSChocolateBarSurfaceView: View {
             .buttonStyle(.plain)
             .foregroundStyle(palette.accent)
         } else {
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: isLandscape ? 4 : 2)
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: tileColumnCount)
             TimelineView(.periodic(from: .now, by: 15.0)) { timeline in
                 LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(0..<visibleSlotCount(for: page), id: \.self) { slotIdx in
@@ -411,7 +342,7 @@ public struct IOSChocolateBarSurfaceView: View {
                             key: key, item: item, effectiveItem: effectiveItem,
                             iconData: iconData, isFrontmost: isFrontmost, now: timeline.date
                         )
-                        .frame(height: 84)
+                        .aspectRatio(1, contentMode: .fit)
                     }
                 }
                 .padding(.vertical, 10)
@@ -2383,15 +2314,6 @@ public struct IOSPersistentControlStripView: View {
                         }
                     }
                     .font(ChocType.caption)
-                } else {
-                    VStack(spacing: 12) {
-                        Image(systemName: "laptopcomputer").font(ChocType.title)
-                        Text(ChocConnectionVisualState.resolve(from: client).bannerTitle(in: lang))
-                        Button(L10n.tr("配对或重试", "Pair or Retry", language: lang)) { onReconnect?() }
-                            .frame(minHeight: 48).buttonStyle(.borderedProminent)
-                    }
-                    .frame(maxWidth: .infinity).padding(20)
-                    .foregroundStyle(ChocConnectionVisualState.resolve(from: client).tintColor(in: palette))
                 }
             } else if preferSingleRow {
                 singleRowContent
@@ -2610,16 +2532,13 @@ public struct IOSPersistentControlStripView: View {
         let isPlaying = activeMedia?.isPlaying ?? false
 
         return VStack(spacing: 12) {
-            Text(String((activeMedia?.appName ?? "♪").prefix(1)).uppercased())
-                .font(ChocType.title)
-                .foregroundStyle(palette.accent)
-                .frame(width: 112, height: 112)
-                .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 26))
             VStack(spacing: 4) {
                 Text(primaryText ?? L10n.tr("未在播放", "Not Playing", language: lang))
                     .font(ChocType.title)
                     .foregroundStyle(palette.primaryText).lineLimit(2)
-                if let artist = activeMedia?.artist { Text(artist).foregroundStyle(palette.secondaryText) }
+                if let artist = activeMedia?.artist {
+                    Text(artist).font(ChocType.caption).foregroundStyle(palette.secondaryText)
+                }
                 if let source = activeMedia?.appName {
                     Text(source).font(ChocType.caption).foregroundStyle(palette.secondaryText)
                 }

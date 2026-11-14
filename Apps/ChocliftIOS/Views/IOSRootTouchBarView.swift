@@ -353,16 +353,19 @@ public struct IOSRootTouchBarView: View {
                 .padding(.top, 10)
 
 
-                IOSPersistentControlStripView(
-                    client: client,
-                    preferSingleRow: false,
-                    primarySurface: true,
-                    onMore: { showToolsSheet = true },
-                    onReconnect: { showPairingSheet = true },
-                    onPromptHUD: { flashHUD($0) },
-                    onEditSlot: { editingSlot = $0 }
-                )
-                .padding(.horizontal, 16)
+                if client.connectionState.isConnected {
+                    IOSPersistentControlStripView(
+                        client: client,
+                        preferSingleRow: false,
+                        primarySurface: true,
+                        onMore: { showToolsSheet = true },
+                        onReconnect: { showPairingSheet = true },
+                        onPromptHUD: { flashHUD($0) },
+                        onEditSlot: { editingSlot = $0 }
+                    )
+                    .padding(.horizontal, 16)
+
+                }
 
                 VStack(spacing: 8) {
                     if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
@@ -372,47 +375,53 @@ public struct IOSRootTouchBarView: View {
                 }
                 .padding(.horizontal, 16)
 
-                // Bottom Mode Switcher Dock (>= 44pt touch targets)
-                HStack(spacing: 8) {
-                    ForEach(IOSActiveSurfaceMode.allCases) { mode in
-                        let selected = (activeMode == mode)
-                        Button {
-                            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                            modeBeforeAutoEmoji = nil
-                            withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
-                                activeMode = mode
-                            }
-                        } label: {
-                            VStack(spacing: 3) {
-                                Image(systemName: mode.sfSymbol)
-                                    .font(ChocType.body.weight(.semibold))
-                                Text(mode.shortTitle(in: lang))
-                                    .font(ChocType.micro)
-                                    .lineLimit(1)
-                            }
-                            .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 46)
-                            .background(
-                                selected ? palette.accent : palette.tileFillBottom.opacity(0.85),
-                                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            )
-                            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("ios-mode-\(mode.rawValue)")
-                    }
-                }
-                .padding(6)
-                .background(palette.barSurface.opacity(0.94), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
-                )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 10)
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            modeDock
+        }
+    }
+
+    private var modeDock: some View {
+        // Bottom Mode Switcher Dock (>= 44pt touch targets)
+        HStack(spacing: 8) {
+            ForEach(IOSActiveSurfaceMode.allCases) { mode in
+                let selected = (activeMode == mode)
+                Button {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    modeBeforeAutoEmoji = nil
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
+                        activeMode = mode
+                    }
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: mode.sfSymbol)
+                            .font(ChocType.body.weight(.semibold))
+                        Text(mode.shortTitle(in: lang))
+                            .font(ChocType.micro)
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+                    .background(
+                        selected ? palette.accent : palette.tileFillBottom.opacity(0.85),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ios-mode-\(mode.rawValue)")
+            }
+        }
+        .padding(6)
+        .background(palette.barSurface.opacity(0.94), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
     }
 
     // MARK: - iPad Native Resizable Multi-Panel Workspace
@@ -715,7 +724,7 @@ public struct IOSRootTouchBarView: View {
                     .lineLimit(1)
             }
             .padding(.horizontal, 12)
-            .frame(minHeight: 38)
+            .frame(minHeight: 44)
             .background(palette.tileFillTop.opacity(0.9), in: Capsule())
             .overlay(
                 Capsule()
@@ -871,34 +880,47 @@ public struct IOSRootTouchBarView: View {
         let index = min(max(0, isEmoji ? currentEmojiSlideIndex : currentPageIndex), count - 1)
         let titles = isEmoji ? client.profile.emojiSlides.map(\.title) : client.profile.pages.map(\.title)
         let title = titles.indices.contains(index) ? titles[index] : L10n.tr("页面", "Page", language: lang)
-        return HStack(spacing: 10) {
-            Button { stepPortraitPage(by: -1, count: count, isEmoji: isEmoji, current: index) } label: {
-                Image(systemName: "chevron.left").frame(width: 44, height: 44)
-            }
-            .accessibilityIdentifier("ios-page-prev-button")
-            Menu {
-                ForEach(0..<count, id: \.self) { page in
-                    Button(titles.indices.contains(page) ? titles[page] : title) {
-                        selectPageDot(index: page, count: count, isEmoji: isEmoji)
+        return Menu {
+            ForEach(0..<count, id: \.self) { page in
+                Button {
+                    selectPageDot(index: page, count: count, isEmoji: isEmoji)
+                } label: {
+                    if page == index {
+                        Label(titles.indices.contains(page) ? titles[page] : title, systemImage: "checkmark")
+                    } else {
+                        Text(titles.indices.contains(page) ? titles[page] : title)
                     }
-                    .accessibilityIdentifier(isEmoji ? "ios-emoji-name-\(page)" : "ios-page-name-\(page)")
                 }
-            } label: {
-                HStack(spacing: 5) {
-                    Text(title).font(ChocType.body.weight(.semibold)).lineLimit(1)
-                    Image(systemName: "chevron.down").font(ChocType.micro)
+                .accessibilityIdentifier(isEmoji ? "ios-emoji-name-\(page)" : "ios-page-name-\(page)")
+            }
+            if !isEmoji {
+                Section {
+                    Button {
+                        deckFollower.selectManualPage(index: index, in: client.profile)
+                    } label: {
+                        Label(L10n.tr("固定当前页", "Pin Current Page", language: lang), systemImage: deckFollower.isFollowingFrontmostApp ? "pin" : "pin.fill")
+                    }
+                    Button(action: resumeFollowingFrontmostApp) {
+                        Label(L10n.tr("跟随前台应用", "Follow Frontmost App", language: lang), systemImage: "arrow.triangle.2.circlepath")
+                    }
+                    .disabled(!client.connectionState.isConnected)
+                    .accessibilityIdentifier("ios-follow-frontmost-app-button")
+                    if !client.connectionState.isConnected {
+                        Text(L10n.tr("连接 Mac 后可跟随前台应用", "Connect your Mac to follow the frontmost app", language: lang))
+                            .font(ChocType.caption)
+                    }
                 }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             }
-            .accessibilityIdentifier("ios-page-name-switcher")
-            reachablePageDotsRow(count: count, isEmoji: isEmoji, activeIdx: index)
-                .frame(width: 100, height: 44)
-            Button { stepPortraitPage(by: 1, count: count, isEmoji: isEmoji, current: index) } label: {
-                Image(systemName: "chevron.right").frame(width: 44, height: 44)
+        } label: {
+            HStack(spacing: 5) {
+                Text(title).font(ChocType.body.weight(.semibold)).lineLimit(1)
+                Image(systemName: "chevron.down").font(ChocType.micro)
             }
-            .accessibilityIdentifier("ios-page-next-button")
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .foregroundStyle(palette.secondaryText)
+        .accessibilityIdentifier("ios-page-name-switcher")
+        .foregroundStyle(palette.primaryText)
         .buttonStyle(.plain)
     }
 
