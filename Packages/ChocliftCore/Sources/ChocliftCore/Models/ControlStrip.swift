@@ -198,6 +198,29 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         return ControlStripLevel.clamp(validElapsed / validDuration)
     }
 
+    /// Some players label a loaded, paused track as "stopped". Only absent track
+    /// metadata means there is no current track; the state string controls the glyph.
+    public static func distributedPlayerUpdate(
+        playerState: String, title: String?, artist: String?, appName: String,
+        bundleIdentifier: String, elapsedSeconds: Double? = nil, durationSeconds: Double? = nil
+    ) -> NowPlayingStatus? {
+        guard clean(title) != nil else { return nil }
+        return NowPlayingStatus(
+            title: title, artist: artist, appName: appName,
+            isPlaying: playerState.lowercased() == "playing",
+            elapsedSeconds: elapsedSeconds, durationSeconds: durationSeconds,
+            bundleIdentifier: bundleIdentifier
+        )
+    }
+
+    /// Apply only a successful transport result; the next player snapshot replaces this estimate.
+    public static func afterPlayPause(_ previous: NowPlayingStatus?, success: Bool) -> NowPlayingStatus? {
+        guard success else { return previous }
+        var next = previous ?? NowPlayingStatus(appName: "Now Playing")
+        next.isPlaying = !(previous?.isPlaying ?? false)
+        return next
+    }
+
     public var hasActiveMedia: Bool {
         primaryDisplayText != nil
     }

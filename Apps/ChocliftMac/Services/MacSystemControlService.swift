@@ -56,6 +56,7 @@ public final class MacSystemControlService {
     private var observedInputDeviceID: AudioObjectID = AudioObjectID(kAudioObjectUnknown)
     private var savedPreMuteInputVolume: Float32 = 0.75
     private var distributedTracks: [String: CachedDistributedTrack] = [:]
+    private var playersWithoutCurrentTrack: Set<String> = []
     private var latestMediaRemoteStatus: NowPlayingStatus?
     private var latestMediaRemoteBundleID: String?
     private var latestMediaRemotePID: pid_t = 0
@@ -139,16 +140,84 @@ public final class MacSystemControlService {
         }
     }
 
-    public func schedulePostActionRefresh() {
+    /// Publish the command's resulting state before any asynchronous player read.
+    public func recordSuccessfulPlayPause() {
+        var next = currentState
+        next.nowPlaying = NowPlayingStatus.afterPlayPause(currentState.nowPlaying, success: true)
+        currentState = next
+        onStateChanged?(next)
+    }
+
+    public func schedulePostActionRefresh(refreshPlayback: Bool = false) {
         postActionRefreshTask?.cancel()
         postActionRefreshTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(90))
-            guard let self, !Task.isCancelled else { return }
-            self.refreshNow()
-            try? await Task.sleep(for: .milliseconds(220))
-            guard !Task.isCancelled else { return }
-            self.refreshNow()
+            for delay in [0, 220, 1000, 1500] {
+                try? await Task.sleep(for: .milliseconds(delay))
+                guard let self, !Task.isCancelled else { return }
+                if refreshPlayback {
+                    await self.refreshScriptablePlayerState()
+                }
+                guard !Task.isCancelled else { return }
+                self.refreshNow()
+            }
         }
+    }
+
+    /// Read state separately from the transport command, which remains unchanged.
+    private func refreshScriptablePlayerState() async {
+        let bundleID = currentState.nowPlaying?.bundleIdentifier
+            ?? currentMediaTransportContext().nowPlayingBundleID
+        guard let bundleID, ["com.spotify.client", "com.apple.Music"].contains(bundleID) else { return }
+        let status = await Task.detached {
+            Self.readScriptablePlayerState(bundleID: bundleID)
+        }.value
+        guard var status, !Task.isCancelled else { return } // Script failure is not a playback-state report.
+        if let previous = currentState.nowPlaying,
+           previous.bundleIdentifier == bundleID, previous.title == status.title {
+            status.elapsedSeconds = previous.elapsedSeconds
+            status.durationSeconds = previous.durationSeconds
+        }
+        let title = status.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if title?.isEmpty != false {
+            playersWithoutCurrentTrack.insert(bundleID)
+            distributedTracks.removeValue(forKey: bundleID)
+        } else {
+            playersWithoutCurrentTrack.remove(bundleID)
+            distributedTracks[bundleID] = CachedDistributedTrack(
+                bundleIdentifier: bundleID, status: status, updatedAt: Date()
+            )
+        }
+        if latestMediaRemoteBundleID == bundleID {
+            latestMediaRemoteStatus = title?.isEmpty == false ? status : nil
+        }
+    }
+
+    nonisolated private static func readScriptablePlayerState(bundleID: String) -> NowPlayingStatus? {
+        let source = """
+        if application id "\(bundleID)" is running then
+            tell application id "\(bundleID)"
+                set playbackState to player state as text
+                try
+                    return {playbackState, name of current track, artist of current track}
+                on error
+                    return {playbackState, "", ""}
+                end try
+            end tell
+        else
+            return {"stopped", "", ""}
+        end if
+        """
+        guard let script = NSAppleScript(source: source) else { return nil }
+        var error: NSDictionary?
+        let result = script.executeAndReturnError(&error)
+        guard error == nil, result.numberOfItems == 3 else { return nil }
+        return NowPlayingStatus(
+            title: result.atIndex(2)?.stringValue,
+            artist: result.atIndex(3)?.stringValue,
+            appName: bundleID == "com.spotify.client" ? "Spotify" : "Music",
+            isPlaying: result.atIndex(1)?.stringValue?.lowercased() == "playing",
+            bundleIdentifier: bundleID
+        )
     }
 
     private func schedulePostSeekRefresh() {
@@ -1706,29 +1775,18 @@ public final class MacSystemControlService {
         elapsedSeconds: Double? = nil,
         durationSeconds: Double? = nil
     ) {
-        let normalizedState = playerState.lowercased()
-        if normalizedState == "stopped" || normalizedState.isEmpty {
-            distributedTracks.removeValue(forKey: bundleID)
-        } else {
-            let playing = (normalizedState == "playing")
-            let status = NowPlayingStatus(
-                title: title,
-                artist: artist,
-                appName: appName,
-                isPlaying: playing,
-                elapsedSeconds: elapsedSeconds,
-                durationSeconds: durationSeconds,
-                bundleIdentifier: bundleID
+        if let status = NowPlayingStatus.distributedPlayerUpdate(
+            playerState: playerState, title: title, artist: artist, appName: appName,
+            bundleIdentifier: bundleID, elapsedSeconds: elapsedSeconds,
+            durationSeconds: durationSeconds
+        ) {
+            playersWithoutCurrentTrack.remove(bundleID)
+            distributedTracks[bundleID] = CachedDistributedTrack(
+                bundleIdentifier: bundleID, status: status, updatedAt: Date()
             )
-            if status.hasActiveMedia {
-                distributedTracks[bundleID] = CachedDistributedTrack(
-                    bundleIdentifier: bundleID,
-                    status: status,
-                    updatedAt: Date()
-                )
-            } else {
-                distributedTracks.removeValue(forKey: bundleID)
-            }
+        } else {
+            playersWithoutCurrentTrack.insert(bundleID)
+            distributedTracks.removeValue(forKey: bundleID)
         }
         applyRefreshedSnapshot()
     }
@@ -1769,36 +1827,35 @@ public final class MacSystemControlService {
     private func resolveBestNowPlaying() -> NowPlayingStatus? {
         pruneTerminatedNowPlayingSessions()
 
-        // 1. Actively playing MediaRemote session
-        if let mr = latestMediaRemoteStatus, mr.hasActiveMedia, mr.isPlaying {
-            return mr
-        }
-
-        // 2. Actively playing Music / Spotify session from DistributedNotificationCenter
         let sortedDistributed = distributedTracks.values.sorted { $0.updatedAt > $1.updatedAt }
-        if let playingDist = sortedDistributed.first(where: { $0.status.isPlaying && $0.status.hasActiveMedia }) {
-            return resolvedDistributedStatus(playingDist)
+        let mrBundleID = latestMediaRemoteStatus?.bundleIdentifier ?? latestMediaRemoteBundleID
+        let mediaRemote = mrBundleID.map { playersWithoutCurrentTrack.contains($0) } == true
+            ? nil : latestMediaRemoteStatus
+        // Explicit player metadata outranks generic audio activity. A distributed update
+        // also replaces a stale MediaRemote playing bit for that same application.
+        if let mr = mediaRemote, mr.hasActiveMedia {
+            let bundleID = mr.bundleIdentifier ?? latestMediaRemoteBundleID
+            if let entry = sortedDistributed.first(where: { $0.bundleIdentifier == bundleID }) {
+                return resolvedDistributedStatus(entry)
+            }
+            if mr.isPlaying { return mr }
         }
+        if let playing = sortedDistributed.first(where: { $0.status.isPlaying && $0.status.hasActiveMedia }) {
+            return resolvedDistributedStatus(playing)
+        }
+        if let paused = sortedDistributed.first(where: { $0.status.hasActiveMedia }) {
+            return resolvedDistributedStatus(paused)
+        }
+        if let mr = mediaRemote, mr.hasActiveMedia { return mr }
 
-        // 3. CoreAudio active audio-output process fallback (gives exact app name when MediaRemote metadata is restricted)
         let outDevice = Self.defaultAudioDevice(isInput: false)
         if Self.isDeviceRunningAudio(deviceID: outDevice),
-           let activeAudioApp = Self.findActiveAudioOutputApp() {
+           let activeAudioApp = Self.findActiveAudioOutputApp(),
+           activeAudioApp.bundleID.map({ !playersWithoutCurrentTrack.contains($0) }) ?? true {
             return NowPlayingStatus(
-                title: nil,
-                artist: nil,
-                appName: activeAudioApp.name,
-                isPlaying: true,
+                appName: activeAudioApp.name, isPlaying: true,
                 bundleIdentifier: activeAudioApp.bundleID
             )
-        }
-
-        // 4. Paused session with track metadata so the user can see what is paused and tap Play
-        if let mr = latestMediaRemoteStatus, mr.hasActiveMedia {
-            return mr
-        }
-        if let pausedDist = sortedDistributed.first(where: { $0.status.hasActiveMedia }) {
-            return resolvedDistributedStatus(pausedDist)
         }
 
         return nil

@@ -988,7 +988,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .systemAction(let action, _, _):
             let result = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
-            scheduleControlStripRefreshIfRelevant(for: action)
+            scheduleControlStripRefreshIfRelevant(for: action, success: result.success)
             recordActivity(deviceName: deviceName, summary: result.message, isSuccess: result.success)
             return (result.success, item.displayTitle(in: lang), result.message)
 
@@ -1100,7 +1100,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             return (false, L10n.tr("该手势当前已停用", "Gesture is currently disabled", language: lang))
         }
         let result = inputService.executeSystemAction(mappedAction, preferredPID: timeTravel.lastExternalAppPID)
-        scheduleControlStripRefreshIfRelevant(for: mappedAction)
+        scheduleControlStripRefreshIfRelevant(for: mappedAction, success: result.success)
         let summary = "\(gesture.title(in: lang)) → \(result.message)"
         recordActivity(deviceName: deviceName, summary: summary, isSuccess: result.success)
         return result
@@ -1134,10 +1134,16 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         return result
     }
 
-    private func scheduleControlStripRefreshIfRelevant(for action: SystemQuickAction) {
+    private func scheduleControlStripRefreshIfRelevant(for action: SystemQuickAction, success: Bool) {
+        guard success else { return }
+        if action == .mediaPlayPause {
+            systemControlService.recordSuccessfulPlayPause()
+        }
         switch action {
         case .volumeUp, .volumeDown, .volumeMute, .mediaPlayPause, .mediaNext, .mediaPrevious:
-            systemControlService.schedulePostActionRefresh()
+            systemControlService.schedulePostActionRefresh(
+                refreshPlayback: [.mediaPlayPause, .mediaNext, .mediaPrevious].contains(action)
+            )
         default:
             break
         }
@@ -1155,7 +1161,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         triggeredBy deviceName: String = "Mac Studio"
     ) -> (success: Bool, message: String) {
         let res = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
-        scheduleControlStripRefreshIfRelevant(for: action)
+        scheduleControlStripRefreshIfRelevant(for: action, success: res.success)
         recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
         return res
     }
@@ -1385,7 +1391,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .performQuickAction(let action):
             let res = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
-            scheduleControlStripRefreshIfRelevant(for: action)
+            scheduleControlStripRefreshIfRelevant(for: action, success: res.success)
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: action.title(in: lang), detail: res.message))
 
