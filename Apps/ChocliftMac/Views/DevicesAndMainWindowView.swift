@@ -1477,6 +1477,47 @@ public struct MacMenuBarPopoverView: View {
             .disabled(!updater.canCheckForUpdates)
             .accessibilityIdentifier("mac-menubar-check-for-updates-button")
 
+            if let statusLine = updater.menuStatusSubtitle(in: lang) {
+                HStack(alignment: .top, spacing: 6) {
+                    if updater.checkState.isChecking {
+                        ProgressView()
+                            .controlSize(.mini)
+                    } else if let result = updater.latestCheckResult {
+                        Image(systemName: result.sfSymbol)
+                            .font(ChocType.micro)
+                            .foregroundStyle(
+                                result.isFailure
+                                    ? palette.statusFailure
+                                    : (result.isUpToDate ? palette.statusConnected : palette.accent)
+                            )
+                            .padding(.top, 1)
+                    }
+                    Text(statusLine)
+                        .font(ChocType.micro)
+                        .foregroundStyle(
+                            updater.latestCheckResult?.isFailure == true
+                                ? palette.statusFailure
+                                : palette.secondaryText
+                        )
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(
+                            updater.latestCheckResult?.isFailure == true
+                                ? palette.statusFailure.opacity(0.35)
+                                : palette.subtleCardStroke,
+                            lineWidth: 1
+                        )
+                )
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("mac-menubar-update-status")
+            }
+
             Button {
                 coordinator.openMainStudioWindow()
             } label: {
@@ -1784,6 +1825,7 @@ private struct MacSoftwareUpdatesCard: View {
                 )
             )
             .tint(palette.accent)
+            .disabled(!updater.hostDescriptor.canStartSparkleUpdater)
             .accessibilityIdentifier("mac-automatic-update-checks-toggle")
 
             HStack(spacing: 8) {
@@ -1850,10 +1892,11 @@ private struct MacSoftwareUpdatesCard: View {
                     .foregroundStyle(statusToneColor(for: result))
 
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(result.title(in: lang))
                             .font(ChocType.caption)
                             .foregroundStyle(result.isFailure ? palette.statusFailure : palette.primaryText)
+                            .fixedSize(horizontal: false, vertical: true)
 
                         Spacer(minLength: 4)
 
@@ -1890,7 +1933,7 @@ private struct MacSoftwareUpdatesCard: View {
             return palette.accent
         case .alreadyCurrent:
             return palette.statusConnected
-        case .feedUnreachable, .signatureMismatch, .checkFailed:
+        case .hostCannotUpdate, .feedUnreachable, .signatureMismatch, .checkFailed:
             return palette.statusFailure
         }
     }

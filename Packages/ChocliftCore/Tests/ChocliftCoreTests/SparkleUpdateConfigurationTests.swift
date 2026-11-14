@@ -112,24 +112,25 @@ final class SparkleUpdateConfigurationTests: XCTestCase {
         XCTAssertEqual(MacUpdateConfiguration.formattedVersionBadge(shortVersion: nil, buildVersion: nil), "v1.0")
     }
 
-    func testPublishedRepoAppcastTopItemIsV1_0_21WithMatchingEnclosureMetadata() throws {
+    func testPublishedRepoAppcastTopItemHasConsistentSignedReleaseMetadata() throws {
         let appcastData = try Data(contentsOf: repoRootURL.appendingPathComponent("appcast.xml"))
         let xmlDoc = try XMLDocument(data: appcastData)
         let items = try xmlDoc.nodes(forXPath: "//channel/item")
         let topItem = try XCTUnwrap(items.first as? XMLElement)
 
         let sparkleNS = "http://www.andymatuschak.org/xml-namespaces/sparkle"
-        let shortVersion = topItem.elements(forLocalName: "shortVersionString", uri: sparkleNS).first?.stringValue
-        let buildVersion = topItem.elements(forLocalName: "version", uri: sparkleNS).first?.stringValue
-        XCTAssertEqual(shortVersion, "1.0.21")
-        XCTAssertEqual(buildVersion, "91")
+        let shortVersion = try XCTUnwrap(topItem.elements(forLocalName: "shortVersionString", uri: sparkleNS).first?.stringValue)
+        let buildVersion = try XCTUnwrap(topItem.elements(forLocalName: "version", uri: sparkleNS).first?.stringValue)
+        let numericBuild = try XCTUnwrap(Int(buildVersion))
+        XCTAssertGreaterThanOrEqual(numericBuild, 105)
 
         let enclosure = try XCTUnwrap(topItem.elements(forName: "enclosure").first)
         XCTAssertEqual(
             enclosure.attribute(forName: "url")?.stringValue,
-            "https://github.com/uhyrdtrdtfg-creator/choclift/releases/download/v1.0.21/Choclift.zip"
+            "https://github.com/uhyrdtrdtfg-creator/choclift/releases/download/v\(shortVersion)/Choclift.zip"
         )
-        XCTAssertEqual(enclosure.attribute(forName: "length")?.stringValue, "5942387")
+        let length = try XCTUnwrap(Int(enclosure.attribute(forName: "length")?.stringValue ?? ""))
+        XCTAssertGreaterThan(length, 0)
         XCTAssertEqual(enclosure.attribute(forLocalName: "os", uri: sparkleNS)?.stringValue, "macos")
 
         let edSig = try XCTUnwrap(enclosure.attribute(forLocalName: "edSignature", uri: sparkleNS)?.stringValue)
@@ -141,6 +142,15 @@ final class SparkleUpdateConfigurationTests: XCTestCase {
             edSignatureBase64: edSig
         )
         XCTAssertNil(MacUpdateConfiguration.validateEnclosureSignature(of: snapshot))
+
+        // Confirm v1.0.22 (build 105) is present in the published appcast feed.
+        let itemVersions = items.compactMap { node -> (String?, String?)? in
+            guard let elem = node as? XMLElement else { return nil }
+            let short = elem.elements(forLocalName: "shortVersionString", uri: sparkleNS).first?.stringValue
+            let build = elem.elements(forLocalName: "version", uri: sparkleNS).first?.stringValue
+            return (short, build)
+        }
+        XCTAssertTrue(itemVersions.contains(where: { $0.0 == "1.0.22" && $0.1 == "105" }))
     }
 
     func testClassifyFoundUpdateSurfacesVersionAndRejectsUnsignedOrMalformedEnclosures() {
@@ -480,5 +490,280 @@ final class SparkleUpdateConfigurationTests: XCTestCase {
             .completed(result: .signatureMismatch(detail: "Bad Ed25519 signature."), checkedAt: t2)
         )
         XCTAssertEqual(machine.state.result?.isUpToDate, false)
+    }
+
+    func testStatusTextForUnsignedHostFeedErrorUpdateFoundAlreadyCurrentAndUnpairedInvariance() {
+        let fixedDate = Date(timeIntervalSince1970: 1_700_000_500)
+        let validSig = Data(repeating: 0x5A, count: 64).base64EncodedString()
+
+        func assertNeitherUpToDateNorPairingRequired(_ presentation: MacUpdateStatusPresentation, language: AppLanguage) {
+            let texts = [presentation.menuStatusText, presentation.cardStatusTitle, presentation.cardStatusDetail].compactMap { $0 }
+            XCTAssertFalse(texts.isEmpty)
+            for text in texts {
+                let lower = text.lowercased()
+                XCTAssertFalse(lower.contains("up to date"), "Unexpected 'up to date' in \(text)")
+                XCTAssertFalse(lower.contains("up-to-date"), "Unexpected 'up-to-date' in \(text)")
+                XCTAssertFalse(text.contains("已是最新"), "Unexpected '已是最新' in \(text)")
+                XCTAssertFalse(lower.contains("pair"), "Update status must never blame pairing (\(language)): \(text)")
+                XCTAssertFalse(text.contains("配对"), "Update status must never blame pairing (\(language)): \(text)")
+            }
+        }
+
+        // 1. Unsigned .app host (e.g., local Debug build with linker/ad-hoc signature or no signature)
+        let unsignedAppHost = MacUpdateHostDescriptor(
+            bundlePathExtension: "app",
+            isCodeSignatureValid: false,
+            isAdhocSigned: true,
+            teamIdentifier: nil,
+            shortVersion: "1.0.22",
+            buildVersion: "105"
+        )
+        let adhocAppHost = MacUpdateHostDescriptor(
+            bundlePathExtension: "app",
+            isCodeSignatureValid: true,
+            isAdhocSigned: true,
+            teamIdentifier: nil,
+            shortVersion: "1.0.22",
+            buildVersion: "105"
+        )
+        for host in [unsignedAppHost, adhocAppHost] {
+            let machine = MacUpdateConfiguration.initialStateMachine(for: host, now: fixedDate)
+            for language in [AppLanguage.english, AppLanguage.chinese] {
+                let unpaired = MacUpdateConfiguration.statusPresentation(
+                    host: host,
+                    state: machine.state,
+                    pairedDeviceCount: 0,
+                    connectedCompanionCount: 0,
+                    language: language
+                )
+                let paired = MacUpdateConfiguration.statusPresentation(
+                    host: host,
+                    state: machine.state,
+                    pairedDeviceCount: 2,
+                    connectedCompanionCount: 1,
+                    language: language
+                )
+                XCTAssertEqual(unpaired, paired, "Unpaired state must not change unsigned-host presentation")
+                XCTAssertTrue(unpaired.canCheckForUpdates, "Check for Updates must stay enabled whenever host is an .app bundle")
+                XCTAssertFalse(unpaired.startsAutomaticChecksOnLaunch)
+                XCTAssertFalse(unpaired.isUpToDate)
+                XCTAssertTrue(unpaired.isFailure)
+                assertNeitherUpToDateNorPairingRequired(unpaired, language: language)
+            }
+
+            let englishUnsigned = MacUpdateConfiguration.statusPresentation(
+                host: host,
+                state: machine.state,
+                pairedDeviceCount: 0,
+                connectedCompanionCount: 0,
+                language: .english
+            )
+            XCTAssertEqual(englishUnsigned.menuStatusText, "Sparkle cannot start because this app bundle is unsigned.")
+            XCTAssertEqual(englishUnsigned.cardStatusTitle, "Sparkle cannot start because this app bundle is unsigned.")
+            XCTAssertTrue((englishUnsigned.cardStatusDetail ?? "").contains("/Applications/Choclift.app"))
+        }
+
+        // 2. Non-.app executable host (e.g., command-line binary or test runner)
+        let cliHost = MacUpdateHostDescriptor(
+            bundlePathExtension: "",
+            isCodeSignatureValid: false,
+            isAdhocSigned: false,
+            teamIdentifier: nil,
+            shortVersion: "1.0.22",
+            buildVersion: "105"
+        )
+        let cliMachine = MacUpdateConfiguration.initialStateMachine(for: cliHost, now: fixedDate)
+        let cliUnpairedEN = MacUpdateConfiguration.statusPresentation(
+            host: cliHost,
+            state: cliMachine.state,
+            pairedDeviceCount: 0,
+            connectedCompanionCount: 0,
+            language: .english
+        )
+        let cliPairedEN = MacUpdateConfiguration.statusPresentation(
+            host: cliHost,
+            state: cliMachine.state,
+            pairedDeviceCount: 3,
+            connectedCompanionCount: 2,
+            language: .english
+        )
+        XCTAssertEqual(cliUnpairedEN, cliPairedEN)
+        XCTAssertFalse(cliUnpairedEN.canCheckForUpdates, "Non-.app executable must disable Check for Updates")
+        XCTAssertFalse(cliUnpairedEN.startsAutomaticChecksOnLaunch)
+        XCTAssertEqual(cliUnpairedEN.menuStatusText, "Sparkle cannot start because Choclift is not running in an app bundle.")
+        XCTAssertEqual(cliUnpairedEN.cardStatusTitle, "Sparkle cannot start because Choclift is not running in an app bundle.")
+        assertNeitherUpToDateNorPairingRequired(cliUnpairedEN, language: .english)
+
+        // 3. Signed .app host (e.g., notarized /Applications/Choclift.app) starts automatic checks and enables button before pairing
+        let signedOlderHost = MacUpdateHostDescriptor(
+            bundlePathExtension: "app",
+            isCodeSignatureValid: true,
+            isAdhocSigned: false,
+            teamIdentifier: "4257SFGRFK",
+            shortVersion: "1.0.19",
+            buildVersion: "84"
+        )
+        var signedMachine = MacUpdateConfiguration.initialStateMachine(for: signedOlderHost, now: fixedDate)
+        XCTAssertEqual(signedMachine.state, .idle)
+        let initialUnpaired = MacUpdateConfiguration.statusPresentation(
+            host: signedOlderHost,
+            state: signedMachine.state,
+            pairedDeviceCount: 0,
+            connectedCompanionCount: 0,
+            language: .english
+        )
+        XCTAssertTrue(initialUnpaired.canCheckForUpdates)
+        XCTAssertTrue(initialUnpaired.startsAutomaticChecksOnLaunch)
+        XCTAssertNil(initialUnpaired.menuStatusText)
+
+        // 4. Feed error (offline / HTTP error) shows the error in both card and menu, unpaired or paired
+        let feedError = NSError(
+            domain: NSURLErrorDomain,
+            code: NSURLErrorNotConnectedToInternet,
+            userInfo: [NSLocalizedDescriptionKey: "The Internet connection appears to be offline."]
+        )
+        signedMachine.recordError(
+            feedError,
+            fallbackHostShortVersion: signedOlderHost.shortVersion,
+            fallbackHostBuildVersion: signedOlderHost.buildVersion,
+            now: fixedDate
+        )
+        let feedUnpairedEN = MacUpdateConfiguration.statusPresentation(
+            host: signedOlderHost,
+            state: signedMachine.state,
+            pairedDeviceCount: 0,
+            connectedCompanionCount: 0,
+            language: .english
+        )
+        let feedPairedEN = MacUpdateConfiguration.statusPresentation(
+            host: signedOlderHost,
+            state: signedMachine.state,
+            pairedDeviceCount: 1,
+            connectedCompanionCount: 1,
+            language: .english
+        )
+        XCTAssertEqual(feedUnpairedEN, feedPairedEN)
+        XCTAssertTrue(feedUnpairedEN.canCheckForUpdates)
+        XCTAssertEqual(feedUnpairedEN.cardStatusTitle, "Update Feed Unreachable")
+        XCTAssertEqual(feedUnpairedEN.cardStatusDetail, "The Internet connection appears to be offline.")
+        XCTAssertEqual(
+            feedUnpairedEN.menuStatusText,
+            "Update Feed Unreachable: The Internet connection appears to be offline."
+        )
+        XCTAssertFalse(feedUnpairedEN.isUpToDate)
+        XCTAssertTrue(feedUnpairedEN.isFailure)
+        assertNeitherUpToDateNorPairingRequired(feedUnpairedEN, language: .english)
+
+        // 5. Reachable appcast with a newer version (v1.0.22 build 105 > installed 1.0.19 build 84) shows update found
+        let releaseV1_0_22 = SparkleAppcastItemSnapshot(
+            shortVersion: "1.0.22",
+            buildVersion: "105",
+            edSignatureBase64: validSig
+        )
+        signedMachine.recordFoundUpdate(releaseV1_0_22, now: fixedDate)
+        for language in [AppLanguage.english, AppLanguage.chinese] {
+            let foundUnpaired = MacUpdateConfiguration.statusPresentation(
+                host: signedOlderHost,
+                state: signedMachine.state,
+                pairedDeviceCount: 0,
+                connectedCompanionCount: 0,
+                language: language
+            )
+            let foundPaired = MacUpdateConfiguration.statusPresentation(
+                host: signedOlderHost,
+                state: signedMachine.state,
+                pairedDeviceCount: 2,
+                connectedCompanionCount: 2,
+                language: language
+            )
+            XCTAssertEqual(foundUnpaired, foundPaired)
+            XCTAssertTrue(foundUnpaired.canCheckForUpdates)
+            XCTAssertFalse(foundUnpaired.isUpToDate)
+            XCTAssertFalse(foundUnpaired.isFailure)
+        }
+        let foundUnpairedEN = MacUpdateConfiguration.statusPresentation(
+            host: signedOlderHost,
+            state: signedMachine.state,
+            pairedDeviceCount: 0,
+            connectedCompanionCount: 0,
+            language: .english
+        )
+        XCTAssertEqual(foundUnpairedEN.cardStatusTitle, "Update Available: v1.0.22 (105)")
+        XCTAssertEqual(foundUnpairedEN.menuStatusText, "Update Available: v1.0.22 (105)")
+
+        // 6. Reachable appcast with the same version (1.0.22 build 105) shows already current
+        let signedCurrentHost = MacUpdateHostDescriptor(
+            bundlePathExtension: "app",
+            isCodeSignatureValid: true,
+            isAdhocSigned: false,
+            teamIdentifier: "4257SFGRFK",
+            shortVersion: "1.0.22",
+            buildVersion: "105"
+        )
+        var currentMachine = MacUpdateConfiguration.initialStateMachine(for: signedCurrentHost, now: fixedDate)
+        let sameVersionNoUpdateError = NSError(
+            domain: MacUpdateConfiguration.sparkleErrorDomain,
+            code: MacUpdateConfiguration.SparkleErrorCode.noUpdate,
+            userInfo: [
+                MacUpdateConfiguration.noUpdateFoundReasonKey: SparkleNoUpdateReason.onLatestVersion.rawValue
+            ]
+        )
+        currentMachine.recordNoUpdate(
+            error: sameVersionNoUpdateError,
+            latestItem: releaseV1_0_22,
+            fallbackHostShortVersion: signedCurrentHost.shortVersion,
+            fallbackHostBuildVersion: signedCurrentHost.buildVersion,
+            now: fixedDate
+        )
+        for language in [AppLanguage.english, AppLanguage.chinese] {
+            let currentUnpaired = MacUpdateConfiguration.statusPresentation(
+                host: signedCurrentHost,
+                state: currentMachine.state,
+                pairedDeviceCount: 0,
+                connectedCompanionCount: 0,
+                language: language
+            )
+            let currentPaired = MacUpdateConfiguration.statusPresentation(
+                host: signedCurrentHost,
+                state: currentMachine.state,
+                pairedDeviceCount: 1,
+                connectedCompanionCount: 1,
+                language: language
+            )
+            XCTAssertEqual(currentUnpaired, currentPaired)
+            XCTAssertTrue(currentUnpaired.canCheckForUpdates)
+            XCTAssertTrue(currentUnpaired.isUpToDate)
+            XCTAssertFalse(currentUnpaired.isFailure)
+        }
+        let currentUnpairedEN = MacUpdateConfiguration.statusPresentation(
+            host: signedCurrentHost,
+            state: currentMachine.state,
+            pairedDeviceCount: 0,
+            connectedCompanionCount: 0,
+            language: .english
+        )
+        XCTAssertEqual(currentUnpairedEN.cardStatusTitle, "Up to Date (v1.0.22 (105))")
+        XCTAssertEqual(currentUnpairedEN.menuStatusText, "Up to Date (v1.0.22 (105))")
+
+        // 7. Sparkle host-unsigned / translocated / read-only errors surface the real reason rather than up-to-date or pairing
+        let hostUnsignedSparkleError = NSError(
+            domain: MacUpdateConfiguration.sparkleErrorDomain,
+            code: MacUpdateConfiguration.SparkleErrorCode.insufficientSigning,
+            userInfo: [NSLocalizedDescriptionKey: "Bundle is not code signed: /tmp/Choclift.app"]
+        )
+        XCTAssertEqual(
+            MacUpdateConfiguration.classifyError(hostUnsignedSparkleError),
+            .hostCannotUpdate(reason: .unsignedAppBundle)
+        )
+
+        let translocatedError = NSError(
+            domain: MacUpdateConfiguration.sparkleErrorDomain,
+            code: MacUpdateConfiguration.SparkleErrorCode.runningTranslocated,
+            userInfo: [NSLocalizedDescriptionKey: "An error occurred in retrieving update information."]
+        )
+        let translocatedResult = MacUpdateConfiguration.classifyError(translocatedError)
+        XCTAssertFalse(translocatedResult.isUpToDate)
+        XCTAssertTrue(translocatedResult.isFailure)
+        XCTAssertTrue(translocatedResult.statusText(in: .english).contains("App Translocation"))
     }
 }

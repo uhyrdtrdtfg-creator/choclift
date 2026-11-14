@@ -1,19 +1,119 @@
 import CryptoKit
 import Foundation
 
+/// Reason Sparkle cannot start or replace the running Mac host process.
+public enum MacUpdateHostUnavailableReason: Equatable, Sendable {
+    /// The process is not running from an `.app` bundle (e.g., CLI binary or SwiftPM test runner).
+    case notAppBundle
+    /// The `.app` bundle is unsigned or ad-hoc signed without an Apple Developer signing identity.
+    case unsignedAppBundle
+}
+
+/// Pure-Foundation snapshot of the running Mac host bundle's packaging and code-signing state.
+public struct MacUpdateHostDescriptor: Equatable, Sendable {
+    public let bundlePathExtension: String
+    public let isCodeSignatureValid: Bool
+    public let isAdhocSigned: Bool
+    public let teamIdentifier: String?
+    public let shortVersion: String?
+    public let buildVersion: String?
+
+    public init(
+        bundlePathExtension: String,
+        isCodeSignatureValid: Bool,
+        isAdhocSigned: Bool = false,
+        teamIdentifier: String? = nil,
+        shortVersion: String? = nil,
+        buildVersion: String? = nil
+    ) {
+        self.bundlePathExtension = bundlePathExtension
+        self.isCodeSignatureValid = isCodeSignatureValid
+        self.isAdhocSigned = isAdhocSigned
+        self.teamIdentifier = teamIdentifier
+        self.shortVersion = shortVersion
+        self.buildVersion = buildVersion
+    }
+
+    public var isAppBundle: Bool {
+        bundlePathExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "app"
+    }
+
+    public var hasAppleSigningIdentity: Bool {
+        guard isCodeSignatureValid, !isAdhocSigned else {
+            return false
+        }
+        guard let team = teamIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines), !team.isEmpty else {
+            return false
+        }
+        return true
+    }
+
+    /// Concrete reason Sparkle cannot start on this host, or `nil` when Sparkle can start normally.
+    public var unavailableReason: MacUpdateHostUnavailableReason? {
+        guard isAppBundle else {
+            return .notAppBundle
+        }
+        guard hasAppleSigningIdentity else {
+            return .unsignedAppBundle
+        }
+        return nil
+    }
+
+    /// Check for Updates is enabled whenever the host is an `.app` bundle, paired or not.
+    public var canCheckForUpdates: Bool {
+        isAppBundle
+    }
+
+    /// Sparkle (including automatic scheduled checks) starts whenever the host is a signed `.app` bundle, paired or not.
+    public var canStartSparkleUpdater: Bool {
+        unavailableReason == nil
+    }
+}
+
+/// Pure-Foundation presentation snapshot for the Settings card and menus, independent of companion pairing state.
+public struct MacUpdateStatusPresentation: Equatable, Sendable {
+    public let canCheckForUpdates: Bool
+    public let startsAutomaticChecksOnLaunch: Bool
+    public let menuStatusText: String?
+    public let cardStatusTitle: String?
+    public let cardStatusDetail: String?
+    public let isUpToDate: Bool
+    public let isFailure: Bool
+
+    public init(
+        canCheckForUpdates: Bool,
+        startsAutomaticChecksOnLaunch: Bool,
+        menuStatusText: String?,
+        cardStatusTitle: String?,
+        cardStatusDetail: String?,
+        isUpToDate: Bool,
+        isFailure: Bool
+    ) {
+        self.canCheckForUpdates = canCheckForUpdates
+        self.startsAutomaticChecksOnLaunch = startsAutomaticChecksOnLaunch
+        self.menuStatusText = menuStatusText
+        self.cardStatusTitle = cardStatusTitle
+        self.cardStatusDetail = cardStatusDetail
+        self.isUpToDate = isUpToDate
+        self.isFailure = isFailure
+    }
+}
+
 /// Discrete outcome of a Sparkle update check on macOS.
-/// Failed outcomes (`feedUnreachable`, `signatureMismatch`, `checkFailed`) are strictly distinct
-/// from `alreadyCurrent` so a failed check never claims the app is up to date.
+/// Failed outcomes (`hostCannotUpdate`, `feedUnreachable`, `signatureMismatch`, `checkFailed`) are strictly distinct
+/// from `alreadyCurrent` so a failed or unavailable check never claims the app is up to date.
 public enum MacUpdateCheckResult: Equatable, Sendable {
     /// A newer valid update was found in the appcast feed.
     case updateFound(shortVersion: String, buildVersion: String?)
     /// The appcast feed was fetched and verified, and the running build is already current (or newer).
     case alreadyCurrent(shortVersion: String?, buildVersion: String?)
+    /// Sparkle cannot start because the running host is unsigned or not packaged in an `.app` bundle.
+    case hostCannotUpdate(reason: MacUpdateHostUnavailableReason)
     /// The appcast feed or archive could not be reached, returned an HTTP/network error, failed XML parsing, or contained no valid macOS items.
     case feedUnreachable(detail: String?)
     /// Cryptographic Ed25519 / signing validation failed on the feed, enclosure, or downloaded archive.
     case signatureMismatch(detail: String?)
-    /// Any other non-up-to-date Sparkle error (e.g., read-only volume, translocated bundle, OS/hardware incompatibility, or updater unavailable).
+    /// Any other non-up-to-date Sparkle error (e.g., read-only volume, translocated bundle, OS/hardware incompatibility, or installer failure).
     case checkFailed(detail: String?)
 
     /// True if and only if the check succeeded and confirmed the app is current.
@@ -24,12 +124,12 @@ public enum MacUpdateCheckResult: Equatable, Sendable {
         return false
     }
 
-    /// True when the check ended in a failure state rather than finding an update or confirming currency.
+    /// True when the check ended in a failure or host-unavailable state rather than finding an update or confirming currency.
     public var isFailure: Bool {
         switch self {
         case .updateFound, .alreadyCurrent:
             return false
-        case .feedUnreachable, .signatureMismatch, .checkFailed:
+        case .hostCannotUpdate, .feedUnreachable, .signatureMismatch, .checkFailed:
             return true
         }
     }
@@ -40,6 +140,13 @@ public enum MacUpdateCheckResult: Equatable, Sendable {
             return "arrow.down.circle.fill"
         case .alreadyCurrent:
             return "checkmark.circle.fill"
+        case .hostCannotUpdate(let reason):
+            switch reason {
+            case .unsignedAppBundle:
+                return "exclamationmark.shield.fill"
+            case .notAppBundle:
+                return "exclamationmark.triangle.fill"
+            }
         case .feedUnreachable:
             return "wifi.exclamationmark"
         case .signatureMismatch:
@@ -68,6 +175,21 @@ public enum MacUpdateCheckResult: Equatable, Sendable {
                 return L10n.tr("已是最新版本（\(badge)）", "Up to Date (\(badge))", language: language)
             }
             return L10n.tr("已是最新版本", "Up to Date", language: language)
+        case .hostCannotUpdate(let reason):
+            switch reason {
+            case .unsignedAppBundle:
+                return L10n.tr(
+                    "当前应用包未签名，Sparkle 无法启动更新检查。",
+                    "Sparkle cannot start because this app bundle is unsigned.",
+                    language: language
+                )
+            case .notAppBundle:
+                return L10n.tr(
+                    "当前未在应用包中运行，Sparkle 无法启动更新检查。",
+                    "Sparkle cannot start because Choclift is not running in an app bundle.",
+                    language: language
+                )
+            }
         case .feedUnreachable:
             return L10n.tr("无法连接更新源", "Update Feed Unreachable", language: language)
         case .signatureMismatch:
@@ -87,6 +209,21 @@ public enum MacUpdateCheckResult: Equatable, Sendable {
             )
         case .alreadyCurrent:
             return nil
+        case .hostCannotUpdate(let reason):
+            switch reason {
+            case .unsignedAppBundle:
+                return L10n.tr(
+                    "未签名的本地构建无法替换自身，请打开已签名的 /Applications/Choclift.app 检查并安装更新。",
+                    "Unsigned local builds cannot replace themselves. Open the signed /Applications/Choclift.app to install updates.",
+                    language: language
+                )
+            case .notAppBundle:
+                return L10n.tr(
+                    "请从已签名的 /Applications/Choclift.app 应用包启动以检查并安装更新。",
+                    "Launch the signed /Applications/Choclift.app bundle to check for and install updates.",
+                    language: language
+                )
+            }
         case .feedUnreachable(let detail):
             let trimmed = detail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return trimmed.isEmpty
@@ -109,11 +246,31 @@ public enum MacUpdateCheckResult: Equatable, Sendable {
             let trimmed = detail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return trimmed.isEmpty
                 ? L10n.tr(
-                    "未能完成更新检查，请稍后重试。",
-                    "Could not complete the update check. Please try again.",
+                    "未能完成更新检查，请使用已公证的 /Applications/Choclift.app 后重试。",
+                    "Could not complete the update check. Make sure you are running /Applications/Choclift.app and try again.",
                     language: language
                 )
                 : trimmed
+        }
+    }
+
+    /// Concise single-line status string surfaced in menus and menu-bar popovers, preserving specific error details.
+    public func statusText(in language: AppLanguage = .system) -> String {
+        switch self {
+        case .updateFound, .alreadyCurrent, .hostCannotUpdate:
+            return title(in: language)
+        case .feedUnreachable(let detail),
+             .signatureMismatch(let detail),
+             .checkFailed(let detail):
+            let trimmed = detail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !trimmed.isEmpty else {
+                return title(in: language)
+            }
+            return L10n.tr(
+                "\(title(in: language))：\(trimmed)",
+                "\(title(in: language)): \(trimmed)",
+                language: language
+            )
         }
     }
 }
@@ -156,7 +313,7 @@ public enum MacUpdateCheckState: Equatable, Sendable {
         case .checking:
             return checkingTitle(in: language)
         case .completed(let result, _):
-            return result.title(in: language)
+            return result.statusText(in: language)
         }
     }
 }
@@ -216,6 +373,19 @@ public struct MacUpdateCheckStateMachine: Equatable, Sendable {
         }
         recordedCycleOutcome = false
         state = .checking
+    }
+
+    @discardableResult
+    public mutating func recordHostUnavailable(
+        _ reason: MacUpdateHostUnavailableReason,
+        now: Date = Date()
+    ) -> MacUpdateCheckResult {
+        let result = MacUpdateCheckResult.hostCannotUpdate(reason: reason)
+        let next = MacUpdateCheckState.completed(result: result, checkedAt: now)
+        state = next
+        previousSettledState = next
+        recordedCycleOutcome = true
+        return result
     }
 
     @discardableResult
@@ -360,9 +530,65 @@ public enum MacUpdateConfiguration {
         public static let signature = 3001
         public static let validation = 3002
 
+        public static let fileCopyFailure = 4000
+        public static let authenticationFailure = 4001
         public static let installation = 4005
         public static let installationCanceled = 4007
         public static let installationAuthorizeLater = 4008
+        public static let installationWriteNoPermission = 4012
+    }
+
+    // MARK: - Host Eligibility & Presentation Evaluation
+
+    /// Builds the initial `MacUpdateCheckStateMachine` for a running Mac host before any user check is triggered.
+    /// Signed `.app` bundles start in `.idle` (ready for automatic & manual checks before pairing);
+    /// unsigned `.app` bundles and non-`.app` executables immediately surface the concrete startup reason.
+    public static func initialStateMachine(
+        for host: MacUpdateHostDescriptor,
+        now: Date = Date()
+    ) -> MacUpdateCheckStateMachine {
+        var machine = MacUpdateCheckStateMachine()
+        if let reason = host.unavailableReason {
+            machine.recordHostUnavailable(reason, now: now)
+        }
+        return machine
+    }
+
+    /// Evaluates how update controls and status text render in the Settings card and menus.
+    /// Companion pairing counts (`pairedDeviceCount`, `connectedCompanionCount`) never gate `canCheckForUpdates`,
+    /// never gate automatic checks, and never change status text.
+    public static func statusPresentation(
+        host: MacUpdateHostDescriptor,
+        state: MacUpdateCheckState,
+        pairedDeviceCount: Int = 0,
+        connectedCompanionCount: Int = 0,
+        language: AppLanguage = .system
+    ) -> MacUpdateStatusPresentation {
+        _ = (pairedDeviceCount, connectedCompanionCount)
+
+        let cardTitle: String?
+        let cardDetail: String?
+        switch state {
+        case .idle:
+            cardTitle = nil
+            cardDetail = nil
+        case .checking:
+            cardTitle = state.checkingTitle(in: language)
+            cardDetail = nil
+        case .completed(let result, _):
+            cardTitle = result.title(in: language)
+            cardDetail = result.detailText(in: language)
+        }
+
+        return MacUpdateStatusPresentation(
+            canCheckForUpdates: host.canCheckForUpdates,
+            startsAutomaticChecksOnLaunch: host.canStartSparkleUpdater && enableAutomaticChecks,
+            menuStatusText: state.menuStatusLine(in: language),
+            cardStatusTitle: cardTitle,
+            cardStatusDetail: cardDetail,
+            isUpToDate: state.result?.isUpToDate ?? false,
+            isFailure: state.result?.isFailure ?? false
+        )
     }
 
     // MARK: - Info.plist Keys
@@ -617,13 +843,16 @@ public enum MacUpdateConfiguration {
         }
 
         let chain = flattenedErrorChain(from: error)
+        if isHostUnsignedErrorChain(chain) {
+            return .hostCannotUpdate(reason: .unsignedAppBundle)
+        }
         if chain.contains(where: isSignatureFailureError) {
             return .signatureMismatch(detail: bestErrorDetail(from: error))
         }
         if chain.contains(where: isFeedReachabilityOrParseError) {
             return .feedUnreachable(detail: bestErrorDetail(from: error))
         }
-        return .checkFailed(detail: bestErrorDetail(from: error))
+        return .checkFailed(detail: nonReplaceableHostDetail(from: chain, rootError: error) ?? bestErrorDetail(from: error))
     }
 
     /// Extracts the most informative human-readable diagnostic from a potentially nested Sparkle `NSError` chain,
@@ -781,6 +1010,65 @@ public enum MacUpdateConfiguration {
             || lower.contains("已是最新")
     }
 
+    private static func isHostUnsignedErrorChain(_ chain: [NSError]) -> Bool {
+        let combinedChainText = chain
+            .flatMap { [$0.localizedDescription, $0.localizedFailureReason, $0.localizedRecoverySuggestion] }
+            .compactMap { $0?.lowercased() }
+            .joined(separator: " ")
+
+        let hostUnsignedMarkers = [
+            "original app is not code signed",
+            "bundle is not code signed",
+            "team identifier could not be retrieved from the original app"
+        ]
+        if hostUnsignedMarkers.contains(where: { combinedChainText.contains($0) }) {
+            return true
+        }
+
+        let updateTargetMarkers = [
+            "new version of the app is not signed",
+            "download archive is not apple code signed",
+            "update is not code signed",
+            "eddsa",
+            "ed25519"
+        ]
+        if !updateTargetMarkers.contains(where: { combinedChainText.contains($0) }),
+           chain.contains(where: { $0.domain == NSOSStatusErrorDomain && $0.code == -67062 }) {
+            return true
+        }
+
+        return false
+    }
+
+    private static func nonReplaceableHostDetail(from chain: [NSError], rootError: NSError) -> String? {
+        let extracted = bestErrorDetail(from: rootError)
+        let hasSpecificDetail = extracted.map { !isGenericBoilerplateMessage($0) && !isRawFoundationFallback($0) } ?? false
+        if hasSpecificDetail {
+            return extracted
+        }
+
+        for candidate in chain {
+            if candidate.domain == sparkleErrorDomain {
+                switch candidate.code {
+                case SparkleErrorCode.runningTranslocated:
+                    return "This copy is running under macOS App Translocation and cannot replace itself. Move Choclift.app to /Applications and relaunch."
+                case SparkleErrorCode.runningFromDiskImage:
+                    return "This copy is running from a read-only disk image and cannot replace itself. Move Choclift.app to /Applications and relaunch."
+                case SparkleErrorCode.installationWriteNoPermission,
+                     SparkleErrorCode.fileCopyFailure,
+                     SparkleErrorCode.authenticationFailure:
+                    return "This copy of Choclift.app does not have permission to replace itself. Install and launch /Applications/Choclift.app."
+                default:
+                    break
+                }
+            }
+            if candidate.domain == NSCocoaErrorDomain, candidate.code == NSFileWriteNoPermissionError {
+                return "This copy of Choclift.app does not have permission to replace itself. Install and launch /Applications/Choclift.app."
+            }
+        }
+        return extracted
+    }
+
     private static func isGenericBoilerplateMessage(_ text: String) -> Bool {
         let lower = text.lowercased()
         let prefixes = [
@@ -789,6 +1077,8 @@ public enum MacUpdateConfiguration {
             "an error occurred while downloading the update",
             "an error occurred while parsing the update feed",
             "an error occurred while extracting the archive",
+            "an error occurred while running the updater",
+            "an error occurred while starting the installer",
             "the update is improperly signed and could not be validated",
             "update error!"
         ]
