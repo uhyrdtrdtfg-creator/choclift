@@ -97,7 +97,7 @@ public struct MacNotchPanelView: View {
         VStack(spacing: 10) {
             headerBar
             if let title = coordinator.controlStripState.nowPlaying?.primaryDisplayText {
-                Text(title).font(.caption).foregroundStyle(palette.secondaryText)
+                Text(title).font(ChocType.title).foregroundStyle(palette.secondaryText)
                     .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             }
             tileGrid
@@ -105,7 +105,7 @@ public struct MacNotchPanelView: View {
         .padding(.horizontal, 14)
         .padding(.top, 11)
         .padding(.bottom, 13)
-        .frame(width: Self.cardWidth, height: Self.cardHeight)
+        .frame(width: Self.cardWidth)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(
@@ -124,7 +124,7 @@ public struct MacNotchPanelView: View {
         .padding(.horizontal, Self.shadowHorizontalPadding)
         .padding(.top, Self.shadowTopPadding)
         .padding(.bottom, Self.shadowBottomPadding)
-        .frame(width: Self.windowSize.width, height: Self.windowSize.height)
+        .frame(width: Self.windowSize.width, height: Self.windowSize.height, alignment: .top)
         .preferredColorScheme(.light)
     }
 
@@ -136,11 +136,11 @@ public struct MacNotchPanelView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(ChocType.micro)
                         Text(activeFolder.emoji)
-                            .font(.system(size: 13))
+                            .font(ChocType.caption)
                         Text(activeFolder.displayTitle(in: lang))
-                            .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                            .font(ChocType.caption)
                             .lineLimit(1)
                     }
                     .foregroundStyle(palette.primaryText)
@@ -153,20 +153,20 @@ public struct MacNotchPanelView: View {
             } else {
                 HStack(spacing: 5) {
                     Text(currentPage.iconEmoji)
-                        .font(.system(size: 13.5))
+                        .font(ChocType.caption)
                     Text(currentPage.title)
-                        .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
                     Text("\(safePageIndex + 1)/\(safePageCount)")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                 }
             }
 
             if let feedback = presentation.inlineFeedback {
                 Text(feedback)
-                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.accent)
                     .lineLimit(1)
                     .padding(.horizontal, 7)
@@ -189,7 +189,7 @@ public struct MacNotchPanelView: View {
                 onOpenStudio()
             } label: {
                 Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 10.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .frame(width: 24, height: 22)
                     .background(palette.barSurface.opacity(0.88), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -206,7 +206,7 @@ public struct MacNotchPanelView: View {
                 onDismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .frame(width: 22, height: 22)
                     .background(palette.barSurface.opacity(0.88), in: Circle())
@@ -226,7 +226,7 @@ public struct MacNotchPanelView: View {
                 stepPage(by: -1)
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .frame(width: 18, height: 20)
                     .contentShape(Rectangle())
@@ -253,7 +253,7 @@ public struct MacNotchPanelView: View {
                 stepPage(by: 1)
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .frame(width: 18, height: 20)
                     .contentShape(Rectangle())
@@ -277,7 +277,7 @@ public struct MacNotchPanelView: View {
             }
         } label: {
             Image(systemName: "arrow.uturn.backward")
-                .font(.system(size: 10.5, weight: .bold))
+                .font(ChocType.micro)
                 .foregroundStyle(canUndo ? palette.accent : palette.secondaryText.opacity(0.42))
                 .frame(width: 24, height: 22)
                 .background(
@@ -333,7 +333,7 @@ public struct MacNotchPanelView: View {
             }
         } label: {
             Image(systemName: "display.2")
-                .font(.system(size: 10, weight: .bold))
+                .font(ChocType.micro)
                 .foregroundStyle(isCustomDisplay ? palette.accent : palette.secondaryText)
                 .frame(width: 24, height: 22)
                 .background(

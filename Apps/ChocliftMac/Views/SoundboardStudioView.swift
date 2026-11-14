@@ -53,11 +53,11 @@ public struct SoundboardStudioView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(L10n.tr("本地音效板", "Local Soundboard", language: lang))
-                        .font(.system(.title3, design: .rounded, weight: .bold))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
 
                     Text("\(coordinator.profile.soundboardClips.count)/\(SoundboardClip.maxBoardCount)")
-                        .font(.caption.monospacedDigit().weight(.bold))
+                        .font(ChocType.caption.monospacedDigit())
                         .foregroundStyle(palette.primaryText)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -65,7 +65,7 @@ public struct SoundboardStudioView: View {
                         .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
                     Text(L10n.tr("最长 8 秒 · Mac 扬声器播放", "≤ 8s each · Mac Speakers", language: lang))
-                        .font(.caption2.weight(.semibold))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -80,7 +80,7 @@ public struct SoundboardStudioView: View {
                         language: lang
                     )
                 )
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
             }
 
@@ -110,7 +110,7 @@ public struct SoundboardStudioView: View {
             // Search by Sound Name
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
 
                 TextField(
@@ -118,7 +118,7 @@ public struct SoundboardStudioView: View {
                     text: $searchQuery
                 )
                 .textFieldStyle(.plain)
-                .font(.system(.callout, design: .rounded))
+                .font(ChocType.body)
                 .foregroundStyle(palette.primaryText)
 
                 if !searchQuery.isEmpty {
@@ -126,7 +126,7 @@ public struct SoundboardStudioView: View {
                         searchQuery = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.secondaryText)
                     }
                     .buttonStyle(.plain)
@@ -143,11 +143,11 @@ public struct SoundboardStudioView: View {
             // Separate Soundboard Volume Slider
             HStack(spacing: 10) {
                 Image(systemName: coordinator.profile.soundboardVolume <= 0.001 ? "speaker.slash.fill" : "speaker.wave.2.bubble.left.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.accent)
 
                 Text(L10n.tr("音效板音量", "Soundboard Volume", language: lang))
-                    .font(.caption.weight(.semibold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
 
                 Slider(
@@ -166,12 +166,12 @@ public struct SoundboardStudioView: View {
                 .frame(width: 170)
 
                 Text("\(ControlStripLevel.percentage(for: volumePreview ?? coordinator.profile.soundboardVolume))%")
-                    .font(.caption.monospacedDigit().weight(.bold))
+                    .font(ChocType.caption.monospacedDigit())
                     .foregroundStyle(palette.secondaryText)
                     .frame(width: 38, alignment: .trailing)
 
                 Text(L10n.tr("独立于系统音量", "Separate from System Vol", language: lang))
-                    .font(.caption2)
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
             }
             .padding(.horizontal, 12)
@@ -187,7 +187,7 @@ public struct SoundboardStudioView: View {
                     coordinator.stopSoundboardPlayback()
                 } label: {
                     Label(L10n.tr("停止", "Stop", language: lang), systemImage: "stop.fill")
-                        .font(.caption.bold())
+                        .font(ChocType.caption)
                 }
                 .buttonStyle(.bordered)
             }
@@ -201,11 +201,11 @@ public struct SoundboardStudioView: View {
             Spacer()
 
             Image(systemName: "speaker.wave.2.bubble.left.fill")
-                .font(.system(size: 36, weight: .semibold))
+                .font(ChocType.title)
                 .foregroundStyle(palette.accent)
 
             Text(L10n.tr("将 Mac 上的短音频文件拖入此处", "Drop Short Mac Audio Files Here", language: lang))
-                .font(.system(.headline, design: .rounded, weight: .bold))
+                .font(ChocType.title)
                 .foregroundStyle(palette.primaryText)
 
             Text(
@@ -215,7 +215,7 @@ public struct SoundboardStudioView: View {
                     language: lang
                 )
             )
-            .font(.callout)
+            .font(ChocType.body)
             .foregroundStyle(palette.secondaryText)
             .multilineTextAlignment(.center)
             .frame(maxWidth: 460)
@@ -258,10 +258,10 @@ public struct SoundboardStudioView: View {
         VStack(spacing: 10) {
             Spacer()
             Image(systemName: "magnifyingglass")
-                .font(.title2)
+                .font(ChocType.title)
                 .foregroundStyle(palette.secondaryText)
             Text(L10n.tr("没有匹配的音效名称", "No Matching Sound Names", language: lang))
-                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.primaryText)
             Spacer()
         }
@@ -290,12 +290,12 @@ public struct SoundboardStudioView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(clip.emoji)
-                    .font(.system(size: 26))
+                    .font(ChocType.title)
 
                 Spacer()
 
                 Text(clip.formattedDuration)
-                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2.5)
@@ -304,7 +304,7 @@ public struct SoundboardStudioView: View {
             }
 
             Text(clip.name)
-                .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.primaryText)
                 .lineLimit(1)
 
@@ -314,9 +314,9 @@ public struct SoundboardStudioView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: isActive ? "speaker.wave.3.fill" : "play.fill")
-                            .font(.system(size: 10.5, weight: .bold))
+                            .font(ChocType.micro)
                         Text(L10n.tr("试听", "Play", language: lang))
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .font(ChocType.micro)
                     }
                     .foregroundStyle(palette.accentForeground)
                     .padding(.horizontal, 9)
@@ -361,7 +361,7 @@ public struct SoundboardStudioView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                 }
                 .menuStyle(.borderlessButton)
@@ -442,12 +442,12 @@ private struct MacSoundClipEditSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(L10n.tr("编辑音效", "Edit Sound", language: lang))
-                .font(.system(.headline, design: .rounded, weight: .bold))
+                .font(ChocType.title)
                 .foregroundStyle(palette.primaryText)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(L10n.tr("名称", "Name", language: lang))
-                    .font(.caption.weight(.semibold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                 TextField("", text: $name)
                     .textFieldStyle(.roundedBorder)
@@ -456,7 +456,7 @@ private struct MacSoundClipEditSheet: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.tr("图标表情", "Emoji", language: lang))
-                        .font(.caption.weight(.semibold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                     TextField("🔊", text: $emoji)
                         .textFieldStyle(.roundedBorder)
@@ -465,7 +465,7 @@ private struct MacSoundClipEditSheet: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.tr("卡片色调", "Tile Tint", language: lang))
-                        .font(.caption.weight(.semibold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                     HStack(spacing: 6) {
                         ForEach(ChocSwatch.tileColors, id: \.self) { hex in
@@ -493,13 +493,13 @@ private struct MacSoundClipEditSheet: View {
 
             HStack {
                 Text(clip.filePath)
-                    .font(.caption2.monospaced())
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer()
                 Text(clip.formattedDuration)
-                    .font(.caption2.monospacedDigit())
+                    .font(ChocType.micro.monospacedDigit())
                     .foregroundStyle(palette.secondaryText)
             }
 

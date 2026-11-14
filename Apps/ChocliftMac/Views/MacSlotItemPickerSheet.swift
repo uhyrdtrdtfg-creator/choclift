@@ -196,10 +196,10 @@ public struct MacSlotItemPickerSheet: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.tr("配置槽位 #\(slotIndex + 1)", "Configure Slot #\(slotIndex + 1)", language: lang))
-                        .font(.system(.headline, design: .rounded, weight: .bold))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("第 \(pageIndex + 1) 页「\(pageTitle)」", "Page \(pageIndex + 1) · \"\(pageTitle)\"", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                 }
 
@@ -208,10 +208,10 @@ public struct MacSlotItemPickerSheet: View {
                 if let existingItem {
                     HStack(spacing: 6) {
                         Text(L10n.tr("当前：", "Current:", language: lang))
-                            .font(.caption2)
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                         Text(existingItem.displayTitle(in: lang))
-                            .font(.caption.weight(.semibold))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                     }
@@ -221,7 +221,7 @@ public struct MacSlotItemPickerSheet: View {
                     .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
                 } else {
                     Text(L10n.tr("空槽位", "Empty Slot", language: lang))
-                        .font(.caption2.weight(.semibold))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 4)
@@ -238,10 +238,10 @@ public struct MacSlotItemPickerSheet: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: tab.sfSymbol)
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(ChocType.caption)
                                 .foregroundStyle(isSel ? palette.accent : palette.secondaryText)
                             Text(tab.title(in: lang))
-                                .font(.system(size: 12.5, weight: isSel ? .bold : .medium, design: .rounded))
+                                .font(ChocType.caption)
                                 .foregroundStyle(isSel ? palette.primaryText : palette.secondaryText)
                         }
                         .frame(maxWidth: .infinity)
@@ -303,7 +303,7 @@ public struct MacSlotItemPickerSheet: View {
                     chooseAppViaFinderPanel()
                 } label: {
                     Label(L10n.tr("从访达选择…", "Browse Finder…", language: lang), systemImage: "folder")
-                        .font(.caption.weight(.medium))
+                        .font(ChocType.caption)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -325,13 +325,13 @@ public struct MacSlotItemPickerSheet: View {
                 Spacer()
                 VStack(spacing: 10) {
                     Image(systemName: "app.dashed")
-                        .font(.system(size: 32))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("未找到匹配的应用", "No Matching Apps", language: lang))
-                        .font(.headline)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("尝试缩短关键词，或从访达中手动选择任意 .app 应用包。", "Try another search term, or pick any .app bundle from Finder.", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                     HStack(spacing: 8) {
                         if !appSearchText.isEmpty {
@@ -363,11 +363,11 @@ public struct MacSlotItemPickerSheet: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 6) {
                                         Text(app.appName)
-                                            .font(.system(.body, design: .rounded, weight: .semibold))
+                                            .font(ChocType.body.weight(.semibold))
                                             .foregroundStyle(palette.primaryText)
                                         if isCurrent {
                                             Text(L10n.tr("当前已选", "Current", language: lang))
-                                                .font(.caption2.bold())
+                                                .font(ChocType.micro)
                                                 .foregroundStyle(palette.statusConnected)
                                                 .padding(.horizontal, 6)
                                                 .padding(.vertical, 1)
@@ -375,7 +375,7 @@ public struct MacSlotItemPickerSheet: View {
                                         }
                                     }
                                     Text(app.bundleIdentifier)
-                                        .font(.caption2)
+                                        .font(ChocType.micro)
                                         .foregroundStyle(palette.secondaryText)
                                         .lineLimit(1)
                                 }
@@ -384,7 +384,7 @@ public struct MacSlotItemPickerSheet: View {
 
                                 if idx == highlightedAppIndex {
                                     Text("⏎")
-                                        .font(.caption.bold())
+                                        .font(ChocType.caption)
                                         .foregroundStyle(palette.primaryText)
                                         .padding(.horizontal, 7)
                                         .padding(.vertical, 2)
@@ -445,7 +445,7 @@ public struct MacSlotItemPickerSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Text(L10n.tr("选择已保存的动作流，或新建一个多步动作流放入此槽位", "Pick a saved flow or create a multi-step flow for this slot", language: lang))
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
 
                 Spacer()
@@ -509,13 +509,13 @@ public struct MacSlotItemPickerSheet: View {
                 Spacer()
                 VStack(spacing: 10) {
                     Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 32))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("暂无已保存的动作流", "No Saved Flows Yet", language: lang))
-                        .font(.headline)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("点击右上角「新建动作流…」可创建单应用全屏或双应用分屏等顺序动作流。", "Click \"New Flow…\" above to create sequential multi-step Mac actions.", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 36)
@@ -535,17 +535,17 @@ public struct MacSlotItemPickerSheet: View {
                                         .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
                                 )
                             Text(flow.emoji.isEmpty ? "⚡️" : flow.emoji)
-                                .font(.system(size: 18))
+                                .font(ChocType.title)
                         }
 
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
                                 Text(flow.name)
-                                    .font(.system(.body, design: .rounded, weight: .semibold))
+                                    .font(ChocType.body.weight(.semibold))
                                     .foregroundStyle(palette.primaryText)
                                 if isCurrent {
                                     Text(L10n.tr("当前已选", "Current", language: lang))
-                                        .font(.caption2.bold())
+                                        .font(ChocType.micro)
                                         .foregroundStyle(palette.statusConnected)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 1)
@@ -559,7 +559,7 @@ public struct MacSlotItemPickerSheet: View {
                                     language: lang
                                 )
                             )
-                            .font(.caption2)
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                             .lineLimit(1)
                         }
@@ -621,7 +621,7 @@ public struct MacSlotItemPickerSheet: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text(L10n.tr("本机快捷指令", "Installed Mac Shortcuts", language: lang))
-                        .font(.subheadline.bold())
+                        .font(ChocType.body.weight(.semibold))
                     Spacer()
                     Button {
                         coordinator.refreshCatalog()
@@ -649,16 +649,16 @@ public struct MacSlotItemPickerSheet: View {
                     VStack(spacing: 8) {
                         Spacer()
                         Image(systemName: "sparkles.rectangle.stack")
-                            .font(.title)
+                            .font(ChocType.title)
                             .foregroundStyle(.secondary)
                         Text(
                             coordinator.installedShortcuts.isEmpty
                                 ? L10n.tr("暂未读取到快捷指令", "No Mac Shortcuts Found", language: lang)
                                 : L10n.tr("无匹配的快捷指令", "No Matching Shortcuts", language: lang)
                         )
-                        .font(.caption.weight(.bold))
+                        .font(ChocType.caption)
                         Text(L10n.tr("可在右侧直接输入快捷指令名称，或打开系统「快捷指令」创建。", "Enter any Shortcut name on the right, or create one in macOS Shortcuts.", language: lang))
-                            .font(.caption2)
+                            .font(ChocType.micro)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
                         Button(L10n.tr("打开「快捷指令」应用", "Open Shortcuts App", language: lang)) {
@@ -707,7 +707,7 @@ public struct MacSlotItemPickerSheet: View {
 
             VStack(alignment: .leading, spacing: 14) {
                 Text(L10n.tr("快捷指令方块预览", "Shortcut Tile Preview", language: lang))
-                    .font(.subheadline.bold())
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
 
                 HStack {
@@ -759,7 +759,7 @@ public struct MacSlotItemPickerSheet: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.tr("方块配色", "Tile Color", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                     swatchRow(selection: $shortcutColorHex)
                 }
@@ -797,7 +797,7 @@ public struct MacSlotItemPickerSheet: View {
         HStack(spacing: 20) {
             VStack(spacing: 12) {
                 Text(L10n.tr("实时预览", "Live Tile Preview", language: lang))
-                    .font(.caption.weight(.semibold))
+                    .font(ChocType.caption)
                     .foregroundStyle(.secondary)
 
                 ChocBarTileCard(
@@ -815,7 +815,7 @@ public struct MacSlotItemPickerSheet: View {
                 .frame(width: 122, height: 122)
 
                 Text(L10n.tr("常用网站快填", "Quick Presets", language: lang))
-                    .font(.caption2.weight(.semibold))
+                    .font(ChocType.micro)
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
 
@@ -871,12 +871,12 @@ public struct MacSlotItemPickerSheet: View {
                     L10n.tr("若已在 Safari / Chrome / Arc 打开则直接切换到该标签页", "Switch to existing tab if already open in Safari / Chrome / Arc", language: lang),
                     isOn: $websiteSwitchExistingTab
                 )
-                .font(.callout)
+                .font(ChocType.body)
                 .tint(palette.accent)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.tr("方块配色", "Tile Color", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                     swatchRow(selection: $websiteColorHex)
                 }
@@ -886,7 +886,7 @@ public struct MacSlotItemPickerSheet: View {
                 HStack {
                     if !isValidWebsiteDraft && websiteURL != "https://" {
                         Text(L10n.tr("请输入有效的网址域名", "Enter a valid website address", language: lang))
-                            .font(.caption)
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.statusFailure)
                     }
                     Spacer()
@@ -947,7 +947,7 @@ public struct MacSlotItemPickerSheet: View {
                 ForEach(groups, id: \.0) { groupTitle, actions in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(groupTitle)
-                            .font(.caption.weight(.bold))
+                            .font(ChocType.caption)
                             .foregroundStyle(.secondary)
 
                         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 9) {
@@ -966,19 +966,19 @@ public struct MacSlotItemPickerSheet: View {
                                 } label: {
                                     HStack(spacing: 10) {
                                         Image(systemName: action.sfSymbol)
-                                            .font(.system(size: 15, weight: .semibold))
+                                            .font(ChocType.body.weight(.semibold))
                                             .foregroundStyle(palette.primaryText)
                                             .frame(width: 32, height: 32)
                                             .background(ChocSwatch.resolvedTileColor(hex: action.accentHex), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(action.sentKeyboardShortcut != nil ? action.compactTitle(in: lang) : action.title(in: lang))
-                                                .font(.callout.weight(.medium))
+                                                .font(ChocType.body)
                                                 .foregroundStyle(palette.primaryText)
                                                 .lineLimit(2)
                                                 .multilineTextAlignment(.leading)
                                             if let shortcut = action.sentKeyboardShortcut {
                                                 Text(shortcut)
-                                                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                                                    .font(ChocType.micro)
                                                     .foregroundStyle(palette.secondaryText)
                                                     .padding(.horizontal, 6)
                                                     .padding(.vertical, 1.5)
@@ -1093,7 +1093,7 @@ public struct MacSlotItemPickerSheet: View {
             HStack(spacing: 7) {
                 Text(emoji)
                 Text(title)
-                    .font(.caption.bold())
+                    .font(ChocType.caption)
                 Spacer()
             }
             .frame(maxWidth: .infinity)
@@ -1119,7 +1119,7 @@ public struct MacSlotItemPickerSheet: View {
                             )
                         if isSel {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 10, weight: .black))
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.primaryText)
                         }
                     }
@@ -1138,7 +1138,7 @@ public struct MacSlotItemPickerSheet: View {
 
         HStack(spacing: 10) {
             Image(systemName: "arrow.turn.up.right")
-                .font(.system(size: 13, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.accent)
 
             switch resolution {
@@ -1151,11 +1151,11 @@ public struct MacSlotItemPickerSheet: View {
                             language: lang
                         )
                     )
-                    .font(.caption.weight(.bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
 
                     Text(L10n.tr("触发此槽位将直接运行原槽位，不复制动作数据。", "Triggering runs the original slot directly without duplicating action data.", language: lang))
-                        .font(.caption2)
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                 }
 
@@ -1169,7 +1169,7 @@ public struct MacSlotItemPickerSheet: View {
                         }
                     } label: {
                         Label(L10n.tr("编辑原槽位", "Edit Original Slot", language: lang), systemImage: "square.and.pencil")
-                            .font(.caption.bold())
+                            .font(ChocType.caption)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(palette.accent)
@@ -1178,10 +1178,10 @@ public struct MacSlotItemPickerSheet: View {
             case .missing:
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.tr("所引用的原槽位已被移除", "Original Referenced Slot Was Removed", language: lang))
-                        .font(.caption.weight(.bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("当前处于静默空置状态，点按不会执行任何动作。可在下方重新选择引用目标或清空。", "This reference stays quiet and runs nothing. Pick another slot below or clear it.", language: lang))
-                        .font(.caption2)
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                 }
                 Spacer()
@@ -1199,7 +1199,7 @@ public struct MacSlotItemPickerSheet: View {
             HStack(spacing: 10) {
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
-                        .font(.caption.weight(.bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                     TextField(
                         L10n.tr("搜索音效名称…", "Search sound names…", language: lang),
@@ -1222,7 +1222,7 @@ public struct MacSlotItemPickerSheet: View {
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
                 Text("\(coordinator.profile.soundboardClips.count)/\(SoundboardClip.maxBoardCount)")
-                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .font(ChocType.caption.monospacedDigit())
                     .foregroundStyle(palette.secondaryText)
 
                 Spacer()
@@ -1251,13 +1251,13 @@ public struct MacSlotItemPickerSheet: View {
                 VStack(spacing: 10) {
                     Spacer()
                     Image(systemName: "speaker.wave.2.bubble.left.fill")
-                        .font(.system(size: 30))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.accent)
                     Text(L10n.tr("音效板尚无音频", "No Sounds on Board Yet", language: lang))
-                        .font(.headline)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("添加 Mac 上的短音效（≤ 8 秒，上限 24 个）后即可放入此槽位，Apple Watch 也可一键触发。", "Add short local Mac sounds (≤ 8s, max 24) to place on a slot for iPhone, iPad, and Apple Watch.", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 420)
@@ -1276,16 +1276,16 @@ public struct MacSlotItemPickerSheet: View {
                                 } label: {
                                     HStack(spacing: 10) {
                                         Text(clip.emoji)
-                                            .font(.system(size: 22))
+                                            .font(ChocType.title)
                                             .frame(width: 34, height: 34)
                                             .background(ChocSwatch.resolvedTileColor(hex: clip.backgroundHex, fallbackHex: "#ECFAEE"), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                                         VStack(alignment: .leading, spacing: 2) {
                                             Text(clip.name)
-                                                .font(.callout.weight(.semibold))
+                                                .font(ChocType.body.weight(.semibold))
                                                 .foregroundStyle(palette.primaryText)
                                                 .lineLimit(1)
                                             Text(clip.formattedDuration)
-                                                .font(.caption2.monospacedDigit())
+                                                .font(ChocType.micro.monospacedDigit())
                                                 .foregroundStyle(palette.secondaryText)
                                         }
                                         Spacer()
@@ -1302,7 +1302,7 @@ public struct MacSlotItemPickerSheet: View {
                                     _ = coordinator.playSoundClip(id: clip.id)
                                 } label: {
                                     Image(systemName: "play.circle.fill")
-                                        .font(.system(size: 18))
+                                        .font(ChocType.title)
                                         .foregroundStyle(palette.accent)
                                 }
                                 .buttonStyle(.plain)
@@ -1337,17 +1337,17 @@ public struct MacSlotItemPickerSheet: View {
                     language: lang
                 )
             )
-            .font(.caption)
+            .font(ChocType.caption)
             .foregroundStyle(palette.secondaryText)
 
             if candidates.isEmpty {
                 VStack(spacing: 10) {
                     Spacer()
                     Image(systemName: "link")
-                        .font(.system(size: 28))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("暂无可引用的其他槽位", "No Other Occupied Slots to Reference", language: lang))
-                        .font(.headline)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Spacer()
                 }
@@ -1373,18 +1373,18 @@ public struct MacSlotItemPickerSheet: View {
                             } label: {
                                 HStack(spacing: 10) {
                                     Image(systemName: "arrow.turn.up.right")
-                                        .font(.system(size: 13, weight: .bold))
+                                        .font(ChocType.caption)
                                         .foregroundStyle(palette.accent)
                                         .frame(width: 30, height: 30)
                                         .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(title)
-                                            .font(.callout.weight(.semibold))
+                                            .font(ChocType.body.weight(.semibold))
                                             .foregroundStyle(palette.primaryText)
                                             .lineLimit(1)
                                         Text("\(candidate.page.iconEmoji) \(candidate.page.title) · #\(candidate.slotIndex + 1)")
-                                            .font(.caption2)
+                                            .font(ChocType.micro)
                                             .foregroundStyle(palette.secondaryText)
                                             .lineLimit(1)
                                     }
@@ -1431,10 +1431,10 @@ public struct MacSlotItemPickerSheet: View {
                 VStack(spacing: 10) {
                     Spacer()
                     Image(systemName: "folder.badge.exclamationmark")
-                        .font(.system(size: 30, weight: .semibold))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.accent)
                     Text(L10n.tr("每页最多放置 1 个文件夹磁贴", "One Folder Per Page", language: lang))
-                        .font(.headline)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(
                         L10n.tr(
@@ -1443,7 +1443,7 @@ public struct MacSlotItemPickerSheet: View {
                             language: lang
                         )
                     )
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     if let onEditOriginalSlot {
                         Button {
@@ -1451,7 +1451,7 @@ public struct MacSlotItemPickerSheet: View {
                             onEditOriginalSlot(pageIndex, existingFolderIdx)
                         } label: {
                             Text(L10n.tr("打开槽位 #\(existingFolderIdx + 1)", "Open Slot #\(existingFolderIdx + 1)", language: lang))
-                                .font(.caption.weight(.bold))
+                                .font(ChocType.caption)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
                                 .background(palette.accent, in: Capsule())
@@ -1508,7 +1508,7 @@ public struct MacSlotItemPickerSheet: View {
                         dismiss()
                     } label: {
                         Text(L10n.tr("保存文件夹", "Save Folder", language: lang))
-                            .font(.callout.weight(.bold))
+                            .font(ChocType.body.weight(.semibold))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 7)
                             .background(palette.accent, in: Capsule())
@@ -1525,7 +1525,7 @@ public struct MacSlotItemPickerSheet: View {
                             language: lang
                         )
                     )
-                    .font(.caption.weight(.bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
 
                     Spacer()
@@ -1580,7 +1580,7 @@ public struct MacSlotItemPickerSheet: View {
                             L10n.tr("添加子动作", "Add Child Action", language: lang),
                             systemImage: "plus.circle.fill"
                         )
-                        .font(.caption.weight(.bold))
+                        .font(ChocType.caption)
                     }
                     .disabled(folderChildren.count >= TileFolder.maxChildren)
                 }
@@ -1589,10 +1589,10 @@ public struct MacSlotItemPickerSheet: View {
                     VStack(spacing: 8) {
                         Spacer()
                         Image(systemName: "square.grid.2x2")
-                            .font(.system(size: 26))
+                            .font(ChocType.title)
                             .foregroundStyle(palette.secondaryText)
                         Text(L10n.tr("点击右上角「添加子动作」，最多添加 8 个动作", "Use \"Add Child Action\" to add up to 8 actions", language: lang))
-                            .font(.caption)
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.secondaryText)
                         Spacer()
                     }
@@ -1603,11 +1603,11 @@ public struct MacSlotItemPickerSheet: View {
                             ForEach(Array(folderChildren.enumerated()), id: \.element.id) { idx, child in
                                 HStack(spacing: 8) {
                                     Text("#\(idx + 1)")
-                                        .font(.caption2.monospacedDigit().weight(.bold))
+                                        .font(ChocType.micro.monospacedDigit())
                                         .foregroundStyle(palette.secondaryText)
 
                                     Text(coordinator.profile.displayTitle(for: child, in: lang))
-                                        .font(.callout.weight(.semibold))
+                                        .font(ChocType.body.weight(.semibold))
                                         .foregroundStyle(palette.primaryText)
                                         .lineLimit(1)
 
@@ -1618,7 +1618,7 @@ public struct MacSlotItemPickerSheet: View {
                                         folderChildren.swapAt(idx, idx - 1)
                                     } label: {
                                         Image(systemName: "chevron.left")
-                                            .font(.caption2.weight(.bold))
+                                            .font(ChocType.micro)
                                     }
                                     .buttonStyle(.plain)
                                     .disabled(idx == 0)
@@ -1628,7 +1628,7 @@ public struct MacSlotItemPickerSheet: View {
                                         folderChildren.swapAt(idx, idx + 1)
                                     } label: {
                                         Image(systemName: "chevron.right")
-                                            .font(.caption2.weight(.bold))
+                                            .font(ChocType.micro)
                                     }
                                     .buttonStyle(.plain)
                                     .disabled(idx + 1 >= folderChildren.count)

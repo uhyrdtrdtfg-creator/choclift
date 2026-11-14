@@ -38,11 +38,11 @@ public struct IOSShowDesktopPillButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: action.sfSymbol)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.accent)
 
                 Text(labelText)
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -104,21 +104,19 @@ public struct IOSFinderDesktopIconsPillButton: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: symbolName)
-                    .font(.system(size: 11.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(areIconsVisible ? palette.accent : palette.accentEmphasis)
 
                 VStack(alignment: .leading, spacing: 0.5) {
                     Text(primaryTitle)
-                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.88)
 
                     Text(restartSubtitle)
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.85)
                 }
             }
             .padding(.horizontal, 9)
@@ -179,7 +177,7 @@ public struct IOSCompanionStripStatusRow: View {
             Label(state.wifiDisplayLabel, systemImage: "wifi")
             if state.isKeepMacAwakeEnabled { Image(systemName: "cup.and.saucer") }
         }
-        .font(.caption2)
+        .font(ChocType.micro)
         .foregroundStyle(palette.secondaryText)
         .lineLimit(1)
 
@@ -226,11 +224,11 @@ public struct IOSMacBatteryStripBadge: View {
 
         HStack(spacing: 5) {
             Image(systemName: symbolName)
-                .font(.system(size: 11, weight: .bold))
+                .font(ChocType.micro)
                 .foregroundStyle(iconTint)
 
             Text(text)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(ChocType.micro)
                 .monospacedDigit()
                 .foregroundStyle(battery != nil ? palette.primaryText : palette.secondaryText.opacity(0.8))
                 .lineLimit(1)
@@ -263,11 +261,11 @@ public struct IOSAwakeReasonStripLabel: View {
     public var body: some View {
         HStack(spacing: 5) {
             Image(systemName: "cup.and.saucer.fill")
-                .font(.system(size: 10.5, weight: .bold))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.accentEmphasis)
 
             Text(reason)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.primaryText)
                 .lineLimit(1)
         }

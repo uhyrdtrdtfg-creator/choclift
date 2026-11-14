@@ -43,21 +43,21 @@ public struct EmojiBarStudioView: View {
                     .fill(coordinator.isEditingTextOnMac ? palette.statusConnected.opacity(0.16) : palette.tileFillBottom)
                     .frame(width: 44, height: 44)
                 Image(systemName: coordinator.isEditingTextOnMac ? "character.cursor.ibeam" : "face.smiling.inverse")
-                    .font(.title3.weight(.semibold))
+                    .font(ChocType.title)
                     .foregroundStyle(coordinator.isEditingTextOnMac ? palette.statusConnected : palette.secondaryText)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(L10n.tr("智能光标感知表情栏", "Smart Cursor-Aware Emoji Bar", language: lang))
-                    .font(.subheadline.bold())
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
                 if coordinator.isEditingTextOnMac, let appName = coordinator.focusedTextAppName {
                     Text(L10n.tr("检测到正在「\(appName)」中输入文字 — 已自动在伴侣设备上弹出表情栏！", "Typing detected in \(appName) — Emoji Bar automatically surfaced on companion!", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.statusConnected)
                 } else {
                     Text(L10n.tr("在 Mac 任意文本框点击打字时，iPhone / iPad / Watch 会自动切换到表情栏。", "Automatically switches your companion to Emoji Bar whenever you focus a text field on Mac.", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                 }
             }
@@ -103,7 +103,7 @@ public struct EmojiBarStudioView: View {
                             Text(slide.iconEmoji)
                             MaxWidthPillTitleLayout(maxWidth: 108) {
                                 Text(displayTitle)
-                                    .font(.system(.caption, design: .rounded, weight: isSelected ? .bold : .semibold))
+                                    .font(ChocType.caption)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                             }
@@ -145,7 +145,7 @@ public struct EmojiBarStudioView: View {
                 Spacer()
 
                 Text(L10n.tr("选中格 #\(selectedEmojiSlot + 1) · 点击右侧替换", "Slot #\(selectedEmojiSlot + 1) · Pick right to replace", language: lang))
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
             }
 
@@ -176,7 +176,7 @@ public struct EmojiBarStudioView: View {
                                     )
 
                                 Text(emoji)
-                                    .font(.system(size: 36))
+                                    .font(ChocType.title)
                             }
                             .aspectRatio(1.0, contentMode: .fit)
                             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -187,7 +187,7 @@ public struct EmojiBarStudioView: View {
                             _ = coordinator.insertText(emoji, triggeredBy: "Mac Studio")
                         } label: {
                             Image(systemName: "paperplane.fill")
-                                .font(.system(size: 9, weight: .bold))
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.secondaryText)
                                 .frame(width: 22, height: 22)
                                 .background(palette.backgroundBottom.opacity(0.65), in: Circle())
@@ -236,7 +236,7 @@ public struct EmojiBarStudioView: View {
                             HStack(spacing: 4) {
                                 Text(cat.icon)
                                 Text(cat.title(in: lang))
-                                    .font(.caption.weight(isSel ? .bold : .medium))
+                                    .font(ChocType.caption)
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5.5)
@@ -260,7 +260,7 @@ public struct EmojiBarStudioView: View {
                             _ = coordinator.insertText(emoji)
                         } label: {
                             Text(emoji)
-                                .font(.system(size: 24))
+                                .font(ChocType.title)
                                 .frame(width: 44, height: 44)
                                 .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))

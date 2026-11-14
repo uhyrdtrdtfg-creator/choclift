@@ -29,7 +29,7 @@ public struct IOSSleepDisplayPillButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "powersleep")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.accentEmphasis)
 
                 Text(
@@ -37,7 +37,7 @@ public struct IOSSleepDisplayPillButton: View {
                         ? L10n.tr("熄屏", "Sleep", language: lang)
                         : L10n.tr("熄灭屏幕", "Sleep Display", language: lang)
                 )
-                .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.primaryText)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
@@ -133,11 +133,11 @@ public struct IOSCompactKeyAndRecentsBar: View {
             Group {
                 if compactKey.isArrowKey {
                     Image(systemName: compactKey.sfSymbol)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                 } else {
                     Text(compactKey.capLabel(in: lang))
-                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
                 }
@@ -175,18 +175,18 @@ public struct IOSCompactKeyAndRecentsBar: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(count > 0 ? palette.accent : palette.secondaryText)
 
                 Text(L10n.tr("最近", "Recent", language: lang))
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
 
                 if count > 0 {
                     Text("\(count)")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.accent)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1)
@@ -240,17 +240,17 @@ public struct IOSCompactKeyAndRecentsBar: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: isAwaitingConfirm ? "exclamationmark.triangle.fill" : "bolt.horizontal.circle.fill")
-                                .font(.system(size: 11, weight: .bold))
+                                .font(ChocType.micro)
                                 .foregroundStyle(isAwaitingConfirm ? palette.statusFailure : palette.accent)
 
                             Text(entry.title)
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
 
                             if let ago = entry.formattedLastTriggered() {
                                 Text(ago)
-                                    .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                                    .font(ChocType.micro)
                                     .monospacedDigit()
                                     .foregroundStyle(palette.secondaryText)
                             }
@@ -315,10 +315,10 @@ public struct IOSRecentlyTriggeredSheet: View {
                 if entries.isEmpty {
                     VStack(spacing: 10) {
                         Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 30, weight: .semibold))
+                            .font(ChocType.title)
                             .foregroundStyle(palette.accent)
                         Text(L10n.tr("暂无最近触发记录", "No Recently Triggered Tiles", language: lang))
-                            .font(.system(.headline, design: .rounded, weight: .bold))
+                            .font(ChocType.title)
                             .foregroundStyle(palette.primaryText)
                         Text(
                             L10n.tr(
@@ -327,7 +327,7 @@ public struct IOSRecentlyTriggeredSheet: View {
                                 language: lang
                             )
                         )
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
@@ -391,24 +391,24 @@ public struct IOSRecentlyTriggeredSheet: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: isAvailable ? "bolt.fill" : "questionmark.square.dashed")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(isAvailable ? palette.accent : palette.secondaryText)
                     .frame(width: 34, height: 34)
                     .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.title)
-                        .font(.system(.subheadline, design: .rounded, weight: .bold))
+                        .font(ChocType.body.weight(.semibold))
                         .foregroundStyle(isAvailable ? palette.primaryText : palette.secondaryText)
                         .lineLimit(1)
 
                     if !isAvailable {
                         Text(L10n.tr("已从页面移除", "Removed from pages", language: lang))
-                            .font(.caption2)
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                     } else if let ago = entry.formattedLastTriggered() {
                         Text(ago)
-                            .font(.caption2.monospacedDigit())
+                            .font(ChocType.micro.monospacedDigit())
                             .foregroundStyle(palette.secondaryText)
                     }
                 }
@@ -417,14 +417,14 @@ public struct IOSRecentlyTriggeredSheet: View {
 
                 if isAwaitingConfirm {
                     Text(L10n.tr("再点确认", "Tap Again", language: lang))
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.emphasisForeground)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(palette.statusFailure, in: Capsule())
                 } else if isAvailable {
                     Text(L10n.tr("再运行", "Run", language: lang))
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.accent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -551,7 +551,7 @@ public struct IOSPinnedStripTilesRow: View {
         if !pinnedSlots.isEmpty {
             HStack(spacing: 5) {
                 Image(systemName: "pin.fill")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.accent)
                     .frame(width: 14)
                     .accessibilityHidden(true)
@@ -612,21 +612,20 @@ public struct IOSPinnedStripTilesRow: View {
                 pinnedLeadingIcon(for: effectiveItem)
 
                 Text(isAwaitingConfirm ? L10n.tr("再点确认", "Confirm", language: lang) : title)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(isAwaitingConfirm ? palette.statusFailure : palette.primaryText)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.72)
 
                 if let outcome {
                     Spacer(minLength: 0)
                     Image(systemName: outcome == .success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(ChocType.micro)
                         .foregroundStyle(outcome == .success ? palette.statusConnected : palette.statusFailure)
                 } else if !isAwaitingConfirm,
                           let ago = client.lastTriggeredText(for: pinned.item, from: pinned.coordinate) {
                     Spacer(minLength: 0)
                     Text(ago)
-                        .font(.system(size: 9, weight: .semibold, design: .rounded))
+                        .font(ChocType.micro)
                         .monospacedDigit()
                         .foregroundStyle(palette.secondaryText)
                 }
@@ -705,27 +704,27 @@ public struct IOSPinnedStripTilesRow: View {
                 .frame(width: 16, height: 16)
         case .systemAction(let action, _, _):
             Image(systemName: action.sfSymbol)
-                .font(.system(size: 11, weight: .bold))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.accent)
                 .frame(width: 16, height: 16)
         case .shortcut(_, let emoji, _):
             Text(emoji.isEmpty ? "⚡️" : emoji)
-                .font(.system(size: 13))
+                .font(ChocType.caption)
         case .website(_, _, let emoji, _, _):
             Text(emoji.isEmpty ? "🌐" : emoji)
-                .font(.system(size: 13))
+                .font(ChocType.caption)
         case .flow(_, _, let emoji, _, _):
             Text(emoji.isEmpty ? "⚡️" : emoji)
-                .font(.system(size: 13))
+                .font(ChocType.caption)
         case .soundboard(_, _, let emoji, _):
             Text(emoji.isEmpty ? "🔊" : emoji)
-                .font(.system(size: 13))
+                .font(ChocType.caption)
         case .folder(let folder):
             Text(folder.emoji)
-                .font(.system(size: 13))
+                .font(ChocType.caption)
         case .slotReference:
             Image(systemName: "arrow.turn.up.right")
-                .font(.system(size: 11, weight: .bold))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.accent)
         }
     }

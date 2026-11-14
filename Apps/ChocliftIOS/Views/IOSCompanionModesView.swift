@@ -206,6 +206,20 @@ public struct IOSChocolateBarSurfaceView: View {
         }
     }
 
+    private func visibleSlotCount(for page: BarPage) -> Int {
+        min(BarPage.slotsPerPage, (page.slots.lastIndex(where: { $0 != nil }).map { $0 + 2 } ?? 1))
+    }
+
+    private var activeTileRegionHeight: CGFloat {
+        guard !client.profile.pages.isEmpty else { return 44 }
+        let index = min(max(0, currentPageIndex), client.profile.pages.count - 1)
+        let page = client.profile.pages[index]
+        guard page.slots.contains(where: { $0 != nil }) else { return 44 }
+        let columns = isLandscape ? 4 : 2
+        let rows = (visibleSlotCount(for: page) + columns - 1) / columns
+        return CGFloat(rows) * 84 + CGFloat(max(0, rows - 1)) * 12 + 20
+    }
+
     private var barHorizontalPager: some View {
         GeometryReader { pagerGeo in
             let pageWidth = max(1, pagerGeo.size.width)
@@ -269,6 +283,7 @@ public struct IOSChocolateBarSurfaceView: View {
                 }
             )
         }
+        .frame(height: activeTileRegionHeight)
     }
 
     private func interactiveDragOffset(
@@ -292,9 +307,9 @@ public struct IOSChocolateBarSurfaceView: View {
         HStack(spacing: 8) {
             HStack(spacing: 5) {
                 Image(systemName: "pin.fill")
-                    .font(.caption2.bold())
+                    .font(ChocType.micro)
                 Text(L10n.tr("已固定当前页", "Page Pinned", language: lang))
-                    .font(.caption2.bold())
+                    .font(ChocType.micro)
                     .lineLimit(1)
             }
             .foregroundStyle(palette.secondaryText)
@@ -307,9 +322,9 @@ public struct IOSChocolateBarSurfaceView: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.caption2.bold())
+                        .font(ChocType.micro)
                     Text(L10n.tr("跟随前台应用", "Follow Frontmost App", language: lang))
-                        .font(.system(.caption, design: .rounded, weight: .bold))
+                        .font(ChocType.caption)
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 12)
@@ -329,7 +344,7 @@ public struct IOSChocolateBarSurfaceView: View {
         HStack(spacing: 8) {
             HStack(spacing: 5) {
                 Image(systemName: "macwindow")
-                    .font(.caption2.bold())
+                    .font(ChocType.micro)
                 Text(
                     L10n.tr(
                         "正跟随 \(appName) · \(page.iconEmoji) \(page.title)",
@@ -337,7 +352,7 @@ public struct IOSChocolateBarSurfaceView: View {
                         language: lang
                     )
                 )
-                .font(.caption2.bold())
+                .font(ChocType.micro)
                 .lineLimit(1)
             }
             .padding(.horizontal, 10)
@@ -364,54 +379,44 @@ public struct IOSChocolateBarSurfaceView: View {
         .padding(.top, 8)
     }
 
+    @ViewBuilder
     private func pageGrid(for page: BarPage, pageOffset: Int) -> some View {
-        let colCount = isLandscape ? 4 : 2
-        let rowCount = isLandscape ? 2 : 4
-
-        return GeometryReader { geo in
-            let spacing: CGFloat = isLandscape ? 12 : 12
-            let horizontalPad: CGFloat = isLandscape ? 14 : 16
-            let verticalPad: CGFloat = isLandscape ? 12 : 10
-            let availW = max(80, geo.size.width - horizontalPad * 2 - spacing * CGFloat(colCount - 1))
-            let availH = max(80, geo.size.height - verticalPad * 2 - spacing * CGFloat(rowCount - 1))
-            let tileW = availW / CGFloat(colCount)
-            let tileH = availH / CGFloat(rowCount)
-
+        if !page.slots.contains(where: { $0 != nil }) {
+            Button {
+                onEditSlot(IOSEditSlotSelection(pageIndex: pageOffset, slotIndex: 0))
+            } label: {
+                Label(L10n.tr("添加", "Add", language: lang), systemImage: "plus")
+                    .font(ChocType.body)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 44)
+                    .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(palette.accent)
+        } else {
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: isLandscape ? 4 : 2)
             TimelineView(.periodic(from: .now, by: 15.0)) { timeline in
-                VStack(spacing: spacing) {
-                    ForEach(0..<rowCount, id: \.self) { row in
-                        HStack(spacing: spacing) {
-                            ForEach(0..<colCount, id: \.self) { col in
-                                let slotIdx = row * colCount + col
-                                let item = page.slots[slotIdx]
-                                let key = "\(pageOffset)-\(slotIdx)"
-                                let slotOrigin = SlotCoordinate(pageID: page.id, slotIndex: slotIdx)
-                                let effectiveItem = item.flatMap { client.profile.resolveBarItem($0, from: slotOrigin).resolvedItem }
-                                let iconData = effectiveItem?.bundleIdentifier.flatMap {
-                                    client.appIconsByBundleID[$0] ?? BundledAppIcons.pngData(for: $0)
-                                }
-                                let isFrontmost = (effectiveItem?.bundleIdentifier != nil && effectiveItem?.bundleIdentifier == client.frontmostBundleID)
-
-                                tileButton(
-                                    pageIndex: pageOffset,
-                                    slotIndex: slotIdx,
-                                    slotOrigin: slotOrigin,
-                                    key: key,
-                                    item: item,
-                                    effectiveItem: effectiveItem,
-                                    iconData: iconData,
-                                    isFrontmost: isFrontmost,
-                                    now: timeline.date
-                                )
-                                .frame(width: tileW, height: tileH)
-                            }
+                LazyVGrid(columns: columns, spacing: 12) {
+                    ForEach(0..<visibleSlotCount(for: page), id: \.self) { slotIdx in
+                        let item = page.slots[slotIdx]
+                        let key = "\(pageOffset)-\(slotIdx)"
+                        let slotOrigin = SlotCoordinate(pageID: page.id, slotIndex: slotIdx)
+                        let effectiveItem = item.flatMap { client.profile.resolveBarItem($0, from: slotOrigin).resolvedItem }
+                        let iconData = effectiveItem?.bundleIdentifier.flatMap {
+                            client.appIconsByBundleID[$0] ?? BundledAppIcons.pngData(for: $0)
                         }
+                        let isFrontmost = effectiveItem?.bundleIdentifier != nil && effectiveItem?.bundleIdentifier == client.frontmostBundleID
+                        tileButton(
+                            pageIndex: pageOffset, slotIndex: slotIdx, slotOrigin: slotOrigin,
+                            key: key, item: item, effectiveItem: effectiveItem,
+                            iconData: iconData, isFrontmost: isFrontmost, now: timeline.date
+                        )
+                        .frame(height: 84)
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, horizontalPad)
-                .padding(.vertical, verticalPad)
+                .padding(.vertical, 10)
             }
+            .frame(maxHeight: .infinity, alignment: .top)
         }
     }
 
@@ -633,13 +638,13 @@ public struct IOSTimeTravelSurfaceView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Label(L10n.tr("应用时间旅行", "App Time Travel", language: lang), systemImage: "clock.arrow.circlepath")
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
 
                 Spacer()
 
                 Text(L10n.tr("点按切换 · 长按固定或退出", "Tap to switch · Hold to Pin or Quit", language: lang))
-                    .font(.caption2)
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .lineLimit(1)
             }
@@ -650,7 +655,7 @@ public struct IOSTimeTravelSurfaceView: View {
                 Spacer()
                 VStack(spacing: 10) {
                     Image(systemName: client.connectionState.isConnected ? "clock" : "laptopcomputer.slash")
-                        .font(.system(size: 30))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
 
                     Text(
@@ -658,7 +663,7 @@ public struct IOSTimeTravelSurfaceView: View {
                             ? L10n.tr("暂无最近切换的 Mac 应用", "No Recent Mac Apps Yet", language: lang)
                             : L10n.tr("连接 Mac 后开启时间旅行", "Connect Your Mac for Time Travel", language: lang)
                     )
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
 
                     Text(
@@ -666,7 +671,7 @@ public struct IOSTimeTravelSurfaceView: View {
                             ? L10n.tr("在 Mac 上任意切换窗口后，最近使用的应用会立即出现在这里。", "Switch windows on your Mac and recent apps will appear here automatically.", language: lang)
                             : L10n.tr("配对并连接 Mac 后，无需按 ⌘Tab 即可在此一键穿梭最近打开的窗口。", "Pair your Mac to jump across recently active windows with a single tap.", language: lang)
                     )
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 320)
@@ -676,7 +681,7 @@ public struct IOSTimeTravelSurfaceView: View {
                             onRequestPairing()
                         } label: {
                             Text(L10n.tr("连接 Mac", "Connect to Mac", language: lang))
-                                .font(.system(.caption, design: .rounded, weight: .bold))
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.accentForeground)
                                 .padding(.horizontal, 16)
                                 .frame(height: 44)
@@ -741,7 +746,7 @@ public struct IOSTimeTravelSurfaceView: View {
 
                     if entry.isPinned {
                         Image(systemName: "pin.fill")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                             .padding(4)
                             .background(palette.backgroundBottom.opacity(0.85), in: Circle())
@@ -750,13 +755,13 @@ public struct IOSTimeTravelSurfaceView: View {
                 }
 
                 Text(entry.appName)
-                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
 
                 if isAwaitingQuitConfirm {
                     Text(L10n.tr("再点确认退出", "Tap Again to Quit", language: lang))
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.emphasisForeground)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 2)
@@ -771,7 +776,7 @@ public struct IOSTimeTravelSurfaceView: View {
                                 ? L10n.tr("当前窗口", "Active", language: lang)
                                 : (entry.isRunning ? L10n.tr("运行中", "Running", language: lang) : L10n.tr("已固定", "Pinned", language: lang))
                         )
-                        .font(.system(size: 10, weight: .medium))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                     }
                 }
@@ -1086,9 +1091,9 @@ public struct IOSEmojiBarSurfaceView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: segment.sfSymbol)
-                            .font(.system(size: 11.5, weight: .bold))
+                            .font(ChocType.micro)
                         Text(segment.title(in: lang))
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .font(ChocType.caption)
                             .lineLimit(1)
                     }
                     .foregroundStyle(isSelected ? palette.accentForeground : palette.secondaryText)
@@ -1114,9 +1119,9 @@ public struct IOSEmojiBarSurfaceView: View {
         if client.isEditingTextOnMac {
             HStack(spacing: 5) {
                 Image(systemName: "character.cursor.ibeam")
-                    .font(.caption2.bold())
+                    .font(ChocType.micro)
                 Text(L10n.tr("正在 \(client.focusedMacAppName ?? "Mac") 输入", "Typing in \(client.focusedMacAppName ?? "Mac")", language: lang))
-                    .font(.caption2.bold())
+                    .font(ChocType.micro)
                     .lineLimit(1)
             }
             .padding(.horizontal, 10)
@@ -1126,9 +1131,9 @@ public struct IOSEmojiBarSurfaceView: View {
         } else {
             HStack(spacing: 5) {
                 Image(systemName: "character.cursor.ibeam")
-                    .font(.caption2.bold())
+                    .font(ChocType.micro)
                 Text(L10n.tr("请先在 Mac 点击输入框", "Focus a Mac text field", language: lang))
-                    .font(.caption2.weight(.semibold))
+                    .font(ChocType.micro)
                     .lineLimit(1)
             }
             .padding(.horizontal, 10)
@@ -1146,9 +1151,9 @@ public struct IOSEmojiBarSurfaceView: View {
                 let safeIdx = min(max(0, currentSlideIndex), client.profile.emojiSlides.count - 1)
                 HStack(spacing: 4) {
                     Text(client.profile.emojiSlides[safeIdx].iconEmoji)
-                        .font(.caption2)
+                        .font(ChocType.micro)
                     Text(client.profile.emojiSlides[safeIdx].title)
-                        .font(.system(.caption2, design: .rounded, weight: .bold))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                         .lineLimit(1)
                 }
@@ -1156,7 +1161,7 @@ public struct IOSEmojiBarSurfaceView: View {
         case .snippets:
             if !client.profile.snippets.isEmpty {
                 Text("\(client.profile.snippets.count)/\(TextSnippet.maxLibraryCount)")
-                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .font(ChocType.micro.monospacedDigit())
                     .foregroundStyle(palette.secondaryText)
             }
         case .clipboard:
@@ -1164,12 +1169,12 @@ public struct IOSEmojiBarSurfaceView: View {
             HStack(spacing: 6) {
                 if pinCount > 0 {
                     Text("\(pinCount)/\(PinnedClipboardItem.maxPinnedCount)")
-                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .font(ChocType.micro.monospacedDigit())
                         .foregroundStyle(palette.secondaryText)
                 }
                 if let text = client.clipboardPreview.previewText, client.connectionState.isConnected {
                     Text(client.clipboardPreview.isTruncated ? "280+" : "\(text.count)/280")
-                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .font(ChocType.micro.monospacedDigit())
                         .foregroundStyle(palette.secondaryText)
                 }
             }
@@ -1185,7 +1190,7 @@ public struct IOSEmojiBarSurfaceView: View {
                 showAllCatalogSheet = true
             } label: {
                 Label(L10n.tr("全部分类", "All Emojis", language: lang), systemImage: "magnifyingglass")
-                    .font(.caption.bold())
+                    .font(ChocType.caption)
                     .padding(.horizontal, 12)
                     .frame(minHeight: 44)
                     .background(palette.tileFillTop, in: Capsule())
@@ -1203,13 +1208,13 @@ public struct IOSEmojiBarSurfaceView: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "plus")
-                        .font(.caption.bold())
+                        .font(ChocType.caption)
                     Text(
                         canAdd
                             ? L10n.tr("新建", "New", language: lang)
                             : "\(TextSnippet.maxLibraryCount)/\(TextSnippet.maxLibraryCount)"
                     )
-                    .font(.caption.bold())
+                    .font(ChocType.caption)
                     .lineLimit(1)
                 }
                 .padding(.horizontal, 12)
@@ -1240,11 +1245,11 @@ public struct IOSEmojiBarSurfaceView: View {
                 Spacer(minLength: 6)
 
                 Image(systemName: "text.quote")
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(ChocType.title)
                     .foregroundStyle(palette.accent)
 
                 Text(L10n.tr("暂无常用文本片段", "No Saved Snippets Yet", language: lang))
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
 
                 Text(
@@ -1254,7 +1259,7 @@ public struct IOSEmojiBarSurfaceView: View {
                         language: lang
                     )
                 )
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 320)
@@ -1264,7 +1269,7 @@ public struct IOSEmojiBarSurfaceView: View {
                     snippetEditorSession = .create
                 } label: {
                     Label(L10n.tr("新建文本片段", "New Snippet", language: lang), systemImage: "plus")
-                        .font(.system(.caption, design: .rounded, weight: .bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.accentForeground)
                         .padding(.horizontal, 16)
                         .frame(height: 44)
@@ -1308,7 +1313,7 @@ public struct IOSEmojiBarSurfaceView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
                         Text(snippet.displayTitle(in: lang))
-                            .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                            .font(ChocType.caption)
                             .foregroundStyle(isTypingBlockedUnfocused ? palette.secondaryText : palette.primaryText)
                             .lineLimit(1)
 
@@ -1316,13 +1321,13 @@ public struct IOSEmojiBarSurfaceView: View {
 
                         HStack(spacing: 3) {
                             Image(systemName: snippet.insertMode.sfSymbol)
-                                .font(.system(size: 9.5, weight: .bold))
+                                .font(ChocType.micro)
                             Text(
                                 isTypingBlockedUnfocused
                                     ? L10n.tr("需聚焦框", "Focus Field", language: lang)
                                     : snippet.insertMode.badgeTitle(in: lang)
                             )
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .font(ChocType.micro)
                             .lineLimit(1)
                         }
                         .foregroundStyle(isTypingBlockedUnfocused ? palette.secondaryText : palette.accent)
@@ -1335,7 +1340,7 @@ public struct IOSEmojiBarSurfaceView: View {
                     }
 
                     Text(snippet.singleLinePreview)
-                        .font(.system(size: 12))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
@@ -1353,7 +1358,7 @@ public struct IOSEmojiBarSurfaceView: View {
                 snippetActionsMenuContent(for: snippet)
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .frame(width: 44, height: 44)
                     .background(palette.tileFillBottom.opacity(0.75), in: Circle())
@@ -1590,7 +1595,7 @@ public struct IOSEmojiBarSurfaceView: View {
                         ForEach(EmojiCatalog.categories) { cat in
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("\(cat.icon) \(cat.title(in: lang))")
-                                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                                    .font(ChocType.body.weight(.semibold))
                                     .foregroundStyle(palette.primaryText)
 
                                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 7), spacing: 8) {
@@ -1607,7 +1612,7 @@ public struct IOSEmojiBarSurfaceView: View {
                                             }
                                         } label: {
                                             Text(em)
-                                                .font(.system(size: 28))
+                                                .font(ChocType.title)
                                                 .frame(height: 44)
                                                 .frame(maxWidth: .infinity)
                                                 .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -1719,7 +1724,7 @@ private struct IOSSnippetEditorSheet: View {
                         Text(L10n.tr("名称", "Title", language: lang))
                         Spacer()
                         Text("\(titleText.count)/\(TextSnippet.maxTitleLength)")
-                            .font(.caption2.monospacedDigit())
+                            .font(ChocType.micro.monospacedDigit())
                     }
                 }
                 .listRowBackground(palette.barSurface)
@@ -1735,7 +1740,7 @@ private struct IOSSnippetEditorSheet: View {
                                         language: lang
                                     )
                                 )
-                                .font(.body)
+                                .font(ChocType.body)
                                 .foregroundStyle(palette.secondaryText.opacity(0.65))
                                 .padding(.top, 8)
                                 .padding(.leading, 5)
@@ -1758,7 +1763,7 @@ private struct IOSSnippetEditorSheet: View {
                             Text(L10n.tr("片段内容", "Snippet Body", language: lang))
                             Spacer()
                             Text("\(bodyText.count)/\(TextSnippet.maxBodyLength)")
-                                .font(.caption2.monospacedDigit())
+                                .font(ChocType.micro.monospacedDigit())
                         }
                     } footer: {
                         Text(selectedInsertMode.subtitle(in: lang))
@@ -1781,13 +1786,13 @@ private struct IOSSnippetEditorSheet: View {
                             } label: {
                                 HStack(spacing: 10) {
                                     Image(systemName: candidate.sfSymbol)
-                                        .font(.system(size: 13.5, weight: .bold))
+                                        .font(ChocType.caption)
                                         .foregroundStyle(isSelected ? palette.accent : palette.secondaryText)
                                         .frame(width: 24)
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(candidate.title(in: lang))
-                                            .font(.system(.subheadline, design: .rounded, weight: isSelected ? .bold : .medium))
+                                            .font(ChocType.body.weight(.semibold))
                                             .foregroundStyle(isModeAvailable || isSelected ? palette.primaryText : palette.secondaryText)
 
                                         if candidate == .typeKeys && !isModeAvailable {
@@ -1798,7 +1803,7 @@ private struct IOSSnippetEditorSheet: View {
                                                     language: lang
                                                 )
                                             )
-                                            .font(.caption2)
+                                            .font(ChocType.micro)
                                             .foregroundStyle(palette.secondaryText)
                                         }
                                     }
@@ -1831,7 +1836,7 @@ private struct IOSSnippetEditorSheet: View {
                             HStack {
                                 Spacer()
                                 Label(L10n.tr("删除此片段", "Delete Snippet", language: lang), systemImage: "trash")
-                                    .font(.body.weight(.semibold))
+                                    .font(ChocType.body.weight(.semibold))
                                 Spacer()
                             }
                         }
@@ -1863,7 +1868,7 @@ private struct IOSSnippetEditorSheet: View {
                     Button(L10n.tr("保存", "Save", language: lang)) {
                         saveAndDismiss()
                     }
-                    .font(.body.weight(.bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(canSave ? palette.accent : palette.secondaryText)
                     .disabled(!canSave)
                     .accessibilityIdentifier("ios-snippet-save-button")
@@ -1959,7 +1964,7 @@ public struct IOSGesturePadSurfaceView: View {
 
                 VStack(spacing: 7) {
                     Image(systemName: client.profile.gestureConfig.isGlobalOverlayEnabled ? "hand.draw.fill" : "hand.raised.slash.fill")
-                        .font(.system(size: 28))
+                        .font(ChocType.title)
                         .foregroundStyle(client.profile.gestureConfig.isGlobalOverlayEnabled ? palette.accent : palette.secondaryText)
 
                     Text(
@@ -1967,14 +1972,14 @@ public struct IOSGesturePadSurfaceView: View {
                             ? L10n.tr("多指触控手势板", "Multi-Touch Gesture Pad", language: lang)
                             : L10n.tr("多指手势已在 Mac 端暂停", "Multi-Touch Paused on Mac", language: lang)
                     )
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
 
                     VStack(spacing: 2) {
                         Text(L10n.tr("双指上/下滑：最大化与最小化  ·  双指左/右滑：贴靠半屏", "2-Finger Up/Down: Max & Min  ·  2-Finger L/R: Snap Half", language: lang))
                         Text(L10n.tr("三指捏合/张开：复制与粘贴  ·  单指可直接点按快捷按钮", "Pinch In/Out: Copy & Paste  ·  1-Finger taps quick buttons", language: lang))
                     }
-                    .font(.caption2)
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .multilineTextAlignment(.center)
                 }
@@ -2005,14 +2010,13 @@ public struct IOSGesturePadSurfaceView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: mapped?.sfSymbol ?? gesture.sfSymbol)
-                                .font(.system(size: 14, weight: .bold))
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.secondaryText)
                                 .frame(width: 18)
                             Text(mapped?.compactTitle(in: lang) ?? gesture.title(in: lang))
-                                .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.8)
                             Spacer(minLength: 0)
                         }
                         .padding(.horizontal, 10)
@@ -2097,7 +2101,7 @@ public struct IOSIPadChocolateBarDeckView: View {
                         }
                     } label: {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.primaryText)
                             .frame(width: 34, height: 30)
                             .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
@@ -2135,10 +2139,10 @@ public struct IOSIPadChocolateBarDeckView: View {
                                     } label: {
                                         HStack(spacing: 4) {
                                             Text(icon)
-                                                .font(.system(size: 11.5))
+                                                .font(ChocType.micro)
                                             MaxWidthPillTitleLayout(maxWidth: 108) {
                                                 Text(displayTitle)
-                                                    .font(.system(size: 11.5, weight: isSelected ? .bold : .semibold, design: .rounded))
+                                                    .font(ChocType.micro)
                                                     .lineLimit(1)
                                                     .truncationMode(.tail)
                                             }
@@ -2185,7 +2189,7 @@ public struct IOSIPadChocolateBarDeckView: View {
                         }
                     } label: {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.primaryText)
                             .frame(width: 34, height: 30)
                             .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
@@ -2361,9 +2365,9 @@ public struct IOSPersistentControlStripView: View {
                 if client.connectionState.isConnected {
                     if state.nowPlaying?.primaryDisplayText != nil { nowPlayingCluster }
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(L10n.tr("音量", "Volume", language: lang)).font(.caption.bold())
+                        Text(L10n.tr("音量", "Volume", language: lang)).font(ChocType.caption)
                         volumeControlCluster
-                        Text(L10n.tr("亮度", "Brightness", language: lang)).font(.caption.bold())
+                        Text(L10n.tr("亮度", "Brightness", language: lang)).font(ChocType.caption)
                         brightnessControlCluster
                     }
                     HStack(spacing: 12) {
@@ -2378,10 +2382,10 @@ public struct IOSPersistentControlStripView: View {
                                 .frame(maxWidth: .infinity, minHeight: 48)
                         }
                     }
-                    .font(.caption.bold())
+                    .font(ChocType.caption)
                 } else {
                     VStack(spacing: 12) {
-                        Image(systemName: "laptopcomputer").font(.largeTitle)
+                        Image(systemName: "laptopcomputer").font(ChocType.title)
                         Text(ChocConnectionVisualState.resolve(from: client).bannerTitle(in: lang))
                         Button(L10n.tr("配对或重试", "Pair or Retry", language: lang)) { onReconnect?() }
                             .frame(minHeight: 48).buttonStyle(.borderedProminent)
@@ -2474,7 +2478,7 @@ public struct IOSPersistentControlStripView: View {
                 triggerStripQuickAction(.volumeMute)
             } label: {
                 Image(systemName: speakerSymbol(level: effectiveVolume, isMuted: isMuted))
-                    .font(.system(size: 13.5, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(isMuted ? palette.statusFailure : palette.accent)
                     .frame(width: 34, height: 34)
                     .background(
@@ -2526,7 +2530,7 @@ public struct IOSPersistentControlStripView: View {
             )
 
             Text("\(pct)%")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(ChocType.micro)
                 .monospacedDigit()
                 .foregroundStyle(isMuted ? palette.secondaryText : palette.primaryText)
                 .frame(minWidth: 32, alignment: .trailing)
@@ -2554,7 +2558,7 @@ public struct IOSPersistentControlStripView: View {
 
         return HStack(spacing: 6) {
             Image(systemName: effectiveBrightness < 0.45 ? "sun.min.fill" : "sun.max.fill")
-                .font(.system(size: 13.5, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(available ? palette.accentEmphasis : palette.secondaryText)
                 .frame(width: 22, height: 34)
 
@@ -2581,7 +2585,7 @@ public struct IOSPersistentControlStripView: View {
             )
 
             Text("\(pct)%")
-                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .font(ChocType.micro)
                 .monospacedDigit()
                 .foregroundStyle(palette.secondaryText)
                 .frame(minWidth: 30, alignment: .trailing)
@@ -2607,17 +2611,17 @@ public struct IOSPersistentControlStripView: View {
 
         return VStack(spacing: 12) {
             Text(String((activeMedia?.appName ?? "♪").prefix(1)).uppercased())
-                .font(.system(size: 48, weight: .bold, design: .rounded))
+                .font(ChocType.title)
                 .foregroundStyle(palette.accent)
                 .frame(width: 112, height: 112)
                 .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 26))
             VStack(spacing: 4) {
                 Text(primaryText ?? L10n.tr("未在播放", "Not Playing", language: lang))
-                    .font(.system(.title3, design: .rounded, weight: .bold))
+                    .font(ChocType.title)
                     .foregroundStyle(palette.primaryText).lineLimit(2)
                 if let artist = activeMedia?.artist { Text(artist).foregroundStyle(palette.secondaryText) }
                 if let source = activeMedia?.appName {
-                    Text(source).font(.caption).foregroundStyle(palette.secondaryText)
+                    Text(source).font(ChocType.caption).foregroundStyle(palette.secondaryText)
                 }
             }
             if let progressFraction {
@@ -2633,7 +2637,7 @@ public struct IOSPersistentControlStripView: View {
                 .accessibilityLabel(L10n.tr("播放进度", "Playback position", language: lang))
             }
             if let progressText {
-                Text(progressText).font(.caption.monospacedDigit())
+                Text(progressText).font(ChocType.caption.monospacedDigit())
                     .foregroundStyle(isScrubbing ? palette.accent : palette.secondaryText)
             }
             HStack(spacing: 24) {
@@ -2651,7 +2655,7 @@ public struct IOSPersistentControlStripView: View {
                 triggerStripQuickAction(.mediaPlayPause)
             } label: {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .frame(width: 52, height: 48)
                     .background(
@@ -2683,7 +2687,7 @@ public struct IOSPersistentControlStripView: View {
                 triggerStripQuickAction(.mediaNext)
             } label: {
                 Image(systemName: "forward.fill")
-                    .font(.system(size: 12.5, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .frame(width: 52, height: 48)
                     .background(
@@ -2728,7 +2732,7 @@ public struct IOSPersistentControlStripView: View {
             client.undoLastWindowMove()
         } label: {
             Image(systemName: "arrow.uturn.backward")
-                .font(.system(size: 13, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(canUndo ? palette.accent : palette.secondaryText.opacity(0.42))
                 .frame(width: 34, height: 34)
                 .background(
@@ -2775,7 +2779,7 @@ public struct IOSPersistentControlStripView: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: isMuted ? "mic.slash.fill" : "mic.fill")
-                    .font(.system(size: 12.5, weight: .bold))
+                    .font(ChocType.caption)
 
                 if !isMuted {
                     Circle()
@@ -2788,7 +2792,7 @@ public struct IOSPersistentControlStripView: View {
                         ? L10n.tr("闭麦", "Muted", language: lang)
                         : (compactLabel ? L10n.tr("麦克", "Mic", language: lang) : L10n.tr("麦克风", "Mic On", language: lang))
                 )
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(ChocType.micro)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
             }
@@ -2836,7 +2840,7 @@ public struct IOSPersistentControlStripView: View {
     private var clockTextView: some View {
         TimelineView(.periodic(from: .now, by: 10.0)) { context in
             Text(Self.localClockFormatter.string(from: context.date))
-                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .font(ChocType.caption)
                 .monospacedDigit()
                 .foregroundStyle(palette.primaryText)
                 .lineLimit(1)

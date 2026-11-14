@@ -48,11 +48,11 @@ public struct IOSEmptyTrashPillButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: isArmed ? "exclamationmark.triangle.fill" : "trash")
-                    .font(.system(size: 11.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(isArmed ? palette.emphasisForeground : palette.statusFailure)
 
                 Text(displayTitle)
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(isArmed ? palette.emphasisForeground : palette.primaryText)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -140,7 +140,7 @@ public struct IOSEjectExternalDisksPillButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: isArmed ? "exclamationmark.triangle.fill" : "eject.fill")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(
                         isArmed
                             ? palette.emphasisForeground
@@ -148,7 +148,7 @@ public struct IOSEjectExternalDisksPillButton: View {
                     )
 
                 Text(displayTitle)
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(
                         isArmed
                             ? palette.emphasisForeground
@@ -241,29 +241,28 @@ public struct IOSPrivacyCaptureStripBadge: View {
             if isConnected && privacy.isAnyCaptureActive {
                 if privacy.isCameraInUse {
                     Image(systemName: "video.fill")
-                        .font(.system(size: 10.5, weight: .bold))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.statusConnected)
                 }
                 if privacy.isMicrophoneInUse {
                     Image(systemName: "mic.fill")
-                        .font(.system(size: 10.5, weight: .bold))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.accentEmphasis)
                 }
             } else {
                 Image(systemName: "video.slash")
-                    .font(.system(size: 10.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText.opacity(0.75))
             }
 
             Text(text)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(
                     isConnected
                         ? (privacy.isAnyCaptureActive ? palette.primaryText : palette.secondaryText)
                         : palette.secondaryText.opacity(0.8)
                 )
                 .lineLimit(1)
-                .minimumScaleFactor(0.85)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3.5)
@@ -299,11 +298,11 @@ public struct IOSWiFiSSIDStripBadge: View {
 
         HStack(spacing: 5) {
             Image(systemName: "wifi")
-                .font(.system(size: 10.5, weight: .bold))
+                .font(ChocType.micro)
                 .foregroundStyle(hasSSID ? palette.accent : palette.secondaryText.opacity(0.75))
 
             Text(labelText)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(hasSSID ? palette.primaryText : palette.secondaryText.opacity(0.85))
                 .lineLimit(1)
                 .truncationMode(.tail)

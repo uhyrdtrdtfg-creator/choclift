@@ -98,12 +98,12 @@ public struct IOSCompanionBarRibbon: View {
 
         return HStack(spacing: 6) {
             Image(systemName: symbolName)
-                .font(.system(size: 12, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(symbolTint)
 
             if let event {
                 Text(event.title)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -115,24 +115,24 @@ public struct IOSCompanionBarRibbon: View {
                         language: lang
                     )
                 )
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(ChocType.micro)
                 .monospacedDigit()
                 .foregroundStyle(palette.secondaryText)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
             } else if isDenied {
                 Text(L10n.tr("日历权限未开启", "Calendar access off", language: lang))
-                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .lineLimit(1)
             } else if isConnected {
                 Text(L10n.tr("近期无日程", "No upcoming events", language: lang))
-                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .lineLimit(1)
             } else {
                 Text(L10n.tr("下一日程", "Next Event", language: lang))
-                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .lineLimit(1)
             }
@@ -168,18 +168,18 @@ public struct IOSCompanionBarRibbon: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "doc.on.clipboard")
-                        .font(.system(size: 11.5, weight: .bold))
+                        .font(ChocType.micro)
                         .foregroundStyle(preview.hasText ? palette.accent : palette.secondaryText)
 
                     if let singleLine = preview.singleLinePreview {
                         Text(singleLine)
-                            .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     } else {
                         Text(L10n.tr("剪贴板为空", "Clipboard empty", language: lang))
-                            .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                             .lineLimit(1)
                     }
@@ -204,7 +204,7 @@ public struct IOSCompanionBarRibbon: View {
                 client.pasteMacClipboard()
             } label: {
                 Text(L10n.tr("粘贴", "Paste", language: lang))
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(preview.hasText ? palette.accentForeground : palette.secondaryText)
                     .padding(.horizontal, 9)
                     .frame(height: 44)
@@ -254,12 +254,12 @@ public struct IOSCompanionBarRibbon: View {
                         .tint(palette.accent)
                 } else {
                     Image(systemName: "camera.viewfinder")
-                        .font(.system(size: 12.5, weight: .bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.accent)
                 }
 
                 Text(compact ? L10n.tr("截屏", "Shot", language: lang) : L10n.tr("截屏", "Screenshot", language: lang))
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -318,16 +318,16 @@ public struct IOSClipboardPreviewCard: View {
             HStack(spacing: 8) {
                 HStack(spacing: 5) {
                     Image(systemName: "doc.on.clipboard")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(preview.hasText ? palette.accent : palette.secondaryText)
 
                     Text(L10n.tr("Mac 剪贴板", "Mac Clipboard", language: lang))
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
 
                     if let text = preview.previewText {
                         Text(preview.isTruncated ? "280+" : "\(text.count)")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -354,9 +354,9 @@ public struct IOSClipboardPreviewCard: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "character.cursor.ibeam")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(ChocType.micro)
                         Text(L10n.tr("粘贴到 Mac", "Paste", language: lang))
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .font(ChocType.caption)
                             .lineLimit(1)
                     }
                     .foregroundStyle((isConnected && preview.hasText) ? palette.accentForeground : palette.secondaryText)
@@ -387,7 +387,7 @@ public struct IOSClipboardPreviewCard: View {
                 if expanded {
                     ScrollView {
                         Text(displayString)
-                            .font(.system(size: 13.5, weight: .regular, design: .rounded))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.primaryText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .multilineTextAlignment(.leading)
@@ -403,7 +403,7 @@ public struct IOSClipboardPreviewCard: View {
                         onTapExpand()
                     } label: {
                         Text(displayString)
-                            .font(.system(size: 12, weight: .regular, design: .rounded))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(3)
                             .multilineTextAlignment(.leading)
@@ -414,7 +414,7 @@ public struct IOSClipboardPreviewCard: View {
                     .accessibilityIdentifier("ios-clipboard-preview-text")
                 } else {
                     Text(displayString)
-                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(4)
                         .multilineTextAlignment(.leading)
@@ -427,7 +427,7 @@ public struct IOSClipboardPreviewCard: View {
                         ? L10n.tr("剪贴板为空或非纯文本", "Clipboard is empty or not plain text", language: lang)
                         : L10n.tr("配对连接 Mac 后在此预览剪贴板文本（最多 280 字）", "Pair with your Mac to preview clipboard text (up to 280 chars)", language: lang)
                 )
-                .font(.system(size: 12, weight: .regular, design: .rounded))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 .lineLimit(expanded ? 2 : 1)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -489,13 +489,13 @@ public struct IOSScreenshotPreviewOverlayCard: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.tr("已存至 Mac 桌面", "Saved to Mac Desktop", language: lang))
-                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
 
                     if let fileName = result.fileName {
                         Text(fileName)
-                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -508,7 +508,7 @@ public struct IOSScreenshotPreviewOverlayCard: View {
                     client.dismissScreenshotPreview()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                         .frame(width: 34, height: 34)
                         .background(palette.tileFillBottom, in: Circle())
@@ -584,7 +584,7 @@ public struct IOSDisplayTargetPickerMenu: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "display.2")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(selectedDisplay != nil ? palette.accent : palette.secondaryText)
 
                     if !compact || selectedDisplay != nil {
@@ -592,7 +592,7 @@ public struct IOSDisplayTargetPickerMenu: View {
                             selectedDisplay?.name
                                 ?? L10n.tr("当前屏幕", "Active Display", language: lang)
                         )
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
                         .frame(maxWidth: compact ? 86 : 140)

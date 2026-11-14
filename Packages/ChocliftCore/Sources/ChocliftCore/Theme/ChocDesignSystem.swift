@@ -5,6 +5,22 @@ import AppKit
 import UIKit
 #endif
 
+// MARK: - Shared typography
+
+/// Four rounded system-font roles shared by companion surfaces and their sheets.
+public enum ChocType {
+    public static let title: Font = .system(size: 17, weight: .semibold, design: .rounded)
+    public static let body: Font = .system(size: 15, weight: .regular, design: .rounded)
+    public static let caption: Font = .system(size: 13, weight: .medium, design: .rounded)
+    public static let micro: Font = .system(size: 11, weight: .medium, design: .rounded)
+
+    public static func tileName(side: CGFloat) -> Font {
+        side < 44
+            ? .system(size: max(9, min(11, side * 0.25)), weight: .medium, design: .rounded)
+            : micro
+    }
+}
+
 // MARK: - Hex Color Extension
 
 public extension Color {
@@ -402,9 +418,9 @@ public struct ChocLinkBadge: View {
     public var body: some View {
         HStack(spacing: 4) {
             Image(systemName: link.sfSymbol)
-                .font(.system(size: prominent ? 11 : 9.5, weight: .bold))
+                .font(ChocType.micro)
             Text(prominent ? link.displayName(in: language) : link.shortLabel(in: language))
-                .font(.system(size: prominent ? 11.5 : 10.5, weight: .bold, design: .rounded))
+                .font(ChocType.micro)
                 .lineLimit(1)
         }
         .foregroundStyle(tint)
@@ -596,11 +612,10 @@ public struct ChocBarTileCard: View {
                         Spacer()
                         HStack(spacing: 3) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: max(8.5, side * 0.095), weight: .bold))
+                                .font(ChocType.tileName(side: side))
                             Text(L10n.tr("再点确认", "Tap Again", language: language))
-                                .font(.system(size: max(9.5, side * 0.105), weight: .bold, design: .rounded))
+                                .font(ChocType.tileName(side: side))
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.75)
                         }
                         .foregroundStyle(palette.emphasisForeground)
                         .padding(.horizontal, isMicro ? 6 : 8)
@@ -622,15 +637,14 @@ public struct ChocBarTileCard: View {
                         Spacer()
                         HStack(spacing: 3) {
                             Image(systemName: lastRunOutcome == .success ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                                .font(.system(size: max(8.5, side * 0.095), weight: .bold))
+                                .font(ChocType.tileName(side: side))
                             Text(
                                 lastRunOutcome == .success
                                     ? L10n.tr("已执行", "Done", language: language)
                                     : L10n.tr("失败", "Failed", language: language)
                             )
-                            .font(.system(size: max(9.5, side * 0.105), weight: .bold, design: .rounded))
+                            .font(ChocType.tileName(side: side))
                             .lineLimit(1)
-                            .minimumScaleFactor(0.75)
                         }
                         .foregroundStyle(palette.emphasisForeground)
                         .padding(.horizontal, isMicro ? 6 : 8)
@@ -694,7 +708,7 @@ public struct ChocBarTileCard: View {
                         HStack {
                             HStack(spacing: 2) {
                                 Image(systemName: "arrow.turn.up.right")
-                                    .font(.system(size: max(7.5, side * 0.082), weight: .bold))
+                                    .font(ChocType.tileName(side: side))
                             }
                             .foregroundStyle(palette.secondaryText)
                             .padding(.horizontal, isMicro ? 4 : 5)
@@ -742,10 +756,9 @@ public struct ChocBarTileCard: View {
                     .frame(width: side * (isMicro ? 0.44 : 0.48), height: side * (isMicro ? 0.44 : 0.48))
 
                     Text(appName)
-                        .font(.system(size: max(11, side * 0.12), weight: .semibold, design: .rounded))
+                        .font(ChocType.tileName(side: side))
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
                         .padding(.horizontal, isMicro ? 5 : 8)
                 }
 
@@ -780,7 +793,7 @@ public struct ChocBarTileCard: View {
                     HStack {
                         Spacer()
                         Image(systemName: "bolt.fill")
-                            .font(.system(size: max(8.5, side * 0.095), weight: .bold))
+                            .font(ChocType.tileName(side: side))
                             .foregroundStyle(palette.accentEmphasis)
                             .padding(isMicro ? 5 : 7)
                     }
@@ -792,11 +805,10 @@ public struct ChocBarTileCard: View {
                         .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
 
                     Text(shortcutName)
-                        .font(.system(size: max(10.5, side * 0.112), weight: .bold, design: .rounded))
+                        .font(ChocType.tileName(side: side))
                         .foregroundStyle(palette.primaryText)
                         .multilineTextAlignment(.center)
                         .lineLimit(isMicro ? 1 : 2)
-                        .minimumScaleFactor(0.8)
                         .padding(.horizontal, isMicro ? 5 : 7)
                 }
             }
@@ -817,7 +829,7 @@ public struct ChocBarTileCard: View {
                     HStack {
                         Spacer()
                         Image(systemName: switchExistingTab ? "arrow.triangle.2.circlepath" : "safari.fill")
-                            .font(.system(size: max(8.5, side * 0.095), weight: .bold))
+                            .font(ChocType.tileName(side: side))
                             .foregroundStyle(palette.accent)
                             .padding(isMicro ? 5 : 7)
                     }
@@ -829,10 +841,9 @@ public struct ChocBarTileCard: View {
                         .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
 
                     Text(title.isEmpty ? cleanHost(from: url) : title)
-                        .font(.system(size: max(10.5, side * 0.115), weight: .bold, design: .rounded))
+                        .font(ChocType.tileName(side: side))
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
                         .padding(.horizontal, isMicro ? 5 : 7)
                 }
             }
@@ -855,10 +866,9 @@ public struct ChocBarTileCard: View {
                         HStack {
                             Spacer()
                             Text(shortcutText)
-                                .font(.system(size: max(7.5, side * 0.085), weight: .bold, design: .monospaced))
+                                .font(ChocType.tileName(side: side))
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.75)
                                 .padding(.horizontal, isMicro ? 4 : 5.5)
                                 .padding(.vertical, 2)
                                 .background(palette.barSurface.opacity(0.92), in: Capsule())
@@ -881,11 +891,10 @@ public struct ChocBarTileCard: View {
                         return action.title(in: language)
                     }()
                     Text((customTitle?.isEmpty == false ? customTitle! : defaultActionLabel))
-                        .font(.system(size: max(10.5, side * 0.11), weight: .semibold, design: .rounded))
+                        .font(ChocType.tileName(side: side))
                         .foregroundStyle(palette.primaryText)
                         .multilineTextAlignment(.center)
                         .lineLimit(isMicro ? 1 : 2)
-                        .minimumScaleFactor(0.8)
                         .padding(.horizontal, isMicro ? 4 : 6)
                 }
             }
@@ -912,10 +921,10 @@ public struct ChocBarTileCard: View {
                         Spacer()
                         HStack(spacing: 2) {
                             Image(systemName: "arrow.triangle.branch")
-                                .font(.system(size: max(8, side * 0.085), weight: .bold))
+                                .font(ChocType.tileName(side: side))
                             if resolvedStepCount > 0 && side >= 54 {
                                 Text("\(resolvedStepCount)")
-                                    .font(.system(size: max(8, side * 0.085), weight: .heavy, design: .rounded))
+                                    .font(ChocType.tileName(side: side))
                             }
                         }
                         .foregroundStyle(palette.accent)
@@ -932,11 +941,10 @@ public struct ChocBarTileCard: View {
                         .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
 
                     Text(resolvedTitle)
-                        .font(.system(size: max(10.5, side * 0.112), weight: .bold, design: .rounded))
+                        .font(ChocType.tileName(side: side))
                         .foregroundStyle(palette.primaryText)
                         .multilineTextAlignment(.center)
                         .lineLimit(isMicro ? 1 : 2)
-                        .minimumScaleFactor(0.8)
                         .padding(.horizontal, isMicro ? 5 : 7)
                 }
             }
@@ -961,7 +969,7 @@ public struct ChocBarTileCard: View {
                     HStack {
                         Spacer()
                         Image(systemName: "speaker.wave.2.fill")
-                            .font(.system(size: max(8, side * 0.088), weight: .bold))
+                            .font(ChocType.tileName(side: side))
                             .foregroundStyle(palette.accent)
                             .padding(.horizontal, isMicro ? 4 : 5)
                             .padding(.vertical, 2)
@@ -976,11 +984,10 @@ public struct ChocBarTileCard: View {
                         .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
 
                     Text(resolvedTitle)
-                        .font(.system(size: max(10.5, side * 0.112), weight: .bold, design: .rounded))
+                        .font(ChocType.tileName(side: side))
                         .foregroundStyle(palette.primaryText)
                         .multilineTextAlignment(.center)
                         .lineLimit(isMicro ? 1 : 2)
-                        .minimumScaleFactor(0.8)
                         .padding(.horizontal, isMicro ? 5 : 7)
                 }
             }
@@ -1002,9 +1009,9 @@ public struct ChocBarTileCard: View {
                         Spacer()
                         HStack(spacing: 2.5) {
                             Image(systemName: "square.grid.2x2.fill")
-                                .font(.system(size: max(7.5, side * 0.082), weight: .bold))
+                                .font(ChocType.tileName(side: side))
                             Text("\(folder.children.count)")
-                                .font(.system(size: max(8, side * 0.085), weight: .heavy, design: .rounded))
+                                .font(ChocType.tileName(side: side))
                                 .monospacedDigit()
                         }
                         .foregroundStyle(palette.accent)
@@ -1021,11 +1028,10 @@ public struct ChocBarTileCard: View {
                         .font(.system(size: side * (isMicro ? 0.30 : 0.32)))
 
                     Text(folder.displayTitle(in: language))
-                        .font(.system(size: max(10.5, side * 0.112), weight: .bold, design: .rounded))
+                        .font(ChocType.tileName(side: side))
                         .foregroundStyle(palette.primaryText)
                         .multilineTextAlignment(.center)
                         .lineLimit(isMicro ? 1 : 2)
-                        .minimumScaleFactor(0.8)
                         .padding(.horizontal, isMicro ? 5 : 7)
                 }
             }
@@ -1037,11 +1043,10 @@ public struct ChocBarTileCard: View {
 
     private func lastTriggeredPill(_ text: String, side: CGFloat, isMicro: Bool) -> some View {
         Text(text)
-            .font(.system(size: max(7.5, side * 0.082), weight: .semibold, design: .rounded))
+            .font(ChocType.tileName(side: side))
             .monospacedDigit()
             .foregroundStyle(palette.secondaryText)
             .lineLimit(1)
-            .minimumScaleFactor(0.8)
             .padding(.horizontal, isMicro ? 4 : 5)
             .padding(.vertical, 1.8)
             .background(palette.barSurface.opacity(0.92), in: Capsule())
@@ -1067,11 +1072,10 @@ public struct ChocBarTileCard: View {
                     .foregroundStyle(palette.secondaryText.opacity(0.72))
 
                 Text(L10n.tr("原槽位已空", "Target Missing", language: language))
-                    .font(.system(size: max(9.5, side * 0.105), weight: .medium, design: .rounded))
+                    .font(ChocType.tileName(side: side))
                     .foregroundStyle(palette.secondaryText.opacity(0.85))
                     .multilineTextAlignment(.center)
                     .lineLimit(isMicro ? 1 : 2)
-                    .minimumScaleFactor(0.75)
                     .padding(.horizontal, isMicro ? 4 : 6)
             }
         }
@@ -1133,7 +1137,7 @@ public struct ChocBarTileCard: View {
             VStack(spacing: isMicro ? 2.5 : 4) {
                 if let plusSymbol = EmptySlotHintPolicy.plusSymbolName(for: nil) {
                     Image(systemName: plusSymbol)
-                        .font(.system(size: isMicro ? 12.5 : 14.5, weight: .medium, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(isPressed ? palette.primaryText : palette.secondaryText.opacity(0.78))
                         .frame(width: isMicro ? 22 : 26, height: isMicro ? 22 : 26)
                         .background(
@@ -1148,7 +1152,7 @@ public struct ChocBarTileCard: View {
 
                 if let addLabel, side >= 38 {
                     Text(addLabel)
-                        .font(.system(size: isMicro ? 9.5 : 10.5, weight: .medium, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(isPressed ? palette.primaryText : palette.secondaryText.opacity(0.82))
                         .lineLimit(1)
                 }

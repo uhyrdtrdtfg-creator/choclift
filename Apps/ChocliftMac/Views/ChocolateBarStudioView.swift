@@ -40,7 +40,7 @@ public struct ChocolateBarStudioView: View {
             HStack(alignment: .top, spacing: 18) {
                 MacStudioNowPlayingRow(coordinator: coordinator, compact: true)
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(L10n.tr("音量", "Volume", language: lang)).font(.caption.bold())
+                    Text(L10n.tr("音量", "Volume", language: lang)).font(ChocType.caption)
                     Slider(value: Binding(get: { volumePreview ?? coordinator.controlStripState.volume }, set: { volumePreview = $0 }), in: 0...1, onEditingChanged: { editing in
                         if !editing {
                             coordinator.setStudioVolume(volumePreview ?? coordinator.controlStripState.volume)
@@ -48,7 +48,7 @@ public struct ChocolateBarStudioView: View {
                         }
                     })
                     Text("\(ControlStripLevel.percentage(for: volumePreview ?? coordinator.controlStripState.volume))%")
-                        .font(.caption.monospacedDigit())
+                        .font(ChocType.caption.monospacedDigit())
                 }
                 .frame(width: 190).padding(14)
             }
@@ -60,12 +60,11 @@ public struct ChocolateBarStudioView: View {
             }
 
             chocolateHardwarePreview
-                .frame(maxHeight: .infinity)
 
             DisclosureGroup(L10n.tr("应用关联", "App Binding", language: lang)) {
                 appDeckBindingBar
             }
-            .font(.caption)
+            .font(ChocType.caption)
             .foregroundStyle(palette.secondaryText)
 
             bottomHintBar
@@ -127,18 +126,18 @@ public struct ChocolateBarStudioView: View {
                         } label: {
                             HStack(spacing: 6) {
                                 Text(page.iconEmoji)
-                                    .font(.system(size: 13.5))
+                                    .font(ChocType.caption)
 
                                 MaxWidthPillTitleLayout(maxWidth: 108) {
                                     Text(displayTitle)
-                                        .font(.system(isSelected ? .callout : .caption, design: .rounded, weight: isSelected ? .bold : .semibold))
+                                        .font(ChocType.caption)
                                         .lineLimit(1)
                                         .truncationMode(.tail)
                                 }
 
                                 if hasBoundApp {
                                     Image(systemName: "macwindow")
-                                        .font(.system(size: isSelected ? 10 : 8.5, weight: .bold))
+                                        .font(ChocType.micro)
                                         .foregroundStyle(isSelected ? palette.accent : palette.accent.opacity(0.85))
                                 } else if !isSelected && count > 0 {
                                     Circle()
@@ -148,7 +147,7 @@ public struct ChocolateBarStudioView: View {
 
                                 if isSelected {
                                     Text("\(count)/\(BarPage.slotsPerPage)")
-                                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                                        .font(ChocType.micro)
                                         .foregroundStyle(palette.secondaryText)
                                 }
                             }
@@ -183,9 +182,9 @@ public struct ChocolateBarStudioView: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "slider.horizontal.3")
-                        .font(.caption.weight(.semibold))
+                        .font(ChocType.caption)
                     Text(L10n.tr("页面设置", "Page Setup", language: lang))
-                        .font(.caption.weight(.semibold))
+                        .font(ChocType.caption)
                 }
                 .foregroundStyle(palette.primaryText)
                 .padding(.horizontal, 11)
@@ -210,11 +209,11 @@ public struct ChocolateBarStudioView: View {
 
         return HStack(spacing: 10) {
             Image(systemName: "macwindow.on.rectangle")
-                .font(.caption.weight(.bold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.accent)
 
             Text(L10n.tr("当前台为此应用时显示本页：", "Show this page when this app is frontmost:", language: lang))
-                .font(.caption.weight(.semibold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 .lineLimit(1)
 
@@ -222,7 +221,7 @@ public struct ChocolateBarStudioView: View {
                 HStack(spacing: 6) {
                     if boundBundleIDs.isEmpty {
                         Text(L10n.tr("无（仅手动切换）", "None (manual only)", language: lang))
-                            .font(.caption)
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.secondaryText.opacity(0.85))
                     } else {
                         ForEach(boundBundleIDs, id: \.self) { bundleID in
@@ -259,7 +258,7 @@ public struct ChocolateBarStudioView: View {
                 .frame(width: 15, height: 15)
 
             Text(appName)
-                .font(.system(.caption, design: .rounded, weight: .semibold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.primaryText)
                 .lineLimit(1)
 
@@ -269,7 +268,7 @@ public struct ChocolateBarStudioView: View {
                 }
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 11))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
             }
             .buttonStyle(.plain)
@@ -332,13 +331,13 @@ public struct ChocolateBarStudioView: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: boundBundleIDs.isEmpty ? "plus.app" : "plus")
-                    .font(.caption2.weight(.bold))
+                    .font(ChocType.micro)
                 Text(
                     boundBundleIDs.isEmpty
                         ? L10n.tr("选择应用…", "Choose App…", language: lang)
                         : L10n.tr("添加应用…", "Add App…", language: lang)
                 )
-                .font(.caption.weight(.semibold))
+                .font(ChocType.caption)
             }
             .foregroundStyle(palette.primaryText)
             .padding(.horizontal, 10)
@@ -396,7 +395,7 @@ public struct ChocolateBarStudioView: View {
     private var emptyPageCallout: some View {
         HStack(spacing: 10) {
             Image(systemName: "square.grid.2x2")
-                .font(.callout.weight(.bold))
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.secondaryText)
             Text(
                 L10n.tr(
@@ -405,7 +404,7 @@ public struct ChocolateBarStudioView: View {
                     language: lang
                 )
             )
-            .font(.caption)
+            .font(ChocType.caption)
             .foregroundStyle(palette.secondaryText)
             .lineLimit(1)
 
@@ -415,7 +414,7 @@ public struct ChocolateBarStudioView: View {
                 editingSlot = EditingSlotTarget(pageIndex: currentPage.index, slotIndex: 0)
             } label: {
                 Text(L10n.tr("配置第 1 格…", "Assign Slot #1…", language: lang))
-                    .font(.caption.weight(.bold))
+                    .font(ChocType.caption)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(palette.accent, in: Capsule())
@@ -440,7 +439,7 @@ public struct ChocolateBarStudioView: View {
 
         return VStack(alignment: .leading, spacing: 12) {
             Text(L10n.tr("第 \(idx + 1) 页设置", "Page #\(idx + 1) Settings", language: lang))
-                .font(.headline)
+                .font(ChocType.title)
                 .foregroundStyle(palette.primaryText)
 
             LabeledContent(L10n.tr("页面名称", "Title", language: lang)) {
@@ -460,7 +459,7 @@ public struct ChocolateBarStudioView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(L10n.tr("页面图标", "Page Icon", language: lang))
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(32), spacing: 6), count: 5), alignment: .leading, spacing: 6) {
                     ForEach(["🍫", "🚀", "⚡️", "🌐", "🔮", "🎨", "🎧", "🌙", "💼", "⭐️"], id: \.self) { em in
@@ -469,7 +468,7 @@ public struct ChocolateBarStudioView: View {
                             coordinator.mutateProfile { $0.pages[idx].iconEmoji = em }
                         } label: {
                             Text(em)
-                                .font(.system(size: 16))
+                                .font(ChocType.body)
                                 .frame(width: 32, height: 30)
                                 .background(
                                     isCur ? palette.accent.opacity(0.20) : palette.tileFillBottom,
@@ -491,7 +490,7 @@ public struct ChocolateBarStudioView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text(L10n.tr("当前台为此应用时显示本页", "Show this page when this app is frontmost", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                     Spacer()
                     appDeckPickerMenu(for: page)
@@ -499,7 +498,7 @@ public struct ChocolateBarStudioView: View {
 
                 if boundBundleIDs.isEmpty {
                     Text(L10n.tr("未绑定应用（保持手动切换）", "No bound apps (manual switching)", language: lang))
-                        .font(.caption2)
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText.opacity(0.8))
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -570,7 +569,7 @@ public struct ChocolateBarStudioView: View {
                             .frame(width: 30, height: 30)
                         if let activeLink {
                             Image(systemName: activeLink.sfSymbol)
-                                .font(.system(size: 11, weight: .bold))
+                                .font(ChocType.micro)
                                 .foregroundStyle(activeLink == .bluetooth ? palette.statusBluetooth : palette.statusConnected)
                         } else {
                             Circle()
@@ -598,13 +597,11 @@ public struct ChocolateBarStudioView: View {
                     }
                 }
 
-                Spacer(minLength: 4)
-
                 Button {
                     coordinator.selectedSection = .timeTravel
                 } label: {
                     Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 13.5, weight: .semibold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                         .frame(width: 30, height: 30)
                         .background(palette.tileFillBottom.opacity(0.75), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -617,7 +614,7 @@ public struct ChocolateBarStudioView: View {
                     coordinator.selectedSection = .emojiBar
                 } label: {
                     Image(systemName: "face.smiling.fill")
-                        .font(.system(size: 13.5, weight: .semibold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                         .frame(width: 30, height: 30)
                         .background(palette.tileFillBottom.opacity(0.75), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -693,7 +690,7 @@ public struct ChocolateBarStudioView: View {
                             coordinator.executeBarItem(item, triggeredBy: "Mac Studio")
                         } label: {
                             Image(systemName: "play.fill")
-                                .font(.system(size: 9, weight: .bold))
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.primaryText)
                                 .frame(width: 22, height: 22)
                                 .background(palette.backgroundBottom.opacity(0.86), in: Circle())
@@ -707,7 +704,7 @@ public struct ChocolateBarStudioView: View {
                         clearSlot(pageIndex: pageIndex, slotIndex: slotIndex)
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.accentForeground)
                             .frame(width: 22, height: 22)
                             .background(palette.statusFailure.opacity(0.92), in: Circle())
@@ -816,7 +813,7 @@ public struct ChocolateBarStudioView: View {
                 systemImage: "arrow.up.and.down.and.arrow.left.and.right"
             )
         }
-        .font(.caption)
+        .font(ChocType.caption)
         .foregroundStyle(palette.secondaryText)
     }
 }

@@ -82,11 +82,11 @@ public struct IOSSoundboardSurfaceView: View {
                 L10n.tr("本机音效板", "Mac Soundboard", language: lang),
                 systemImage: "speaker.wave.2.bubble.left.fill"
             )
-            .font(.system(.subheadline, design: .rounded, weight: .bold))
+            .font(ChocType.body.weight(.semibold))
             .foregroundStyle(palette.primaryText)
 
             Text("\(allClips.count)/\(SoundboardClip.maxBoardCount)")
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .font(ChocType.micro)
                 .foregroundStyle(
                     allClips.count >= SoundboardClip.maxBoardCount
                         ? palette.emphasisForeground
@@ -103,7 +103,7 @@ public struct IOSSoundboardSurfaceView: View {
                 .accessibilityIdentifier("ios-soundboard-cap-pill")
 
             Text("≤ 8s")
-                .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 3)
@@ -126,9 +126,9 @@ public struct IOSSoundboardSurfaceView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "stop.fill")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(ChocType.micro)
                     Text(L10n.tr("停止", "Stop", language: lang))
-                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                 }
                 .foregroundStyle(palette.primaryText)
                 .padding(.horizontal, 10)
@@ -160,7 +160,7 @@ public struct IOSSoundboardSurfaceView: View {
                 }
             } label: {
                 Image(systemName: isSilent ? "speaker.slash.fill" : "waveform.circle.fill")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(isSilent ? palette.statusFailure : palette.accent)
                     .frame(width: 34, height: 34)
                     .background(
@@ -181,7 +181,7 @@ public struct IOSSoundboardSurfaceView: View {
             .accessibilityLabel(L10n.tr("音效板静音开关", "Toggle Soundboard Mute", language: lang))
 
             Text(L10n.tr("音效音量", "Pad Vol", language: lang))
-                .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
@@ -213,7 +213,7 @@ public struct IOSSoundboardSurfaceView: View {
             .accessibilityLabel(L10n.tr("音效板独立音量", "Soundboard Volume", language: lang))
 
             Text("\(pct)%")
-                .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                .font(ChocType.micro)
                 .monospacedDigit()
                 .foregroundStyle(isSilent ? palette.secondaryText : palette.primaryText)
                 .frame(minWidth: 34, alignment: .trailing)
@@ -235,14 +235,14 @@ public struct IOSSoundboardSurfaceView: View {
     private var soundSearchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 13, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
 
             TextField(
                 L10n.tr("搜索音效名称…", "Search sound names…", language: lang),
                 text: $searchQuery
             )
-            .font(.system(.subheadline, design: .rounded))
+            .font(ChocType.body)
             .foregroundStyle(palette.primaryText)
             .focused($isSoundSearchFocused)
             .autocorrectionDisabled()
@@ -259,7 +259,7 @@ public struct IOSSoundboardSurfaceView: View {
                     searchQuery = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 15))
+                        .font(ChocType.body)
                         .foregroundStyle(palette.secondaryText)
                         .frame(width: 28, height: 28)
                         .contentShape(Circle())
@@ -315,15 +315,15 @@ public struct IOSSoundboardSurfaceView: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .top) {
                     Text(clip.emoji)
-                        .font(.system(size: 24))
+                        .font(ChocType.title)
 
                     Spacer(minLength: 4)
 
                     HStack(spacing: 3) {
                         Image(systemName: "waveform")
-                            .font(.system(size: 9.5, weight: .bold))
+                            .font(ChocType.micro)
                         Text(clip.formattedDuration)
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(ChocType.micro)
                     }
                     .foregroundStyle(palette.secondaryText)
                     .padding(.horizontal, 6)
@@ -334,7 +334,7 @@ public struct IOSSoundboardSurfaceView: View {
                 Spacer(minLength: 2)
 
                 Text(clip.name)
-                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -400,11 +400,11 @@ public struct IOSSoundboardSurfaceView: View {
         VStack(spacing: 8) {
             Spacer(minLength: 6)
             Image(systemName: "speaker.wave.2.bubble.left")
-                .font(.system(size: 28, weight: .semibold))
+                .font(ChocType.title)
                 .foregroundStyle(palette.secondaryText)
 
             Text(L10n.tr("Mac 音效板暂为空", "No Sounds on Your Mac Yet", language: lang))
-                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.primaryText)
 
             Text(
@@ -414,7 +414,7 @@ public struct IOSSoundboardSurfaceView: View {
                     language: lang
                 )
             )
-            .font(.caption)
+            .font(ChocType.caption)
             .foregroundStyle(palette.secondaryText)
             .multilineTextAlignment(.center)
             .frame(maxWidth: 380)
@@ -431,7 +431,7 @@ public struct IOSSoundboardSurfaceView: View {
         return VStack(spacing: 8) {
             Spacer(minLength: 6)
             Image(systemName: "magnifyingglass")
-                .font(.title3)
+                .font(ChocType.title)
                 .foregroundStyle(palette.secondaryText)
 
             Text(
@@ -441,14 +441,14 @@ public struct IOSSoundboardSurfaceView: View {
                     language: lang
                 )
             )
-            .font(.system(.subheadline, design: .rounded, weight: .bold))
+            .font(ChocType.body.weight(.semibold))
             .foregroundStyle(palette.primaryText)
 
             Button {
                 searchQuery = ""
             } label: {
                 Text(L10n.tr("清空搜索", "Clear Search", language: lang))
-                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.accentForeground)
                     .padding(.horizontal, 14)
                     .frame(height: 34)
@@ -644,14 +644,14 @@ public struct IOSWorkspaceSearchSheet: View {
     private var searchInputBar: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.accent)
 
             TextField(
                 L10n.tr("输入关键词查找，点按结果才执行…", "Type to search; tap a result to run…", language: lang),
                 text: $query
             )
-            .font(.system(.body, design: .rounded))
+            .font(ChocType.body)
             .foregroundStyle(palette.primaryText)
             .focused($isSearchFieldFocused)
             .autocorrectionDisabled()
@@ -668,7 +668,7 @@ public struct IOSWorkspaceSearchSheet: View {
                     query = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
+                        .font(ChocType.body)
                         .foregroundStyle(palette.secondaryText)
                         .frame(width: 44, height: 44)
                         .contentShape(Circle())
@@ -697,9 +697,9 @@ public struct IOSWorkspaceSearchSheet: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: itemScope.sfSymbol)
-                                .font(.system(size: 11, weight: .bold))
+                                .font(ChocType.micro)
                             Text(itemScope.title(in: lang))
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .font(ChocType.caption)
                         }
                         .padding(.horizontal, 12)
                         .frame(height: 34)
@@ -745,13 +745,13 @@ public struct IOSWorkspaceSearchSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(result.title)
-                            .font(.system(.subheadline, design: .rounded, weight: .bold))
+                            .font(ChocType.body.weight(.semibold))
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
 
                         if let badge = result.badgeText, !badge.isEmpty {
                             Text(badge)
-                                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.secondaryText)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
@@ -760,7 +760,7 @@ public struct IOSWorkspaceSearchSheet: View {
                     }
 
                     Text(result.subtitle)
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                         .lineLimit(1)
                 }
@@ -769,14 +769,14 @@ public struct IOSWorkspaceSearchSheet: View {
 
                 if isAwaitingConfirm {
                     Text(L10n.tr("再点确认", "Tap Again", language: lang))
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.emphasisForeground)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(palette.statusFailure, in: Capsule())
                 } else {
                     Text(actionVerbLabel(for: result.payload))
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.accent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -809,7 +809,7 @@ public struct IOSWorkspaceSearchSheet: View {
                     .frame(width: 34, height: 34)
             case .systemAction(let action, _, _):
                 Image(systemName: action.sfSymbol)
-                    .font(.system(size: 15, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
                     .frame(width: 34, height: 34)
                     .background(
@@ -818,7 +818,7 @@ public struct IOSWorkspaceSearchSheet: View {
                     )
             case .shortcut(_, let emoji, let hex):
                 Text(emoji)
-                    .font(.system(size: 18))
+                    .font(ChocType.title)
                     .frame(width: 34, height: 34)
                     .background(
                         ChocSwatch.resolvedTileColor(hex: hex),
@@ -826,7 +826,7 @@ public struct IOSWorkspaceSearchSheet: View {
                     )
             case .website(_, _, let emoji, let hex, _):
                 Text(emoji)
-                    .font(.system(size: 18))
+                    .font(ChocType.title)
                     .frame(width: 34, height: 34)
                     .background(
                         ChocSwatch.resolvedTileColor(hex: hex),
@@ -834,7 +834,7 @@ public struct IOSWorkspaceSearchSheet: View {
                     )
             case .flow(_, _, let emoji, let hex, _):
                 Text(emoji)
-                    .font(.system(size: 18))
+                    .font(ChocType.title)
                     .frame(width: 34, height: 34)
                     .background(
                         ChocSwatch.resolvedTileColor(hex: hex),
@@ -842,7 +842,7 @@ public struct IOSWorkspaceSearchSheet: View {
                     )
             case .soundboard(_, _, let emoji, let hex):
                 Text(emoji)
-                    .font(.system(size: 18))
+                    .font(ChocType.title)
                     .frame(width: 34, height: 34)
                     .background(
                         ChocSwatch.resolvedTileColor(hex: hex),
@@ -850,7 +850,7 @@ public struct IOSWorkspaceSearchSheet: View {
                     )
             case .folder(let folder):
                 Text(folder.emoji)
-                    .font(.system(size: 18))
+                    .font(ChocType.title)
                     .frame(width: 34, height: 34)
                     .background(
                         ChocSwatch.resolvedTileColor(hex: folder.backgroundHex),
@@ -858,20 +858,20 @@ public struct IOSWorkspaceSearchSheet: View {
                     )
             case .slotReference:
                 Image(systemName: "arrow.turn.up.right")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .frame(width: 34, height: 34)
                     .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             }
         case .snippet:
             Image(systemName: "text.quote")
-                .font(.system(size: 15, weight: .bold))
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.accent)
                 .frame(width: 34, height: 34)
                 .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         case .flow(let flow):
             Text(flow.emoji.isEmpty ? "⚡️" : flow.emoji)
-                .font(.system(size: 18))
+                .font(ChocType.title)
                 .frame(width: 34, height: 34)
                 .background(
                     ChocSwatch.resolvedTileColor(hex: flow.backgroundHex),
@@ -968,11 +968,11 @@ public struct IOSWorkspaceSearchSheet: View {
         return VStack(spacing: 10) {
             Spacer()
             Image(systemName: "magnifyingglass.circle.fill")
-                .font(.system(size: 36))
+                .font(ChocType.title)
                 .foregroundStyle(palette.accent.opacity(0.85))
 
             Text(L10n.tr("搜索巧栏按键、文本片段与动作流", "Search Tiles, Snippets & Flows", language: lang))
-                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.primaryText)
 
             Text(
@@ -982,7 +982,7 @@ public struct IOSWorkspaceSearchSheet: View {
                     language: lang
                 )
             )
-            .font(.caption)
+            .font(ChocType.caption)
             .foregroundStyle(palette.secondaryText)
             .multilineTextAlignment(.center)
             .frame(maxWidth: 340)
@@ -997,7 +997,7 @@ public struct IOSWorkspaceSearchSheet: View {
         VStack(spacing: 8) {
             Spacer()
             Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 30))
+                .font(ChocType.title)
                 .foregroundStyle(palette.secondaryText)
 
             Text(
@@ -1007,11 +1007,11 @@ public struct IOSWorkspaceSearchSheet: View {
                     language: lang
                 )
             )
-            .font(.system(.subheadline, design: .rounded, weight: .bold))
+            .font(ChocType.body.weight(.semibold))
             .foregroundStyle(palette.primaryText)
 
             Text(L10n.tr("可尝试切换上方分类或输入更短的关键词。", "Try switching scopes above or using a shorter keyword.", language: lang))
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
             Spacer()
         }

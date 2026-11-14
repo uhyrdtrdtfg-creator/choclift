@@ -35,11 +35,11 @@ public struct IOSOrcaTaskStatusBar: View {
     private var notRunningRow: some View {
         HStack(spacing: 7) {
             Image(systemName: "terminal")
-                .font(.system(size: 11.5, weight: .semibold))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
 
             Text(L10n.tr("Orca 未运行", "Orca is not running", language: lang))
-                .font(.system(size: 12, weight: .medium, design: .rounded))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 .lineLimit(1)
 
@@ -104,13 +104,13 @@ public struct IOSOrcaTaskStatusBar: View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
                 Image(systemName: "terminal.fill")
-                    .font(.system(size: 10.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.accent)
                 Text("Orca")
-                    .font(.system(size: 11.5, weight: .heavy, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.primaryText)
                 Text("\(rows.count)")
-                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
             }
             .padding(.leading, 4)
@@ -167,14 +167,14 @@ public struct IOSOrcaTaskStatusBar: View {
         let tint = stateColor(for: item.state)
         return HStack(spacing: 8) {
             Text("Orca")
-                .font(.system(size: 11, weight: .heavy, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
 
             stateBadge(for: item.state, tint: tint)
 
             if let title = item.title, !title.isEmpty {
                 Text(title)
-                    .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -187,10 +187,10 @@ public struct IOSOrcaTaskStatusBar: View {
             if item.canTapToFocus {
                 HStack(spacing: 3) {
                     Image(systemName: "macwindow.on.rectangle")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(ChocType.micro)
                     if !compact {
                         Text(L10n.tr("前置", "Focus", language: lang))
-                            .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                            .font(ChocType.micro)
                     }
                 }
                 .foregroundStyle(palette.accent)
@@ -208,7 +208,7 @@ public struct IOSOrcaTaskStatusBar: View {
 
             if let title = item.title, !title.isEmpty {
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .frame(maxWidth: compact ? 180 : 240, alignment: .leading)
@@ -216,7 +216,7 @@ public struct IOSOrcaTaskStatusBar: View {
 
             if item.canTapToFocus {
                 Image(systemName: "macwindow.on.rectangle")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.accent)
             }
         }
@@ -225,9 +225,9 @@ public struct IOSOrcaTaskStatusBar: View {
     private func stateBadge(for state: OrcaTaskState, tint: Color) -> some View {
         HStack(spacing: 4) {
             Image(systemName: state.sfSymbol)
-                .font(.system(size: 10.5, weight: .bold))
+                .font(ChocType.micro)
             Text(state.label(in: lang))
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(ChocType.micro)
                 .lineLimit(1)
         }
         .foregroundStyle(tint)
