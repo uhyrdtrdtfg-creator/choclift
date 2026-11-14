@@ -2827,9 +2827,32 @@ public final class CompanionClientEngine: ObservableObject {
         return tileFeedbackTracker.outcome(for: slot)
     }
 
+    public static let maxProposedFlowSentenceCharacters = 500
+
     public func triggerFlow(id: UUID) {
         tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.triggerFlow(flowID: id))
+    }
+
+    /// Sends only the plain-text sentence to the paired Mac so the Mac can ask the model for a draft
+    /// and wait for local confirmation on the Mac before saving or running anything.
+    @discardableResult
+    public func proposeFlow(sentence: String) -> Bool {
+        let lang = profile.settings.language
+        let trimmed = sentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("动作流建议", "Flow Proposal", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return false
+        }
+        let bounded = String(trimmed.prefix(Self.maxProposedFlowSentenceCharacters))
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.proposeFlow(sentence: bounded))
+        return true
     }
 
     public func activateRecentApp(_ entry: RecentAppEntry) {

@@ -121,6 +121,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     public let soundboardService: MacSoundboardService
     public let keepAwakeService: MacKeepAwakeService
     public let updaterService: MacSparkleUpdaterService
+    public private(set) var sentenceFlow: MacSentenceFlowController!
 
     private let appSupportDirectory: URL
     private let profileFileURL: URL
@@ -206,6 +207,34 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.leftEdgePanelEnabled = UserDefaults.standard.object(forKey: Self.leftEdgePanelEnabledKey) as? Bool ?? false
 
         self.server.delegate = self
+        self.sentenceFlow = MacSentenceFlowController(
+            contextProvider: { [weak self] in
+                guard let self else { return ActionFlowProposalCatalogContext() }
+                let lang = self.lang
+                return ActionFlowProposalCatalogContext(
+                    installedApps: self.installedApps,
+                    installedShortcuts: self.installedShortcuts,
+                    snippets: self.profile.snippets.map {
+                        ActionFlowProposalSnippetSummary(id: $0.id, title: $0.displayTitle(in: lang))
+                    },
+                    language: lang
+                )
+            },
+            onSaveFlow: { [weak self] flow in
+                self?.saveFlow(flow)
+            },
+            onExecuteFlow: { [weak self] flow, triggeredBy in
+                guard let self else {
+                    return ActionFlowRunResult(
+                        success: false,
+                        title: flow.name,
+                        detail: "Mac coordinator unavailable",
+                        executedStepCount: 0
+                    )
+                }
+                return await self.enqueueAndExecuteFlow(flow, triggeredBy: triggeredBy)
+            }
+        )
         let panelCtrl = MacNotchPanelController(coordinator: self)
         self.notchPanelController = panelCtrl
         let statusCtrl = MacMenuBarStatusController(coordinator: self)
@@ -1078,6 +1107,45 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         }
     }
 
+    @discardableResult
+    public func proposeFlowFromSentence(
+        _ sentence: String? = nil,
+        triggeredBy deviceName: String = "Mac Studio"
+    ) async -> Result<ActionFlowDraft, ActionFlowProposalError> {
+        if installedApps.isEmpty && !isScanningCatalog {
+            installedApps = await catalogService.scanInstalledApps()
+        }
+        if installedShortcuts.isEmpty && !isScanningCatalog {
+            installedShortcuts = await catalogService.fetchInstalledShortcuts()
+        }
+        let outcome = await sentenceFlow.propose(sentence: sentence, originDeviceName: deviceName)
+        switch outcome {
+        case .success(let draft):
+            let summary = L10n.tr(
+                "已生成动作流草稿「\(draft.flow.name)」（\(draft.flow.steps.count) 步），等待在 Mac 确认",
+                "Proposed draft \"\(draft.flow.name)\" (\(draft.flow.steps.count) steps) — awaiting Mac confirmation",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: summary, isSuccess: true)
+        case .failure(let err):
+            recordActivity(
+                deviceName: deviceName,
+                summary: err.localizedDescription(in: lang),
+                isSuccess: false
+            )
+        }
+        return outcome
+    }
+
+    @discardableResult
+    public func confirmProposedFlow(expectedDraftID: UUID? = nil) async -> ActionFlowRunResult? {
+        await sentenceFlow.confirmDraft(expectedDraftID: expectedDraftID)
+    }
+
+    public func cancelProposedFlow() {
+        sentenceFlow.cancelDraft()
+    }
+
     public func executeBarItem(_ item: BarItem, triggeredBy deviceName: String) {
         Task { @MainActor in
             _ = await triggerBarItem(item, triggeredBy: deviceName)
@@ -1507,6 +1575,13 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                     triggeredBy: device.deviceName
                 )
                 reply(.actionFeedback(success: flowResult.success, title: flowResult.title, detail: flowResult.detail))
+            }
+
+        case .proposeFlow(let sentence):
+            Task { @MainActor in
+                openMainStudioWindow(selectingSection: .flows)
+                let outcome = await proposeFlowFromSentence(sentence, triggeredBy: device.deviceName)
+                reply(MacSentenceFlowController.sanitizedCompanionFeedback(for: outcome, language: lang))
             }
 
         case .activateRecentApp(let bundleIdentifier, let appPath):
