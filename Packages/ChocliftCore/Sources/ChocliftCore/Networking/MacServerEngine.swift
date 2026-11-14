@@ -907,6 +907,7 @@ public final class MacServerEngine: ObservableObject {
                  .setSoundboardVolume,
                  .setKeepMacAwake,
                  .setAudioOutputDevice,
+                 .setAudioInputDevice,
                  .sleepMacDisplay,
                  .setFinderDesktopIconsVisible,
                  .emptyMacTrash,

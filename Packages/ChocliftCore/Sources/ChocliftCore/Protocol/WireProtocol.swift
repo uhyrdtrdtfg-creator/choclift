@@ -43,6 +43,7 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case setSoundboardVolume(level: Double)
     case setKeepMacAwake(Bool)
     case setAudioOutputDevice(deviceID: String)
+    case setAudioInputDevice(deviceID: String)
     case requestFrontmostAppWindows
     case raiseFrontmostWindow(windowID: String)
     case sleepMacDisplay

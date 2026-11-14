@@ -2281,6 +2281,36 @@ public final class CompanionClientEngine: ObservableObject {
         send(.setAudioOutputDevice(deviceID: trimmed))
     }
 
+    /// Requests switching the Mac's default CoreAudio microphone input device (`kAudioHardwarePropertyDefaultInputDevice`)
+    /// without optimistically moving the checkmark locally before the Mac confirms the switch.
+    public func selectAudioInputDevice(id: String) {
+        let lang = profile.settings.language
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("麦克风输入", "Microphone Input", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        guard controlStripState.canSwitchAudioInput else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("麦克风输入只读", "Microphone Input Read-Only", language: lang),
+                detail: L10n.tr(
+                    "当前 macOS 音频硬件不支持通过公开 API 切换默认麦克风输入设备。",
+                    "macOS reported the default microphone input as read-only via public CoreAudio API.",
+                    language: lang
+                )
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.setAudioInputDevice(deviceID: trimmed))
+    }
+
     public func requestFrontmostAppWindows() {
         guard connectionState.isConnected else { return }
         send(.requestFrontmostAppWindows)

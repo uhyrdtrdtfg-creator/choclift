@@ -638,6 +638,23 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     }
 
     @discardableResult
+    public func selectAudioInputDevice(
+        id: String,
+        triggeredBy: String = "Mac Studio"
+    ) -> (success: Bool, title: String, detail: String) {
+        let res = systemControlService.setDefaultAudioInputDevice(id: id, language: lang)
+        controlStripState = systemControlService.currentState
+        server.broadcastControlStripState(systemControlService.currentState)
+        recordActivity(deviceName: triggeredBy, summary: res.detail, isSuccess: res.success)
+        if res.success {
+            flashBanner(res.detail)
+        } else {
+            flashBanner("\(res.title) · \(res.detail)")
+        }
+        return res
+    }
+
+    @discardableResult
     public func addSoundFilesFromURLs(_ urls: [URL]) -> (added: [SoundboardClip], errors: [String]) {
         guard !urls.isEmpty else { return ([], []) }
         var workingClips = profile.soundboardClips
@@ -1594,6 +1611,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             let res = systemControlService.setDefaultAudioOutputDevice(id: deviceID, language: lang)
             controlStripState = systemControlService.currentState
             lastAudioOutputError = res.success ? nil : res.detail
+            server.broadcastControlStripState(systemControlService.currentState)
+            reply(.controlStripStateUpdated(systemControlService.currentState))
+            recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
+            reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
+
+        case .setAudioInputDevice(let deviceID):
+            let res = systemControlService.setDefaultAudioInputDevice(id: deviceID, language: lang)
+            controlStripState = systemControlService.currentState
             server.broadcastControlStripState(systemControlService.currentState)
             reply(.controlStripStateUpdated(systemControlService.currentState))
             recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)

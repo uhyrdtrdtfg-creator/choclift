@@ -2387,7 +2387,8 @@ public struct WatchAudioOutputPickerSheet: View {
     }
 
     public var body: some View {
-        let selectedID = state.currentAudioOutputDevice?.id
+        let selectedOutputID = state.currentAudioOutputDevice?.id
+        let selectedInputID = state.currentAudioInputDevice?.id
 
         List {
             if let feedback = sheetFeedback {
@@ -2414,67 +2415,143 @@ public struct WatchAudioOutputPickerSheet: View {
                     .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .listRowBackground(palette.barSurface)
-            } else if !state.canSwitchAudioOutput {
-                HStack(spacing: 6) {
-                    Image(systemName: "lock.fill")
-                        .font(ChocType.micro)
-                        .foregroundStyle(palette.accentEmphasis)
-                    Text(L10n.tr("音频输出只读", "Audio Output Read-Only", language: lang))
+            } else {
+                Section {
+                    if !state.canSwitchAudioOutput {
+                        HStack(spacing: 6) {
+                            Image(systemName: "lock.fill")
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.accentEmphasis)
+                            Text(L10n.tr("音频输出只读", "Audio Output Read-Only", language: lang))
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.secondaryText)
+                        }
+                        .listRowBackground(palette.tileFillBottom)
+                    }
+
+                    if state.audioOutputDevices.isEmpty {
+                        Text(L10n.tr("无可用音频输出设备", "No Audio Outputs", language: lang))
+                            .font(ChocType.caption)
+                            .foregroundStyle(palette.secondaryText)
+                            .listRowBackground(palette.barSurface)
+                    } else {
+                        ForEach(state.audioOutputDevices) { device in
+                            let isSelected = (device.id == selectedOutputID)
+                            let isRowEnabled = state.canSwitchAudioOutput && device.isSelectable
+                            Button {
+                                guard isRowEnabled else { return }
+                                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                                sheetFeedback = nil
+                                awaitingSwitchFeedback = true
+                                client.selectAudioOutputDevice(id: device.id)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 7) {
+                                        Image(systemName: device.sfSymbol)
+                                            .font(ChocType.caption)
+                                            .foregroundStyle(isSelected ? palette.statusConnected : (isRowEnabled ? palette.accent : palette.secondaryText))
+                                        Text(device.name)
+                                            .font(ChocType.caption)
+                                            .foregroundStyle(isRowEnabled || isSelected ? palette.primaryText : palette.secondaryText)
+                                            .lineLimit(2)
+                                        Spacer(minLength: 4)
+                                        if isSelected {
+                                            Image(systemName: "checkmark")
+                                                .font(ChocType.caption)
+                                                .foregroundStyle(palette.statusConnected)
+                                        } else if !isRowEnabled {
+                                            Image(systemName: device.isAirPlay ? "airplayaudio" : "lock")
+                                                .font(ChocType.micro)
+                                                .foregroundStyle(palette.secondaryText.opacity(0.65))
+                                        }
+                                    }
+                                    if let unavailableDetail = device.selectionUnavailableReason(in: lang) {
+                                        Text(unavailableDetail)
+                                            .font(ChocType.micro)
+                                            .foregroundStyle(palette.secondaryText)
+                                            .lineLimit(2)
+                                    }
+                                }
+                                .frame(minHeight: 38)
+                                .opacity(isRowEnabled || isSelected ? 1.0 : 0.72)
+                            }
+                            .disabled(!isRowEnabled)
+                            .listRowBackground(palette.barSurface)
+                            .accessibilityIdentifier("watch-audio-output-device-\(device.id)")
+                        }
+                    }
+                } header: {
+                    Text(L10n.tr("音频输出", "Output", language: lang))
                         .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                 }
-                .listRowBackground(palette.tileFillBottom)
-            }
 
-            if isConnected && state.audioOutputDevices.isEmpty {
-                Text(L10n.tr("无可用音频输出设备", "No Audio Outputs", language: lang))
-                    .font(ChocType.caption)
-                    .foregroundStyle(palette.secondaryText)
-                    .listRowBackground(palette.barSurface)
-            } else if isConnected {
-                ForEach(state.audioOutputDevices) { device in
-                    let isSelected = (device.id == selectedID)
-                    let isRowEnabled = state.canSwitchAudioOutput && device.isSelectable
-                    Button {
-                        guard isRowEnabled else { return }
-                        CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
-                        sheetFeedback = nil
-                        awaitingSwitchFeedback = true
-                        client.selectAudioOutputDevice(id: device.id)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 7) {
-                                Image(systemName: device.sfSymbol)
-                                    .font(ChocType.caption)
-                                    .foregroundStyle(isSelected ? palette.statusConnected : (isRowEnabled ? palette.accent : palette.secondaryText))
-                                Text(device.name)
-                                    .font(ChocType.caption)
-                                    .foregroundStyle(isRowEnabled || isSelected ? palette.primaryText : palette.secondaryText)
-                                    .lineLimit(2)
-                                Spacer(minLength: 4)
-                                if isSelected {
-                                    Image(systemName: "checkmark")
-                                        .font(ChocType.caption)
-                                        .foregroundStyle(palette.statusConnected)
-                                } else if !isRowEnabled {
-                                    Image(systemName: device.isAirPlay ? "airplayaudio" : "lock")
-                                        .font(ChocType.micro)
-                                        .foregroundStyle(palette.secondaryText.opacity(0.65))
-                                }
-                            }
-                            if let unavailableDetail = device.selectionUnavailableReason(in: lang) {
-                                Text(unavailableDetail)
-                                    .font(ChocType.micro)
-                                    .foregroundStyle(palette.secondaryText)
-                                    .lineLimit(2)
-                            }
+                Section {
+                    if !state.canSwitchAudioInput {
+                        HStack(spacing: 6) {
+                            Image(systemName: "lock.fill")
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.accentEmphasis)
+                            Text(L10n.tr("麦克风输入只读", "Microphone Read-Only", language: lang))
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.secondaryText)
                         }
-                        .frame(minHeight: 38)
-                        .opacity(isRowEnabled || isSelected ? 1.0 : 0.72)
+                        .listRowBackground(palette.tileFillBottom)
                     }
-                    .disabled(!isRowEnabled)
-                    .listRowBackground(palette.barSurface)
-                    .accessibilityIdentifier("watch-audio-output-device-\(device.id)")
+
+                    if state.audioInputDevices.isEmpty {
+                        Text(L10n.tr("无可用麦克风输入", "No Audio Inputs", language: lang))
+                            .font(ChocType.caption)
+                            .foregroundStyle(palette.secondaryText)
+                            .listRowBackground(palette.barSurface)
+                    } else {
+                        ForEach(state.audioInputDevices) { device in
+                            let isSelected = (device.id == selectedInputID)
+                            let isRowEnabled = state.canSwitchAudioInput && device.isSelectable
+                            Button {
+                                guard isRowEnabled else { return }
+                                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                                sheetFeedback = nil
+                                awaitingSwitchFeedback = true
+                                client.selectAudioInputDevice(id: device.id)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 7) {
+                                        Image(systemName: device.sfSymbol)
+                                            .font(ChocType.caption)
+                                            .foregroundStyle(isSelected ? palette.statusConnected : (isRowEnabled ? palette.accent : palette.secondaryText))
+                                        Text(device.name)
+                                            .font(ChocType.caption)
+                                            .foregroundStyle(isRowEnabled || isSelected ? palette.primaryText : palette.secondaryText)
+                                            .lineLimit(2)
+                                        Spacer(minLength: 4)
+                                        if isSelected {
+                                            Image(systemName: "checkmark")
+                                                .font(ChocType.caption)
+                                                .foregroundStyle(palette.statusConnected)
+                                        } else if !isRowEnabled {
+                                            Image(systemName: "lock")
+                                                .font(ChocType.micro)
+                                                .foregroundStyle(palette.secondaryText.opacity(0.65))
+                                        }
+                                    }
+                                    Text(device.inputSubtitle(in: lang))
+                                        .font(ChocType.micro)
+                                        .foregroundStyle(palette.secondaryText)
+                                        .lineLimit(1)
+                                }
+                                .frame(minHeight: 38)
+                                .opacity(isRowEnabled || isSelected ? 1.0 : 0.72)
+                            }
+                            .disabled(!isRowEnabled)
+                            .listRowBackground(palette.barSurface)
+                            .accessibilityIdentifier("watch-audio-input-device-\(device.id)")
+                        }
+                    }
+                } header: {
+                    Text(L10n.tr("麦克风输入", "Microphone Input", language: lang))
+                        .font(ChocType.micro)
+                        .foregroundStyle(palette.secondaryText)
                 }
             }
         }
@@ -2487,6 +2564,11 @@ public struct WatchAudioOutputPickerSheet: View {
             )
             .ignoresSafeArea()
         )
+        .onAppear {
+            if isConnected {
+                client.requestControlStripState()
+            }
+        }
         .onReceive(client.$lastFeedback) { newFeedback in
             guard awaitingSwitchFeedback, let newFeedback else { return }
             awaitingSwitchFeedback = false

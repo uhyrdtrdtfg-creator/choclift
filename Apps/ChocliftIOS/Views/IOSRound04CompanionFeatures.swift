@@ -188,22 +188,17 @@ public struct IOSAudioOutputPickerSheet: View {
                             switchFeedbackBanner(feedback)
                         }
 
-                        if isConnected && !state.canSwitchAudioOutput {
-                            readOnlyBanner
-                        }
-
                         if !isConnected {
                             offlineStateCard
-                        } else if state.audioOutputDevices.isEmpty {
-                            emptyDevicesCard
                         } else {
-                            devicesListCard
+                            outputDevicesSection
+                            inputDevicesSection
                         }
                     }
                     .padding(16)
                 }
             }
-            .navigationTitle(L10n.tr("Mac 音频输出", "Mac Audio Output", language: lang))
+            .navigationTitle(L10n.tr("Mac 音频", "Mac Audio", language: lang))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -221,8 +216,13 @@ public struct IOSAudioOutputPickerSheet: View {
                             Image(systemName: "arrow.clockwise")
                         }
                         .accessibilityIdentifier("ios-audio-output-refresh")
-                        .accessibilityLabel(L10n.tr("刷新输出设备", "Refresh Output Devices", language: lang))
+                        .accessibilityLabel(L10n.tr("刷新音频设备", "Refresh Audio Devices", language: lang))
                     }
+                }
+            }
+            .onAppear {
+                if isConnected {
+                    client.requestControlStripState()
                 }
             }
             .onReceive(client.$lastFeedback) { newFeedback in
@@ -445,6 +445,180 @@ public struct IOSAudioOutputPickerSheet: View {
                 .buttonStyle(.plain)
                 .disabled(!isRowEnabled)
                 .accessibilityIdentifier("ios-audio-output-device-\(device.id)")
+            }
+        }
+    }
+
+    private var outputDevicesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "hifispeaker.2.fill")
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.accent)
+                Text(L10n.tr("音频输出", "Output", language: lang))
+                    .font(ChocType.caption.weight(.semibold))
+                    .foregroundStyle(palette.secondaryText)
+            }
+            .padding(.horizontal, 2)
+
+            if !state.canSwitchAudioOutput {
+                readOnlyBanner
+            }
+
+            if state.audioOutputDevices.isEmpty {
+                emptyDevicesCard
+            } else {
+                devicesListCard
+            }
+        }
+        .accessibilityIdentifier("ios-audio-output-section")
+    }
+
+    private var inputDevicesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "mic.fill")
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.accent)
+                Text(L10n.tr("麦克风输入", "Microphone Input", language: lang))
+                    .font(ChocType.caption.weight(.semibold))
+                    .foregroundStyle(palette.secondaryText)
+
+                Spacer(minLength: 8)
+
+                if !state.canSwitchAudioInput {
+                    Text(L10n.tr("只读", "Read-Only", language: lang))
+                        .font(ChocType.micro)
+                        .foregroundStyle(palette.secondaryText)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(palette.tileFillBottom, in: Capsule())
+                } else if let currentInput = state.currentAudioInputDevice {
+                    Text(currentInput.name)
+                        .font(ChocType.micro)
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 2)
+            .padding(.top, 4)
+
+            if !state.canSwitchAudioInput {
+                inputReadOnlyBanner
+            }
+
+            if state.audioInputDevices.isEmpty {
+                emptyInputDevicesCard
+            } else {
+                inputDevicesListCard
+            }
+        }
+        .accessibilityIdentifier("ios-audio-input-section")
+    }
+
+    private var inputReadOnlyBanner: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "lock.fill")
+                .font(ChocType.body.weight(.semibold))
+                .foregroundStyle(palette.accentEmphasis)
+
+            Text(
+                L10n.tr(
+                    "当前麦克风输入为只读：macOS 报告默认音频输入属性不支持写入，因此仅展示当前设备，不会伪造切换结果。",
+                    "Read-only: macOS reported that the default input property is not settable via public CoreAudio API, so the current microphone is shown without faking a switch.",
+                    language: lang
+                )
+            )
+            .font(ChocType.caption)
+            .foregroundStyle(palette.secondaryText)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
+        .accessibilityIdentifier("ios-audio-input-readonly-banner")
+    }
+
+    private var emptyInputDevicesCard: some View {
+        Text(L10n.tr("Mac 当前未报告可用的麦克风输入设备。", "No microphone input devices reported by your Mac.", language: lang))
+            .font(ChocType.caption)
+            .foregroundStyle(palette.secondaryText)
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+            )
+    }
+
+    private var inputDevicesListCard: some View {
+        let selectedInputID = state.currentAudioInputDevice?.id
+        return VStack(spacing: 8) {
+            ForEach(state.audioInputDevices) { device in
+                let isSelected = (device.id == selectedInputID)
+                let isRowEnabled = state.canSwitchAudioInput && device.isSelectable
+                Button {
+                    guard isRowEnabled else { return }
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                    sheetFeedback = nil
+                    awaitingSwitchFeedback = true
+                    client.selectAudioInputDevice(id: device.id)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: device.sfSymbol)
+                            .font(ChocType.body.weight(.semibold))
+                            .foregroundStyle(isSelected ? palette.statusConnected : (isRowEnabled ? palette.accent : palette.secondaryText))
+                            .frame(width: 34, height: 34)
+                            .background(
+                                (isSelected ? palette.statusConnected.opacity(0.14) : palette.tileFillBottom),
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            )
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(device.name)
+                                .font(ChocType.body.weight(.semibold))
+                                .foregroundStyle(isRowEnabled || isSelected ? palette.primaryText : palette.secondaryText)
+                                .lineLimit(1)
+
+                            Text(device.inputSubtitle(in: lang))
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.secondaryText)
+                        }
+
+                        Spacer(minLength: 8)
+
+                        if isSelected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(ChocType.title)
+                                .foregroundStyle(palette.statusConnected)
+                        } else if !isRowEnabled {
+                            Image(systemName: "lock")
+                                .font(ChocType.caption)
+                                .foregroundStyle(palette.secondaryText.opacity(0.6))
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(minHeight: 48)
+                    .opacity(isRowEnabled || isSelected ? 1.0 : 0.72)
+                    .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(
+                                isSelected ? palette.statusConnected : palette.subtleCardStroke,
+                                lineWidth: isSelected ? 1.6 : 1
+                            )
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(!isRowEnabled)
+                .accessibilityIdentifier("ios-audio-input-device-\(device.id)")
             }
         }
     }

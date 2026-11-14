@@ -264,8 +264,9 @@ public final class MacSystemControlService {
 
         let sbVolume = ControlStripLevel.clamp(soundboardVolumeProvider?() ?? currentState.soundboardVolume)
         let keepAwake = keepMacAwakeProvider?() ?? currentState.isKeepMacAwakeEnabled
-        let audioSnapshot = Self.enumerateAudioOutputDevices(
+        let audioSnapshots = Self.enumerateAudioDevices(
             defaultOutputID: outDevice,
+            defaultInputID: inDevice,
             bonjourAirPlayReceivers: airPlayRouteMonitor.currentBonjourReceivers
         )
         let batteryStatus = Self.readMacBatteryStatus()
@@ -289,9 +290,12 @@ public final class MacSystemControlService {
             selectedTargetDisplayID: topology.selectedDisplayID,
             soundboardVolume: sbVolume,
             isKeepMacAwakeEnabled: keepAwake,
-            audioOutputDevices: audioSnapshot.devices,
-            selectedAudioOutputDeviceID: audioSnapshot.selectedID,
-            canSwitchAudioOutput: audioSnapshot.canSwitch,
+            audioOutputDevices: audioSnapshots.output.devices,
+            selectedAudioOutputDeviceID: audioSnapshots.output.selectedID,
+            canSwitchAudioOutput: audioSnapshots.output.canSwitch,
+            audioInputDevices: audioSnapshots.input.devices,
+            selectedAudioInputDeviceID: audioSnapshots.input.selectedID,
+            canSwitchAudioInput: audioSnapshots.input.canSwitch,
             macBattery: batteryStatus,
             areFinderDesktopIconsVisible: finderIconsVisible,
             privacyCapture: privacyCapture,
@@ -781,32 +785,6 @@ public final class MacSystemControlService {
         return isDeviceRunningAudio(deviceID: deviceID)
     }
 
-    private static func inputChannelCount(deviceID: AudioObjectID) -> Int {
-        var addr = AudioObjectPropertyAddress(
-            mSelector: kAudioDevicePropertyStreamConfiguration,
-            mScope: kAudioDevicePropertyScopeInput,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        guard AudioObjectHasProperty(deviceID, &addr) else { return 0 }
-        var byteSize: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(deviceID, &addr, 0, nil, &byteSize) == noErr,
-              byteSize >= UInt32(MemoryLayout<AudioBufferList>.size) else {
-            return 0
-        }
-
-        let rawPtr = UnsafeMutableRawPointer.allocate(
-            byteCount: Int(byteSize),
-            alignment: MemoryLayout<AudioBufferList>.alignment
-        )
-        defer { rawPtr.deallocate() }
-
-        guard AudioObjectGetPropertyData(deviceID, &addr, 0, nil, &byteSize, rawPtr) == noErr else {
-            return 0
-        }
-        let bufferList = UnsafeMutableAudioBufferListPointer(rawPtr.assumingMemoryBound(to: AudioBufferList.self))
-        return bufferList.reduce(0) { $0 + Int($1.mNumberChannels) }
-    }
-
     public static func enumerateEjectableExternalVolumes() -> [ExternalDiskVolumeCandidate] {
         let keys: [URLResourceKey] = [
             .volumeLocalizedNameKey,
@@ -1179,6 +1157,34 @@ public final class MacSystemControlService {
         return (result.success, result.title, result.detail)
     }
 
+    public func setDefaultAudioInputDeviceDetailed(
+        id: String,
+        language: AppLanguage = .system
+    ) -> MacAudioInputSwitchResult {
+        let driver = CoreAudioHardwareOutputDriver(
+            bonjourAirPlayReceivers: airPlayRouteMonitor.currentBonjourReceivers
+        )
+        let result = MacAudioInputSwitchEngine.performSwitch(
+            requestedID: id,
+            language: language,
+            using: driver
+        )
+        rebindActiveAudioDeviceListeners()
+        _ = applyRefreshedSnapshot()
+        if result.success {
+            schedulePostActionRefresh()
+        }
+        return result
+    }
+
+    public func setDefaultAudioInputDevice(
+        id: String,
+        language: AppLanguage = .system
+    ) -> (success: Bool, title: String, detail: String) {
+        let result = setDefaultAudioInputDeviceDetailed(id: id, language: language)
+        return (result.success, result.title, result.detail)
+    }
+
     // MARK: - CoreAudio Read / Write Helpers
 
     private func readOutputVolumeAndMute(deviceID: AudioObjectID) -> (Double, Bool) {
@@ -1388,21 +1394,28 @@ public final class MacSystemControlService {
         return running != 0
     }
 
-    private static func enumerateAudioOutputDevices(
+    private static func enumerateAudioDevices(
         defaultOutputID: AudioObjectID,
+        defaultInputID: AudioObjectID,
         bonjourAirPlayReceivers: [MacDiscoveredAirPlayReceiver]
-    ) -> (devices: [MacAudioOutputDevice], selectedID: String?, canSwitch: Bool) {
+    ) -> (output: MacAudioOutputSnapshot, input: MacAudioInputSnapshot) {
         let driver = CoreAudioHardwareOutputDriver(bonjourAirPlayReceivers: bonjourAirPlayReceivers)
-        let defaultSettable = driver.isSelectorSettable(.defaultOutput).isSettable
+        let defaultOutSettable = driver.isSelectorSettable(.defaultOutput).isSettable
+        let defaultInSettable = driver.isDefaultInputSettable().isSettable
         let records = driver.readLiveDeviceRecords()
         let airPlayReceivers = driver.readDiscoveredAirPlayReceivers()
-        let snapshot = MacAudioOutputSwitchEngine.enumerateSnapshot(
+        let outputSnapshot = MacAudioOutputSwitchEngine.enumerateSnapshot(
             records: records,
             airPlayReceivers: airPlayReceivers,
             defaultOutputObjectID: UInt32(defaultOutputID),
-            isDefaultOutputSettable: defaultSettable
+            isDefaultOutputSettable: defaultOutSettable
         )
-        return (snapshot.devices, snapshot.selectedID, snapshot.canSwitch)
+        let inputSnapshot = MacAudioInputSwitchEngine.enumerateSnapshot(
+            records: records,
+            defaultInputObjectID: UInt32(defaultInputID),
+            isDefaultInputSettable: defaultInSettable
+        )
+        return (outputSnapshot, inputSnapshot)
     }
 
     nonisolated fileprivate static func isAudioDeviceHidden(deviceID: AudioObjectID) -> Bool {
@@ -1424,6 +1437,21 @@ public final class MacSystemControlService {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyDeviceCanBeDefaultDevice,
             mScope: kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(deviceID, &addr) else { return true }
+        var canBeDefault: UInt32 = 1
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(deviceID, &addr, 0, nil, &size, &canBeDefault) == noErr else {
+            return true
+        }
+        return canBeDefault != 0
+    }
+
+    nonisolated fileprivate static func canAudioDeviceBeDefaultInput(deviceID: AudioObjectID) -> Bool {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceCanBeDefaultDevice,
+            mScope: kAudioDevicePropertyScopeInput,
             mElement: kAudioObjectPropertyElementMain
         )
         guard AudioObjectHasProperty(deviceID, &addr) else { return true }
@@ -1491,9 +1519,20 @@ public final class MacSystemControlService {
     }
 
     nonisolated fileprivate static func outputChannelCount(deviceID: AudioObjectID) -> Int {
+        channelCount(deviceID: deviceID, scope: kAudioDevicePropertyScopeOutput)
+    }
+
+    nonisolated fileprivate static func inputChannelCount(deviceID: AudioObjectID) -> Int {
+        channelCount(deviceID: deviceID, scope: kAudioDevicePropertyScopeInput)
+    }
+
+    nonisolated private static func channelCount(
+        deviceID: AudioObjectID,
+        scope: AudioObjectPropertyScope
+    ) -> Int {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyStreamConfiguration,
-            mScope: kAudioDevicePropertyScopeOutput,
+            mScope: scope,
             mElement: kAudioObjectPropertyElementMain
         )
         guard AudioObjectHasProperty(deviceID, &addr) else { return 0 }
@@ -1514,6 +1553,56 @@ public final class MacSystemControlService {
         }
         let bufferList = UnsafeMutableAudioBufferListPointer(rawPtr.assumingMemoryBound(to: AudioBufferList.self))
         return bufferList.reduce(0) { $0 + Int($1.mNumberChannels) }
+    }
+
+    nonisolated fileprivate static func readInputDataSourceCode(deviceID: AudioObjectID) -> UInt32? {
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDataSource,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(deviceID, &addr) else { return nil }
+        var code: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        guard AudioObjectGetPropertyData(deviceID, &addr, 0, nil, &size, &code) == noErr,
+              code != 0 else {
+            return nil
+        }
+        return code
+    }
+
+    nonisolated fileprivate static func hasHeadsetInputTerminalStream(deviceID: AudioObjectID) -> Bool {
+        var streamsAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyStreams,
+            mScope: kAudioDevicePropertyScopeInput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(deviceID, &streamsAddr) else { return false }
+        var byteSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(deviceID, &streamsAddr, 0, nil, &byteSize) == noErr,
+              byteSize >= UInt32(MemoryLayout<AudioObjectID>.size) else {
+            return false
+        }
+        let count = Int(byteSize) / MemoryLayout<AudioObjectID>.size
+        var streamIDs = [AudioObjectID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(deviceID, &streamsAddr, 0, nil, &byteSize, &streamIDs) == noErr else {
+            return false
+        }
+        for streamID in streamIDs where streamID != kAudioObjectUnknown {
+            var termAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioStreamPropertyTerminalType,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            guard AudioObjectHasProperty(streamID, &termAddr) else { continue }
+            var termType: UInt32 = 0
+            var termSize = UInt32(MemoryLayout<UInt32>.size)
+            if AudioObjectGetPropertyData(streamID, &termAddr, 0, nil, &termSize, &termType) == noErr,
+               termType == kAudioStreamTerminalTypeHeadsetMicrophone {
+                return true
+            }
+        }
+        return false
     }
 
     nonisolated fileprivate static func readCFStringProperty(
@@ -1659,6 +1748,21 @@ public final class MacSystemControlService {
                 ),
                 AudioObjectPropertyAddress(
                     mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
+                    mScope: kAudioObjectPropertyScopeGlobal,
+                    mElement: kAudioObjectPropertyElementMain
+                ),
+                AudioObjectPropertyAddress(
+                    mSelector: kAudioDevicePropertyDataSource,
+                    mScope: kAudioDevicePropertyScopeInput,
+                    mElement: kAudioObjectPropertyElementMain
+                ),
+                AudioObjectPropertyAddress(
+                    mSelector: kAudioDevicePropertyDataSources,
+                    mScope: kAudioDevicePropertyScopeInput,
+                    mElement: kAudioObjectPropertyElementMain
+                ),
+                AudioObjectPropertyAddress(
+                    mSelector: kAudioDevicePropertyDeviceIsAlive,
                     mScope: kAudioObjectPropertyScopeGlobal,
                     mElement: kAudioObjectPropertyElementMain
                 )
@@ -2117,13 +2221,65 @@ public final class MacSystemControlService {
     }
 }
 
-// MARK: - Live CoreAudio Hardware Output Driver (macOS 13+)
+// MARK: - Live CoreAudio Hardware Output & Input Driver (macOS 13+)
 
-public struct CoreAudioHardwareOutputDriver: MacAudioOutputHardwareDriver {
+public struct CoreAudioHardwareOutputDriver: MacAudioOutputHardwareDriver, MacAudioInputHardwareDriver {
     private let bonjourAirPlayReceivers: [MacDiscoveredAirPlayReceiver]
 
     public init(bonjourAirPlayReceivers: [MacDiscoveredAirPlayReceiver] = []) {
         self.bonjourAirPlayReceivers = bonjourAirPlayReceivers
+    }
+
+    public func isDefaultInputSettable() -> (isSettable: Bool, status: Int32) {
+        let sysObj = AudioObjectID(kAudioObjectSystemObject)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(sysObj, &addr) else {
+            return (false, kAudioHardwareUnknownPropertyError)
+        }
+        var settable: DarwinBoolean = false
+        let status = AudioObjectIsPropertySettable(sysObj, &addr, &settable)
+        return (status == noErr && settable.boolValue, status)
+    }
+
+    public func readDefaultInputDevice() -> (objectID: UInt32, status: Int32) {
+        let sysObj = AudioObjectID(kAudioObjectSystemObject)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(sysObj, &addr) else {
+            return (UInt32(kAudioObjectUnknown), kAudioHardwareUnknownPropertyError)
+        }
+        var devID = AudioObjectID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        let status = AudioObjectGetPropertyData(sysObj, &addr, 0, nil, &size, &devID)
+        return (status == noErr ? UInt32(devID) : UInt32(kAudioObjectUnknown), status)
+    }
+
+    public func writeDefaultInputDevice(_ objectID: UInt32) -> Int32 {
+        let sysObj = AudioObjectID(kAudioObjectSystemObject)
+        var addr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectHasProperty(sysObj, &addr) else {
+            return kAudioHardwareUnknownPropertyError
+        }
+        var mutableTarget = AudioObjectID(objectID)
+        return AudioObjectSetPropertyData(
+            sysObj,
+            &addr,
+            0,
+            nil,
+            UInt32(MemoryLayout<AudioObjectID>.size),
+            &mutableTarget
+        )
     }
 
     public func isSelectorAvailable(_ selector: MacAudioDefaultSelector) -> Bool {
@@ -2217,6 +2373,7 @@ public struct CoreAudioHardwareOutputDriver: MacAudioOutputHardwareDriver {
 
         for devID in rawIDs where devID != kAudioObjectUnknown {
             let outChannels = MacSystemControlService.outputChannelCount(deviceID: devID)
+            let inChannels = MacSystemControlService.inputChannelCount(deviceID: devID)
             let uid = MacSystemControlService.readCFStringProperty(
                 deviceID: devID,
                 selector: kAudioDevicePropertyDeviceUID
@@ -2225,14 +2382,24 @@ public struct CoreAudioHardwareOutputDriver: MacAudioOutputHardwareDriver {
                 deviceID: devID,
                 selector: kAudioDevicePropertyModelUID
             )
+            let fallbackDeviceName = (outChannels <= 0 && inChannels > 0) ? "Audio Input" : "Audio Output"
             let name = MacSystemControlService.readCFStringProperty(
                 deviceID: devID,
                 selector: kAudioObjectPropertyName
-            ) ?? "Audio Output"
+            ) ?? fallbackDeviceName
             let transport = MacSystemControlService.readTransportKind(deviceID: devID)
             let hidden = MacSystemControlService.isAudioDeviceHidden(deviceID: devID)
             let privateAgg = MacSystemControlService.isPrivateOrAutoAggregateAudioDevice(deviceID: devID)
-            let canBeDefault = MacSystemControlService.canAudioDeviceBeDefaultOutput(deviceID: devID)
+            let canBeDefaultOut = MacSystemControlService.canAudioDeviceBeDefaultOutput(deviceID: devID)
+            let canBeDefaultIn = inChannels > 0
+                ? MacSystemControlService.canAudioDeviceBeDefaultInput(deviceID: devID)
+                : false
+            let inDataSource = inChannels > 0
+                ? MacSystemControlService.readInputDataSourceCode(deviceID: devID)
+                : nil
+            let hasHeadsetStream = inChannels > 0
+                ? MacSystemControlService.hasHeadsetInputTerminalStream(deviceID: devID)
+                : false
 
             records.append(
                 MacAudioRawDeviceRecord(
@@ -2243,8 +2410,12 @@ public struct CoreAudioHardwareOutputDriver: MacAudioOutputHardwareDriver {
                     outputChannelCount: outChannels,
                     isHidden: hidden,
                     isPrivateAggregate: privateAgg,
-                    canBeDefaultOutput: canBeDefault,
-                    modelUID: modelUID
+                    canBeDefaultOutput: canBeDefaultOut,
+                    modelUID: modelUID,
+                    inputChannelCount: inChannels,
+                    canBeDefaultInput: canBeDefaultIn,
+                    inputDataSourceCode: inDataSource,
+                    hasHeadsetTerminalStream: hasHeadsetStream
                 )
             )
         }

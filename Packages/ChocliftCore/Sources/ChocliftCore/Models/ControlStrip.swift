@@ -411,6 +411,12 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
     public var selectedAudioOutputDeviceID: String?
     /// True when CoreAudio reports `kAudioHardwarePropertyDefaultOutputDevice` as settable on this Mac.
     public var canSwitchAudioOutput: Bool
+    /// Current Mac audio input (microphone) devices enumerated via public CoreAudio APIs.
+    public var audioInputDevices: [MacAudioInputDevice]
+    /// UID of the Mac's current default audio input device, if reported by CoreAudio.
+    public var selectedAudioInputDeviceID: String?
+    /// True when CoreAudio reports `kAudioHardwarePropertyDefaultInputDevice` as settable on this Mac.
+    public var canSwitchAudioInput: Bool
     /// Read-only Mac battery percentage/charging state or AC power-adapter state (`nil` before first Mac sync).
     public var macBattery: MacBatteryStatus?
     /// True when Finder's `CreateDesktop` preference is enabled so desktop icons are shown on the Mac.
@@ -439,6 +445,9 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         case audioOutputDevices
         case selectedAudioOutputDeviceID
         case canSwitchAudioOutput
+        case audioInputDevices
+        case selectedAudioInputDeviceID
+        case canSwitchAudioInput
         case macBattery
         case areFinderDesktopIconsVisible
         case privacyCapture
@@ -462,6 +471,9 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         audioOutputDevices: [MacAudioOutputDevice] = [],
         selectedAudioOutputDeviceID: String? = nil,
         canSwitchAudioOutput: Bool = true,
+        audioInputDevices: [MacAudioInputDevice] = [],
+        selectedAudioInputDeviceID: String? = nil,
+        canSwitchAudioInput: Bool = true,
         macBattery: MacBatteryStatus? = nil,
         areFinderDesktopIconsVisible: Bool = true,
         privacyCapture: MacPrivacyCaptureStatus = .inactive,
@@ -489,6 +501,12 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             devices: audioOutputDevices
         )
         self.canSwitchAudioOutput = canSwitchAudioOutput
+        self.audioInputDevices = audioInputDevices
+        self.selectedAudioInputDeviceID = Self.resolvedSelectedAudioInputDeviceID(
+            selectedID: selectedAudioInputDeviceID,
+            devices: audioInputDevices
+        )
+        self.canSwitchAudioInput = canSwitchAudioInput
         self.macBattery = macBattery
         self.areFinderDesktopIconsVisible = areFinderDesktopIconsVisible
         self.privacyCapture = privacyCapture
@@ -527,6 +545,14 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             devices: decodedAudioDevices
         )
         self.canSwitchAudioOutput = try container.decodeIfPresent(Bool.self, forKey: .canSwitchAudioOutput) ?? true
+        let decodedAudioInputs = try container.decodeIfPresent([MacAudioInputDevice].self, forKey: .audioInputDevices) ?? []
+        let rawAudioInputSelectedID = try container.decodeIfPresent(String.self, forKey: .selectedAudioInputDeviceID)
+        self.audioInputDevices = decodedAudioInputs
+        self.selectedAudioInputDeviceID = Self.resolvedSelectedAudioInputDeviceID(
+            selectedID: rawAudioInputSelectedID,
+            devices: decodedAudioInputs
+        )
+        self.canSwitchAudioInput = try container.decodeIfPresent(Bool.self, forKey: .canSwitchAudioInput) ?? true
         self.macBattery = try container.decodeIfPresent(MacBatteryStatus.self, forKey: .macBattery)
         self.areFinderDesktopIconsVisible = try container.decodeIfPresent(Bool.self, forKey: .areFinderDesktopIconsVisible) ?? true
         self.privacyCapture = try container.decodeIfPresent(MacPrivacyCaptureStatus.self, forKey: .privacyCapture) ?? .inactive
@@ -568,6 +594,17 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         )
         try container.encodeIfPresent(resolvedAudioSelectedID, forKey: .selectedAudioOutputDeviceID)
         try container.encode(canSwitchAudioOutput, forKey: .canSwitchAudioOutput)
+        if !audioInputDevices.isEmpty {
+            try container.encode(audioInputDevices, forKey: .audioInputDevices)
+        }
+        let resolvedAudioInputSelectedID = Self.resolvedSelectedAudioInputDeviceID(
+            selectedID: selectedAudioInputDeviceID,
+            devices: audioInputDevices
+        )
+        try container.encodeIfPresent(resolvedAudioInputSelectedID, forKey: .selectedAudioInputDeviceID)
+        if !canSwitchAudioInput {
+            try container.encode(false, forKey: .canSwitchAudioInput)
+        }
         try container.encodeIfPresent(macBattery, forKey: .macBattery)
         try container.encode(areFinderDesktopIconsVisible, forKey: .areFinderDesktopIconsVisible)
         if privacyCapture != .inactive {
@@ -626,6 +663,34 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         return cleaned
     }
 
+    public var currentAudioInputDevice: MacAudioInputDevice? {
+        guard let selectedID = Self.resolvedSelectedAudioInputDeviceID(
+            selectedID: selectedAudioInputDeviceID,
+            devices: audioInputDevices
+        ) else {
+            return nil
+        }
+        return audioInputDevices.first(where: { $0.id == selectedID })
+    }
+
+    public func currentAudioInputLabel(in language: AppLanguage = .system) -> String {
+        if let device = currentAudioInputDevice {
+            return device.name
+        }
+        return L10n.tr("系统默认麦克风", "System Default Mic", language: language)
+    }
+
+    public static func resolvedSelectedAudioInputDeviceID(
+        selectedID: String?,
+        devices: [MacAudioInputDevice]
+    ) -> String? {
+        guard let cleaned = cleanAudioID(selectedID),
+              devices.contains(where: { $0.id == cleaned }) else {
+            return nil
+        }
+        return cleaned
+    }
+
     private static func cleanAudioID(_ raw: String?) -> String? {
         guard let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
               !trimmed.isEmpty else {
@@ -666,6 +731,10 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             Self.resolvedSelectedAudioOutputDeviceID(selectedID: selectedAudioOutputDeviceID, devices: audioOutputDevices) !=
                 Self.resolvedSelectedAudioOutputDeviceID(selectedID: other.selectedAudioOutputDeviceID, devices: other.audioOutputDevices) ||
             canSwitchAudioOutput != other.canSwitchAudioOutput ||
+            audioInputDevices != other.audioInputDevices ||
+            Self.resolvedSelectedAudioInputDeviceID(selectedID: selectedAudioInputDeviceID, devices: audioInputDevices) !=
+                Self.resolvedSelectedAudioInputDeviceID(selectedID: other.selectedAudioInputDeviceID, devices: other.audioInputDevices) ||
+            canSwitchAudioInput != other.canSwitchAudioInput ||
             macBattery != other.macBattery ||
             areFinderDesktopIconsVisible != other.areFinderDesktopIconsVisible ||
             privacyCapture != other.privacyCapture ||
