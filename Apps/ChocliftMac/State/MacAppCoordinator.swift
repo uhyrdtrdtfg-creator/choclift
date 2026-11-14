@@ -84,6 +84,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     @Published public private(set) var notchPanelEnabled: Bool = true
     @Published public private(set) var leftEdgePanelEnabled: Bool = false
     @Published public private(set) var runningFlowID: UUID?
+    @Published public private(set) var lastFlowRunResults: [UUID: ActionFlowRunResult] = [:]
     @Published public private(set) var orcaStatus: OrcaTaskStatusSnapshot?
     @Published public private(set) var canUndoWindowMove: Bool = false
     @Published public private(set) var connectedDisplays: [MacDisplayInfo] = []
@@ -246,6 +247,10 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             self?.timeTravel.frontmostAppName
         }
 
+        updaterService.languageProvider = { [weak self] in
+            self?.lang ?? .system
+        }
+
         inputService.onSelectionDispatchFeedback = { [weak self] success, message in
             self?.recordActivity(deviceName: "Mac", summary: message, isSuccess: success)
         }
@@ -254,6 +259,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         }
         inputService.mediaSeekContextProvider = { [weak self] in
             self?.systemControlService.currentMediaSeekContext() ?? MacMediaSeekContext()
+        }
+        inputService.mediaPlaybackModeContextProvider = { [weak self] in
+            self?.systemControlService.currentMediaPlaybackModeContext() ?? MacMediaPlaybackModeContext()
         }
 
         keepAwakeService.onAssertionStateChanged = { [weak self] isHolding in
@@ -293,6 +301,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             guard let self else { return }
             self.controlStripState = state
             self.nowPlayingScrub.reconcile(with: state.nowPlaying)
+            if let bid = state.nowPlaying?.bundleIdentifier {
+                self.server.pushMissingIconsToAllSessions(bundleIDs: [bid])
+            }
             self.server.broadcastControlStripState(state)
         }
         systemControlService.start()
@@ -569,6 +580,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             return
         }
 
+        lastFlowRunResults.removeValue(forKey: id)
         mutateProfile { draft in
             _ = draft.deleteFlow(id: id)
         }
@@ -623,6 +635,23 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         let res = systemControlService.setDefaultAudioOutputDevice(id: id, language: lang)
         controlStripState = systemControlService.currentState
         lastAudioOutputError = res.success ? nil : res.detail
+        server.broadcastControlStripState(systemControlService.currentState)
+        recordActivity(deviceName: triggeredBy, summary: res.detail, isSuccess: res.success)
+        if res.success {
+            flashBanner(res.detail)
+        } else {
+            flashBanner("\(res.title) · \(res.detail)")
+        }
+        return res
+    }
+
+    @discardableResult
+    public func selectAudioInputDevice(
+        id: String,
+        triggeredBy: String = "Mac Studio"
+    ) -> (success: Bool, title: String, detail: String) {
+        let res = systemControlService.setDefaultAudioInputDevice(id: id, language: lang)
+        controlStripState = systemControlService.currentState
         server.broadcastControlStripState(systemControlService.currentState)
         recordActivity(deviceName: triggeredBy, summary: res.detail, isSuccess: res.success)
         if res.success {
@@ -765,6 +794,97 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         soundboardService.stopAll()
         let msg = L10n.tr("已停止音效播放", "Stopped soundboard playback", language: lang)
         recordActivity(deviceName: deviceName, summary: msg, isSuccess: true)
+    }
+
+    // MARK: - Text Snippet Studio & Slot Helpers
+
+    @discardableResult
+    public func saveSnippet(_ snippet: TextSnippet) -> Bool {
+        var didSave = false
+        mutateProfile { draft in
+            didSave = draft.upsertSnippet(snippet)
+        }
+        return didSave
+    }
+
+    @discardableResult
+    public func renameSnippet(id: UUID, title: String) -> Bool {
+        var didRename = false
+        mutateProfile { draft in
+            didRename = draft.renameSnippet(id: id, title: title)
+        }
+        return didRename
+    }
+
+    @discardableResult
+    public func setSnippetInsertMode(id: UUID, mode: SnippetInsertMode) -> Bool {
+        var didUpdate = false
+        mutateProfile { draft in
+            didUpdate = draft.setSnippetInsertMode(id: id, mode: mode)
+        }
+        return didUpdate
+    }
+
+    @discardableResult
+    public func deleteSnippet(id: UUID) -> Bool {
+        var didDelete = false
+        mutateProfile { draft in
+            didDelete = draft.deleteSnippet(id: id)
+        }
+        return didDelete
+    }
+
+    public func assignSnippetToSlot(
+        _ snippet: TextSnippet,
+        emoji: String = "📝",
+        backgroundHex: String = "#F3EEFF",
+        pageIndex: Int,
+        slotIndex: Int
+    ) {
+        guard profile.pages.indices.contains(pageIndex),
+              profile.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
+        mutateProfile { draft in
+            let existingID = draft.pages[pageIndex].slots[slotIndex]?.id ?? UUID()
+            let item = draft.makeBarItem(
+                for: snippet,
+                emoji: emoji,
+                backgroundHex: backgroundHex,
+                id: existingID
+            )
+            _ = draft.setSlotItem(item, pageIndex: pageIndex, slotIndex: slotIndex)
+        }
+    }
+
+    @discardableResult
+    public func runSnippetByID(
+        _ snippetID: UUID,
+        fallbackName: String? = nil,
+        triggeredBy deviceName: String = "Mac Studio"
+    ) -> (success: Bool, title: String, detail: String) {
+        guard let snippet = profile.snippet(withID: snippetID) else {
+            let label = (fallbackName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+                ? fallbackName!
+                : L10n.tr("文本片段", "Snippet", language: lang)
+            let missingMsg = L10n.tr(
+                "未找到文本片段「\(label)」，可能已被删除",
+                "Snippet \"\(label)\" was not found (it may have been deleted)",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: missingMsg, isSuccess: false)
+            return (false, label, missingMsg)
+        }
+
+        let allowActivatePreferred = (deviceName == "Mac Studio") &&
+            (NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier)
+        let res = inputService.executeSnippet(
+            snippet.body,
+            mode: snippet.insertMode,
+            preferredPID: timeTravel.lastExternalAppPID,
+            allowActivatingPreferredPID: allowActivatePreferred,
+            language: lang
+        )
+        recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
+        return (res.success, snippet.displayTitle(in: lang), res.message)
     }
 
     public func setSlotItem(_ item: BarItem?, pageIndex: Int, slotIndex: Int) {
@@ -1023,6 +1143,13 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 // Quiet missing state: do not run anything and do not raise a failure toast.
                 return (true, "", "")
             }
+
+        case .snippet(let snippetID, let titleSnapshot, _, _):
+            return runSnippetByID(
+                snippetID,
+                fallbackName: titleSnapshot,
+                triggeredBy: deviceName
+            )
         }
     }
 
@@ -1071,6 +1198,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             }
             let res = await ActionFlowRunner.run(flow, driver: driver, language: self.lang)
             capturedResult = res
+            self.lastFlowRunResults[flow.id] = res
             self.recordActivity(deviceName: deviceName, summary: res.detail, isSuccess: res.success)
         }
 
@@ -1231,6 +1359,52 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         return res
     }
 
+    @discardableResult
+    public func setNowPlayingShuffle(
+        _ enabled: Bool,
+        triggeredBy deviceName: String = "Mac Studio",
+        originDeviceID: String? = nil
+    ) -> (success: Bool, appliedShuffle: Bool?, message: String) {
+        let res = inputService.setNowPlayingShuffle(enabled: enabled, language: lang)
+        if res.success, let applied = res.appliedShuffle, let targetBundleID = res.targetBundleID {
+            systemControlService.recordAppliedShuffle(applied, bundleIdentifier: targetBundleID)
+            controlStripState = systemControlService.currentState
+            nowPlayingScrub.reconcile(with: controlStripState.nowPlaying)
+            server.broadcastControlStripState(
+                systemControlService.currentState,
+                excludingDeviceID: originDeviceID
+            )
+        } else {
+            controlStripState = systemControlService.currentState
+            nowPlayingScrub.reconcile(with: controlStripState.nowPlaying)
+        }
+        recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
+        return (res.success, res.appliedShuffle, res.message)
+    }
+
+    @discardableResult
+    public func setNowPlayingRepeat(
+        _ mode: NowPlayingRepeatMode,
+        triggeredBy deviceName: String = "Mac Studio",
+        originDeviceID: String? = nil
+    ) -> (success: Bool, appliedRepeat: NowPlayingRepeatMode?, message: String) {
+        let res = inputService.setNowPlayingRepeat(mode: mode, language: lang)
+        if res.success, let applied = res.appliedRepeat, let targetBundleID = res.targetBundleID {
+            systemControlService.recordAppliedRepeat(applied, bundleIdentifier: targetBundleID)
+            controlStripState = systemControlService.currentState
+            nowPlayingScrub.reconcile(with: controlStripState.nowPlaying)
+            server.broadcastControlStripState(
+                systemControlService.currentState,
+                excludingDeviceID: originDeviceID
+            )
+        } else {
+            controlStripState = systemControlService.currentState
+            nowPlayingScrub.reconcile(with: controlStripState.nowPlaying)
+        }
+        recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
+        return (res.success, res.appliedRepeat, res.message)
+    }
+
     private func recordActivity(deviceName: String, summary: String, isSuccess: Bool) {
         let event = MacActivityEvent(deviceName: deviceName, summary: summary, isSuccess: isSuccess)
         activityLog.insert(event, at: 0)
@@ -1337,13 +1511,21 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .activateRecentApp(let bundleIdentifier, let appPath):
             Task { @MainActor in
-                let result = await catalogService.launchOrActivateApp(
+                let result = await catalogService.launchOrActivateAppWithHandle(
                     bundleIdentifier: bundleIdentifier,
                     appPath: appPath,
                     windowService: windowService
                 )
+                let title = result.app?.appName
+                    ?? timeTravel.timeline.first(where: {
+                        $0.bundleIdentifier.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
+                    })?.appName
+                    ?? systemControlService.currentState.nowPlaying.flatMap {
+                        $0.bundleIdentifier?.caseInsensitiveCompare(bundleIdentifier) == .orderedSame ? $0.appName : nil
+                    }
+                    ?? bundleIdentifier
                 recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
-                reply(.actionFeedback(success: result.success, title: bundleIdentifier, detail: result.message))
+                reply(.actionFeedback(success: result.success, title: title, detail: result.message))
             }
 
         case .setRecentAppPinned(let bundleIdentifier, let isPinned):
@@ -1383,8 +1565,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 allowActivatingPreferredPID: false,
                 language: lang
             )
-            // When typing mode is triggered with no focused field, do nothing quietly.
-            guard res.didPerformAction else { return }
+            guard res.didPerformAction || !res.message.isEmpty else { return }
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
             let label = MacInputAndMediaService.previewLabel(for: text)
             reply(.actionFeedback(
@@ -1405,8 +1586,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .requestControlStripState:
             let immediate = systemControlService.currentState
+            if let bid = immediate.nowPlaying?.bundleIdentifier {
+                server.pushMissingIconsToAllSessions(bundleIDs: [bid])
+            }
             reply(.controlStripStateUpdated(immediate))
-            systemControlService.refreshNow { refreshed in
+            systemControlService.refreshNow { [weak self] refreshed in
+                if let bid = refreshed.nowPlaying?.bundleIdentifier {
+                    self?.server.pushMissingIconsToAllSessions(bundleIDs: [bid])
+                }
                 if refreshed.hasMeaningfulDifference(from: immediate) {
                     reply(.controlStripStateUpdated(refreshed))
                 }
@@ -1595,6 +1782,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
 
+        case .setAudioInputDevice(let deviceID):
+            let res = systemControlService.setDefaultAudioInputDevice(id: deviceID, language: lang)
+            controlStripState = systemControlService.currentState
+            server.broadcastControlStripState(systemControlService.currentState)
+            reply(.controlStripStateUpdated(systemControlService.currentState))
+            recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)
+            reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
+
         case .requestFrontmostAppWindows:
             let snapshot = refreshFrontmostWindowSnapshot()
             reply(.frontmostWindowsUpdated(snapshot))
@@ -1690,6 +1885,36 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 reply(.actionFeedback(
                     success: false,
                     title: L10n.tr("播放进度", "Playback Position", language: lang),
+                    detail: res.message
+                ))
+            }
+
+        case .setNowPlayingShuffle(let enabled):
+            let res = setNowPlayingShuffle(
+                enabled,
+                triggeredBy: device.deviceName,
+                originDeviceID: device.deviceID
+            )
+            reply(.controlStripStateUpdated(systemControlService.currentState))
+            if !res.success {
+                reply(.actionFeedback(
+                    success: false,
+                    title: L10n.tr("随机播放", "Shuffle", language: lang),
+                    detail: res.message
+                ))
+            }
+
+        case .setNowPlayingRepeat(let mode):
+            let res = setNowPlayingRepeat(
+                mode,
+                triggeredBy: device.deviceName,
+                originDeviceID: device.deviceID
+            )
+            reply(.controlStripStateUpdated(systemControlService.currentState))
+            if !res.success {
+                reply(.actionFeedback(
+                    success: false,
+                    title: L10n.tr("循环播放", "Repeat", language: lang),
                     detail: res.message
                 ))
             }
@@ -1834,6 +2059,100 @@ private final class MacCoordinatorFlowDriver: ActionFlowDriver {
                 strictTargetPID: true
             )
         }
+    }
+
+    func openWebsite(
+        url: String,
+        switchExistingTab: Bool
+    ) async -> (success: Bool, message: String) {
+        guard let coordinator else {
+            return (false, "Mac coordinator unavailable")
+        }
+        return await coordinator.catalogService.openWebsite(
+            rawURL: url,
+            switchExistingTab: switchExistingTab
+        )
+    }
+
+    func runShortcut(
+        named shortcutName: String
+    ) async -> (success: Bool, message: String) {
+        guard let coordinator else {
+            return (false, "Mac coordinator unavailable")
+        }
+        return await coordinator.catalogService.runShortcut(
+            named: shortcutName,
+            allowSchemeFallback: false
+        )
+    }
+
+    func insertSnippet(
+        snippetID: UUID,
+        titleSnapshot: String?,
+        preferredPID: Int32?
+    ) -> (success: Bool, message: String) {
+        guard let coordinator else {
+            return (false, "Mac coordinator unavailable")
+        }
+        let lang = coordinator.lang
+        guard let snippet = coordinator.profile.snippet(withID: snippetID) else {
+            let trimmedTitle = titleSnapshot?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let label = trimmedTitle.isEmpty
+                ? L10n.tr("文本片段", "Snippet", language: lang)
+                : trimmedTitle
+            let msg = L10n.tr(
+                "未找到文本片段「\(label)」，可能已被删除",
+                "Snippet \"\(label)\" was not found (it may have been deleted)",
+                language: lang
+            )
+            return (false, msg)
+        }
+
+        let effectivePID = preferredPID ?? coordinator.timeTravel.lastExternalAppPID
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let chocliftIsFrontmost = (NSWorkspace.shared.frontmostApplication?.processIdentifier == myPID)
+        if chocliftIsFrontmost,
+           snippet.insertMode == .typeKeys,
+           let effectivePID,
+           effectivePID != myPID,
+           let app = NSRunningApplication(processIdentifier: effectivePID),
+           !app.isTerminated {
+            app.activate()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.06))
+        }
+
+        let res = coordinator.inputService.executeSnippet(
+            snippet.body,
+            mode: snippet.insertMode,
+            preferredPID: effectivePID,
+            allowActivatingPreferredPID: chocliftIsFrontmost,
+            language: lang
+        )
+        if res.success {
+            return (true, res.message)
+        }
+        let trimmedMessage = res.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedMessage.isEmpty {
+            return (false, trimmedMessage)
+        }
+        if !coordinator.windowService.isAccessibilityTrusted() {
+            return (
+                false,
+                L10n.tr(
+                    "请在系统设置 → 辅助功能中授权 Choclift 后键入文本片段",
+                    "Grant Accessibility permission in System Settings to type snippets",
+                    language: lang
+                )
+            )
+        }
+        return (
+            false,
+            L10n.tr(
+                "未检测到焦点输入框，请先在 Mac 中点击文本框",
+                "No text field focused on Mac — click a text field first",
+                language: lang
+            )
+        )
     }
 
     func sleep(seconds: Double) async {

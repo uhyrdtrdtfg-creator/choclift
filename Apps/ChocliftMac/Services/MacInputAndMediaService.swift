@@ -17,6 +17,8 @@ public final class MacInputAndMediaService {
     public var mediaTransportContextProvider: (() -> MacMediaTransportContext)?
     /// Supplies live Now Playing bundle + duration context for playback scrubbing (`MacMediaSeekRouter`).
     public var mediaSeekContextProvider: (() -> MacMediaSeekContext)?
+    /// Supplies live Now Playing bundle + running-player context for shuffle/repeat (`MacMediaPlaybackModeRouter`).
+    public var mediaPlaybackModeContextProvider: (() -> MacMediaPlaybackModeContext)?
 
     public init(windowService: MacAccessibilityAndWindowService) {
         self.windowService = windowService
@@ -164,18 +166,44 @@ public final class MacInputAndMediaService {
             )
 
         case .typeKeys:
-            // Typing mode is only available when a field is focused. If no field is focused, do nothing.
             guard windowService.isAccessibilityTrusted() else {
-                return (false, false, "")
+                return (
+                    false,
+                    true,
+                    L10n.tr(
+                        "请在系统设置 → 辅助功能中授权 Choclift 后输入到光标处",
+                        "Grant Accessibility permission in System Settings to insert at the cursor",
+                        language: language
+                    )
+                )
             }
-            let hasFocusedField = (windowService.focusedTextInput(excludingPID: myPID) != nil)
+            let resolvedFocus: MacAccessibilityAndWindowService.FocusedTextInputTarget? = {
+                if let direct = windowService.focusedTextInput(excludingPID: myPID) {
+                    return direct
+                }
+                if allowActivatingPreferredPID,
+                   let preferredPID,
+                   preferredPID != myPID,
+                   let app = NSRunningApplication(processIdentifier: preferredPID),
+                   !app.isTerminated {
+                    app.activate()
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.06))
+                    return windowService.focusedTextInput(inApplicationPID: preferredPID)
+                }
+                return nil
+            }()
             let plan = SnippetInsertPolicy.evaluate(
                 body: clamped,
                 mode: .typeKeys,
-                isFieldFocused: hasFocusedField
+                isFieldFocused: resolvedFocus != nil
             )
             guard case .typeThroughKeyPath(let textToType) = plan else {
-                return (false, false, "")
+                let message = SnippetInsertPolicy.rejectionMessage(for: plan, language: language) ?? L10n.tr(
+                    "未检测到焦点输入框，请先在 Mac 中点击文本框",
+                    "No text field focused on Mac — click a text field first",
+                    language: language
+                )
+                return (false, true, message)
             }
             typeStringThroughKeyPath(textToType)
             return (
@@ -288,6 +316,8 @@ public final class MacInputAndMediaService {
             return windowService.performWindowOperation(.center, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .toggleFullscreen:
             return windowService.performWindowOperation(.toggleFullscreen, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+        case .moveWindowToNextDisplay:
+            return windowService.performWindowOperation(.moveToNextDisplay, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
 
         case .switchToNextWindow, .switchToPreviousWindow:
             guard ensureAccessibilityOrPrompt() else { return accessibilityDeniedResult() }
@@ -730,6 +760,117 @@ public final class MacInputAndMediaService {
         }
     }
 
+    /// Writes the public AppleEvent shuffle property for `com.apple.Music` (`shuffle enabled`) or
+    /// `com.spotify.client` (`shuffling`). Never calls private MediaRemote, never launches or activates
+    /// the player, and returns the exact AppleEvent error on failure so the companion does not flip its icon.
+    public func setNowPlayingShuffle(
+        enabled: Bool,
+        language: AppLanguage = .system
+    ) -> (success: Bool, appliedShuffle: Bool?, targetBundleID: String?, message: String) {
+        let context = mediaPlaybackModeContextProvider?() ?? Self.fallbackMediaPlaybackModeContext()
+        let route = MacMediaPlaybackModeRouter.chooseShuffleRoute(enabled: enabled, context: context)
+
+        switch route {
+        case .script(let target, let scriptBody):
+            switch executePlayerPlaybackModeAppleScript(target: target, scriptBody: scriptBody) {
+            case .delivered:
+                let stateText = enabled
+                    ? L10n.tr("已开启 \(target.displayName) 随机播放", "Turned on Shuffle in \(target.displayName)", language: language)
+                    : L10n.tr("已关闭 \(target.displayName) 随机播放", "Turned off Shuffle in \(target.displayName)", language: language)
+                return (true, enabled, target.bundleIdentifier, stateText)
+            case .notRunning:
+                return (
+                    false,
+                    nil,
+                    nil,
+                    MacMediaPlaybackModeRejectionReason.playerNotRunning(bundleID: target.bundleIdentifier)
+                        .message(in: language)
+                )
+            case .failed(let errorMessage):
+                return (false, nil, nil, errorMessage)
+            }
+
+        case .rejected(let reason):
+            return (false, nil, nil, reason.message(in: language))
+        }
+    }
+
+    /// Writes the public AppleEvent repeat property for `com.apple.Music` (`song repeat`) or
+    /// `com.spotify.client` (`repeating`). Never calls private MediaRemote, never launches or activates
+    /// the player, and returns the exact AppleEvent error on failure so the companion does not flip its icon.
+    public func setNowPlayingRepeat(
+        mode: NowPlayingRepeatMode,
+        language: AppLanguage = .system
+    ) -> (success: Bool, appliedRepeat: NowPlayingRepeatMode?, targetBundleID: String?, message: String) {
+        let context = mediaPlaybackModeContextProvider?() ?? Self.fallbackMediaPlaybackModeContext()
+        let route = MacMediaPlaybackModeRouter.chooseRepeatRoute(mode: mode, context: context)
+
+        switch route {
+        case .script(let target, let scriptBody):
+            switch executePlayerPlaybackModeAppleScript(target: target, scriptBody: scriptBody) {
+            case .delivered:
+                let modeLabel = mode.accessibilityValueText(in: language)
+                let summary = L10n.tr(
+                    "已将 \(target.displayName) 循环设为\(modeLabel)",
+                    "Set \(target.displayName) Repeat to \(modeLabel)",
+                    language: language
+                )
+                return (true, mode, target.bundleIdentifier, summary)
+            case .notRunning:
+                return (
+                    false,
+                    nil,
+                    nil,
+                    MacMediaPlaybackModeRejectionReason.playerNotRunning(bundleID: target.bundleIdentifier)
+                        .message(in: language)
+                )
+            case .failed(let errorMessage):
+                return (false, nil, nil, errorMessage)
+            }
+
+        case .rejected(let reason):
+            return (false, nil, nil, reason.message(in: language))
+        }
+    }
+
+    private func executePlayerPlaybackModeAppleScript(
+        target: MacMediaPlaybackModeTargetPlayer,
+        scriptBody: String
+    ) -> PlayerScriptOutcome {
+        guard Self.isAppRunning(bundleID: target.bundleIdentifier) else {
+            return .notRunning
+        }
+
+        let source = """
+        with timeout of 3 seconds
+            \(scriptBody)
+        end timeout
+        """
+        guard let script = NSAppleScript(source: source) else {
+            return .failed("AppleScript initialization failed")
+        }
+
+        var errorDict: NSDictionary?
+        let descriptor = script.executeAndReturnError(&errorDict)
+        if let errorDict {
+            let errNum = (errorDict[NSAppleScript.errorNumber] as? Int) ?? 0
+            if errNum == -600 {
+                return .notRunning
+            }
+            let rawReason = ((errorDict[NSAppleScript.errorBriefMessage] as? String)
+                ?? (errorDict[NSAppleScript.errorMessage] as? String))?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let rawReason, !rawReason.isEmpty {
+                return .failed(rawReason)
+            }
+            return .failed("AppleEvent error (\(errNum))")
+        }
+        if descriptor.stringValue == "NOT_RUNNING" {
+            return .notRunning
+        }
+        return .delivered
+    }
+
     private func executePlayerSeekAppleScript(
         target: MacMediaSeekTargetPlayer,
         positionSeconds: Double
@@ -836,6 +977,14 @@ public final class MacInputAndMediaService {
             durationSeconds: nil,
             isSpotifyRunning: isAppRunning(bundleID: MacMediaSeekRouter.spotifyBundleIdentifier),
             isMusicRunning: isAppRunning(bundleID: MacMediaSeekRouter.musicBundleIdentifier)
+        )
+    }
+
+    private static func fallbackMediaPlaybackModeContext() -> MacMediaPlaybackModeContext {
+        MacMediaPlaybackModeContext(
+            nowPlayingBundleID: nil,
+            isSpotifyRunning: isAppRunning(bundleID: MacMediaPlaybackModeRouter.spotifyBundleIdentifier),
+            isMusicRunning: isAppRunning(bundleID: MacMediaPlaybackModeRouter.musicBundleIdentifier)
         )
     }
 

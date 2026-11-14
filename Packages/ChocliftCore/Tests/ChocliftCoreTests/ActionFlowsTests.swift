@@ -11,6 +11,9 @@ private final class RecordingFlowDriver: ActionFlowDriver {
         case launch(bundleID: String, appPath: String?)
         case waitWindow(bundleID: String, pid: Int32, action: SystemQuickAction)
         case systemAction(action: SystemQuickAction, target: FlowSystemActionTarget)
+        case openWebsite(url: String, switchExistingTab: Bool)
+        case runShortcut(name: String)
+        case insertSnippet(snippetID: UUID, titleSnapshot: String?, preferredPID: Int32?)
         case sleep(seconds: Double)
     }
 
@@ -26,6 +29,12 @@ private final class RecordingFlowDriver: ActionFlowDriver {
     var onSleep: ((Int, Double) -> Void)?
     /// Custom hook invoked on `executeSystemAction`.
     var onSystemAction: ((SystemQuickAction, FlowSystemActionTarget) -> (success: Bool, message: String))?
+    /// Custom hook invoked on `openWebsite`.
+    var onOpenWebsite: ((String, Bool) -> (success: Bool, message: String))?
+    /// Custom hook invoked on `runShortcut`.
+    var onRunShortcut: ((String) -> (success: Bool, message: String))?
+    /// Custom hook invoked on `insertSnippet`.
+    var onInsertSnippet: ((UUID, String?, Int32?) -> (success: Bool, message: String))?
 
     private var sleepCount = 0
     private var nextPID: Int32 = 100
@@ -79,6 +88,39 @@ private final class RecordingFlowDriver: ActionFlowDriver {
             return onSystemAction(action, target)
         }
         return (true, "Executed \(action.rawValue)")
+    }
+
+    func openWebsite(
+        url: String,
+        switchExistingTab: Bool
+    ) async -> (success: Bool, message: String) {
+        recordedCalls.append(.openWebsite(url: url, switchExistingTab: switchExistingTab))
+        if let onOpenWebsite {
+            return onOpenWebsite(url, switchExistingTab)
+        }
+        return (true, "Opened \(url)")
+    }
+
+    func runShortcut(
+        named shortcutName: String
+    ) async -> (success: Bool, message: String) {
+        recordedCalls.append(.runShortcut(name: shortcutName))
+        if let onRunShortcut {
+            return onRunShortcut(shortcutName)
+        }
+        return (true, "Ran Shortcut \"\(shortcutName)\"")
+    }
+
+    func insertSnippet(
+        snippetID: UUID,
+        titleSnapshot: String?,
+        preferredPID: Int32?
+    ) -> (success: Bool, message: String) {
+        recordedCalls.append(.insertSnippet(snippetID: snippetID, titleSnapshot: titleSnapshot, preferredPID: preferredPID))
+        if let onInsertSnippet {
+            return onInsertSnippet(snippetID, titleSnapshot, preferredPID)
+        }
+        return (true, "Inserted snippet \(titleSnapshot ?? snippetID.uuidString)")
     }
 
     func sleep(seconds: Double) async {
@@ -686,6 +728,361 @@ final class ActionFlowsTests: XCTestCase {
         XCTAssertFalse(failureToast.success)
         XCTAssertTrue(failureToast.title.contains("Step 4"), "Expected Step 4 in toast title: \(failureToast.title)")
         XCTAssertTrue((failureToast.detail ?? "").contains("Open Notes"), "Expected failed step name in detail: \(failureToast.detail ?? "")")
+    }
+
+    // MARK: - 6. Website, Shortcut, and Snippet Flow Steps (Backward Decode, Sequential Execution & Real Error Halting)
+
+    func testLegacyV1_0_21FlowWithoutNewStepCasesDecodesCleanly() throws {
+        let legacyJSON = """
+        {
+          "id": "11111111-2222-3333-4444-555555555555",
+          "name": "Legacy Workspace Setup",
+          "emoji": "🪟",
+          "backgroundHex": "#ECFAFE",
+          "updatedAt": 1700000000,
+          "steps": [
+            {
+              "id": "AAAAAAAA-0000-0000-0000-000000000001",
+              "isEnabled": true,
+              "kind": {
+                "type": "launch_or_activate_app",
+                "bundleIdentifier": "com.apple.Safari",
+                "appName": "Safari"
+              }
+            },
+            {
+              "id": "AAAAAAAA-0000-0000-0000-000000000002",
+              "isEnabled": true,
+              "kind": {
+                "type": "wait_for_app_frontmost",
+                "bundleIdentifier": "",
+                "timeoutSeconds": 2.5
+              }
+            },
+            {
+              "id": "AAAAAAAA-0000-0000-0000-000000000003",
+              "isEnabled": true,
+              "kind": {
+                "type": "delay",
+                "seconds": 0.4
+              }
+            },
+            {
+              "id": "AAAAAAAA-0000-0000-0000-000000000004",
+              "isEnabled": true,
+              "kind": {
+                "type": "system_action",
+                "action": "maximize_window"
+              }
+            }
+          ]
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(ActionFlow.self, from: Data(legacyJSON.utf8))
+        XCTAssertEqual(decoded.name, "Legacy Workspace Setup")
+        XCTAssertEqual(decoded.steps.count, 4)
+        XCTAssertEqual(decoded.steps[0].kind, .launchOrActivateApp(bundleIdentifier: "com.apple.Safari", appName: "Safari", appPath: nil))
+        XCTAssertEqual(decoded.steps[1].kind, .waitForAppFrontmost(bundleIdentifier: "", appName: nil, timeoutSeconds: 2.5))
+        XCTAssertEqual(decoded.steps[2].kind, .delay(seconds: 0.4))
+        XCTAssertEqual(decoded.steps[3].kind, .systemAction(action: .maximizeWindow, targetBundleIdentifier: nil, targetAppName: nil))
+    }
+
+    func testWebsiteShortcutAndSnippetStepsRoundTripCodingAndDefaults() throws {
+        let snippetID = UUID(uuidString: "99999999-8888-7777-6666-555555555555")!
+        let flow = ActionFlow(
+            name: "Morning Triage",
+            emoji: "🚀",
+            backgroundHex: "#EFF8FF",
+            steps: [
+                ActionFlowStep(kind: .openWebsite(url: " https://linear.app/team ", title: " Linear ", switchExistingTab: true)),
+                ActionFlowStep(kind: .openWebsite(url: "https://github.com/notifications", title: "   ", switchExistingTab: false)),
+                ActionFlowStep(kind: .runShortcut(shortcutName: " Daily Standup Notes ")),
+                ActionFlowStep(kind: .insertSnippet(snippetID: snippetID, titleSnapshot: " Standup Template "))
+            ]
+        )
+
+        let data = try JSONEncoder().encode(flow)
+        let decoded = try JSONDecoder().decode(ActionFlow.self, from: data)
+        XCTAssertEqual(decoded, flow)
+        XCTAssertEqual(decoded.steps[0].kind, .openWebsite(url: "https://linear.app/team", title: "Linear", switchExistingTab: true))
+        XCTAssertEqual(decoded.steps[1].kind, .openWebsite(url: "https://github.com/notifications", title: nil, switchExistingTab: false))
+        XCTAssertEqual(decoded.steps[2].kind, .runShortcut(shortcutName: "Daily Standup Notes"))
+        XCTAssertEqual(decoded.steps[3].kind, .insertSnippet(snippetID: snippetID, titleSnapshot: "Standup Template"))
+
+        // Minimal JSON payloads with omitted optional keys + malformed insert_snippet missing snippetID
+        let minimalJSON = """
+        [
+          {
+            "kind": { "type": "open_website", "url": "https://example.com" }
+          },
+          {
+            "kind": { "type": "run_shortcut", "shortcutName": "Focus Mode" }
+          },
+          {
+            "kind": { "type": "insert_snippet", "snippetID": "\(snippetID.uuidString)" }
+          },
+          {
+            "kind": { "type": "insert_snippet", "titleSnapshot": "Broken Missing UUID" }
+          }
+        ]
+        """
+        let minimalSteps = try JSONDecoder().decode([ActionFlowStep].self, from: Data(minimalJSON.utf8))
+        XCTAssertEqual(minimalSteps.count, 4)
+        XCTAssertEqual(minimalSteps[0].kind, .openWebsite(url: "https://example.com", title: nil, switchExistingTab: true))
+        XCTAssertEqual(minimalSteps[1].kind, .runShortcut(shortcutName: "Focus Mode"))
+        XCTAssertEqual(minimalSteps[2].kind, .insertSnippet(snippetID: snippetID, titleSnapshot: nil))
+        XCTAssertEqual(minimalSteps[3].kind, .unsupported(rawType: "insert_snippet:missing_snippet_id"))
+    }
+
+    func testFlowRunsWebsiteShortcutAndSnippetSequentiallyAndPassesPreferredPID() async {
+        let driver = RecordingFlowDriver()
+        driver.fallbackExternalAppPID = 4242
+
+        let snippetA = UUID()
+        let snippetB = UUID()
+
+        let flow = ActionFlow(
+            name: "Research & Draft",
+            steps: [
+                // Before any app step, insertSnippet receives fallbackExternalAppPID (4242)
+                ActionFlowStep(kind: .insertSnippet(snippetID: snippetA, titleSnapshot: "Header")),
+                ActionFlowStep(kind: .openWebsite(url: "github.com/apple/swift", title: "Swift Repo", switchExistingTab: true)),
+                ActionFlowStep(kind: .runShortcut(shortcutName: "Prepare Scratchpad")),
+                ActionFlowStep(kind: .launchOrActivateApp(bundleIdentifier: "com.apple.Notes", appName: "Notes")),
+                // After launching Notes, insertSnippet receives Notes's processIdentifier
+                ActionFlowStep(kind: .insertSnippet(snippetID: snippetB, titleSnapshot: "Review Checklist"))
+            ]
+        )
+
+        let result = await ActionFlowRunner.run(flow, driver: driver, language: .english)
+        XCTAssertTrue(result.success)
+        XCTAssertEqual(result.executedStepCount, 5)
+        XCTAssertNil(result.failedStepIndex)
+        XCTAssertNil(result.failedStepTitle)
+
+        let notesPID = try! XCTUnwrap(driver.runningAppsByBundleID["com.apple.Notes"]?.processIdentifier)
+        XCTAssertEqual(
+            driver.recordedCalls,
+            [
+                .insertSnippet(snippetID: snippetA, titleSnapshot: "Header", preferredPID: 4242),
+                .openWebsite(url: "https://github.com/apple/swift", switchExistingTab: true),
+                .runShortcut(name: "Prepare Scratchpad"),
+                .launch(bundleID: "com.apple.Notes", appPath: nil),
+                .insertSnippet(snippetID: snippetB, titleSnapshot: "Review Checklist", preferredPID: notesPID)
+            ]
+        )
+    }
+
+    func testFailedWebsiteShortcutAndSnippetStepsStopFlowImmediatelyAndReportStepNumberAndRealError() async {
+        let snippetID = UUID()
+
+        // Case A: Invalid URL in step 2 stops before step 3 and never invokes driver.openWebsite
+        do {
+            let driver = RecordingFlowDriver()
+            let flow = ActionFlow(
+                name: "Bad Website Flow",
+                steps: [
+                    ActionFlowStep(kind: .delay(seconds: 0.1)),
+                    ActionFlowStep(kind: .openWebsite(url: "https://", title: "Broken Link", switchExistingTab: true)),
+                    ActionFlowStep(kind: .runShortcut(shortcutName: "Should Not Run"))
+                ]
+            )
+            let res = await ActionFlowRunner.run(flow, driver: driver, language: .english)
+            XCTAssertFalse(res.success)
+            XCTAssertEqual(res.executedStepCount, 1)
+            XCTAssertEqual(res.failedStepIndex, 1)
+            XCTAssertTrue(res.title.contains("Step 2"), "Unexpected title: \(res.title)")
+            XCTAssertTrue(res.detail.contains("Invalid URL: https://"), "Expected real URL validation error in detail: \(res.detail)")
+            XCTAssertEqual(driver.recordedCalls, [.sleep(seconds: 0.1)])
+        }
+
+        // Case B: Shortcut failure at 1-based Step 3 (with Step 1 disabled!) reports Step 3 and real CLI error, halting before Step 4
+        do {
+            let driver = RecordingFlowDriver()
+            let realCLIError = "Error: The operation couldn’t be completed. Couldn’t find shortcut \"Missing Shortcut\"."
+            driver.onRunShortcut = { _ in
+                (false, realCLIError)
+            }
+
+            let flow = ActionFlow(
+                name: "Shortcut Failure Flow",
+                steps: [
+                    ActionFlowStep(kind: .delay(seconds: 0.2), isEnabled: false), // Step 1 disabled
+                    ActionFlowStep(kind: .openWebsite(url: "https://example.com", title: "Example", switchExistingTab: false)), // Step 2
+                    ActionFlowStep(kind: .runShortcut(shortcutName: "Missing Shortcut")), // Step 3 fails!
+                    ActionFlowStep(kind: .insertSnippet(snippetID: snippetID, titleSnapshot: "Never Inserted")) // Step 4 must not run
+                ]
+            )
+
+            let res = await ActionFlowRunner.run(flow, driver: driver, language: .english)
+            XCTAssertFalse(res.success)
+            XCTAssertEqual(res.executedStepCount, 1)
+            XCTAssertEqual(res.failedStepIndex, 2)
+            XCTAssertTrue(res.title.contains("Step 3"), "Expected 1-based Step 3 even when Step 1 is disabled: \(res.title)")
+            XCTAssertTrue(res.detail.contains("Step 3"), "Expected Step 3 in detail: \(res.detail)")
+            XCTAssertTrue(res.detail.contains(realCLIError), "Expected real CLI error in detail: \(res.detail)")
+            XCTAssertEqual(
+                driver.recordedCalls,
+                [
+                    .openWebsite(url: "https://example.com", switchExistingTab: false),
+                    .runShortcut(name: "Missing Shortcut")
+                ]
+            )
+        }
+
+        // Case C: Deleted or failed snippet step stops flow, reports Step 2 and real snippet error, never marks flow successful
+        do {
+            let driver = RecordingFlowDriver()
+            let realSnippetError = "Snippet \"Deleted Signature\" was deleted"
+            driver.onInsertSnippet = { _, _, _ in
+                (false, realSnippetError)
+            }
+
+            let flow = ActionFlow(
+                name: "Snippet Failure Flow",
+                steps: [
+                    ActionFlowStep(kind: .launchOrActivateApp(bundleIdentifier: "com.apple.Notes", appName: "Notes")),
+                    ActionFlowStep(kind: .insertSnippet(snippetID: snippetID, titleSnapshot: "Deleted Signature")),
+                    ActionFlowStep(kind: .systemAction(action: .maximizeWindow))
+                ]
+            )
+
+            let res = await ActionFlowRunner.run(flow, driver: driver, language: .english)
+            XCTAssertFalse(res.success)
+            XCTAssertEqual(res.executedStepCount, 1)
+            XCTAssertEqual(res.failedStepIndex, 1)
+            XCTAssertTrue(res.title.contains("Step 2"), "Unexpected title: \(res.title)")
+            XCTAssertTrue(res.detail.contains(realSnippetError), "Expected real snippet error in detail: \(res.detail)")
+            XCTAssertEqual(
+                driver.recordedCalls,
+                [
+                    .launch(bundleID: "com.apple.Notes", appPath: nil),
+                    .insertSnippet(
+                        snippetID: snippetID,
+                        titleSnapshot: "Deleted Signature",
+                        preferredPID: driver.runningAppsByBundleID["com.apple.Notes"]?.processIdentifier
+                    )
+                ]
+            )
+        }
+    }
+
+    func testLoopbackSyncAndFailureReportingForWebsiteShortcutAndSnippetFlow() async throws {
+        guard Self.isLoopbackSocketAllowedByEnvironment() else {
+            throw XCTSkip("Local TCP loopback sockets are blocked by this sandbox environment.")
+        }
+
+        let suiteName = "com.choclift.flowtests.ext.\(UUID().uuidString)"
+        let isolatedDefaults = UserDefaults(suiteName: suiteName)!
+        defer { isolatedDefaults.removePersistentDomain(forName: suiteName) }
+
+        let driver = RecordingFlowDriver()
+        let delegate = FlowExecutingMacServerDelegate(driver: driver)
+
+        let snippet = TextSnippet(title: "PR Template", body: "## Summary\n- Ready for review", insertMode: .clipboardPaste)
+        _ = delegate.profile.upsertSnippet(snippet)
+
+        let server = MacServerEngine(macID: "mac-flow-ext-host", macName: "Studio Mac")
+        server.delegate = delegate
+        delegate.server = server
+        server.start(preferredPort: 0, advertiseBonjour: false, advertiseBluetooth: false)
+        defer { server.stop() }
+
+        try await waitUntil("Server listening") { server.isListening && server.listeningPort != nil }
+        let port = try XCTUnwrap(server.listeningPort)
+
+        let iphone = CompanionClientEngine(
+            deviceID: "iphone-flow-ext-1",
+            deviceName: "Test iPhone",
+            platform: .iPhone,
+            userDefaults: isolatedDefaults,
+            storageKeyPrefix: "iphoneFlowExt"
+        )
+        let ipad = CompanionClientEngine(
+            deviceID: "ipad-flow-ext-1",
+            deviceName: "Test iPad",
+            platform: .iPad,
+            userDefaults: isolatedDefaults,
+            storageKeyPrefix: "ipadFlowExt"
+        )
+        defer {
+            iphone.disconnect()
+            ipad.disconnect()
+        }
+
+        iphone.connectToHost(host: "127.0.0.1", port: port, targetName: "Studio Mac")
+        try await waitUntil("iPhone awaiting PIN") {
+            if case .awaitingPIN = iphone.connectionState { return true }
+            return false
+        }
+        iphone.submitPIN(server.currentPIN)
+        try await waitUntil("iPhone connected") { iphone.connectionState.isConnected }
+
+        ipad.connectToHost(host: "127.0.0.1", port: port, targetName: "Studio Mac")
+        try await waitUntil("iPad awaiting PIN") {
+            if case .awaitingPIN = ipad.connectionState { return true }
+            return false
+        }
+        ipad.submitPIN(server.currentPIN)
+        try await waitUntil("iPad connected") { ipad.connectionState.isConnected }
+
+        // Create flow with Website + Shortcut + Snippet steps on iPhone and push to Mac & iPad
+        let comboFlow = ActionFlow(
+            name: "PR Ship Flow",
+            emoji: "🌐",
+            backgroundHex: "#ECFAFE",
+            steps: [
+                ActionFlowStep(kind: .openWebsite(url: "https://github.com/pulls", title: "GitHub PRs", switchExistingTab: true)),
+                ActionFlowStep(kind: .runShortcut(shortcutName: "Copy Branch Ticket")),
+                ActionFlowStep(kind: .insertSnippet(snippetID: snippet.id, titleSnapshot: snippet.title))
+            ]
+        )
+        var edited = iphone.profile
+        edited.upsertFlow(comboFlow)
+        iphone.pushUpdatedProfile(edited)
+
+        try await waitUntil("Mac & iPad receive synced comboFlow") {
+            delegate.profile.flow(withID: comboFlow.id) == comboFlow &&
+            ipad.profile.flow(withID: comboFlow.id) == comboFlow
+        }
+
+        // 1. Successful trigger from iPad runs all 3 steps in order
+        ipad.lastFeedback = nil
+        ipad.triggerFlow(id: comboFlow.id)
+        try await waitUntil("iPad receives success feedback") {
+            ipad.lastFeedback?.title == comboFlow.name && ipad.lastFeedback?.success == true
+        }
+        XCTAssertEqual(
+            driver.recordedCalls,
+            [
+                .openWebsite(url: "https://github.com/pulls", switchExistingTab: true),
+                .runShortcut(name: "Copy Branch Ticket"),
+                .insertSnippet(snippetID: snippet.id, titleSnapshot: "PR Template", preferredPID: 999)
+            ]
+        )
+
+        // 2. Failing shortcut on Step 2 halts before Step 3 (snippet) and reports Step 2 + real error back to iPhone
+        driver.recordedCalls.removeAll()
+        driver.onRunShortcut = { name in
+            (false, "Shortcut \"\(name)\" failed with exit code 1")
+        }
+        iphone.lastFeedback = nil
+        iphone.triggerFlow(id: comboFlow.id)
+        try await waitUntil("iPhone receives failure feedback") {
+            iphone.lastFeedback != nil
+        }
+        let errToast = try XCTUnwrap(iphone.lastFeedback)
+        XCTAssertFalse(errToast.success)
+        XCTAssertTrue(errToast.title.contains("Step 2"), "Expected Step 2 in title: \(errToast.title)")
+        XCTAssertTrue((errToast.detail ?? "").contains("Shortcut \"Copy Branch Ticket\" failed with exit code 1"))
+        XCTAssertEqual(
+            driver.recordedCalls,
+            [
+                .openWebsite(url: "https://github.com/pulls", switchExistingTab: true),
+                .runShortcut(name: "Copy Branch Ticket")
+            ]
+        )
     }
 
     // MARK: - Helpers

@@ -138,6 +138,25 @@ public enum SnippetInsertPolicy {
             return .typeThroughKeyPath(clamped)
         }
     }
+
+    /// Returns the localized honest failure message when a `SnippetExecutionPlan` cannot run.
+    public static func rejectionMessage(
+        for plan: SnippetExecutionPlan,
+        language: AppLanguage = .system
+    ) -> String? {
+        switch plan {
+        case .focusedFieldInsertPreservingClipboard, .pasteThroughClipboard, .typeThroughKeyPath:
+            return nil
+        case .rejectedEmptyText:
+            return L10n.tr("输入内容为空", "Text is empty", language: language)
+        case .rejectedNoFocusedField:
+            return L10n.tr(
+                "未检测到焦点输入框，请先在 Mac 中点击文本框",
+                "No text field focused on Mac — click a text field first",
+                language: language
+            )
+        }
+    }
 }
 
 // MARK: - 2. Empty-Slot Hint Policy (Round 6)

@@ -117,6 +117,7 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var nowPlayingScrub = NowPlayingScrubController()
     @Published public private(set) var hapticQuietHours: HapticQuietHoursSettings = .disabled
     @Published public private(set) var observedClipboardPreviewTexts: Set<String> = []
+    @Published public private(set) var lastNowPlayingModeError: String?
     @Published public var lastFeedback: CompanionFeedbackToast?
 
     public let deviceID: String
@@ -127,6 +128,8 @@ public final class CompanionClientEngine: ObservableObject {
     public var simulatedBluetoothReconnectProvider: (() -> CompanionFrameTransport?)?
     /// Internal test hook allowing simulated BLE discovery + GATT metadata sessions without physical radio hardware.
     var simulatedBluetoothConnector: ((DiscoveredBluetoothMac) -> CompanionFrameTransport?)?
+    /// Internal test hook allowing simulated Wi-Fi TCP sessions for deterministic cross-link upgrade tests.
+    var simulatedWiFiConnector: ((DiscoveredMacHost) -> CompanionFrameTransport?)?
     /// Internal test hook allowing unit tests to deterministically simulate watchOS NECP `.waiting(NWError)` states.
     var simulatedTCPWaitingErrorProvider: ((NWEndpoint) -> NWError?)?
     public var reconnectDelaySeconds: TimeInterval = 2.0
@@ -194,6 +197,51 @@ public final class CompanionClientEngine: ObservableObject {
     private var maintenanceConfirmExpiryTask: Task<Void, Never>?
     private var lockScreenConfirmExpiryTask: Task<Void, Never>?
     private var connectedClipboardMacID: String?
+    private var awaitingPlaybackModeFeedback = false
+    private var requestedNowPlayingIconBundleIDs: Set<String> = []
+
+    private final class BackgroundWiFiUpgradeSession {
+        let sessionID = UUID()
+        let bleSessionID: UUID
+        let targetMacID: String
+        let targetMacName: String
+        let savedAuthToken: String
+        let host: DiscoveredMacHost
+        var connection: NWConnection?
+        var frameTransport: CompanionFrameTransport?
+        var isTransportReady = false
+        var didAttemptHTTPFallback = false
+        var didSendSavedToken = false
+        var isPromoted = false
+        var bleClosedDuringUpgrade = false
+        var bleHadPendingOutboundOnClose = false
+        var accumulator = WireStreamAccumulator()
+        var watchdogTask: Task<Void, Never>?
+        var queuedOutboundMessages: [ClientMessage] = []
+
+        init(
+            bleSessionID: UUID,
+            targetMacID: String,
+            targetMacName: String,
+            savedAuthToken: String,
+            host: DiscoveredMacHost
+        ) {
+            self.bleSessionID = bleSessionID
+            self.targetMacID = targetMacID
+            self.targetMacName = targetMacName
+            self.savedAuthToken = savedAuthToken
+            self.host = host
+        }
+    }
+
+    private var backgroundWiFiUpgrade: BackgroundWiFiUpgradeSession?
+    private var failedWiFiUpgradeHosts: Set<DiscoveredMacHost> = []
+    private var recentControlLevelChanges: [ControlLevelKind: (level: Double, isVolumeMuted: Bool, timestamp: Date)] = [:]
+    private var awaitingPostUpgradeControlStripRefresh = false
+
+    var isBackgroundWiFiUpgradeInFlight: Bool {
+        backgroundWiFiUpgrade != nil
+    }
 
     public init(
         deviceID: String,
@@ -267,6 +315,7 @@ public final class CompanionClientEngine: ObservableObject {
                 self.discoveredMacs = hosts.sorted {
                     $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
+                self.failedWiFiUpgradeHosts.formIntersection(Set(self.discoveredMacs))
                 if self.connectionState == .disconnected,
                    !self.recoveringSavedBluetooth,
                    self.reconnectTask == nil,
@@ -338,6 +387,11 @@ public final class CompanionClientEngine: ObservableObject {
 
     func simulateDiscoveredWiFiMacs(_ hosts: [DiscoveredMacHost]) {
         discoveredMacs = hosts
+        if backgroundWiFiUpgrade == nil {
+            failedWiFiUpgradeHosts.removeAll()
+        } else {
+            failedWiFiUpgradeHosts.formIntersection(Set(hosts))
+        }
         autoConnectIfAppropriate()
     }
 
@@ -396,13 +450,22 @@ public final class CompanionClientEngine: ObservableObject {
         if connectionState == .disconnected && !intentionalDisconnect {
             if !recoveringSavedBluetooth { consecutiveReconnectFailures = 0 }
             autoConnectIfAppropriate(allowBluetoothNow: discoveredMacs.isEmpty)
+        } else if connectionState.isConnected && activeLink == .bluetooth && !intentionalDisconnect {
+            if backgroundWiFiUpgrade == nil {
+                failedWiFiUpgradeHosts.removeAll()
+            }
+            considerBackgroundWiFiUpgradeIfNeeded()
         }
     }
 
     // MARK: - Auto-Connect & Cross-Link Preference
 
     private func autoConnectIfAppropriate(allowBluetoothNow: Bool = false) {
-        guard connectionState == .disconnected, !intentionalDisconnect, !savedMacs.isEmpty else { return }
+        guard !intentionalDisconnect, !savedMacs.isEmpty else { return }
+        guard connectionState == .disconnected else {
+            considerBackgroundWiFiUpgradeIfNeeded()
+            return
+        }
         if recoveringSavedBluetooth {
             if reconnectTask == nil, wifiRecoveryPathMonitor == nil {
                 scheduleRecoveryAttempt(failedLink: .bluetooth, delaySeconds: reconnectDelaySeconds, preservePINState: false)
@@ -452,12 +515,716 @@ public final class CompanionClientEngine: ObservableObject {
                 return byID
             }
             if let byName = discoveredMacs.first(where: {
+                $0.macID == nil &&
                 $0.name.caseInsensitiveCompare(saved.macName) == .orderedSame
             }) {
                 return byName
             }
         }
         return nil
+    }
+
+    private func matchingTrustedWiFiUpgradeHost(for saved: SavedMacCredential) -> DiscoveredMacHost? {
+        if let byID = discoveredMacs.first(where: {
+            $0.macID == saved.macID && !failedWiFiUpgradeHosts.contains($0)
+        }) {
+            return byID
+        }
+        if let byNameWithoutID = discoveredMacs.first(where: {
+            $0.macID == nil &&
+            $0.name.caseInsensitiveCompare(saved.macName) == .orderedSame &&
+            !failedWiFiUpgradeHosts.contains($0)
+        }) {
+            return byNameWithoutID
+        }
+        return nil
+    }
+
+    private func considerBackgroundWiFiUpgradeIfNeeded() {
+        guard !intentionalDisconnect,
+              activeLink == .bluetooth,
+              case let .connected(connectedMacID, connectedMacName) = connectionState,
+              let saved = savedMacs.first(where: { $0.macID == connectedMacID }),
+              !saved.authToken.isEmpty else {
+            return
+        }
+        if let existing = backgroundWiFiUpgrade {
+            if existing.bleSessionID == currentSessionID && existing.targetMacID == connectedMacID {
+                return
+            }
+            cancelBackgroundWiFiUpgrade()
+        }
+        guard let wifiHost = matchingTrustedWiFiUpgradeHost(for: saved) else {
+            return
+        }
+        beginBackgroundWiFiUpgrade(
+            to: wifiHost,
+            saved: saved,
+            connectedMacName: connectedMacName
+        )
+    }
+
+    private var bleTransportHasInFlightOutboundData: Bool {
+        guard let transport = frameTransport else { return false }
+        if let simPipe = transport as? SimulatedBLECompanionPipe {
+            return simPipe.hasPendingOutboundBytes
+        }
+        #if os(macOS) || os(iOS) || os(watchOS)
+        if let clientLink = transport as? BluetoothClientLink {
+            return clientLink.isWriteInFlight || clientLink.pendingOutboundByteCount > 0
+        }
+        #endif
+        return false
+    }
+
+    private func resolvedDirectHostAndPort(
+        forUpgradeHost host: DiscoveredMacHost,
+        saved: SavedMacCredential?
+    ) -> (String, UInt16)? {
+        if let directHost = host.directHost, !directHost.isEmpty,
+           let directPort = host.directPort, directPort > 0 {
+            return (directHost, directPort)
+        }
+        if case let .hostPort(nwHost, nwPort) = host.endpoint, nwPort.rawValue > 0 {
+            let cleanHost: String? = {
+                switch nwHost {
+                case .name(let name, _):
+                    return name
+                case .ipv4(let v4):
+                    return String(describing: v4).split(separator: "%").first.map(String.init)
+                case .ipv6(let v6):
+                    return String(describing: v6).split(separator: "%").first.map(String.init)
+                @unknown default:
+                    return nil
+                }
+            }()
+            if let cleanHost, !cleanHost.isEmpty {
+                return (cleanHost, nwPort.rawValue)
+            }
+        }
+        if let saved,
+           let lastHost = saved.lastDirectHost, !lastHost.isEmpty,
+           let lastPort = saved.lastDirectPort, lastPort > 0 {
+            return (lastHost, lastPort)
+        }
+        return nil
+    }
+
+    private func beginBackgroundWiFiUpgrade(
+        to host: DiscoveredMacHost,
+        saved: SavedMacCredential,
+        connectedMacName: String
+    ) {
+        let upgrade = BackgroundWiFiUpgradeSession(
+            bleSessionID: currentSessionID,
+            targetMacID: saved.macID,
+            targetMacName: connectedMacName,
+            savedAuthToken: saved.authToken,
+            host: host
+        )
+        backgroundWiFiUpgrade = upgrade
+        let watchdogSeconds = max(0.1, min(3.5, connectTimeoutSeconds))
+
+        if let simulatedWiFiConnector {
+            guard let simTransport = simulatedWiFiConnector(host) else {
+                failBackgroundWiFiUpgrade(sessionID: upgrade.sessionID)
+                return
+            }
+            attachBackgroundWiFiTransport(simTransport, to: upgrade, watchdogSeconds: watchdogSeconds)
+            return
+        }
+
+        #if os(watchOS) && !targetEnvironment(simulator)
+        if let (directHost, directPort) = resolvedDirectHostAndPort(forUpgradeHost: host, saved: saved) {
+            upgrade.didAttemptHTTPFallback = true
+            let pollSeconds = max(0.5, min(10.0, heartbeatTimeoutSeconds * 0.6))
+            let httpTransport = HTTPCompanionClientLink(
+                host: directHost,
+                port: directPort,
+                requestTimeoutSeconds: watchdogSeconds,
+                pollTimeoutSeconds: pollSeconds
+            )
+            attachBackgroundWiFiTransport(httpTransport, to: upgrade, watchdogSeconds: watchdogSeconds)
+            return
+        }
+        #endif
+
+        let params = NWParameters.tcp
+        params.includePeerToPeer = true
+        if let tcpOptions = params.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options {
+            tcpOptions.noDelay = true
+            tcpOptions.enableKeepalive = true
+            tcpOptions.keepaliveIdle = 15
+        }
+
+        let conn = NWConnection(to: host.endpoint, using: params)
+        upgrade.connection = conn
+        let upgradeSessionID = upgrade.sessionID
+
+        conn.stateUpdateHandler = { [weak self, weak conn] state in
+            Task { @MainActor [weak self] in
+                guard let self, let conn else { return }
+                if self.currentSessionID == upgradeSessionID {
+                    guard self.connection === conn else { return }
+                    switch state {
+                    case .failed:
+                        self.handleConnectionDropped(failedLink: .wifi)
+                    case .cancelled:
+                        if self.intentionalDisconnect {
+                            self.connectionState = .disconnected
+                        }
+                    default:
+                        break
+                    }
+                } else if let activeUpgrade = self.backgroundWiFiUpgrade,
+                          activeUpgrade.sessionID == upgradeSessionID,
+                          activeUpgrade.connection === conn {
+                    switch state {
+                    case .ready:
+                        activeUpgrade.isTransportReady = true
+                        self.armUpgradeWatchdog(for: activeUpgrade, timeoutSeconds: watchdogSeconds)
+                        self.receiveUpgradeOrPromotedLoop(for: conn, upgradeSessionID: upgradeSessionID)
+                        self.sendInitialUpgradeHello(for: activeUpgrade)
+                    case .waiting(let error):
+                        self.handleUpgradeTCPConnectionWaiting(
+                            error,
+                            upgrade: activeUpgrade,
+                            watchdogSeconds: watchdogSeconds
+                        )
+                    case .failed, .cancelled:
+                        self.failBackgroundWiFiUpgrade(sessionID: upgradeSessionID)
+                    default:
+                        break
+                    }
+                }
+            }
+        }
+
+        armUpgradeWatchdog(for: upgrade, timeoutSeconds: watchdogSeconds)
+
+        if let simulatedWaiting = simulatedTCPWaitingErrorProvider?(host.endpoint) {
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let activeUpgrade = self.backgroundWiFiUpgrade,
+                      activeUpgrade.sessionID == upgradeSessionID,
+                      activeUpgrade.connection === conn else { return }
+                self.handleUpgradeTCPConnectionWaiting(
+                    simulatedWaiting,
+                    upgrade: activeUpgrade,
+                    watchdogSeconds: watchdogSeconds
+                )
+            }
+        } else {
+            conn.start(queue: networkQueue)
+        }
+    }
+
+    private func handleUpgradeTCPConnectionWaiting(
+        _ error: NWError,
+        upgrade: BackgroundWiFiUpgradeSession,
+        watchdogSeconds: TimeInterval
+    ) {
+        guard backgroundWiFiUpgrade?.sessionID == upgrade.sessionID,
+              !upgrade.isPromoted,
+              !upgrade.isTransportReady else {
+            return
+        }
+
+        var posixCode: POSIXErrorCode?
+        if case let .posix(code) = error {
+            posixCode = code
+        }
+
+        let shouldTryHTTPWiFiFallback: Bool = {
+            guard !upgrade.didAttemptHTTPFallback, posixCode != .ECONNREFUSED else { return false }
+            if platform == .appleWatch {
+                return true
+            }
+            if let code = posixCode {
+                return code == .ENETDOWN || code == .EACCES || code == .EPERM
+            }
+            return false
+        }()
+
+        if shouldTryHTTPWiFiFallback,
+           let (directHost, directPort) = resolvedDirectHostAndPort(
+               forUpgradeHost: upgrade.host,
+               saved: savedMacs.first(where: { $0.macID == upgrade.targetMacID })
+           ) {
+            upgrade.didAttemptHTTPFallback = true
+            let oldConn = upgrade.connection
+            upgrade.connection = nil
+            oldConn?.cancel()
+
+            let pollSeconds = max(0.5, min(10.0, heartbeatTimeoutSeconds * 0.6))
+            let httpTransport = HTTPCompanionClientLink(
+                host: directHost,
+                port: directPort,
+                requestTimeoutSeconds: watchdogSeconds,
+                pollTimeoutSeconds: pollSeconds
+            )
+            attachBackgroundWiFiTransport(httpTransport, to: upgrade, watchdogSeconds: watchdogSeconds)
+            return
+        }
+
+        if let code = posixCode,
+           code == .ECONNREFUSED || code == .ENETDOWN || code == .ENETUNREACH || code == .EHOSTUNREACH || code == .EACCES || code == .EPERM {
+            failBackgroundWiFiUpgrade(sessionID: upgrade.sessionID)
+        }
+    }
+
+    private func attachBackgroundWiFiTransport(
+        _ transport: CompanionFrameTransport,
+        to upgrade: BackgroundWiFiUpgradeSession,
+        watchdogSeconds: TimeInterval
+    ) {
+        upgrade.frameTransport = transport
+        let upgradeSessionID = upgrade.sessionID
+
+        transport.onReady = { [weak self, weak transport] in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let transport,
+                      let activeUpgrade = self.backgroundWiFiUpgrade,
+                      activeUpgrade.sessionID == upgradeSessionID,
+                      !activeUpgrade.isPromoted,
+                      activeUpgrade.frameTransport === transport else {
+                    return
+                }
+                activeUpgrade.isTransportReady = true
+                self.armUpgradeWatchdog(for: activeUpgrade, timeoutSeconds: watchdogSeconds)
+                self.sendInitialUpgradeHello(for: activeUpgrade)
+            }
+        }
+
+        transport.onPayload = { [weak self, weak transport] payload in
+            Task { @MainActor [weak self] in
+                guard let self, let transport else { return }
+                if self.currentSessionID == upgradeSessionID {
+                    guard self.frameTransport === transport else { return }
+                    self.ingest(payload, sessionID: upgradeSessionID)
+                } else if let activeUpgrade = self.backgroundWiFiUpgrade,
+                          activeUpgrade.sessionID == upgradeSessionID,
+                          activeUpgrade.frameTransport === transport {
+                    self.ingestUpgradePayload(payload, upgrade: activeUpgrade)
+                }
+            }
+        }
+
+        transport.onClosed = { [weak self, weak transport] in
+            Task { @MainActor [weak self] in
+                guard let self, let transport else { return }
+                if self.currentSessionID == upgradeSessionID {
+                    guard self.frameTransport === transport else { return }
+                    self.handleConnectionDropped(failedLink: .wifi)
+                } else if let activeUpgrade = self.backgroundWiFiUpgrade,
+                          activeUpgrade.sessionID == upgradeSessionID,
+                          activeUpgrade.frameTransport === transport {
+                    self.failBackgroundWiFiUpgrade(sessionID: upgradeSessionID)
+                }
+            }
+        }
+
+        armUpgradeWatchdog(for: upgrade, timeoutSeconds: watchdogSeconds)
+        transport.start()
+    }
+
+    private func armUpgradeWatchdog(
+        for upgrade: BackgroundWiFiUpgradeSession,
+        timeoutSeconds: TimeInterval
+    ) {
+        upgrade.watchdogTask?.cancel()
+        let bounded = max(0.1, timeoutSeconds)
+        let upgradeSessionID = upgrade.sessionID
+        upgrade.watchdogTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(bounded))
+            guard let self,
+                  !Task.isCancelled,
+                  let activeUpgrade = self.backgroundWiFiUpgrade,
+                  activeUpgrade.sessionID == upgradeSessionID,
+                  !activeUpgrade.isPromoted else {
+                return
+            }
+            self.failBackgroundWiFiUpgrade(sessionID: upgradeSessionID)
+        }
+    }
+
+    private func sendInitialUpgradeHello(for upgrade: BackgroundWiFiUpgradeSession) {
+        let tokenToSend: String?
+        if upgrade.host.macID == upgrade.targetMacID {
+            tokenToSend = upgrade.savedAuthToken
+            upgrade.didSendSavedToken = true
+            upgrade.bleHadPendingOutboundOnClose = upgrade.bleHadPendingOutboundOnClose || bleTransportHasInFlightOutboundData
+        } else {
+            tokenToSend = nil
+            upgrade.didSendSavedToken = false
+        }
+        sendUpgradeMessage(
+            .hello(
+                protocolVersion: ChocliftDefaults.protocolVersion,
+                deviceID: deviceID,
+                deviceName: deviceName,
+                platform: platform,
+                savedAuthToken: tokenToSend
+            ),
+            on: upgrade
+        )
+    }
+
+    private func sendUpgradeMessage(_ message: ClientMessage, on upgrade: BackgroundWiFiUpgradeSession) {
+        guard let framed = try? WireFrameCodec.encode(message) else {
+            failBackgroundWiFiUpgrade(sessionID: upgrade.sessionID)
+            return
+        }
+        if let transport = upgrade.frameTransport {
+            transport.send(framed)
+        } else if let conn = upgrade.connection {
+            conn.send(content: framed, completion: .contentProcessed { _ in })
+        } else {
+            failBackgroundWiFiUpgrade(sessionID: upgrade.sessionID)
+        }
+    }
+
+    private func receiveUpgradeOrPromotedLoop(
+        for conn: NWConnection,
+        upgradeSessionID: UUID
+    ) {
+        conn.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self, weak conn] data, _, isComplete, error in
+            Task { @MainActor [weak self] in
+                guard let self, let conn else { return }
+                if self.currentSessionID == upgradeSessionID {
+                    guard self.connection === conn else { return }
+                    if let data, !data.isEmpty {
+                        self.ingest(data, sessionID: upgradeSessionID)
+                    }
+                    if isComplete || error != nil {
+                        if self.currentSessionID == upgradeSessionID {
+                            self.handleConnectionDropped(failedLink: .wifi)
+                        }
+                    } else {
+                        self.receiveUpgradeOrPromotedLoop(for: conn, upgradeSessionID: upgradeSessionID)
+                    }
+                } else if let activeUpgrade = self.backgroundWiFiUpgrade,
+                          activeUpgrade.sessionID == upgradeSessionID,
+                          activeUpgrade.connection === conn {
+                    if let data, !data.isEmpty {
+                        self.ingestUpgradePayload(data, upgrade: activeUpgrade)
+                    }
+                    if self.currentSessionID == upgradeSessionID {
+                        guard self.connection === conn else { return }
+                        if isComplete || error != nil {
+                            self.handleConnectionDropped(failedLink: .wifi)
+                        } else {
+                            self.receiveUpgradeOrPromotedLoop(for: conn, upgradeSessionID: upgradeSessionID)
+                        }
+                    } else if self.backgroundWiFiUpgrade?.sessionID == upgradeSessionID {
+                        if isComplete || error != nil {
+                            self.failBackgroundWiFiUpgrade(sessionID: upgradeSessionID)
+                        } else {
+                            self.receiveUpgradeOrPromotedLoop(for: conn, upgradeSessionID: upgradeSessionID)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func ingestUpgradePayload(_ payload: Data, upgrade: BackgroundWiFiUpgradeSession) {
+        guard backgroundWiFiUpgrade?.sessionID == upgrade.sessionID, !upgrade.isPromoted else { return }
+        do {
+            let frames = try upgrade.accumulator.appendAndExtractPayloads(payload)
+            for frame in frames {
+                if upgrade.isPromoted {
+                    guard currentSessionID == upgrade.sessionID else { return }
+                    lastServerActivityAt = Date()
+                    if let postAuthMsg = try? WireFrameCodec.decodePayload(ServerMessage.self, from: frame) {
+                        handleServerMessage(postAuthMsg)
+                    }
+                    continue
+                }
+
+                // Still pre-auth on the background TCP connection: any malformed or unknown frame disconnects
+                // the background TCP socket immediately while keeping the authenticated BLE session untouched.
+                let message = try WireFrameCodec.decodePayload(ServerMessage.self, from: frame)
+                switch message {
+                case .pairingRequired(let serverMacID, _):
+                    guard !upgrade.didSendSavedToken, serverMacID == upgrade.targetMacID else {
+                        failBackgroundWiFiUpgrade(sessionID: upgrade.sessionID)
+                        return
+                    }
+                    upgrade.didSendSavedToken = true
+                    upgrade.bleHadPendingOutboundOnClose = upgrade.bleHadPendingOutboundOnClose || bleTransportHasInFlightOutboundData
+                    armUpgradeWatchdog(for: upgrade, timeoutSeconds: max(0.1, min(3.5, connectTimeoutSeconds)))
+                    sendUpgradeMessage(
+                        .hello(
+                            protocolVersion: ChocliftDefaults.protocolVersion,
+                            deviceID: deviceID,
+                            deviceName: deviceName,
+                            platform: platform,
+                            savedAuthToken: upgrade.savedAuthToken
+                        ),
+                        on: upgrade
+                    )
+
+                case .authSucceeded(
+                    let macID,
+                    let macName,
+                    let authToken,
+                    let serverProfile,
+                    let serverRecents,
+                    let frontmost,
+                    let editingText,
+                    let focusedApp,
+                    let axTrusted
+                ):
+                    guard upgrade.didSendSavedToken,
+                          macID == upgrade.targetMacID,
+                          !intentionalDisconnect,
+                          activeLink == .bluetooth,
+                          case let .connected(currentMacID, _) = connectionState,
+                          currentMacID == upgrade.targetMacID else {
+                        failBackgroundWiFiUpgrade(sessionID: upgrade.sessionID)
+                        return
+                    }
+                    promoteBackgroundWiFiUpgrade(
+                        upgrade,
+                        macID: macID,
+                        macName: macName,
+                        authToken: authToken,
+                        serverProfile: serverProfile,
+                        serverRecents: serverRecents,
+                        frontmost: frontmost,
+                        editingText: editingText,
+                        focusedApp: focusedApp,
+                        axTrusted: axTrusted
+                    )
+
+                case .authFailed, .unknownServerMessage:
+                    failBackgroundWiFiUpgrade(sessionID: upgrade.sessionID)
+                    return
+
+                default:
+                    failBackgroundWiFiUpgrade(sessionID: upgrade.sessionID)
+                    return
+                }
+            }
+        } catch {
+            failBackgroundWiFiUpgrade(sessionID: upgrade.sessionID)
+        }
+    }
+
+    private func promoteBackgroundWiFiUpgrade(
+        _ upgrade: BackgroundWiFiUpgradeSession,
+        macID: String,
+        macName: String,
+        authToken: String,
+        serverProfile: ChocliftWorkspaceProfile,
+        serverRecents: [RecentAppEntry],
+        frontmost: String?,
+        editingText: Bool,
+        focusedApp: String?,
+        axTrusted: Bool
+    ) {
+        upgrade.watchdogTask?.cancel()
+        upgrade.watchdogTask = nil
+        upgrade.isPromoted = true
+        backgroundWiFiUpgrade = nil
+        failedWiFiUpgradeHosts.remove(upgrade.host)
+
+        let hadPendingBLEOutbound = upgrade.bleHadPendingOutboundOnClose || bleTransportHasInFlightOutboundData
+        let oldBLEConnection = connection
+        connection = nil
+        let oldBLETransport = frameTransport
+        frameTransport = nil
+
+        wifiPreferenceTask?.cancel()
+        wifiPreferenceTask = nil
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        connectWatchdogTask?.cancel()
+        connectWatchdogTask = nil
+        pinSubmissionWatchdogTask?.cancel()
+        pinSubmissionWatchdogTask = nil
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        clearPINGlitchState()
+
+        let preservedPeripheralID = activeBluetoothPeripheralID
+            ?? savedMacs.first(where: { $0.macID == macID })?.lastBluetoothPeripheralID
+            ?? discoveredBluetoothMacs.first(where: {
+                $0.macID == macID ||
+                $0.name.caseInsensitiveCompare(macName) == .orderedSame
+            })?.id
+        let resolvedDirect = resolvedDirectHostAndPort(
+            forUpgradeHost: upgrade.host,
+            saved: savedMacs.first(where: { $0.macID == macID })
+        )
+
+        currentSessionID = upgrade.sessionID
+        connection = upgrade.connection
+        frameTransport = upgrade.frameTransport
+        isTransportReady = true
+        lastServerActivityAt = Date()
+        accumulator = upgrade.accumulator
+        retriedTokenMacIDs = [macID]
+        isSavedMacProbeConnect = false
+        probeTargetMacID = nil
+        consecutiveReconnectFailures = 0
+        recoveringSavedBluetooth = false
+        wifiRecoveryPathMonitor?.cancel()
+        wifiRecoveryPathMonitor = nil
+        lastConnectionIssue = nil
+
+        activeEndpoint = upgrade.host.endpoint
+        activeTargetName = macName
+        activeDirectHost = upgrade.host.directHost ?? resolvedDirect?.0
+        activeDirectPort = upgrade.host.directPort ?? resolvedDirect?.1
+        activeBluetoothPeripheralID = nil
+        candidateMacID = macID
+        activeLink = .wifi
+
+        oldBLEConnection?.cancel()
+        oldBLETransport?.cancel()
+
+        saveCredential(
+            SavedMacCredential(
+                macID: macID,
+                macName: macName,
+                authToken: authToken,
+                lastDirectHost: activeDirectHost,
+                lastDirectPort: activeDirectPort,
+                lastBluetoothPeripheralID: preservedPeripheralID,
+                updatedAt: Date()
+            )
+        )
+        if connectedClipboardMacID != macID {
+            observedClipboardPreviewTexts.removeAll()
+            connectedClipboardMacID = macID
+        }
+        profile = serverProfile
+        var updatedStrip = controlStripState
+        updatedStrip.soundboardVolume = serverProfile.soundboardVolume
+        controlStripState = updatedStrip
+        recentApps = serverRecents
+        frontmostBundleID = frontmost
+        frontmostAppName = frontmost.map { bid in
+            serverProfile.resolvedAppDisplayName(
+                forBundleIdentifier: bid,
+                preferredAppName: serverRecents.first(where: {
+                    $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame
+                })?.appName,
+                recentApps: serverRecents,
+                catalogApps: macCatalogApps
+            )
+        }
+        isEditingTextOnMac = editingText
+        focusedMacAppName = focusedApp
+        isMacAccessibilityGranted = axTrusted
+
+        let nextConnectionState = CompanionConnectionState.connected(macID: macID, macName: macName)
+        if connectionState != nextConnectionState {
+            connectionState = nextConnectionState
+        }
+
+        startHeartbeat(sessionID: currentSessionID)
+
+        let now = Date()
+        var queuedControlKinds: Set<ControlLevelKind> = []
+        for queued in upgrade.queuedOutboundMessages {
+            if case let .setControlLevel(kind, _) = queued {
+                queuedControlKinds.insert(kind)
+            }
+        }
+        if hadPendingBLEOutbound {
+            for kind in ControlLevelKind.allCases where !queuedControlKinds.contains(kind) {
+                if let recent = recentControlLevelChanges[kind],
+                   now.timeIntervalSince(recent.timestamp) <= 1.0 {
+                    send(.setControlLevel(kind: kind, level: recent.level))
+                }
+            }
+        }
+        for queued in upgrade.queuedOutboundMessages {
+            send(queued)
+        }
+        upgrade.queuedOutboundMessages.removeAll()
+
+        awaitingPostUpgradeControlStripRefresh = !recentControlLevelChanges.isEmpty
+        requestMissingIconsIfNeeded()
+        send(.requestControlStripState)
+        send(.requestCompanionDashboard)
+        if platform != .appleWatch {
+            send(.requestFrontmostAppWindows)
+        }
+    }
+
+    private func handlePrimaryBluetoothClosedDuringUpgradeIfApplicable(sessionID: UUID) -> Bool {
+        guard currentSessionID == sessionID,
+              activeLink == .bluetooth,
+              connectionState.isConnected,
+              !intentionalDisconnect,
+              let upgrade = backgroundWiFiUpgrade,
+              upgrade.bleSessionID == sessionID,
+              !upgrade.isPromoted else {
+            return false
+        }
+        guard upgrade.didSendSavedToken else {
+            cancelBackgroundWiFiUpgrade()
+            return false
+        }
+        upgrade.bleClosedDuringUpgrade = true
+        upgrade.bleHadPendingOutboundOnClose = upgrade.bleHadPendingOutboundOnClose || bleTransportHasInFlightOutboundData
+        isTransportReady = false
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
+        let oldTransport = frameTransport
+        frameTransport = nil
+        oldTransport?.cancel()
+        return true
+    }
+
+    private func failBackgroundWiFiUpgrade(sessionID: UUID) {
+        guard let upgrade = backgroundWiFiUpgrade,
+              upgrade.sessionID == sessionID,
+              !upgrade.isPromoted else {
+            return
+        }
+        backgroundWiFiUpgrade = nil
+        upgrade.watchdogTask?.cancel()
+        upgrade.watchdogTask = nil
+        let conn = upgrade.connection
+        upgrade.connection = nil
+        conn?.cancel()
+        let transport = upgrade.frameTransport
+        upgrade.frameTransport = nil
+        transport?.cancel()
+        upgrade.accumulator.reset()
+        upgrade.queuedOutboundMessages.removeAll()
+
+        failedWiFiUpgradeHosts.insert(upgrade.host)
+
+        if upgrade.bleClosedDuringUpgrade {
+            if currentSessionID == upgrade.bleSessionID && !intentionalDisconnect {
+                handleConnectionDropped(failedLink: .bluetooth)
+            }
+            return
+        }
+
+        considerBackgroundWiFiUpgradeIfNeeded()
+    }
+
+    private func cancelBackgroundWiFiUpgrade() {
+        guard let upgrade = backgroundWiFiUpgrade else { return }
+        backgroundWiFiUpgrade = nil
+        upgrade.watchdogTask?.cancel()
+        upgrade.watchdogTask = nil
+        let conn = upgrade.connection
+        upgrade.connection = nil
+        conn?.cancel()
+        let transport = upgrade.frameTransport
+        upgrade.frameTransport = nil
+        transport?.cancel()
+        upgrade.accumulator.reset()
+        upgrade.queuedOutboundMessages.removeAll()
     }
 
     private func matchingSavedDiscoveredBluetoothHost(preferMacID: String? = nil) -> DiscoveredBluetoothMac? {
@@ -831,6 +1598,7 @@ public final class CompanionClientEngine: ObservableObject {
         probeTargetMacID: String?
     ) {
         intentionalDisconnect = false
+        cancelBackgroundWiFiUpgrade()
         wifiPreferenceTask?.cancel()
         reconnectTask?.cancel()
         connectWatchdogTask?.cancel()
@@ -932,6 +1700,9 @@ public final class CompanionClientEngine: ObservableObject {
         transport.onClosed = { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.currentSessionID == sessionID else { return }
+                if self.handlePrimaryBluetoothClosedDuringUpgradeIfApplicable(sessionID: sessionID) {
+                    return
+                }
                 self.handleConnectionDropped(failedLink: .bluetooth)
             }
         }
@@ -949,10 +1720,14 @@ public final class CompanionClientEngine: ObservableObject {
 
     private func handleBluetoothWriteFailure(_ reason: String) {
         if connectionState.isConnected {
+            if handlePrimaryBluetoothClosedDuringUpgradeIfApplicable(sessionID: currentSessionID) {
+                return
+            }
             handleConnectionDropped(failedLink: .bluetooth)
             lastConnectionIssue = reason
             return
         }
+        cancelBackgroundWiFiUpgrade()
         currentSessionID = UUID()
         isTransportReady = false
         isSavedMacProbeConnect = false
@@ -1064,6 +1839,7 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     private func abortUnmatchedSavedMacProbe(unmatchedTargetMacID: String?) {
+        cancelBackgroundWiFiUpgrade()
         currentSessionID = UUID()
         isTransportReady = false
         isSavedMacProbeConnect = false
@@ -1107,6 +1883,7 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     private func openConnection(to endpoint: NWEndpoint, targetName: String, preservePINState: Bool) {
+        cancelBackgroundWiFiUpgrade()
         wifiPreferenceTask?.cancel()
         reconnectTask?.cancel()
         connectWatchdogTask?.cancel()
@@ -1138,6 +1915,67 @@ public final class CompanionClientEngine: ObservableObject {
             connectionState = .connecting(targetName: targetName)
         }
 
+        let hasBluetoothFallback = matchingSavedDiscoveredBluetoothHost(preferMacID: candidateMacID) != nil
+        let watchdogSeconds = hasBluetoothFallback ? min(3.5, connectTimeoutSeconds) : max(0.2, connectTimeoutSeconds)
+
+        if let simulatedWiFiConnector {
+            let host = discoveredMacs.first(where: { $0.endpoint == endpoint })
+                ?? DiscoveredMacHost(
+                    id: "\(targetName)-sim",
+                    name: targetName,
+                    macID: candidateMacID,
+                    endpoint: endpoint,
+                    directHost: activeDirectHost,
+                    directPort: activeDirectPort
+                )
+            guard let simTransport = simulatedWiFiConnector(host) else {
+                handleConnectionDropped(failedLink: .wifi)
+                return
+            }
+            frameTransport = simTransport
+            simTransport.onReady = { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, self.currentSessionID == sessionID else { return }
+                    self.isTransportReady = true
+                    self.lastServerActivityAt = Date()
+                    self.armHandshakeWatchdog(
+                        sessionID: sessionID,
+                        failedLink: .wifi,
+                        timeoutSeconds: watchdogSeconds
+                    )
+                    self.sendHello()
+                    if let pendingPIN = self.pendingPINSubmission {
+                        self.pendingPINSubmission = nil
+                        self.send(.submitPIN(
+                            pin: pendingPIN,
+                            deviceID: self.deviceID,
+                            deviceName: self.deviceName,
+                            platform: self.platform
+                        ))
+                    }
+                }
+            }
+            simTransport.onPayload = { [weak self] payload in
+                Task { @MainActor [weak self] in
+                    guard let self, self.currentSessionID == sessionID else { return }
+                    self.ingest(payload, sessionID: sessionID)
+                }
+            }
+            simTransport.onClosed = { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, self.currentSessionID == sessionID else { return }
+                    self.handleConnectionDropped(failedLink: .wifi)
+                }
+            }
+            armHandshakeWatchdog(
+                sessionID: sessionID,
+                failedLink: .wifi,
+                timeoutSeconds: watchdogSeconds
+            )
+            simTransport.start()
+            return
+        }
+
         #if os(watchOS) && !targetEnvironment(simulator)
         // Per Apple TN3135, low-level Network.framework sockets (`NWConnection`) are blocked by NECP on physical
         // watchOS hardware, whereas high-level `URLSession` HTTP is permitted over direct Watch Wi-Fi and iPhone LAN relay.
@@ -1152,9 +1990,6 @@ public final class CompanionClientEngine: ObservableObject {
             return
         }
         #endif
-
-        let hasBluetoothFallback = matchingSavedDiscoveredBluetoothHost(preferMacID: candidateMacID) != nil
-        let watchdogSeconds = hasBluetoothFallback ? min(3.5, connectTimeoutSeconds) : max(0.2, connectTimeoutSeconds)
 
         let params = NWParameters.tcp
         params.includePeerToPeer = true
@@ -1294,6 +2129,7 @@ public final class CompanionClientEngine: ObservableObject {
         targetName: String,
         preservePINState: Bool
     ) {
+        cancelBackgroundWiFiUpgrade()
         wifiPreferenceTask?.cancel()
         reconnectTask?.cancel()
         connectWatchdogTask?.cancel()
@@ -1416,6 +2252,10 @@ public final class CompanionClientEngine: ObservableObject {
 
     public func disconnect() {
         intentionalDisconnect = true
+        cancelBackgroundWiFiUpgrade()
+        failedWiFiUpgradeHosts.removeAll()
+        recentControlLevelChanges.removeAll()
+        awaitingPostUpgradeControlStripRefresh = false
         recoveringSavedBluetooth = false
         wifiRecoveryPathMonitor?.cancel()
         wifiRecoveryPathMonitor = nil
@@ -1459,6 +2299,9 @@ public final class CompanionClientEngine: ObservableObject {
         disconnectedStrip.frontmostAppName = nil
         controlStripState = disconnectedStrip
         nowPlayingScrub.cancel()
+        awaitingPlaybackModeFeedback = false
+        lastNowPlayingModeError = nil
+        requestedNowPlayingIconBundleIDs.removeAll()
         disarmMaintenanceConfirmation()
         disarmLockMacScreenConfirmation()
         tileFeedbackTracker.clearPendingWithoutFeedback()
@@ -1500,6 +2343,10 @@ public final class CompanionClientEngine: ObservableObject {
                 let timeout = self.activeLink == .bluetooth && self.connectionState.isConnected
                     ? self.bluetoothHeartbeatTimeoutSeconds : self.heartbeatTimeoutSeconds
                 if Date().timeIntervalSince(self.lastServerActivityAt) > max(0.1, timeout) {
+                    if self.activeLink == .bluetooth,
+                       self.handlePrimaryBluetoothClosedDuringUpgradeIfApplicable(sessionID: sessionID) {
+                        break
+                    }
                     self.handleConnectionDropped(failedLink: self.activeLink ?? .bluetooth)
                     break
                 }
@@ -1550,6 +2397,9 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     private func handleConnectionDropped(failedLink: CompanionLinkKind) {
+        cancelBackgroundWiFiUpgrade()
+        recentControlLevelChanges.removeAll()
+        awaitingPostUpgradeControlStripRefresh = false
         if failedLink == .bluetooth, connectionState.isConnected,
            savedMacs.contains(where: { $0.macID == candidateMacID }) {
             recoveringSavedBluetooth = true
@@ -1660,6 +2510,9 @@ public final class CompanionClientEngine: ObservableObject {
         disconnectedStrip.frontmostAppName = nil
         controlStripState = disconnectedStrip
         nowPlayingScrub.cancel()
+        awaitingPlaybackModeFeedback = false
+        lastNowPlayingModeError = nil
+        requestedNowPlayingIconBundleIDs.removeAll()
         disarmMaintenanceConfirmation()
         disarmLockMacScreenConfirmation()
         if let failedBanner = tileFeedbackTracker.failPendingOnDisconnect() {
@@ -1984,6 +2837,88 @@ public final class CompanionClientEngine: ObservableObject {
         send(.activateRecentApp(bundleIdentifier: entry.bundleIdentifier, appPath: entry.appPath))
     }
 
+    /// Returns the Mac app icon PNG data already cached in `appIconsByBundleID` for `bundleIdentifier`,
+    /// or `nil` when no cached icon exists for that bundle ID (falling back to the generic note).
+    public static func resolvedCachedAppIconData(
+        forBundleIdentifier bundleIdentifier: String?,
+        cachedIconsByBundleID: [String: Data]
+    ) -> Data? {
+        guard let trimmed = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        if let exact = cachedIconsByBundleID[trimmed], !exact.isEmpty {
+            return exact
+        }
+        if let matched = cachedIconsByBundleID.first(where: {
+            $0.key.caseInsensitiveCompare(trimmed) == .orderedSame && !$0.value.isEmpty
+        }) {
+            return matched.value
+        }
+        return nil
+    }
+
+    public func cachedAppIconData(forBundleIdentifier bundleIdentifier: String?) -> Data? {
+        Self.resolvedCachedAppIconData(
+            forBundleIdentifier: bundleIdentifier,
+            cachedIconsByBundleID: appIconsByBundleID
+        )
+    }
+
+    public func cacheAppIconData(_ pngData: Data, forBundleIdentifier bundleIdentifier: String) {
+        let trimmed = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !pngData.isEmpty else { return }
+        appIconsByBundleID[trimmed] = pngData
+    }
+
+    public func requestNowPlayingAppIconIfNeeded() {
+        guard connectionState.isConnected,
+              let rawBid = controlStripState.nowPlaying?.bundleIdentifier?
+                  .trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawBid.isEmpty,
+              cachedAppIconData(forBundleIdentifier: rawBid) == nil else {
+            return
+        }
+        let lower = rawBid.lowercased()
+        guard !requestedNowPlayingIconBundleIDs.contains(lower) else { return }
+        requestedNowPlayingIconBundleIDs.insert(lower)
+        send(.requestIcons(bundleIdentifiers: [rawBid]))
+    }
+
+    @discardableResult
+    public func activateMacApp(bundleIdentifier: String, appPath: String? = nil) -> Bool {
+        let lang = profile.settings.language
+        let trimmed = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        guard connectionState.isConnected else {
+            let displayName = controlStripState.nowPlaying?.appName ?? trimmed
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: displayName,
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return false
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.activateRecentApp(bundleIdentifier: trimmed, appPath: appPath))
+        return true
+    }
+
+    @discardableResult
+    public func activateNowPlayingApp() -> Bool {
+        guard let bundleID = controlStripState.nowPlaying?.bundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !bundleID.isEmpty else {
+            return false
+        }
+        let resolvedPath = recentApps.first(where: {
+            $0.bundleIdentifier.caseInsensitiveCompare(bundleID) == .orderedSame
+        })?.appPath ?? macCatalogApps.first(where: {
+            $0.bundleIdentifier.caseInsensitiveCompare(bundleID) == .orderedSame
+        })?.appPath
+        return activateMacApp(bundleIdentifier: bundleID, appPath: resolvedPath)
+    }
+
     public func togglePinRecentApp(_ entry: RecentAppEntry) {
         tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.setRecentAppPinned(bundleIdentifier: entry.bundleIdentifier, isPinned: !entry.isPinned))
@@ -2140,6 +3075,78 @@ public final class CompanionClientEngine: ObservableObject {
         return clampedSeconds
     }
 
+    /// Requests setting the public AppleEvent shuffle property on the Mac (`com.apple.Music` or `com.spotify.client`).
+    /// Never optimistically flips `controlStripState.nowPlaying?.shuffleEnabled` locally.
+    @discardableResult
+    public func setNowPlayingShuffle(_ enabled: Bool) -> Bool {
+        let lang = profile.settings.language
+        guard let nowPlaying = controlStripState.nowPlaying,
+              nowPlaying.supportsShuffleAndRepeat else {
+            return false
+        }
+        guard connectionState.isConnected else {
+            let detail = L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            lastNowPlayingModeError = detail
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("随机播放", "Shuffle", language: lang),
+                detail: detail
+            )
+            return false
+        }
+        lastNowPlayingModeError = nil
+        awaitingPlaybackModeFeedback = true
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.setNowPlayingShuffle(enabled: enabled))
+        return true
+    }
+
+    @discardableResult
+    public func toggleNowPlayingShuffle() -> Bool {
+        guard let nowPlaying = controlStripState.nowPlaying,
+              nowPlaying.supportsShuffleAndRepeat else {
+            return false
+        }
+        let nextEnabled = !(nowPlaying.shuffleEnabled ?? false)
+        return setNowPlayingShuffle(nextEnabled)
+    }
+
+    /// Requests setting the public AppleEvent repeat property on the Mac (`com.apple.Music` or `com.spotify.client`).
+    /// Never optimistically flips `controlStripState.nowPlaying?.repeatMode` locally.
+    @discardableResult
+    public func setNowPlayingRepeat(_ mode: NowPlayingRepeatMode) -> Bool {
+        let lang = profile.settings.language
+        guard let nowPlaying = controlStripState.nowPlaying,
+              nowPlaying.supportsShuffleAndRepeat else {
+            return false
+        }
+        guard connectionState.isConnected else {
+            let detail = L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            lastNowPlayingModeError = detail
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("循环播放", "Repeat", language: lang),
+                detail: detail
+            )
+            return false
+        }
+        lastNowPlayingModeError = nil
+        awaitingPlaybackModeFeedback = true
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.setNowPlayingRepeat(mode: mode))
+        return true
+    }
+
+    @discardableResult
+    public func cycleNowPlayingRepeat() -> Bool {
+        guard let nowPlaying = controlStripState.nowPlaying,
+              let target = MacMediaPlaybackModeTargetPlayer(bundleIdentifier: nowPlaying.bundleIdentifier) else {
+            return false
+        }
+        let nextMode = target.nextRepeatMode(after: nowPlaying.repeatMode)
+        return setNowPlayingRepeat(nextMode)
+    }
+
     public func setControlLevel(kind: ControlLevelKind, level: Double) {
         let clamped = ControlStripLevel.clamp(level)
         var next = controlStripState
@@ -2153,6 +3160,16 @@ public final class CompanionClientEngine: ObservableObject {
             next.brightness = clamped
         }
         controlStripState = next
+        recentControlLevelChanges[kind] = (
+            level: clamped,
+            isVolumeMuted: next.isVolumeMuted,
+            timestamp: Date()
+        )
+        if let upgrade = backgroundWiFiUpgrade,
+           upgrade.didSendSavedToken,
+           !upgrade.bleClosedDuringUpgrade {
+            upgrade.bleHadPendingOutboundOnClose = true
+        }
         send(.setControlLevel(kind: kind, level: clamped))
     }
 
@@ -2279,6 +3296,36 @@ public final class CompanionClientEngine: ObservableObject {
         }
         tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.setAudioOutputDevice(deviceID: trimmed))
+    }
+
+    /// Requests switching the Mac's default CoreAudio microphone input device (`kAudioHardwarePropertyDefaultInputDevice`)
+    /// without optimistically moving the checkmark locally before the Mac confirms the switch.
+    public func selectAudioInputDevice(id: String) {
+        let lang = profile.settings.language
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("麦克风输入", "Microphone Input", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        guard controlStripState.canSwitchAudioInput else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("麦克风输入只读", "Microphone Input Read-Only", language: lang),
+                detail: L10n.tr(
+                    "当前 macOS 音频硬件不支持通过公开 API 切换默认麦克风输入设备。",
+                    "macOS reported the default microphone input as read-only via public CoreAudio API.",
+                    language: lang
+                )
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.setAudioInputDevice(deviceID: trimmed))
     }
 
     public func requestFrontmostAppWindows() {
@@ -2716,6 +3763,16 @@ public final class CompanionClientEngine: ObservableObject {
         requestMissingIconsIfNeeded()
     }
 
+    public func setGestureBinding(
+        _ gesture: TouchGestureType,
+        action: SystemQuickAction,
+        isEnabled: Bool = true
+    ) {
+        var updated = profile
+        updated.gestureConfig.setAction(action, for: gesture, isEnabled: isEnabled)
+        pushUpdatedProfile(updated)
+    }
+
     public func requestMacCatalog() {
         send(.requestMacCatalog)
     }
@@ -2727,6 +3784,9 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     public func forgetSavedMac(macID: String) {
+        if backgroundWiFiUpgrade?.targetMacID == macID {
+            cancelBackgroundWiFiUpgrade()
+        }
         savedMacs.removeAll { $0.macID == macID }
         persistSavedCredentials()
     }
@@ -2734,6 +3794,39 @@ public final class CompanionClientEngine: ObservableObject {
     // MARK: - Wire Send / Receive
 
     private func send(_ message: ClientMessage) {
+        if let upgrade = backgroundWiFiUpgrade,
+           upgrade.bleClosedDuringUpgrade,
+           !upgrade.isPromoted,
+           currentSessionID == upgrade.bleSessionID {
+            switch message {
+            case .ping, .hello:
+                break
+            case let .setControlLevel(kind, level):
+                upgrade.queuedOutboundMessages.removeAll { existing in
+                    if case let .setControlLevel(existingKind, _) = existing {
+                        return existingKind == kind
+                    }
+                    return false
+                }
+                upgrade.queuedOutboundMessages.append(.setControlLevel(kind: kind, level: level))
+                return
+            default:
+                upgrade.queuedOutboundMessages.append(message)
+                return
+            }
+        }
+        switch message {
+        case .setNowPlayingShuffle,
+             .setNowPlayingRepeat,
+             .ping,
+             .requestIcons,
+             .requestControlStripState,
+             .requestCompanionDashboard,
+             .requestFrontmostAppWindows:
+            break
+        default:
+            awaitingPlaybackModeFeedback = false
+        }
         do {
             let framed = try WireFrameCodec.encode(message)
             if let frameTransport {
@@ -2871,6 +3964,9 @@ public final class CompanionClientEngine: ObservableObject {
             clipboardPreview = .empty
             frontmostWindows = .empty
             isCapturingScreenshot = false
+            awaitingPlaybackModeFeedback = false
+            lastNowPlayingModeError = nil
+            requestedNowPlayingIconBundleIDs.removeAll()
             connectionState = .connected(macID: macID, macName: macName)
             startHeartbeat(sessionID: currentSessionID)
             requestMissingIconsIfNeeded()
@@ -2878,6 +3974,9 @@ public final class CompanionClientEngine: ObservableObject {
             send(.requestCompanionDashboard)
             if platform != .appleWatch {
                 send(.requestFrontmostAppWindows)
+            }
+            if activeLink == .bluetooth {
+                considerBackgroundWiFiUpgradeIfNeeded()
             }
 
         case .authFailed(let reason):
@@ -2933,6 +4032,16 @@ public final class CompanionClientEngine: ObservableObject {
             if let resolvedTileBanner = tileFeedbackTracker.resolvePending(success: success) {
                 publishTileFeedback(resolvedTileBanner)
             }
+            if awaitingPlaybackModeFeedback {
+                awaitingPlaybackModeFeedback = false
+                if success {
+                    lastNowPlayingModeError = nil
+                } else {
+                    let trimmedDetail = detail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    lastNowPlayingModeError = !trimmedDetail.isEmpty ? trimmedDetail : trimmedTitle
+                }
+            }
             lastFeedback = CompanionFeedbackToast(success: success, title: title, detail: detail)
 
         case .orcaStatusUpdated(let snapshot):
@@ -2942,10 +4051,35 @@ public final class CompanionClientEngine: ObservableObject {
             break
 
         case .controlStripStateUpdated(let state):
-            controlStripState = state
-            nowPlayingScrub.reconcile(with: state.nowPlaying)
-            profile.soundboardVolume = state.soundboardVolume
-            if state.ejectableExternalVolumeCount <= 0,
+            let previousNowPlaying = controlStripState.nowPlaying
+            var mergedState = state
+            if awaitingPostUpgradeControlStripRefresh {
+                awaitingPostUpgradeControlStripRefresh = false
+                let now = Date()
+                if let recentVolume = recentControlLevelChanges[.volume],
+                   now.timeIntervalSince(recentVolume.timestamp) <= 0.75 {
+                    mergedState.volume = recentVolume.level
+                    mergedState.isVolumeMuted = recentVolume.isVolumeMuted
+                }
+                if let recentBrightness = recentControlLevelChanges[.brightness],
+                   now.timeIntervalSince(recentBrightness.timestamp) <= 0.75 {
+                    mergedState.brightness = recentBrightness.level
+                }
+            }
+            controlStripState = mergedState
+            nowPlayingScrub.reconcile(with: mergedState.nowPlaying)
+            profile.soundboardVolume = mergedState.soundboardVolume
+            if previousNowPlaying?.bundleIdentifier != mergedState.nowPlaying?.bundleIdentifier {
+                awaitingPlaybackModeFeedback = false
+                lastNowPlayingModeError = nil
+            } else if awaitingPlaybackModeFeedback,
+                      (previousNowPlaying?.shuffleEnabled != mergedState.nowPlaying?.shuffleEnabled ||
+                       previousNowPlaying?.repeatMode != mergedState.nowPlaying?.repeatMode) {
+                awaitingPlaybackModeFeedback = false
+                lastNowPlayingModeError = nil
+            }
+            requestNowPlayingAppIconIfNeeded()
+            if mergedState.ejectableExternalVolumeCount <= 0,
                maintenanceConfirmController.gate.armedTargetID == Round08MaintenanceAction.ejectExternalDisks.rawValue {
                 disarmMaintenanceConfirmation()
             }

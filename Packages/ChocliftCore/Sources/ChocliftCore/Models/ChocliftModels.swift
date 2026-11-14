@@ -92,6 +92,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case lockScreen = "lock_screen"
     case quitApp = "quit_app"
     case openEmojiPicker = "open_emoji_picker"
+    case moveWindowToNextDisplay = "move_window_to_next_display"
 
     public var id: String { rawValue }
 
@@ -123,12 +124,13 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .lockScreen: return "lock.display"
         case .quitApp: return "xmark.octagon.fill"
         case .openEmojiPicker: return "face.smiling.inverse"
+        case .moveWindowToNextDisplay: return "display.2"
         }
     }
 
     public var accentHex: String {
         switch self {
-        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow:
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow, .moveWindowToNextDisplay:
             return "#EDF6FF"
         case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
             return "#F3EEFF"
@@ -141,7 +143,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public var isWindowAction: Bool {
         switch self {
-        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen:
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay:
             return true
         default:
             return false
@@ -150,7 +152,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public var isUndoableWindowMove: Bool {
         switch self {
-        case .maximizeWindow, .snapWindowLeft, .snapWindowRight:
+        case .maximizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .moveWindowToNextDisplay:
             return true
         default:
             return false
@@ -201,7 +203,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
              .centerWindow, .toggleFullscreen, .missionControl, .showDesktop,
              .screenshotInteractive, .mediaPlayPause, .mediaNext, .mediaPrevious,
-             .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca:
+             .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca,
+             .moveWindowToNextDisplay:
             return nil
         }
     }
@@ -234,6 +237,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .lockScreen: return L10n.tr("锁定屏幕", "Lock Screen", language: lang)
         case .quitApp: return L10n.tr("退出当前应用", "Quit Application", language: lang)
         case .openEmojiPicker: return L10n.tr("系统表情面板", "macOS Emoji Panel", language: lang)
+        case .moveWindowToNextDisplay: return L10n.tr("窗口移至下一显示器", "Move Window to Next Display", language: lang)
         }
     }
 
@@ -265,7 +269,41 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .lockScreen: return L10n.tr("锁屏", "Lock", language: lang)
         case .quitApp: return L10n.tr("退出", "Quit", language: lang)
         case .openEmojiPicker: return L10n.tr("表情框", "Emoji", language: lang)
+        case .moveWindowToNextDisplay: return L10n.tr("下一屏幕", "Next Display", language: lang)
         }
+    }
+
+    public static let windowLayoutSlotActions: [SystemQuickAction] = [
+        .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
+        .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay
+    ]
+
+    public static func slotActionSections(
+        in lang: AppLanguage = .system,
+        compactHeaders: Bool = false
+    ) -> [(String, [SystemQuickAction])] {
+        [
+            (
+                compactHeaders
+                    ? L10n.tr("窗口分屏与布局", "Window Layout", language: lang)
+                    : L10n.tr("窗口分屏与布局", "Window Layout & Sizing", language: lang),
+                windowLayoutSlotActions
+            ),
+            (
+                compactHeaders
+                    ? L10n.tr("编辑与剪贴板", "Clipboard & Edit", language: lang)
+                    : L10n.tr("编辑与剪贴板", "Clipboard & Editing", language: lang),
+                [.copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction]
+            ),
+            (
+                L10n.tr("媒体与音量", "Media & Volume", language: lang),
+                [.mediaPlayPause, .mediaPrevious, .mediaNext, .volumeUp, .volumeDown, .volumeMute]
+            ),
+            (
+                L10n.tr("桌面与系统控制", "Workspace & System", language: lang),
+                [.missionControl, .showDesktop, .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp]
+            )
+        ]
     }
 
     /// Only `.volumeUp`, `.volumeDown`, and `.mediaNext` repeat while held down.
@@ -320,6 +358,13 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
     )
     /// Opens up to 8 concrete child actions without adding a new `BarPage` (at most 1 folder per page).
     case folder(TileFolder)
+    /// Inserts or types a saved `TextSnippet` using its configured `SnippetInsertMode`.
+    case snippet(
+        snippetID: UUID,
+        titleSnapshot: String,
+        emoji: String = "📝",
+        backgroundHex: String = "#F3EEFF"
+    )
 
     private enum CodingKeys: String, CodingKey {
         case macApp
@@ -330,6 +375,7 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
         case soundboard
         case slotReference
         case folder
+        case snippet
     }
 
     private enum MacAppKeys: String, CodingKey {
@@ -377,6 +423,13 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
     private enum SlotReferenceKeys: String, CodingKey {
         case targetPageID
         case targetSlotIndex
+    }
+
+    private enum SnippetKeys: String, CodingKey {
+        case snippetID
+        case titleSnapshot
+        case emoji
+        case backgroundHex
     }
 
     public init(from decoder: Decoder) throws {
@@ -464,6 +517,18 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
         } else if container.contains(.folder) {
             let decodedFolder = try container.decode(TileFolder.self, forKey: .folder)
             self = .folder(decodedFolder)
+        } else if container.contains(.snippet) {
+            let nested = try container.nestedContainer(keyedBy: SnippetKeys.self, forKey: .snippet)
+            let snippetID = try nested.decode(UUID.self, forKey: .snippetID)
+            let titleSnapshot = try nested.decodeIfPresent(String.self, forKey: .titleSnapshot) ?? ""
+            let emoji = try nested.decodeIfPresent(String.self, forKey: .emoji) ?? "📝"
+            let backgroundHex = try nested.decodeIfPresent(String.self, forKey: .backgroundHex) ?? "#F3EEFF"
+            self = .snippet(
+                snippetID: snippetID,
+                titleSnapshot: titleSnapshot,
+                emoji: emoji,
+                backgroundHex: backgroundHex
+            )
         } else {
             throw DecodingError.dataCorrupted(
                 DecodingError.Context(
@@ -526,6 +591,13 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
 
         case .folder(let folder):
             try container.encode(folder, forKey: .folder)
+
+        case .snippet(let snippetID, let titleSnapshot, let emoji, let backgroundHex):
+            var nested = container.nestedContainer(keyedBy: SnippetKeys.self, forKey: .snippet)
+            try nested.encode(snippetID, forKey: .snippetID)
+            try nested.encode(titleSnapshot, forKey: .titleSnapshot)
+            try nested.encode(emoji, forKey: .emoji)
+            try nested.encode(backgroundHex, forKey: .backgroundHex)
         }
     }
 }
@@ -573,6 +645,9 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
             return L10n.tr("引用 #\(targetSlotIndex + 1)", "Ref #\(targetSlotIndex + 1)", language: lang)
         case .folder(let folder):
             return folder.displayTitle(in: lang)
+        case .snippet(_, let titleSnapshot, _, _):
+            let trimmed = titleSnapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? L10n.tr("文本片段", "Snippet", language: lang) : trimmed
         }
     }
 
@@ -592,6 +667,13 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     public var soundID: UUID? {
         if case .soundboard(let id, _, _, _) = kind {
+            return id
+        }
+        return nil
+    }
+
+    public var snippetID: UUID? {
+        if case .snippet(let id, _, _, _) = kind {
             return id
         }
         return nil
@@ -640,7 +722,7 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
                 in: profile,
                 from: SlotCoordinate(pageID: pageID, slotIndex: slotIdx)
             )
-        case .macApp, .shortcut, .website, .soundboard, .folder:
+        case .macApp, .shortcut, .website, .soundboard, .folder, .snippet:
             return false
         }
     }
@@ -1015,6 +1097,19 @@ public struct GestureConfiguration: Codable, Equatable, Hashable, Sendable {
         }
         return binding.action
     }
+
+    public mutating func setAction(
+        _ action: SystemQuickAction,
+        for gesture: TouchGestureType,
+        isEnabled: Bool = true
+    ) {
+        if let index = bindings.firstIndex(where: { $0.gesture == gesture }) {
+            bindings[index].action = action
+            bindings[index].isEnabled = isEnabled
+        } else {
+            bindings.append(GestureBinding(gesture: gesture, action: action, isEnabled: isEnabled))
+        }
+    }
 }
 
 // MARK: - App Time Travel
@@ -1386,7 +1481,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                        let targetAppName, !targetAppName.isEmpty {
                         return targetAppName
                     }
-                case .delay, .unsupported:
+                case .delay, .unsupported, .openWebsite, .runShortcut, .insertSnippet:
                     break
                 }
             }
@@ -1408,6 +1503,24 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         snippets.first(where: { $0.id == id })
     }
 
+    public func makeBarItem(
+        for snippet: TextSnippet,
+        emoji: String = "📝",
+        backgroundHex: String = "#F3EEFF",
+        id: UUID = UUID()
+    ) -> BarItem {
+        let trimmedEmoji = emoji.trimmingCharacters(in: .whitespacesAndNewlines)
+        return BarItem(
+            id: id,
+            kind: .snippet(
+                snippetID: snippet.id,
+                titleSnapshot: snippet.displayTitle(in: settings.language),
+                emoji: trimmedEmoji.isEmpty ? "📝" : trimmedEmoji,
+                backgroundHex: backgroundHex
+            )
+        )
+    }
+
     @discardableResult
     public mutating func upsertSnippet(_ snippet: TextSnippet) -> Bool {
         let clampedBody = TextSnippet.clampBody(snippet.body)
@@ -1423,12 +1536,14 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         )
         if let idx = snippets.firstIndex(where: { $0.id == normalized.id }) {
             snippets[idx] = normalized
+            syncSnippetBarItems(for: normalized)
             return true
         }
         guard snippets.count < TextSnippet.maxLibraryCount else {
             return false
         }
         snippets.append(normalized)
+        syncSnippetBarItems(for: normalized)
         return true
     }
 
@@ -1453,6 +1568,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
             language: settings.language
         )
         snippets[idx].updatedAt = Date()
+        syncSnippetBarItems(for: snippets[idx])
         return true
     }
 
@@ -1460,7 +1576,66 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     public mutating func deleteSnippet(id: UUID) -> Bool {
         let before = snippets.count
         snippets.removeAll { $0.id == id }
-        return snippets.count != before
+        var removedFromSlot = false
+        for pIdx in pages.indices {
+            for sIdx in pages[pIdx].slots.indices {
+                if pages[pIdx].slots[sIdx]?.snippetID == id {
+                    pages[pIdx].slots[sIdx] = nil
+                    removedFromSlot = true
+                } else if let slot = pages[pIdx].slots[sIdx], var folder = slot.folder {
+                    let beforeChildren = folder.children.count
+                    folder.children.removeAll { $0.snippetID == id }
+                    if folder.children.count != beforeChildren {
+                        pages[pIdx].slots[sIdx] = BarItem(id: slot.id, kind: .folder(folder))
+                        removedFromSlot = true
+                    }
+                }
+            }
+        }
+        if removedFromSlot {
+            pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
+        }
+        return snippets.count != before || removedFromSlot
+    }
+
+    private mutating func syncSnippetBarItems(for snippet: TextSnippet) {
+        let updatedTitle = snippet.displayTitle(in: settings.language)
+        for pIdx in pages.indices {
+            for sIdx in pages[pIdx].slots.indices {
+                guard let existing = pages[pIdx].slots[sIdx] else { continue }
+                if case .snippet(let snippetID, _, let emoji, let hex) = existing.kind, snippetID == snippet.id {
+                    pages[pIdx].slots[sIdx] = BarItem(
+                        id: existing.id,
+                        kind: .snippet(
+                            snippetID: snippet.id,
+                            titleSnapshot: updatedTitle,
+                            emoji: emoji,
+                            backgroundHex: hex
+                        )
+                    )
+                } else if var folder = existing.folder {
+                    var changed = false
+                    for cIdx in folder.children.indices {
+                        if case .snippet(let snippetID, _, let emoji, let hex) = folder.children[cIdx].kind,
+                           snippetID == snippet.id {
+                            folder.children[cIdx] = BarItem(
+                                id: folder.children[cIdx].id,
+                                kind: .snippet(
+                                    snippetID: snippet.id,
+                                    titleSnapshot: updatedTitle,
+                                    emoji: emoji,
+                                    backgroundHex: hex
+                                )
+                            )
+                            changed = true
+                        }
+                    }
+                    if changed {
+                        pages[pIdx].slots[sIdx] = BarItem(id: existing.id, kind: .folder(folder))
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Action Flow Profile Helpers
@@ -1774,6 +1949,11 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         case .flow(let flowID, _, _, _, _):
             if let flow = flow(withID: flowID) {
                 return flow.name
+            }
+            return item.displayTitle(in: lang)
+        case .snippet(let snippetID, _, _, _):
+            if let snippet = snippet(withID: snippetID) {
+                return snippet.displayTitle(in: lang)
             }
             return item.displayTitle(in: lang)
         default:

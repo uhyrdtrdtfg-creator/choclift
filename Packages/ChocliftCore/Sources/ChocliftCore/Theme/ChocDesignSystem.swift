@@ -467,7 +467,7 @@ public struct DataImageView: View {
     }
 
     public var body: some View {
-        if let pngData, let image = makeSwiftUIImage(from: pngData) {
+        if let pngData, let image = Self.swiftUIImage(from: pngData) {
             image
                 .renderingMode(.original)
                 .resizable()
@@ -482,7 +482,8 @@ public struct DataImageView: View {
         }
     }
 
-    private func makeSwiftUIImage(from data: Data) -> Image? {
+    public static func swiftUIImage(from data: Data) -> Image? {
+        guard !data.isEmpty else { return nil }
         #if os(macOS)
         guard let nsImage = NSImage(data: data) else { return nil }
         return Image(nsImage: nsImage)
@@ -623,8 +624,9 @@ public struct ChocBarTileCard: View {
                         case .macApp(_, _, _, let symbol):
                             DataImageView(pngData: resolvedIconData(for: resolved), fallbackSymbol: symbol, tint: palette.secondaryText)
                         case .shortcut(_, let emoji, _), .website(_, _, let emoji, _, _),
-                             .flow(_, _, let emoji, _, _), .soundboard(_, _, let emoji, _):
-                            Text(emoji).font(.system(size: side * 0.8))
+                             .flow(_, _, let emoji, _, _), .soundboard(_, _, let emoji, _),
+                             .snippet(_, _, let emoji, _):
+                            Text(emoji.isEmpty ? "📝" : emoji).font(.system(size: side * 0.8))
                         case .systemAction(let action, _, _):
                             Image(systemName: action.sfSymbol).resizable().scaledToFit().padding(8).foregroundStyle(palette.accent)
                         case .folder(let folder):

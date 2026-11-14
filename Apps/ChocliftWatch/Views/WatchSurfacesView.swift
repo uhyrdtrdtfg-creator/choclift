@@ -245,13 +245,185 @@ private struct WatchCalendarComplicationLine: View {
 
 // MARK: - 1. Watch Chocolate Bar Surface (8 Synced Pages x 8 Slots)
 
+private struct WatchBarScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private final class WatchScrollOffsetTracker {
+    var latestMinY: CGFloat = 0
+}
+
+struct WatchVolumeCrownFocusRule: Equatable, Sendable {
+    enum Phase: Equatable, Sendable {
+        case scrollingTiles
+        case requestingCrown(armedAt: TimeInterval, referenceScrollOffset: CGFloat)
+        case controllingVolume(armedAt: TimeInterval, referenceScrollOffset: CGFloat)
+    }
+
+    static let scrollReleaseThresholdPoints: CGFloat = 8.0
+    static let postFocusScrollSettleWindowSeconds: TimeInterval = 0.30
+
+    private(set) var phase: Phase = .scrollingTiles
+
+    var isArmed: Bool {
+        switch phase {
+        case .scrollingTiles:
+            return false
+        case .requestingCrown, .controllingVolume:
+            return true
+        }
+    }
+
+    var isRequestingFocus: Bool {
+        if case .requestingCrown = phase { return true }
+        return false
+    }
+
+    func isVolumeFocusable(isBarActive: Bool) -> Bool {
+        isBarActive && isArmed
+    }
+
+    static func isPlayerVolumeFocusable(isPlayerVisible: Bool) -> Bool {
+        isPlayerVisible
+    }
+
+    mutating func armByUserTap(
+        isBarActive: Bool,
+        currentScrollOffset: CGFloat,
+        at timestamp: TimeInterval
+    ) {
+        guard isBarActive else {
+            phase = .scrollingTiles
+            return
+        }
+        switch phase {
+        case .scrollingTiles, .requestingCrown:
+            phase = .requestingCrown(armedAt: timestamp, referenceScrollOffset: currentScrollOffset)
+        case .controllingVolume:
+            phase = .controllingVolume(armedAt: timestamp, referenceScrollOffset: currentScrollOffset)
+        }
+    }
+
+    mutating func handleFocusChanged(
+        isFocused: Bool,
+        isBarActive: Bool,
+        currentScrollOffset: CGFloat,
+        at timestamp: TimeInterval
+    ) {
+        guard isBarActive else {
+            phase = .scrollingTiles
+            return
+        }
+        if isFocused {
+            if isArmed {
+                phase = .controllingVolume(armedAt: timestamp, referenceScrollOffset: currentScrollOffset)
+            }
+        } else if case .controllingVolume = phase {
+            phase = .scrollingTiles
+        }
+    }
+
+    @discardableResult
+    mutating func handleScrollOffsetChanged(
+        to newScrollOffset: CGFloat,
+        isCrownRotating: Bool,
+        at timestamp: TimeInterval
+    ) -> Bool {
+        guard !isCrownRotating else { return false }
+        switch phase {
+        case .scrollingTiles:
+            return false
+        case .requestingCrown(let armedAt, let referenceOffset):
+            let delta = newScrollOffset - referenceOffset
+            if delta <= -Self.scrollReleaseThresholdPoints {
+                phase = .scrollingTiles
+                return true
+            }
+            if delta >= Self.scrollReleaseThresholdPoints {
+                if (timestamp - armedAt) < Self.postFocusScrollSettleWindowSeconds {
+                    phase = .requestingCrown(armedAt: armedAt, referenceScrollOffset: newScrollOffset)
+                    return false
+                }
+                phase = .scrollingTiles
+                return true
+            }
+            return false
+        case .controllingVolume(let armedAt, let referenceOffset):
+            let delta = newScrollOffset - referenceOffset
+            if delta <= -Self.scrollReleaseThresholdPoints {
+                phase = .scrollingTiles
+                return true
+            }
+            if delta >= Self.scrollReleaseThresholdPoints {
+                if (timestamp - armedAt) < Self.postFocusScrollSettleWindowSeconds {
+                    phase = .controllingVolume(armedAt: armedAt, referenceScrollOffset: newScrollOffset)
+                    return false
+                }
+                phase = .scrollingTiles
+                return true
+            }
+            return false
+        }
+    }
+
+    mutating func handleBarActivityChanged(isActive: Bool) {
+        if !isActive {
+            phase = .scrollingTiles
+        }
+    }
+
+    mutating func release() {
+        phase = .scrollingTiles
+    }
+
+    static func verifyFocusRule() {
+        var rule = WatchVolumeCrownFocusRule()
+        // 1. Tile page scrolls with the crown by default.
+        precondition(!rule.isArmed && !rule.isVolumeFocusable(isBarActive: true))
+        precondition(!rule.handleScrollOffsetChanged(to: -24, isCrownRotating: false, at: 0.5))
+        precondition(!rule.isVolumeFocusable(isBarActive: true))
+
+        // 2. Inactive bar ignores volume taps.
+        rule.armByUserTap(isBarActive: false, currentScrollOffset: 0, at: 1.0)
+        precondition(!rule.isVolumeFocusable(isBarActive: false))
+        precondition(!rule.isArmed)
+
+        // 3. Tapping the compact volume control arms crown focus.
+        rule.armByUserTap(isBarActive: true, currentScrollOffset: 0, at: 2.0)
+        precondition(rule.isRequestingFocus && rule.isVolumeFocusable(isBarActive: true))
+        rule.handleFocusChanged(isFocused: true, isBarActive: true, currentScrollOffset: 0, at: 2.04)
+        precondition(!rule.isRequestingFocus && rule.isVolumeFocusable(isBarActive: true))
+
+        // 4. Scrolling the tiles again releases crown focus back to tile scrolling.
+        precondition(!rule.handleScrollOffsetChanged(to: -16, isCrownRotating: true, at: 2.5))
+        precondition(rule.handleScrollOffsetChanged(to: -16, isCrownRotating: false, at: 2.5))
+        precondition(!rule.isArmed && !rule.isVolumeFocusable(isBarActive: true))
+
+        // 5. Native focus transfer back to ScrollView also releases without re-stealing.
+        rule.armByUserTap(isBarActive: true, currentScrollOffset: -16, at: 3.0)
+        rule.handleFocusChanged(isFocused: true, isBarActive: true, currentScrollOffset: -16, at: 3.03)
+        rule.handleFocusChanged(isFocused: false, isBarActive: true, currentScrollOffset: -28, at: 3.4)
+        precondition(!rule.isArmed && !rule.isVolumeFocusable(isBarActive: true))
+
+        // 6. WatchMediaPlayer owns volume crown iff visible.
+        precondition(!isPlayerVolumeFocusable(isPlayerVisible: false))
+        precondition(isPlayerVolumeFocusable(isPlayerVisible: true))
+    }
+}
+
 public struct WatchChocolateBarView: View {
+    private static let scrollCoordinateSpaceName = "watch-chocolate-bar-scroll"
+
     @ObservedObject var client: CompanionClientEngine
     @Binding var deckFollower: AppDeckFollowerState
     var isDeckSwitchHighlighted: Bool = false
     var isBarVisible: Bool = true
     let onRequestPairing: () -> Void
 
+    @State private var isSurfaceAppeared: Bool = false
     @State private var showPagePickerSheet: Bool = false
     @State private var assigningSlot: WatchSlotCoordinate?
     @State private var openFolderSlot: WatchSlotCoordinate?
@@ -260,13 +432,16 @@ public struct WatchChocolateBarView: View {
     @State private var crownVolume: Double = 0.5
     @State private var isCrownRotating: Bool = false
     @State private var crownThrottle = ControlLevelDragThrottle(minimumInterval: 0.4)
+    @State private var crownFocusRule = WatchVolumeCrownFocusRule()
+    @State private var volumeFocusRequestID: UInt64 = 0
+    @State private var scrollTracker = WatchScrollOffsetTracker()
     @FocusState private var isVolumeCrownFocused: Bool
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
     private var isCrownActiveForBar: Bool {
-        isBarVisible && !showPagePickerSheet && assigningSlot == nil && openFolderSlot == nil
+        isBarVisible && isSurfaceAppeared && !showPagePickerSheet && assigningSlot == nil && openFolderSlot == nil
     }
 
     private var safePageIndex: Int {
@@ -299,6 +474,8 @@ public struct WatchChocolateBarView: View {
     public var body: some View {
         ScrollView {
             VStack(spacing: 8) {
+                watchCrownVolumeBar
+
                 if let orcaStatus = client.orcaStatus {
                     WatchOrcaComplicationLine(client: client, status: orcaStatus)
                 }
@@ -339,18 +516,40 @@ public struct WatchChocolateBarView: View {
                 .id(activePage.id)
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.22), value: safePageIndex)
-
-                watchCrownVolumeBar
-                    .padding(.bottom, 2)
             }
             .padding(.horizontal, 6)
             .padding(.bottom, 8)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: WatchBarScrollOffsetPreferenceKey.self,
+                        value: proxy.frame(in: .named(Self.scrollCoordinateSpaceName)).minY
+                    )
+                }
+            )
+        }
+        .coordinateSpace(.named(Self.scrollCoordinateSpaceName))
+        .onPreferenceChange(WatchBarScrollOffsetPreferenceKey.self) { minY in
+            scrollTracker.latestMinY = minY
+            guard crownFocusRule.isArmed else { return }
+            if crownFocusRule.handleScrollOffsetChanged(
+                to: minY,
+                isCrownRotating: isCrownRotating,
+                at: ProcessInfo.processInfo.systemUptime
+            ) {
+                finishCrownRotationIfNeeded()
+                isVolumeCrownFocused = false
+            }
         }
         .onAppear {
+            isSurfaceAppeared = true
             crownVolume = ControlStripLevel.clamp(client.controlStripState.volume)
-            if isCrownActiveForBar {
-                isVolumeCrownFocused = true
-            }
+        }
+        .onDisappear {
+            finishCrownRotationIfNeeded()
+            isSurfaceAppeared = false
+            crownFocusRule.release()
+            isVolumeCrownFocused = false
         }
         .onReceive(client.$controlStripState) { updated in
             guard !isCrownRotating else { return }
@@ -359,19 +558,28 @@ public struct WatchChocolateBarView: View {
                 crownVolume = clamped
             }
         }
-        .task(id: isCrownActiveForBar) {
-            if isCrownActiveForBar {
-                try? await Task.sleep(for: .milliseconds(60))
-                guard !Task.isCancelled, isCrownActiveForBar else { return }
-                isVolumeCrownFocused = true
-            } else {
+        .onChange(of: isCrownActiveForBar) { _, active in
+            crownFocusRule.handleBarActivityChanged(isActive: active)
+            if !active {
+                finishCrownRotationIfNeeded()
                 isVolumeCrownFocused = false
             }
         }
-        .task(id: isVolumeCrownFocused) {
-            guard isCrownActiveForBar, !isVolumeCrownFocused else { return }
-            try? await Task.sleep(for: .milliseconds(220))
-            guard !Task.isCancelled, isCrownActiveForBar else { return }
+        .onChange(of: isVolumeCrownFocused) { _, focused in
+            crownFocusRule.handleFocusChanged(
+                isFocused: focused,
+                isBarActive: isCrownActiveForBar,
+                currentScrollOffset: scrollTracker.latestMinY,
+                at: ProcessInfo.processInfo.systemUptime
+            )
+            if !focused {
+                finishCrownRotationIfNeeded()
+            }
+        }
+        .task(id: volumeFocusRequestID) {
+            guard volumeFocusRequestID > 0, isCrownActiveForBar, crownFocusRule.isArmed else { return }
+            try? await Task.sleep(for: .milliseconds(35))
+            guard !Task.isCancelled, isCrownActiveForBar, crownFocusRule.isRequestingFocus else { return }
             isVolumeCrownFocused = true
         }
         .sheet(isPresented: $showPagePickerSheet) {
@@ -393,14 +601,39 @@ public struct WatchChocolateBarView: View {
         }
     }
 
+    private func armVolumeCrown() {
+        guard isCrownActiveForBar else { return }
+        if !isCrownRotating {
+            crownVolume = ControlStripLevel.clamp(client.controlStripState.volume)
+        }
+        crownFocusRule.armByUserTap(
+            isBarActive: isCrownActiveForBar,
+            currentScrollOffset: scrollTracker.latestMinY,
+            at: ProcessInfo.processInfo.systemUptime
+        )
+        isVolumeCrownFocused = true
+        volumeFocusRequestID &+= 1
+    }
+
+    private func finishCrownRotationIfNeeded() {
+        guard isCrownRotating else { return }
+        isCrownRotating = false
+        let clamped = ControlStripLevel.clamp(crownVolume)
+        let now = ProcessInfo.processInfo.systemUptime
+        let committed = crownThrottle.endDrag(at: clamped, at: now)
+        client.setControlLevel(kind: .volume, level: committed)
+    }
+
     private var watchCrownVolumeBar: some View {
         let isMuted = client.controlStripState.isVolumeMuted && !isCrownRotating
         let displayedLevel = ControlStripLevel.clamp(isCrownRotating ? crownVolume : client.controlStripState.volume)
         let pct = ControlStripLevel.percentage(for: displayedLevel)
         let muteKey = "watch-volume-mute"
         let isMutePressed = (pressedSlotKey == muteKey)
+        let isVolumeFocusable = crownFocusRule.isVolumeFocusable(isBarActive: isCrownActiveForBar)
+        let isHighlighted = isVolumeFocusable || isCrownRotating
 
-        return HStack(spacing: 7) {
+        return HStack(spacing: 0) {
             Button {
                 CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
                 ChocPressFeedback.completeTap(key: muteKey, pressedKey: $pressedSlotKey)
@@ -413,12 +646,12 @@ public struct WatchChocolateBarView: View {
                         detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
                     )
                 }
-                isVolumeCrownFocused = true
+                armVolumeCrown()
             } label: {
                 Image(systemName: (isMuted || displayedLevel <= 0.001) ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .font(ChocType.caption)
                     .foregroundStyle(isMuted ? palette.emphasisForeground : palette.accent)
-                    .frame(width: 32, height: 30)
+                    .frame(width: 30, height: 28)
                     .background(
                         isMuted
                             ? palette.statusFailure.opacity(isMutePressed ? 0.84 : 1.0)
@@ -436,6 +669,8 @@ public struct WatchChocolateBarView: View {
                     )
                     .contentShape(Capsule())
                     .scaleEffect(isMutePressed ? 0.92 : 1.0)
+                    .padding(.leading, 4)
+                    .padding(.vertical, 3)
             }
             .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedSlotKey, key: muteKey))
             .accessibilityIdentifier("watch-bar-volume-mute")
@@ -445,43 +680,60 @@ public struct WatchChocolateBarView: View {
                     : L10n.tr("静音", "Mute", language: lang)
             )
 
-            GeometryReader { geo in
-                let width = max(1, geo.size.width)
-                let fillWidth = max(6, width * CGFloat(displayedLevel))
+            Button {
+                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                armVolumeCrown()
+            } label: {
+                HStack(spacing: 6) {
+                    GeometryReader { geo in
+                        let width = max(1, geo.size.width)
+                        let fillWidth = max(6, width * CGFloat(displayedLevel))
 
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(palette.tileFillBottom)
-                        .frame(height: 6)
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(palette.tileFillBottom)
+                                .frame(height: 6)
 
-                    if displayedLevel > 0.005 {
-                        Capsule()
-                            .fill(isMuted ? palette.secondaryText.opacity(0.45) : palette.accent)
-                            .frame(width: min(width, fillWidth), height: 6)
+                            if displayedLevel > 0.005 {
+                                Capsule()
+                                    .fill(isMuted ? palette.secondaryText.opacity(0.45) : palette.accent)
+                                    .frame(width: min(width, fillWidth), height: 6)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            }
-            .frame(height: 16)
+                    .frame(height: 16)
 
-            Text("\(pct)%")
-                .font(ChocType.micro)
-                .monospacedDigit()
-                .foregroundStyle(isMuted ? palette.secondaryText : palette.primaryText)
-                .frame(minWidth: 31, alignment: .trailing)
+                    Text("\(pct)%")
+                        .font(ChocType.micro)
+                        .monospacedDigit()
+                        .foregroundStyle(
+                            isMuted
+                                ? palette.secondaryText
+                                : (isHighlighted ? palette.accent : palette.primaryText)
+                        )
+                        .frame(minWidth: 31, alignment: .trailing)
+                }
+                .padding(.leading, 7)
+                .padding(.trailing, 8)
+                .padding(.vertical, 3)
+                .frame(maxWidth: .infinity, minHeight: 34)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("watch-bar-volume-focus")
+            .accessibilityLabel(L10n.tr("表冠调节音量", "Crown Volume", language: lang))
+            .accessibilityValue("\(pct)%")
         }
-        .padding(.leading, 4)
-        .padding(.trailing, 8)
-        .padding(.vertical, 3)
         .background(palette.barSurface.opacity(0.95), in: Capsule())
         .overlay(
             Capsule()
                 .strokeBorder(
-                    isCrownRotating ? palette.accent : palette.subtleCardStroke,
-                    lineWidth: isCrownRotating ? 1.4 : 1
+                    isHighlighted ? palette.accent : palette.subtleCardStroke,
+                    lineWidth: isHighlighted ? 1.5 : 1
                 )
         )
-        .focusable(isCrownActiveForBar)
+        .focusable(isVolumeFocusable)
         .focused($isVolumeCrownFocused)
         .focusEffectDisabled()
         .digitalCrownRotation(
@@ -493,7 +745,7 @@ public struct WatchChocolateBarView: View {
             isContinuous: false,
             isHapticFeedbackEnabled: true,
             onChange: { _ in
-                guard isCrownActiveForBar else { return }
+                guard crownFocusRule.isVolumeFocusable(isBarActive: isCrownActiveForBar) else { return }
                 isCrownRotating = true
                 let clamped = ControlStripLevel.clamp(crownVolume)
                 let now = ProcessInfo.processInfo.systemUptime
@@ -502,12 +754,7 @@ public struct WatchChocolateBarView: View {
                 }
             },
             onIdle: {
-                guard isCrownRotating else { return }
-                isCrownRotating = false
-                let clamped = ControlStripLevel.clamp(crownVolume)
-                let now = ProcessInfo.processInfo.systemUptime
-                let committed = crownThrottle.endDrag(at: clamped, at: now)
-                client.setControlLevel(kind: .volume, level: committed)
+                finishCrownRotationIfNeeded()
             }
         )
         .accessibilityIdentifier("watch-bar-crown-volume")
@@ -691,9 +938,6 @@ public struct WatchChocolateBarView: View {
                             detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
                         )
                     }
-                }
-                if isCrownActiveForBar {
-                    isVolumeCrownFocused = true
                 }
             } else {
                 confirmGate.disarm()
@@ -944,7 +1188,8 @@ public struct WatchQuickActionsView: View {
     private let windowActions: [SystemQuickAction] = [
         .maximizeWindow, .minimizeWindow,
         .snapWindowLeft, .snapWindowRight,
-        .centerWindow, .toggleFullscreen
+        .centerWindow, .toggleFullscreen,
+        .moveWindowToNextDisplay
     ]
 
     private let workspaceActions: [SystemQuickAction] = [
@@ -1355,24 +1600,38 @@ private struct WatchMediaPlayer: View {
     @ObservedObject var client: CompanionClientEngine
     @State private var pressedKey: String?
     @State private var suppressReleaseKey: String?
+    @State private var isPlayerVisible: Bool = false
+    @State private var crownVolume: Double = 0.5
+    @State private var isCrownRotating: Bool = false
+    @State private var crownThrottle = ControlLevelDragThrottle(minimumInterval: 0.4)
+    @FocusState private var isVolumeCrownFocused: Bool
+
+    private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
-                Text(client.controlStripState.nowPlaying?.primaryDisplayText ?? L10n.tr("未在播放", "Nothing playing", language: client.profile.settings.language))
+                Text(client.controlStripState.nowPlaying?.primaryDisplayText ?? L10n.tr("未在播放", "Nothing playing", language: lang))
                     .font(ChocType.title).lineLimit(2)
                 HStack(spacing: 6) {
                     transport(.mediaPrevious, symbol: "backward.fill")
                     transport(.mediaPlayPause, symbol: client.controlStripState.nowPlaying?.isPlaying == true ? "pause.fill" : "play.fill")
                     transport(.mediaNext, symbol: "forward.fill")
                 }
+                playerCrownVolumeBar
                 if let media = client.controlStripState.nowPlaying {
                     if let artist = media.artist { Text(artist).font(ChocType.caption) }
                     if media.isSeekable, let fraction = client.nowPlayingScrub.effectiveProgressFraction(for: media) {
                         Slider(value: Binding(get: { fraction }, set: {
                             _ = client.updateNowPlayingScrub(normalizedProgress: $0)
                         }), in: 0...1, onEditingChanged: { editing in
-                            if !editing { _ = client.commitNowPlayingScrub(normalizedProgress: client.nowPlayingScrub.effectiveProgressFraction(for: client.controlStripState.nowPlaying) ?? fraction) }
+                            if !editing {
+                                _ = client.commitNowPlayingScrub(normalizedProgress: client.nowPlayingScrub.effectiveProgressFraction(for: client.controlStripState.nowPlaying) ?? fraction)
+                                if isPlayerVisible {
+                                    isVolumeCrownFocused = true
+                                }
+                            }
                         }).tint(palette.accent)
                     }
                     if let times = NowPlayingProgressFormatter.rowDisplayContent(for: media, overrideElapsedSeconds: client.nowPlayingScrub.effectiveElapsedSeconds(for: media))?.progressText {
@@ -1381,20 +1640,206 @@ private struct WatchMediaPlayer: View {
                 }
             }.padding(8)
         }
-        .foregroundStyle(palette.primaryText).background(palette.backgroundTop)
+        .foregroundStyle(palette.primaryText)
+        .background(palette.backgroundTop)
+        .onAppear {
+            isPlayerVisible = true
+            crownVolume = ControlStripLevel.clamp(client.controlStripState.volume)
+            isVolumeCrownFocused = true
+        }
+        .onDisappear {
+            finishCrownRotationIfNeeded()
+            isPlayerVisible = false
+            isVolumeCrownFocused = false
+        }
+        .onReceive(client.$controlStripState) { updated in
+            guard !isCrownRotating else { return }
+            let clamped = ControlStripLevel.clamp(updated.volume)
+            if abs(crownVolume - clamped) > 0.004 {
+                crownVolume = clamped
+            }
+        }
+        .task(id: isPlayerVisible) {
+            if isPlayerVisible {
+                try? await Task.sleep(for: .milliseconds(60))
+                guard !Task.isCancelled, isPlayerVisible else { return }
+                isVolumeCrownFocused = true
+            } else {
+                isVolumeCrownFocused = false
+            }
+        }
     }
+
+    private func finishCrownRotationIfNeeded() {
+        guard isCrownRotating else { return }
+        isCrownRotating = false
+        let clamped = ControlStripLevel.clamp(crownVolume)
+        let now = ProcessInfo.processInfo.systemUptime
+        let committed = crownThrottle.endDrag(at: clamped, at: now)
+        client.setControlLevel(kind: .volume, level: committed)
+    }
+
+    private var playerCrownVolumeBar: some View {
+        let isMuted = client.controlStripState.isVolumeMuted && !isCrownRotating
+        let displayedLevel = ControlStripLevel.clamp(isCrownRotating ? crownVolume : client.controlStripState.volume)
+        let pct = ControlStripLevel.percentage(for: displayedLevel)
+        let isFocusable = WatchVolumeCrownFocusRule.isPlayerVolumeFocusable(isPlayerVisible: isPlayerVisible)
+
+        return HStack(spacing: 0) {
+            Button {
+                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                if client.connectionState.isConnected {
+                    client.performQuickAction(.volumeMute)
+                } else {
+                    client.lastFeedback = CompanionFeedbackToast(
+                        success: false,
+                        title: L10n.tr("静音", "Mute", language: lang),
+                        detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                    )
+                }
+                if isPlayerVisible {
+                    isVolumeCrownFocused = true
+                }
+            } label: {
+                Image(systemName: (isMuted || displayedLevel <= 0.001) ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    .font(ChocType.caption)
+                    .foregroundStyle(isMuted ? palette.emphasisForeground : palette.accent)
+                    .frame(width: 30, height: 28)
+                    .background(
+                        isMuted ? palette.statusFailure : palette.tileFillBottom,
+                        in: Capsule()
+                    )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(
+                                isMuted ? palette.statusFailure : palette.subtleCardStroke,
+                                lineWidth: 1
+                            )
+                    )
+                    .contentShape(Capsule())
+                    .padding(.leading, 4)
+                    .padding(.vertical, 3)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("watch-player-volume-mute")
+            .accessibilityLabel(
+                isMuted
+                    ? L10n.tr("取消静音", "Unmute", language: lang)
+                    : L10n.tr("静音", "Mute", language: lang)
+            )
+
+            Button {
+                if isPlayerVisible {
+                    isVolumeCrownFocused = true
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    GeometryReader { geo in
+                        let width = max(1, geo.size.width)
+                        let fillWidth = max(6, width * CGFloat(displayedLevel))
+
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(palette.tileFillBottom)
+                                .frame(height: 6)
+
+                            if displayedLevel > 0.005 {
+                                Capsule()
+                                    .fill(isMuted ? palette.secondaryText.opacity(0.45) : palette.accent)
+                                    .frame(width: min(width, fillWidth), height: 6)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    }
+                    .frame(height: 16)
+
+                    Text("\(pct)%")
+                        .font(ChocType.micro)
+                        .monospacedDigit()
+                        .foregroundStyle(isMuted ? palette.secondaryText : palette.primaryText)
+                        .frame(minWidth: 31, alignment: .trailing)
+                }
+                .padding(.leading, 7)
+                .padding(.trailing, 8)
+                .padding(.vertical, 3)
+                .frame(maxWidth: .infinity, minHeight: 34)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("watch-player-volume-focus")
+            .accessibilityLabel(L10n.tr("表冠调节音量", "Crown Volume", language: lang))
+            .accessibilityValue("\(pct)%")
+        }
+        .background(palette.barSurface.opacity(0.95), in: Capsule())
+        .overlay(
+            Capsule()
+                .strokeBorder(
+                    (isVolumeCrownFocused || isCrownRotating) ? palette.accent : palette.subtleCardStroke,
+                    lineWidth: (isVolumeCrownFocused || isCrownRotating) ? 1.5 : 1
+                )
+        )
+        .focusable(isFocusable)
+        .focused($isVolumeCrownFocused)
+        .focusEffectDisabled()
+        .digitalCrownRotation(
+            detent: $crownVolume,
+            from: 0.0,
+            through: 1.0,
+            by: 0.02,
+            sensitivity: .medium,
+            isContinuous: false,
+            isHapticFeedbackEnabled: true,
+            onChange: { _ in
+                guard isFocusable else { return }
+                isCrownRotating = true
+                let clamped = ControlStripLevel.clamp(crownVolume)
+                let now = ProcessInfo.processInfo.systemUptime
+                if let throttled = crownThrottle.updateDrag(to: clamped, at: now) {
+                    client.setControlLevel(kind: .volume, level: throttled)
+                }
+            },
+            onIdle: {
+                finishCrownRotationIfNeeded()
+            }
+        )
+        .accessibilityIdentifier("watch-player-crown-volume")
+    }
+
     private func transport(_ action: SystemQuickAction, symbol: String) -> some View {
         Button {
             if suppressReleaseKey == action.rawValue { suppressReleaseKey = nil; return }
             client.performQuickAction(action)
+            if isPlayerVisible {
+                isVolumeCrownFocused = true
+            }
         } label: {
             Image(systemName: symbol).frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(WatchRepeatableQuickActionButtonStyle(pressedKey: $pressedKey, key: action.rawValue, action: action, suppressReleaseKey: $suppressReleaseKey) {
             client.performQuickAction(action)
+            if isPlayerVisible {
+                isVolumeCrownFocused = true
+            }
         })
     }
 }
+
+#if DEBUG
+#Preview("Watch Crown Focus Rule") {
+    WatchVolumeCrownFocusRule.verifyFocusRule()
+    let previewClient = CompanionClientEngine(
+        deviceID: "preview-watch",
+        deviceName: "Preview Watch",
+        platform: .appleWatch,
+        storageKeyPrefix: "com.choclift.preview.watch.crown"
+    )
+    return WatchChocolateBarView(
+        client: previewClient,
+        deckFollower: .constant(AppDeckFollowerState()),
+        onRequestPairing: {}
+    )
+}
+#endif
 
 private struct WatchRepeatableQuickActionButtonStyle: ButtonStyle {
     @Binding var pressedKey: String?
@@ -1943,7 +2388,8 @@ public struct WatchAudioOutputPickerSheet: View {
     }
 
     public var body: some View {
-        let selectedID = state.currentAudioOutputDevice?.id
+        let selectedOutputID = state.currentAudioOutputDevice?.id
+        let selectedInputID = state.currentAudioInputDevice?.id
 
         List {
             if let feedback = sheetFeedback {
@@ -1970,67 +2416,143 @@ public struct WatchAudioOutputPickerSheet: View {
                     .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .listRowBackground(palette.barSurface)
-            } else if !state.canSwitchAudioOutput {
-                HStack(spacing: 6) {
-                    Image(systemName: "lock.fill")
-                        .font(ChocType.micro)
-                        .foregroundStyle(palette.accentEmphasis)
-                    Text(L10n.tr("音频输出只读", "Audio Output Read-Only", language: lang))
+            } else {
+                Section {
+                    if !state.canSwitchAudioOutput {
+                        HStack(spacing: 6) {
+                            Image(systemName: "lock.fill")
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.accentEmphasis)
+                            Text(L10n.tr("音频输出只读", "Audio Output Read-Only", language: lang))
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.secondaryText)
+                        }
+                        .listRowBackground(palette.tileFillBottom)
+                    }
+
+                    if state.audioOutputDevices.isEmpty {
+                        Text(L10n.tr("无可用音频输出设备", "No Audio Outputs", language: lang))
+                            .font(ChocType.caption)
+                            .foregroundStyle(palette.secondaryText)
+                            .listRowBackground(palette.barSurface)
+                    } else {
+                        ForEach(state.audioOutputDevices) { device in
+                            let isSelected = (device.id == selectedOutputID)
+                            let isRowEnabled = state.canSwitchAudioOutput && device.isSelectable
+                            Button {
+                                guard isRowEnabled else { return }
+                                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                                sheetFeedback = nil
+                                awaitingSwitchFeedback = true
+                                client.selectAudioOutputDevice(id: device.id)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 7) {
+                                        Image(systemName: device.sfSymbol)
+                                            .font(ChocType.caption)
+                                            .foregroundStyle(isSelected ? palette.statusConnected : (isRowEnabled ? palette.accent : palette.secondaryText))
+                                        Text(device.name)
+                                            .font(ChocType.caption)
+                                            .foregroundStyle(isRowEnabled || isSelected ? palette.primaryText : palette.secondaryText)
+                                            .lineLimit(2)
+                                        Spacer(minLength: 4)
+                                        if isSelected {
+                                            Image(systemName: "checkmark")
+                                                .font(ChocType.caption)
+                                                .foregroundStyle(palette.statusConnected)
+                                        } else if !isRowEnabled {
+                                            Image(systemName: device.isAirPlay ? "airplayaudio" : "lock")
+                                                .font(ChocType.micro)
+                                                .foregroundStyle(palette.secondaryText.opacity(0.65))
+                                        }
+                                    }
+                                    if let unavailableDetail = device.selectionUnavailableReason(in: lang) {
+                                        Text(unavailableDetail)
+                                            .font(ChocType.micro)
+                                            .foregroundStyle(palette.secondaryText)
+                                            .lineLimit(2)
+                                    }
+                                }
+                                .frame(minHeight: 38)
+                                .opacity(isRowEnabled || isSelected ? 1.0 : 0.72)
+                            }
+                            .disabled(!isRowEnabled)
+                            .listRowBackground(palette.barSurface)
+                            .accessibilityIdentifier("watch-audio-output-device-\(device.id)")
+                        }
+                    }
+                } header: {
+                    Text(L10n.tr("音频输出", "Output", language: lang))
                         .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                 }
-                .listRowBackground(palette.tileFillBottom)
-            }
 
-            if isConnected && state.audioOutputDevices.isEmpty {
-                Text(L10n.tr("无可用音频输出设备", "No Audio Outputs", language: lang))
-                    .font(ChocType.caption)
-                    .foregroundStyle(palette.secondaryText)
-                    .listRowBackground(palette.barSurface)
-            } else if isConnected {
-                ForEach(state.audioOutputDevices) { device in
-                    let isSelected = (device.id == selectedID)
-                    let isRowEnabled = state.canSwitchAudioOutput && device.isSelectable
-                    Button {
-                        guard isRowEnabled else { return }
-                        CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
-                        sheetFeedback = nil
-                        awaitingSwitchFeedback = true
-                        client.selectAudioOutputDevice(id: device.id)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 7) {
-                                Image(systemName: device.sfSymbol)
-                                    .font(ChocType.caption)
-                                    .foregroundStyle(isSelected ? palette.statusConnected : (isRowEnabled ? palette.accent : palette.secondaryText))
-                                Text(device.name)
-                                    .font(ChocType.caption)
-                                    .foregroundStyle(isRowEnabled || isSelected ? palette.primaryText : palette.secondaryText)
-                                    .lineLimit(2)
-                                Spacer(minLength: 4)
-                                if isSelected {
-                                    Image(systemName: "checkmark")
-                                        .font(ChocType.caption)
-                                        .foregroundStyle(palette.statusConnected)
-                                } else if !isRowEnabled {
-                                    Image(systemName: device.isAirPlay ? "airplayaudio" : "lock")
-                                        .font(ChocType.micro)
-                                        .foregroundStyle(palette.secondaryText.opacity(0.65))
-                                }
-                            }
-                            if let unavailableDetail = device.selectionUnavailableReason(in: lang) {
-                                Text(unavailableDetail)
-                                    .font(ChocType.micro)
-                                    .foregroundStyle(palette.secondaryText)
-                                    .lineLimit(2)
-                            }
+                Section {
+                    if !state.canSwitchAudioInput {
+                        HStack(spacing: 6) {
+                            Image(systemName: "lock.fill")
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.accentEmphasis)
+                            Text(L10n.tr("麦克风输入只读", "Microphone Read-Only", language: lang))
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.secondaryText)
                         }
-                        .frame(minHeight: 38)
-                        .opacity(isRowEnabled || isSelected ? 1.0 : 0.72)
+                        .listRowBackground(palette.tileFillBottom)
                     }
-                    .disabled(!isRowEnabled)
-                    .listRowBackground(palette.barSurface)
-                    .accessibilityIdentifier("watch-audio-output-device-\(device.id)")
+
+                    if state.audioInputDevices.isEmpty {
+                        Text(L10n.tr("无可用麦克风输入", "No Audio Inputs", language: lang))
+                            .font(ChocType.caption)
+                            .foregroundStyle(palette.secondaryText)
+                            .listRowBackground(palette.barSurface)
+                    } else {
+                        ForEach(state.audioInputDevices) { device in
+                            let isSelected = (device.id == selectedInputID)
+                            let isRowEnabled = state.canSwitchAudioInput && device.isSelectable
+                            Button {
+                                guard isRowEnabled else { return }
+                                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                                sheetFeedback = nil
+                                awaitingSwitchFeedback = true
+                                client.selectAudioInputDevice(id: device.id)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 7) {
+                                        Image(systemName: device.sfSymbol)
+                                            .font(ChocType.caption)
+                                            .foregroundStyle(isSelected ? palette.statusConnected : (isRowEnabled ? palette.accent : palette.secondaryText))
+                                        Text(device.name)
+                                            .font(ChocType.caption)
+                                            .foregroundStyle(isRowEnabled || isSelected ? palette.primaryText : palette.secondaryText)
+                                            .lineLimit(2)
+                                        Spacer(minLength: 4)
+                                        if isSelected {
+                                            Image(systemName: "checkmark")
+                                                .font(ChocType.caption)
+                                                .foregroundStyle(palette.statusConnected)
+                                        } else if !isRowEnabled {
+                                            Image(systemName: "lock")
+                                                .font(ChocType.micro)
+                                                .foregroundStyle(palette.secondaryText.opacity(0.65))
+                                        }
+                                    }
+                                    Text(device.inputSubtitle(in: lang))
+                                        .font(ChocType.micro)
+                                        .foregroundStyle(palette.secondaryText)
+                                        .lineLimit(1)
+                                }
+                                .frame(minHeight: 38)
+                                .opacity(isRowEnabled || isSelected ? 1.0 : 0.72)
+                            }
+                            .disabled(!isRowEnabled)
+                            .listRowBackground(palette.barSurface)
+                            .accessibilityIdentifier("watch-audio-input-device-\(device.id)")
+                        }
+                    }
+                } header: {
+                    Text(L10n.tr("麦克风输入", "Microphone Input", language: lang))
+                        .font(ChocType.micro)
+                        .foregroundStyle(palette.secondaryText)
                 }
             }
         }
@@ -2043,6 +2565,11 @@ public struct WatchAudioOutputPickerSheet: View {
             )
             .ignoresSafeArea()
         )
+        .onAppear {
+            if isConnected {
+                client.requestControlStripState()
+            }
+        }
         .onReceive(client.$lastFeedback) { newFeedback in
             guard awaitingSwitchFeedback, let newFeedback else { return }
             awaitingSwitchFeedback = false

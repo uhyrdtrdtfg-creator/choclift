@@ -83,14 +83,34 @@ public struct IOSRootTouchBarView: View {
         )
     }
 
+    private static let minTouchTarget: CGFloat = 44
+    private static let workspaceHorizontalPadding: CGFloat = 16
+    private static let splitColumnSpacing: CGFloat = 16
+    // 6 iPad tile/key columns of 44pt targets + 12pt grid spacing + 14pt deck insets + room for 2-column sliders.
+    private static let minSplitDeckColumnWidth: CGFloat = (minTouchTarget * 6) + (12 * 5) + (14 * 2) + 48
+    // Control column holds 44pt targets with card insets and readable labels.
+    private static let minSplitControlColumnWidth: CGFloat = (minTouchTarget * 7) + 12
+    private static let maxSplitControlColumnWidth: CGFloat = 460
+    private static let minimumIPadSplitWidth: CGFloat =
+        (workspaceHorizontalPadding * 2) + splitColumnSpacing + minSplitDeckColumnWidth + minSplitControlColumnWidth
+    private static let minimumIPadSplitHeight: CGFloat = 580
+
     public init(client: CompanionClientEngine) {
         self.client = client
+    }
+
+    private func canUseIPadSplitWorkspace(in size: CGSize) -> Bool {
+        guard UIDevice.current.userInterfaceIdiom == .pad,
+              size.width > size.height else {
+            return false
+        }
+        return size.width >= Self.minimumIPadSplitWidth && size.height >= Self.minimumIPadSplitHeight
     }
 
     public var body: some View {
         GeometryReader { geo in
             let isLandscape = geo.size.width > geo.size.height
-            let isIPadWide = UIDevice.current.userInterfaceIdiom == .pad && geo.size.width >= 680 && geo.size.height >= 480
+            let isIPadWide = canUseIPadSplitWorkspace(in: geo.size)
 
             ZStack {
                 palette.backgroundTop.ignoresSafeArea()
@@ -385,12 +405,20 @@ public struct IOSRootTouchBarView: View {
                         }
                     }
                     toolsRow(L10n.tr("动作流", "Flows", language: lang), "arrow.triangle.branch") {
-                        showToolsSheet = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showFlowsManagerSheet = true }
+                        if showToolsSheet {
+                            showToolsSheet = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showFlowsManagerSheet = true }
+                        } else {
+                            showFlowsManagerSheet = true
+                        }
                     }
                     toolsRow(L10n.tr("搜索工作区", "Search Workspace", language: lang), "macwindow") {
-                        showToolsSheet = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showWorkspaceSearchSheet = true }
+                        if showToolsSheet {
+                            showToolsSheet = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showWorkspaceSearchSheet = true }
+                        } else {
+                            showWorkspaceSearchSheet = true
+                        }
                     }
                 }
                 toolsSection(L10n.tr("媒体与显示", "Media & Display", language: lang)) {
@@ -456,15 +484,21 @@ public struct IOSRootTouchBarView: View {
     }
 
     private var modeDock: some View {
+        modeDockView(isSplitWorkspace: false)
+    }
+
+    private func modeDockView(isSplitWorkspace: Bool) -> some View {
         // Bottom Mode Switcher Dock (>= 44pt touch targets)
         HStack(spacing: 0) {
             ForEach(IOSActiveSurfaceMode.allCases) { mode in
-                let selected = (activeMode == mode) && !showNowPlaying
+                let selected = (activeMode == mode) && (!showNowPlaying || isSplitWorkspace)
                 Button {
                     CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
                     modeBeforeAutoEmoji = nil
                     withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
-                        showNowPlaying = false
+                        if !isSplitWorkspace {
+                            showNowPlaying = false
+                        }
                         activeMode = mode
                     }
                 } label: {
@@ -493,8 +527,276 @@ public struct IOSRootTouchBarView: View {
 
     // MARK: - iPad Native Resizable Multi-Panel Workspace
 
+    @ViewBuilder
     private func iPadExpandedWorkspace(size: CGSize) -> some View {
-        portraitWorkspace(isWide: true)
+        if canUseIPadSplitWorkspace(in: size) {
+            let usableWidth = max(
+                Self.minSplitDeckColumnWidth + Self.minSplitControlColumnWidth,
+                size.width - (Self.workspaceHorizontalPadding * 2) - Self.splitColumnSpacing
+            )
+            let rightColumnWidth = min(
+                Self.maxSplitControlColumnWidth,
+                max(Self.minSplitControlColumnWidth, floor(usableWidth * 0.38))
+            )
+            let leftColumnWidth = max(Self.minSplitDeckColumnWidth, usableWidth - rightColumnWidth)
+            // Keep two-row strip inside the deck until the single-row layout can hold all clusters without crowding.
+            let deckControlStripWidth = leftColumnWidth >= 820 ? leftColumnWidth : min(leftColumnWidth, 600)
+
+            VStack(spacing: 0) {
+                VStack(spacing: 12) {
+                    iPadWorkspaceHeader
+                        .padding(.horizontal, Self.workspaceHorizontalPadding)
+                        .padding(.top, 10)
+
+                    HStack(alignment: .top, spacing: Self.splitColumnSpacing) {
+                        iPadPrimarySurfaceColumn(deckControlStripWidth: deckControlStripWidth)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("ios-ipad-tile-region")
+
+                        iPadControlRegionColumn
+                            .frame(width: rightColumnWidth)
+                            .frame(maxHeight: .infinity)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, Self.workspaceHorizontalPadding)
+                }
+                .padding(.bottom, 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // Layout sibling reserves the full dock height; clip so cards/badges never cover the dock.
+                .clipped()
+
+                modeDockView(isSplitWorkspace: true)
+            }
+        } else {
+            portraitWorkspace(isWide: size.width > size.height)
+        }
+    }
+
+    private var iPadWorkspaceHeader: some View {
+        HStack(spacing: 8) {
+            Button {
+                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                if showNowPlaying {
+                    withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                        showNowPlaying = false
+                    }
+                } else {
+                    showToolsSheet = true
+                }
+            } label: {
+                ChocliftBrandIconView(size: 30)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.tr("更多控制", "More Controls", language: lang))
+
+            Group {
+                if activeMode == .chocolateBar || activeMode == .emojiBar {
+                    portraitPageStepperBar
+                } else {
+                    Text(activeMode.shortTitle(in: lang))
+                        .font(ChocType.title)
+                }
+            }
+            .foregroundStyle(palette.primaryText)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                    showNowPlaying.toggle()
+                }
+            } label: {
+                Image(systemName: "play.circle.fill")
+                    .font(ChocType.title)
+                    .foregroundStyle(showNowPlaying ? palette.accent : palette.secondaryText)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.tr("正在播放", "Now Playing", language: lang))
+            .accessibilityIdentifier("ios-now-playing-button")
+
+            connectionStatusPillButton
+        }
+    }
+
+    @ViewBuilder
+    private func iPadPrimarySurfaceColumn(deckControlStripWidth: CGFloat) -> some View {
+        switch activeMode {
+        case .chocolateBar:
+            IOSIPadChocolateBarDeckView(
+                client: client,
+                currentPageIndex: manualPageSelectionBinding,
+                isFollowingFrontmostApp: deckFollower.isFollowingFrontmostApp,
+                isDeckSwitchHighlighted: isDeckSwitchHighlighted,
+                onFollowFrontmostApp: resumeFollowingFrontmostApp,
+                onSelectManualPage: { pageOffset in
+                    selectPageDot(
+                        index: pageOffset,
+                        count: max(1, client.profile.pages.count),
+                        isEmoji: false
+                    )
+                },
+                onMovePage: { direction in
+                    moveActiveBarPage(direction)
+                },
+                availableWidth: deckControlStripWidth,
+                isLandscape: true,
+                onPromptHUD: { message in
+                    flashHUD(message)
+                }
+            ) { slot in
+                editingSlot = slot
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        case .soundboard:
+            iPadSecondaryModeSurfaceCard {
+                IOSSoundboardSurfaceView(
+                    client: client,
+                    currentBarPageIndex: currentPageIndex,
+                    isLandscape: true,
+                    onPromptHUD: { message in
+                        flashHUD(message)
+                    },
+                    onRequestPairing: { showPairingSheet = true }
+                )
+            }
+        case .timeTravel:
+            iPadSecondaryModeSurfaceCard {
+                IOSTimeTravelSurfaceView(
+                    client: client,
+                    isLandscape: true,
+                    currentBarPageIndex: currentPageIndex,
+                    onRequestPairing: { showPairingSheet = true },
+                    onPromptHUD: { message in
+                        flashHUD(message)
+                    }
+                )
+            }
+        case .emojiBar:
+            iPadSecondaryModeSurfaceCard {
+                IOSEmojiBarSurfaceView(
+                    client: client,
+                    currentSlideIndex: $currentEmojiSlideIndex,
+                    activeSegment: $currentEmojiSegment,
+                    isLandscape: true
+                )
+            }
+        case .gesturePad:
+            iPadSecondaryModeSurfaceCard {
+                IOSGesturePadSurfaceView(
+                    client: client,
+                    isLandscape: true
+                ) { gesture in
+                    triggerCompanionGesture(gesture)
+                }
+            }
+        }
+    }
+
+    private func iPadSecondaryModeSurfaceCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(palette.barSurface.opacity(0.65), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+            )
+    }
+
+    private var iPadControlRegionColumn: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                iPadControlTabButton(
+                    title: L10n.tr("Mac 控制", "Mac Controls", language: lang),
+                    symbol: "slider.horizontal.3",
+                    isSelected: !showNowPlaying,
+                    identifier: "ios-ipad-controls-tab"
+                ) {
+                    showNowPlaying = false
+                }
+
+                iPadControlTabButton(
+                    title: L10n.tr("正在播放", "Now Playing", language: lang),
+                    symbol: "play.circle.fill",
+                    isSelected: showNowPlaying,
+                    identifier: "ios-ipad-now-playing-tab"
+                ) {
+                    showNowPlaying = true
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            Rectangle()
+                .fill(palette.subtleCardStroke)
+                .frame(height: 1)
+                .padding(.horizontal, 16)
+
+            Group {
+                if showNowPlaying {
+                    IOSNowPlayingPage(client: client)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                } else {
+                    toolsList
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(palette.barSurface.opacity(0.65), in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("ios-ipad-control-region")
+    }
+
+    private func iPadControlTabButton(
+        title: String,
+        symbol: String,
+        isSelected: Bool,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
+                action()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(ChocType.caption)
+                Text(title)
+                    .font(ChocType.caption)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(
+                isSelected ? palette.accent : palette.barSurface.opacity(0.9),
+                in: Capsule()
+            )
+            .foregroundStyle(isSelected ? palette.accentForeground : palette.primaryText)
+            .overlay(
+                Capsule()
+                    .strokeBorder(isSelected ? .clear : palette.subtleCardStroke, lineWidth: 1)
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
     }
 
     private var iPadTimeTravelDockStrip: some View {

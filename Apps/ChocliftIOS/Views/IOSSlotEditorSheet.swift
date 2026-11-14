@@ -11,6 +11,7 @@ public struct IOSSlotEditorSheet: View {
         case reference
         case shortcuts
         case website
+        case snippets
 
         public var id: String { rawValue }
 
@@ -24,6 +25,7 @@ public struct IOSSlotEditorSheet: View {
             case .website: return "globe"
             case .actions: return "command.square.fill"
             case .folder: return "folder.fill"
+            case .snippets: return "text.quote"
             }
         }
 
@@ -37,6 +39,7 @@ public struct IOSSlotEditorSheet: View {
             case .website: return L10n.tr("网页", "Web", language: lang)
             case .actions: return L10n.tr("动作", "Actions", language: lang)
             case .folder: return L10n.tr("文件夹", "Folder", language: lang)
+            case .snippets: return L10n.tr("片段", "Snippets", language: lang)
             }
         }
     }
@@ -55,6 +58,7 @@ public struct IOSSlotEditorSheet: View {
     @State private var tab: EditorTab = .apps
     @State private var searchQuery: String = ""
     @State private var soundSearchQuery: String = ""
+    @State private var snippetSearchQuery: String = ""
     @State private var isWaitingForCatalog: Bool = false
 
     @State private var shortcutName: String = ""
@@ -151,6 +155,8 @@ public struct IOSSlotEditorSheet: View {
                                 assignItem(item)
                             }
                         )
+                    case .snippets:
+                        snippetsPicker
                     }
                 }
             }
@@ -776,24 +782,7 @@ public struct IOSSlotEditorSheet: View {
     }
 
     private var actionsGrid: some View {
-        let sections: [(String, [SystemQuickAction])] = [
-            (
-                L10n.tr("窗口分屏与布局", "Window Layout", language: lang),
-                [.maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen]
-            ),
-            (
-                L10n.tr("编辑与剪贴板", "Clipboard & Edit", language: lang),
-                [.copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction]
-            ),
-            (
-                L10n.tr("媒体与音量", "Media & Volume", language: lang),
-                [.mediaPlayPause, .mediaPrevious, .mediaNext, .volumeUp, .volumeDown, .volumeMute]
-            ),
-            (
-                L10n.tr("桌面与系统控制", "Workspace & System", language: lang),
-                [.missionControl, .showDesktop, .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp]
-            )
-        ]
+        let sections = SystemQuickAction.slotActionSections(in: lang, compactHeaders: true)
 
         return List {
             ForEach(sections, id: \.0) { header, actions in
@@ -888,7 +877,7 @@ public struct IOSSlotEditorSheet: View {
     private func stageItem(_ item: BarItem) {
         reviewName = item.displayTitle(in: lang)
         switch item.kind {
-        case .shortcut(_, let emoji, _), .website(_, _, let emoji, _, _), .flow(_, _, let emoji, _, _), .soundboard(_, _, let emoji, _): reviewIcon = emoji
+        case .shortcut(_, let emoji, _), .website(_, _, let emoji, _, _), .flow(_, _, let emoji, _, _), .soundboard(_, _, let emoji, _), .snippet(_, _, let emoji, _): reviewIcon = emoji
         case .folder(let folder): reviewIcon = folder.emoji
         case .macApp(_, _, _, let symbol): reviewIcon = symbol
         case .systemAction(let action, _, _): reviewIcon = action.sfSymbol
@@ -910,12 +899,19 @@ public struct IOSSlotEditorSheet: View {
         case .soundboard(let id, _, let emoji, let hex): item.kind = .soundboard(soundID: id, titleSnapshot: name, emoji: reviewIcon.isEmpty ? emoji : reviewIcon, backgroundHex: hex)
         case .folder(var folder): folder.title = name; if !reviewIcon.isEmpty { folder.emoji = reviewIcon }; item.kind = .folder(folder)
         case .slotReference: break
+        case .snippet(let id, _, let emoji, let hex): item.kind = .snippet(snippetID: id, titleSnapshot: name, emoji: reviewIcon.isEmpty ? emoji : reviewIcon, backgroundHex: hex)
         }
         var updated = client.profile
         if var flow = pendingFlow {
             flow.name = name
             if !reviewIcon.isEmpty { flow.emoji = reviewIcon }
             updated.upsertFlow(flow)
+        }
+        if case .snippet(let id, _, _, _) = item.kind,
+           !title.isEmpty,
+           let existingSnippet = updated.snippet(withID: id),
+           title != existingSnippet.displayTitle(in: lang) {
+            _ = updated.renameSnippet(id: id, title: name)
         }
         guard updated.setSlotItem(item, pageIndex: pageIndex, slotIndex: slotIndex) else { return }
         client.pushUpdatedProfile(updated)
@@ -1049,6 +1045,140 @@ public struct IOSSlotEditorSheet: View {
             tab = .folder
         case .slotReference:
             tab = .reference
+        case .snippet:
+            tab = .snippets
+        }
+    }
+
+    // MARK: - Snippets Tab (Existing Saved Text Snippets)
+
+    private var snippetsPicker: some View {
+        let allSnippets = client.profile.snippets
+        let trimmed = snippetSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let filtered = allSnippets.filter { snippet in
+            guard !trimmed.isEmpty else { return true }
+            return snippet.title.localizedCaseInsensitiveContains(trimmed) ||
+                snippet.displayTitle(in: lang).localizedCaseInsensitiveContains(trimmed) ||
+                snippet.body.localizedCaseInsensitiveContains(trimmed)
+        }
+        let currentSnippetID = existingItem?.snippetID
+        let currentSnippetEmoji: String = {
+            if case .snippet(_, _, let emoji, _) = existingItem?.kind, !emoji.isEmpty {
+                return emoji
+            }
+            return "📝"
+        }()
+        let currentSnippetHex: String = {
+            if case .snippet(_, _, _, let hex) = existingItem?.kind, !hex.isEmpty {
+                return hex
+            }
+            return "#F3EEFF"
+        }()
+
+        return VStack(spacing: 10) {
+            if !allSnippets.isEmpty {
+                TextField(
+                    L10n.tr("搜索文本片段…", "Search snippets…", language: lang),
+                    text: $snippetSearchQuery
+                )
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .padding(.horizontal, 14)
+                .accessibilityIdentifier("ios-slot-snippet-search")
+            }
+
+            if allSnippets.isEmpty {
+                Spacer()
+                VStack(spacing: 10) {
+                    Image(systemName: "text.quote")
+                        .font(ChocType.title)
+                        .foregroundStyle(palette.secondaryText)
+                    Text(L10n.tr("暂无已保存的文本片段", "No Saved Snippets Yet", language: lang))
+                        .font(ChocType.title)
+                        .foregroundStyle(palette.primaryText)
+                    Text(
+                        L10n.tr(
+                            "请先在「表情与片段」页或 Mac 端新建文本片段，随后即可在此选择放入任意槽位。",
+                            "Create snippets in the Emoji & Snippets tab or on your Mac first, then pick one here for any slot.",
+                            language: lang
+                        )
+                    )
+                    .font(ChocType.caption)
+                    .foregroundStyle(palette.secondaryText)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+                }
+                Spacer()
+            } else if filtered.isEmpty {
+                Spacer()
+                VStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(ChocType.title)
+                        .foregroundStyle(palette.secondaryText)
+                    Text(
+                        L10n.tr(
+                            "没有匹配「\(snippetSearchQuery)」的片段",
+                            "No snippets matching \"\(snippetSearchQuery)\"",
+                            language: lang
+                        )
+                    )
+                    .font(ChocType.body.weight(.semibold))
+                    .foregroundStyle(palette.primaryText)
+                    Button(L10n.tr("清空搜索", "Clear Search", language: lang)) {
+                        snippetSearchQuery = ""
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(palette.accent)
+                }
+                Spacer()
+            } else {
+                List(filtered) { snippet in
+                    Button {
+                        let existingID = existingItem?.id ?? UUID()
+                        assignItem(
+                            client.profile.makeBarItem(
+                                for: snippet,
+                                emoji: currentSnippetEmoji,
+                                backgroundHex: currentSnippetHex,
+                                id: existingID
+                            )
+                        )
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(currentSnippetID == snippet.id ? currentSnippetEmoji : "📝")
+                                .font(ChocType.title)
+                                .frame(width: 36, height: 36)
+                                .background(
+                                    ChocSwatch.resolvedTileColor(hex: "#F3EEFF"),
+                                    in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                )
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(snippet.displayTitle(in: lang))
+                                    .font(ChocType.body.weight(.semibold))
+                                    .foregroundStyle(palette.primaryText)
+                                    .lineLimit(1)
+                                Text("\(snippet.insertMode.badgeTitle(in: lang)) · \(snippet.singleLinePreview)")
+                                    .font(ChocType.micro)
+                                    .foregroundStyle(palette.secondaryText)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer()
+
+                            if currentSnippetID == snippet.id {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(palette.accent)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .listRowBackground(palette.barSurface)
+                    .accessibilityIdentifier("ios-slot-pick-snippet-\(snippet.id.uuidString)")
+                }
+                .scrollContentBackground(.hidden)
+            }
         }
     }
 }

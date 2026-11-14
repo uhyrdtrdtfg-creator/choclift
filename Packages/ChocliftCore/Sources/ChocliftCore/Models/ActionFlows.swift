@@ -22,6 +22,18 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
         targetAppName: String? = nil
     )
     case unsupported(rawType: String)
+    case openWebsite(
+        url: String,
+        title: String? = nil,
+        switchExistingTab: Bool = true
+    )
+    case runShortcut(
+        shortcutName: String
+    )
+    case insertSnippet(
+        snippetID: UUID,
+        titleSnapshot: String? = nil
+    )
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -33,6 +45,12 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
         case action
         case targetBundleIdentifier
         case targetAppName
+        case url
+        case title
+        case switchExistingTab
+        case shortcutName
+        case snippetID
+        case titleSnapshot
     }
 
     private enum StepTypeTag: String {
@@ -40,6 +58,9 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
         case waitForAppFrontmost = "wait_for_app_frontmost"
         case delay = "delay"
         case systemAction = "system_action"
+        case openWebsite = "open_website"
+        case runShortcut = "run_shortcut"
+        case insertSnippet = "insert_snippet"
     }
 
     public init(from decoder: Decoder) throws {
@@ -84,6 +105,24 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
                 targetAppName: targetAppName
             )
 
+        case StepTypeTag.openWebsite.rawValue:
+            let url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
+            let title = try container.decodeIfPresent(String.self, forKey: .title)
+            let switchExistingTab = try container.decodeIfPresent(Bool.self, forKey: .switchExistingTab) ?? true
+            self = .openWebsite(url: url, title: title, switchExistingTab: switchExistingTab)
+
+        case StepTypeTag.runShortcut.rawValue:
+            let shortcutName = try container.decodeIfPresent(String.self, forKey: .shortcutName) ?? ""
+            self = .runShortcut(shortcutName: shortcutName)
+
+        case StepTypeTag.insertSnippet.rawValue:
+            guard let snippetID = try container.decodeIfPresent(UUID.self, forKey: .snippetID) else {
+                self = .unsupported(rawType: "\(rawType):missing_snippet_id")
+                return
+            }
+            let titleSnapshot = try container.decodeIfPresent(String.self, forKey: .titleSnapshot)
+            self = .insertSnippet(snippetID: snippetID, titleSnapshot: titleSnapshot)
+
         default:
             self = .unsupported(rawType: rawType)
         }
@@ -116,6 +155,21 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
 
         case .unsupported(let rawType):
             try container.encode(rawType, forKey: .type)
+
+        case .openWebsite(let url, let title, let switchExistingTab):
+            try container.encode(StepTypeTag.openWebsite.rawValue, forKey: .type)
+            try container.encode(url, forKey: .url)
+            try container.encodeIfPresent(title, forKey: .title)
+            try container.encode(switchExistingTab, forKey: .switchExistingTab)
+
+        case .runShortcut(let shortcutName):
+            try container.encode(StepTypeTag.runShortcut.rawValue, forKey: .type)
+            try container.encode(shortcutName, forKey: .shortcutName)
+
+        case .insertSnippet(let snippetID, let titleSnapshot):
+            try container.encode(StepTypeTag.insertSnippet.rawValue, forKey: .type)
+            try container.encode(snippetID, forKey: .snippetID)
+            try container.encodeIfPresent(titleSnapshot, forKey: .titleSnapshot)
         }
     }
 }
@@ -174,6 +228,22 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
         return min(max(0.01, raw), maxTimeoutSeconds)
     }
 
+    public static func isValidWebsiteURL(_ raw: String) -> Bool {
+        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, clean != "https://", clean != "http://" else { return false }
+        let normalized = clean.contains("://") ? clean : "https://\(clean)"
+        guard let url = URL(string: normalized), let host = url.host(), !host.isEmpty else {
+            return false
+        }
+        return true
+    }
+
+    public static func normalizedWebsiteURL(_ raw: String) -> String {
+        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return "" }
+        return clean.contains("://") ? clean : "https://\(clean)"
+    }
+
     private static func normalizedKind(_ kind: ActionFlowStepKind) -> ActionFlowStepKind {
         switch kind {
         case .delay(let seconds):
@@ -183,6 +253,22 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
                 bundleIdentifier: bundleID,
                 appName: appName,
                 timeoutSeconds: clampTimeout(timeout)
+            )
+        case .openWebsite(let url, let title, let switchExistingTab):
+            let cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .openWebsite(
+                url: cleanURL,
+                title: (cleanTitle?.isEmpty == false) ? cleanTitle : nil,
+                switchExistingTab: switchExistingTab
+            )
+        case .runShortcut(let shortcutName):
+            return .runShortcut(shortcutName: shortcutName.trimmingCharacters(in: .whitespacesAndNewlines))
+        case .insertSnippet(let snippetID, let titleSnapshot):
+            let cleanSnapshot = titleSnapshot?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .insertSnippet(
+                snippetID: snippetID,
+                titleSnapshot: (cleanSnapshot?.isEmpty == false) ? cleanSnapshot : nil
             )
         default:
             return kind
@@ -201,6 +287,12 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
             return action.sfSymbol
         case .unsupported:
             return "exclamationmark.triangle"
+        case .openWebsite:
+            return "globe"
+        case .runShortcut:
+            return "sparkles.rectangle.stack"
+        case .insertSnippet:
+            return "text.quote"
         }
     }
 
@@ -216,6 +308,12 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
             return "#7C5CFF"
         case .unsupported:
             return "#E5484D"
+        case .openWebsite:
+            return "#0EA5E9"
+        case .runShortcut:
+            return "#EC4899"
+        case .insertSnippet:
+            return "#D97706"
         }
     }
 
@@ -230,7 +328,7 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
         case .systemAction(_, let targetBundleID, _):
             let trimmed = targetBundleID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return trimmed.isEmpty ? nil : trimmed
-        case .delay, .unsupported:
+        case .delay, .unsupported, .openWebsite, .runShortcut, .insertSnippet:
             return nil
         }
     }
@@ -281,6 +379,37 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
 
         case .unsupported(let rawType):
             return L10n.tr("不支持的步骤 (\(rawType))", "Unsupported Step (\(rawType))", language: lang)
+
+        case .openWebsite(let url, let title, _):
+            let cleanTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+            let derivedHost: String = {
+                guard !cleanURL.isEmpty else { return "" }
+                let normalized = cleanURL.contains("://") ? cleanURL : "https://\(cleanURL)"
+                if let host = URL(string: normalized)?.host(), !host.isEmpty {
+                    return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+                }
+                return cleanURL
+            }()
+            let label = !cleanTitle.isEmpty ? cleanTitle : derivedHost
+            if label.isEmpty {
+                return L10n.tr("打开网页", "Open Website", language: lang)
+            }
+            return L10n.tr("打开网页 \(label)", "Open Website \(label)", language: lang)
+
+        case .runShortcut(let shortcutName):
+            let cleanName = shortcutName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleanName.isEmpty {
+                return L10n.tr("运行快捷指令", "Run Shortcut", language: lang)
+            }
+            return L10n.tr("运行快捷指令「\(cleanName)」", "Run Shortcut \"\(cleanName)\"", language: lang)
+
+        case .insertSnippet(_, let titleSnapshot):
+            let cleanTitle = titleSnapshot?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if cleanTitle.isEmpty {
+                return L10n.tr("插入文本片段", "Insert Snippet", language: lang)
+            }
+            return L10n.tr("插入片段「\(cleanTitle)」", "Insert Snippet \"\(cleanTitle)\"", language: lang)
         }
     }
 
@@ -308,6 +437,22 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
             return L10n.tr("系统全局快捷操作", "System-wide Mac action", language: lang)
         case .unsupported(let rawType):
             return rawType
+        case .openWebsite(let url, _, let switchExistingTab):
+            let cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+            let shownURL = cleanURL.isEmpty ? "https://" : cleanURL
+            return switchExistingTab
+                ? L10n.tr("\(shownURL) · 优先切换已打开标签页", "\(shownURL) · Switch existing tab", language: lang)
+                : L10n.tr("\(shownURL) · 在浏览器中打开", "\(shownURL) · Open in browser", language: lang)
+        case .runShortcut(let shortcutName):
+            let cleanName = shortcutName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return cleanName.isEmpty
+                ? L10n.tr("macOS 快捷指令", "macOS Shortcut", language: lang)
+                : L10n.tr("macOS 快捷指令 · \(cleanName)", "macOS Shortcut · \(cleanName)", language: lang)
+        case .insertSnippet(let snippetID, let titleSnapshot):
+            let cleanTitle = titleSnapshot?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return cleanTitle.isEmpty
+                ? L10n.tr("已保存文本片段 (\(snippetID.uuidString.prefix(8)))", "Saved Snippet (\(snippetID.uuidString.prefix(8)))", language: lang)
+                : L10n.tr("已保存文本片段 · \(cleanTitle)", "Saved Snippet · \(cleanTitle)", language: lang)
         }
     }
 
@@ -498,6 +643,21 @@ public protocol ActionFlowDriver: AnyObject {
         target: FlowSystemActionTarget
     ) -> (success: Bool, message: String)
 
+    func openWebsite(
+        url: String,
+        switchExistingTab: Bool
+    ) async -> (success: Bool, message: String)
+
+    func runShortcut(
+        named shortcutName: String
+    ) async -> (success: Bool, message: String)
+
+    func insertSnippet(
+        snippetID: UUID,
+        titleSnapshot: String?,
+        preferredPID: Int32?
+    ) -> (success: Bool, message: String)
+
     func sleep(seconds: Double) async
 }
 
@@ -508,8 +668,7 @@ public enum ActionFlowRunner {
         driver: ActionFlowDriver,
         language: AppLanguage = .system
     ) async -> ActionFlowRunResult {
-        let activeSteps = flow.steps.filter(\.isEnabled)
-        guard !activeSteps.isEmpty else {
+        guard flow.steps.contains(where: \.isEnabled) else {
             let msg = L10n.tr(
                 "动作流「\(flow.name)」没有可执行的步骤",
                 "Flow \"\(flow.name)\" has no executable steps",
@@ -528,19 +687,23 @@ public enum ActionFlowRunner {
         var currentTargetApp: FlowAppHandle?
         var executedCount = 0
 
-        for (idx, step) in activeSteps.enumerated() {
+        for (idx, step) in flow.steps.enumerated() where step.isEnabled {
             let stepNumber = idx + 1
             let stepTitle = step.displayTitle(in: language)
 
             func fail(_ reason: String) -> ActionFlowRunResult {
+                let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+                let effectiveReason = trimmedReason.isEmpty
+                    ? L10n.tr("执行失败", "Step execution failed", language: language)
+                    : trimmedReason
                 let failTitle = L10n.tr(
                     "\(flow.name)：第 \(stepNumber) 步「\(stepTitle)」失败",
                     "\(flow.name): Step \(stepNumber) (\(stepTitle)) failed",
                     language: language
                 )
                 let failDetail = L10n.tr(
-                    "第 \(stepNumber) 步「\(stepTitle)」失败：\(reason)",
-                    "Step \(stepNumber) (\(stepTitle)) failed: \(reason)",
+                    "第 \(stepNumber) 步「\(stepTitle)」失败：\(effectiveReason)",
+                    "Step \(stepNumber) (\(stepTitle)) failed: \(effectiveReason)",
                     language: language
                 )
                 return ActionFlowRunResult(
@@ -708,6 +871,50 @@ public enum ActionFlowRunner {
                         language: language
                     )
                 )
+
+            case .openWebsite(let url, _, let switchExistingTab):
+                let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedURL.isEmpty else {
+                    return fail(L10n.tr("网址为空", "Website URL is empty", language: language))
+                }
+                guard ActionFlowStep.isValidWebsiteURL(trimmedURL) else {
+                    return fail(L10n.tr("无效的网址：\(trimmedURL)", "Invalid URL: \(trimmedURL)", language: language))
+                }
+                let normalizedURL = ActionFlowStep.normalizedWebsiteURL(trimmedURL)
+                let res = await driver.openWebsite(url: normalizedURL, switchExistingTab: switchExistingTab)
+                guard res.success else {
+                    return fail(res.message)
+                }
+                executedCount += 1
+
+            case .runShortcut(let shortcutName):
+                let trimmedName = shortcutName.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedName.isEmpty else {
+                    return fail(L10n.tr("快捷指令名称为空", "Shortcut name is empty", language: language))
+                }
+                let res = await driver.runShortcut(named: trimmedName)
+                guard res.success else {
+                    return fail(res.message)
+                }
+                executedCount += 1
+
+            case .insertSnippet(let snippetID, let titleSnapshot):
+                let preferredPID: Int32? = {
+                    if let targetBundle = currentTargetBundleID,
+                       let live = driver.runningApp(forBundleIdentifier: targetBundle) {
+                        return live.processIdentifier
+                    }
+                    return currentTargetApp?.processIdentifier ?? driver.fallbackExternalAppPID
+                }()
+                let res = driver.insertSnippet(
+                    snippetID: snippetID,
+                    titleSnapshot: titleSnapshot,
+                    preferredPID: preferredPID
+                )
+                guard res.success else {
+                    return fail(res.message)
+                }
+                executedCount += 1
             }
         }
 

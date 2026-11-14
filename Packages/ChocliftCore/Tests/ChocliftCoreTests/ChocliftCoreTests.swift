@@ -1053,4 +1053,306 @@ final class ChocliftCoreTests: XCTestCase {
             2
         )
     }
+
+    // MARK: - Snippet Bar Slots, Pinned Strip, Notch, Legacy Decode & Type-Keys Failure Tests
+
+    func testLegacyBarItemsWithoutSnippetCaseStillDecodeCleanly() throws {
+        let appID = UUID()
+        let flowID = UUID()
+        let soundID = UUID()
+        let pageID = UUID()
+        let legacyPayloads: [(String, (BarItem) -> Void)] = [
+            (
+                """
+                {"id":"\(appID.uuidString)","kind":{"macApp":{"bundleIdentifier":"com.apple.Safari","appName":"Safari","fallbackSymbol":"safari"}}}
+                """,
+                { item in
+                    XCTAssertEqual(item.id, appID)
+                    XCTAssertEqual(item.bundleIdentifier, "com.apple.Safari")
+                    XCTAssertEqual(item.displayTitle(in: .english), "Safari")
+                    XCTAssertNil(item.snippetID)
+                }
+            ),
+            (
+                """
+                {"id":"\(UUID().uuidString)","kind":{"shortcut":{"shortcutName":"Morning Routine","emoji":"☀️","backgroundHex":"#FFF6E3"}}}
+                """,
+                { item in
+                    XCTAssertEqual(item.displayTitle(in: .english), "Morning Routine")
+                    XCTAssertNil(item.snippetID)
+                }
+            ),
+            (
+                """
+                {"id":"\(UUID().uuidString)","kind":{"website":{"url":"https://apple.com","title":"Apple","emoji":"🍎","backgroundHex":"#FFF1EC","switchExistingTab":true}}}
+                """,
+                { item in
+                    XCTAssertEqual(item.displayTitle(in: .english), "Apple")
+                    XCTAssertNil(item.snippetID)
+                }
+            ),
+            (
+                """
+                {"id":"\(UUID().uuidString)","kind":{"systemAction":{"action":"maximize_window"}}}
+                """,
+                { item in
+                    XCTAssertEqual(item.displayTitle(in: .english), SystemQuickAction.maximizeWindow.title(in: .english))
+                    XCTAssertNil(item.snippetID)
+                }
+            ),
+            (
+                """
+                {"id":"\(UUID().uuidString)","kind":{"flow":{"flowID":"\(flowID.uuidString)","titleSnapshot":"Focus Layout","emoji":"⚡️","backgroundHex":"#ECFAFE","stepCountSnapshot":2}}}
+                """,
+                { item in
+                    XCTAssertEqual(item.flowID, flowID)
+                    XCTAssertEqual(item.displayTitle(in: .english), "Focus Layout")
+                    XCTAssertNil(item.snippetID)
+                }
+            ),
+            (
+                """
+                {"id":"\(UUID().uuidString)","kind":{"soundboard":{"soundID":"\(soundID.uuidString)","titleSnapshot":"Tink","emoji":"🔊","backgroundHex":"#ECFAEE"}}}
+                """,
+                { item in
+                    XCTAssertEqual(item.soundID, soundID)
+                    XCTAssertEqual(item.displayTitle(in: .english), "Tink")
+                    XCTAssertNil(item.snippetID)
+                }
+            ),
+            (
+                """
+                {"id":"\(UUID().uuidString)","kind":{"slotReference":{"targetPageID":"\(pageID.uuidString)","targetSlotIndex":3}}}
+                """,
+                { item in
+                    XCTAssertEqual(item.slotReferenceCoordinate, SlotCoordinate(pageID: pageID, slotIndex: 3))
+                    XCTAssertNil(item.snippetID)
+                }
+            ),
+            (
+                """
+                {"id":"\(UUID().uuidString)","kind":{"folder":{"title":"Dev","emoji":"🗂️","backgroundHex":"#F3EEFF","children":[]}}}
+                """,
+                { item in
+                    XCTAssertTrue(item.isFolder)
+                    XCTAssertEqual(item.displayTitle(in: .english), "Dev")
+                    XCTAssertNil(item.snippetID)
+                }
+            )
+        ]
+
+        for (rawJSON, verify) in legacyPayloads {
+            let decoded = try JSONDecoder().decode(BarItem.self, from: Data(rawJSON.utf8))
+            verify(decoded)
+        }
+
+        // Also decode a full legacy BarPage containing old BarItems without `.snippet`
+        let legacyPageJSON = """
+        {
+          "id": "\(pageID.uuidString)",
+          "index": 0,
+          "title": "Daily",
+          "iconEmoji": "🍫",
+          "slots": [
+            {"id":"\(appID.uuidString)","kind":{"macApp":{"bundleIdentifier":"com.apple.finder","appName":"Finder"}}},
+            null, null, null, null, null, null, null
+          ]
+        }
+        """.data(using: .utf8)!
+        let decodedPage = try JSONDecoder().decode(BarPage.self, from: legacyPageJSON)
+        XCTAssertEqual(decodedPage.slots.count, BarPage.slotsPerPage)
+        XCTAssertEqual(decodedPage.slots[0]?.bundleIdentifier, "com.apple.finder")
+        XCTAssertNil(decodedPage.slots[1])
+    }
+
+    func testSnippetBarSlotPinnedStripNotchAndSyncLifecycle() throws {
+        var profile = ChocliftDefaults.makeDefaultProfile()
+        profile.settings.language = .english
+
+        let greeting = TextSnippet(title: "Standup Note", body: "Yesterday: shipped C04\nToday: tests", insertMode: .focusedFieldInsert)
+        let typeCmd = TextSnippet(title: "Git Status", body: "git status -sb", insertMode: .typeKeys)
+        XCTAssertTrue(profile.upsertSnippet(greeting))
+        XCTAssertTrue(profile.upsertSnippet(typeCmd))
+
+        // Assign snippet to Page 0 Slot 2 (shared across Chocolate Bar, Mac Notch Bar, and Pinned Strip)
+        let customSnippetTile = profile.makeBarItem(for: greeting, emoji: "✍️", backgroundHex: "#EDF6FF")
+        XCTAssertEqual(customSnippetTile.snippetID, greeting.id)
+        XCTAssertFalse(customSnippetTile.requiresDestructiveConfirmation(in: profile))
+        XCTAssertTrue(profile.setSlotItem(customSnippetTile, pageIndex: 0, slotIndex: 2))
+
+        // Pin the snippet bar slot to the persistent strip
+        let slotCoord = SlotCoordinate(pageID: profile.pages[0].id, slotIndex: 2)
+        XCTAssertTrue(profile.pinSlotToStrip(slotCoord))
+        XCTAssertEqual(profile.resolvedPinnedStripSlots().count, 1)
+        XCTAssertEqual(profile.resolvedPinnedStripSlots().first?.item.snippetID, greeting.id)
+
+        // Add `typeCmd` inside a folder on Page 1 Slot 0 and a slotReference on Page 1 Slot 1 pointing to Page 0 Slot 2
+        let folder = TileFolder(title: "Snip Folder", emoji: "📂", children: [profile.makeBarItem(for: typeCmd)])
+        XCTAssertTrue(profile.setSlotItem(BarItem(kind: .folder(folder)), pageIndex: 1, slotIndex: 0))
+        XCTAssertTrue(
+            profile.setSlotItem(
+                BarItem(kind: .slotReference(targetPageID: profile.pages[0].id, targetSlotIndex: 2)),
+                pageIndex: 1,
+                slotIndex: 1
+            )
+        )
+
+        // Encode & decode round-trip
+        let data = try JSONEncoder().encode(profile)
+        var decoded = try JSONDecoder().decode(ChocliftWorkspaceProfile.self, from: data)
+        XCTAssertEqual(decoded.pages[0].slots[2]?.snippetID, greeting.id)
+        XCTAssertEqual(decoded.resolvedPinnedStripSlots().first?.item.snippetID, greeting.id)
+        XCTAssertEqual(
+            decoded.displayTitle(for: try XCTUnwrap(decoded.pages[1].slots[1]), in: .english),
+            "Standup Note"
+        )
+
+        // Search finds the snippet tile on the bar
+        let tileHits = CompanionWorkspaceSearch.search(in: decoded, query: "Standup", scope: .tiles, language: .english)
+        XCTAssertFalse(tileHits.isEmpty)
+
+        // Renaming the snippet updates titleSnapshot on the bar slot while preserving custom emoji & hex
+        XCTAssertTrue(decoded.renameSnippet(id: greeting.id, title: "Daily Update"))
+        guard case .snippet(_, let updatedSnapshot, let preservedEmoji, let preservedHex) = decoded.pages[0].slots[2]?.kind else {
+            return XCTFail("Expected .snippet bar item")
+        }
+        XCTAssertEqual(updatedSnapshot, "Daily Update")
+        XCTAssertEqual(preservedEmoji, "✍️")
+        XCTAssertEqual(preservedHex, "#EDF6FF")
+        XCTAssertEqual(decoded.resolvedPinnedStripSlots().first?.item.displayTitle(in: .english), "Daily Update")
+
+        // Deleting the snippet clears its bar slot, unpins it from the strip, and removes folder child entries
+        XCTAssertTrue(decoded.deleteSnippet(id: greeting.id))
+        XCTAssertNil(decoded.pages[0].slots[2])
+        XCTAssertTrue(decoded.resolvedPinnedStripSlots().isEmpty)
+
+        XCTAssertTrue(decoded.deleteSnippet(id: typeCmd.id))
+        XCTAssertEqual(decoded.pages[1].slots[0]?.folder?.children.count, 0)
+    }
+
+    #if os(macOS)
+    @MainActor
+    func testSnippetSlotLoopbackAndTypeKeysUnfocusedHonestFailure() async throws {
+        // Pure policy check: typeKeys when no text field is focused returns rejectedNoFocusedField + honest failure
+        let unfocusedPlan = SnippetInsertPolicy.evaluate(body: "echo hi", mode: .typeKeys, isFieldFocused: false)
+        XCTAssertEqual(unfocusedPlan, .rejectedNoFocusedField)
+        XCTAssertEqual(
+            SnippetInsertPolicy.rejectionMessage(for: unfocusedPlan, language: .english),
+            "No text field focused on Mac — click a text field first"
+        )
+        XCTAssertEqual(
+            SnippetInsertPolicy.rejectionMessage(for: unfocusedPlan, language: .chinese),
+            "未检测到焦点输入框，请先在 Mac 中点击文本框"
+        )
+
+        final class SnippetSlotDelegate: MacServerEngineDelegate {
+            weak var server: MacServerEngine?
+            var profile: ChocliftWorkspaceProfile = ChocliftDefaults.makeDefaultProfile()
+            var isFieldFocused: Bool = false
+            var executedPlans: [SnippetExecutionPlan] = []
+
+            func serverCurrentProfile() -> ChocliftWorkspaceProfile { profile }
+            func serverCurrentRecentApps() -> [RecentAppEntry] { [] }
+            func serverFrontmostBundleID() -> String? { "com.apple.finder" }
+            func serverTextInputState() -> (isEditing: Bool, appName: String?) {
+                (isFieldFocused, isFieldFocused ? "Notes" : nil)
+            }
+            func serverIsAccessibilityGranted() -> Bool { true }
+            func serverIcons(for bundleIDs: [String]) -> [String: Data] { [:] }
+            func serverDidUpdatePairedDevices(_ devices: [PairedDeviceRecord]) {}
+
+            func serverDidReceiveAuthenticatedMessage(
+                _ message: ClientMessage,
+                from device: PairedDeviceRecord,
+                reply: @escaping @MainActor (ServerMessage) -> Void
+            ) {
+                if case .triggerBarItem(let item) = message,
+                   case .snippet(let snippetID, let fallback, _, _) = item.kind {
+                    guard let snippet = profile.snippet(withID: snippetID) else {
+                        reply(.actionFeedback(success: false, title: fallback, detail: "Missing"))
+                        return
+                    }
+                    let plan = SnippetInsertPolicy.evaluate(
+                        body: snippet.body,
+                        mode: snippet.insertMode,
+                        isFieldFocused: isFieldFocused
+                    )
+                    guard plan.isExecutable else {
+                        let detail = SnippetInsertPolicy.rejectionMessage(for: plan, language: .english)
+                        reply(.actionFeedback(success: false, title: snippet.displayTitle(in: .english), detail: detail))
+                        return
+                    }
+                    executedPlans.append(plan)
+                    reply(.actionFeedback(success: true, title: snippet.displayTitle(in: .english), detail: "Typed"))
+                }
+            }
+        }
+
+        let suiteName = "com.choclift.tests.c04.snippetSlot.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let delegate = SnippetSlotDelegate()
+        delegate.profile.settings.language = .english
+        let typeSnippet = TextSnippet(title: "Deploy Cmd", body: "make check", insertMode: .typeKeys)
+        XCTAssertTrue(delegate.profile.upsertSnippet(typeSnippet))
+        let slotItem = delegate.profile.makeBarItem(for: typeSnippet)
+        XCTAssertTrue(delegate.profile.setSlotItem(slotItem, pageIndex: 0, slotIndex: 3))
+        let coord = SlotCoordinate(pageID: delegate.profile.pages[0].id, slotIndex: 3)
+        XCTAssertTrue(delegate.profile.pinSlotToStrip(coord))
+
+        let server = MacServerEngine(macID: "mac-c04", macName: "Mac C04")
+        server.delegate = delegate
+        delegate.server = server
+        defer { server.stop() }
+
+        let serverEnd = server.acceptInMemoryCompanion()
+        let (proxy, clientEnd) = InMemoryCompanionPipe.pair()
+        proxy.onPayload = { serverEnd.send($0) }
+        serverEnd.onPayload = { proxy.send($0) }
+        proxy.start()
+        serverEnd.start()
+
+        let phone = CompanionClientEngine(
+            deviceID: "iphone-c04",
+            deviceName: "iPhone C04",
+            platform: .iPhone,
+            userDefaults: defaults,
+            storageKeyPrefix: "iphone-c04"
+        )
+        defer { phone.disconnect() }
+
+        phone.connectInMemoryBluetooth(to: clientEnd, targetName: "Mac C04")
+        for _ in 0..<50 {
+            if case .awaitingPIN = phone.connectionState { break }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        phone.submitPIN(server.currentPIN)
+        for _ in 0..<50 where !phone.connectionState.isConnected {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertTrue(phone.connectionState.isConnected)
+
+        // 1. Triggering the type-keys snippet bar/pinned slot with NO focused field returns honest failure (no pasteboard path)
+        phone.triggerBarItem(slotItem, from: coord)
+        for _ in 0..<50 where phone.lastFeedback == nil {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(phone.lastFeedback?.success, false)
+        XCTAssertEqual(phone.lastFeedback?.detail, "No text field focused on Mac — click a text field first")
+        XCTAssertEqual(phone.tileOutcome(for: coord), .failure)
+        XCTAssertTrue(delegate.executedPlans.isEmpty)
+
+        // 2. Focusing a field on Mac allows the same snippet slot to type through the key path
+        delegate.isFieldFocused = true
+        phone.lastFeedback = nil
+        phone.triggerBarItem(slotItem, from: coord)
+        for _ in 0..<50 where phone.lastFeedback == nil {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(phone.lastFeedback?.success, true)
+        XCTAssertEqual(phone.tileOutcome(for: coord), .success)
+        XCTAssertEqual(delegate.executedPlans, [.typeThroughKeyPath("make check")])
+    }
+    #endif
 }

@@ -255,6 +255,99 @@ public enum NotchPanelLayout {
             height: quartzRect.height
         )
     }
+
+    /// Converts a top-left view rect (such as a SwiftUI `GeometryProxy` frame in the root hosting coordinate space)
+    /// into AppKit bottom-left window coordinates for a window of `windowHeight`.
+    public static func appKitWindowRect(
+        fromTopLeftRect topLeftRect: CGRect,
+        windowHeight: CGFloat
+    ) -> CGRect {
+        guard !topLeftRect.isNull, topLeftRect.width > 0, topLeftRect.height > 0, windowHeight > 0 else {
+            return .zero
+        }
+        return CGRect(
+            x: topLeftRect.origin.x,
+            y: windowHeight - topLeftRect.maxY,
+            width: topLeftRect.width,
+            height: topLeftRect.height
+        )
+    }
+
+    /// Converts slot frames measured in top-left SwiftUI root coordinates into AppKit bottom-left window coordinates.
+    public static func appKitWindowSlotFrames(
+        fromTopLeftSlotFrames topLeftFrames: [Int: CGRect],
+        windowHeight: CGFloat
+    ) -> [Int: CGRect] {
+        var converted: [Int: CGRect] = [:]
+        converted.reserveCapacity(topLeftFrames.count)
+        for (slotIndex, rect) in topLeftFrames {
+            let windowRect = appKitWindowRect(fromTopLeftRect: rect, windowHeight: windowHeight)
+            if windowRect.width > 0 && windowRect.height > 0 {
+                converted[slotIndex] = windowRect
+            }
+        }
+        return converted
+    }
+
+    /// Hit-tests `pointInWindow` (AppKit bottom-left window coordinates) against injected real `slotFrames`
+    /// (also in AppKit bottom-left window coordinates).
+    public static func hitTestSlotIndex(
+        at pointInWindow: CGPoint,
+        slotFrames: [Int: CGRect],
+        edgeSlop: CGFloat = 0
+    ) -> Int? {
+        for slotIndex in slotFrames.keys.sorted() {
+            guard let frame = slotFrames[slotIndex] else { continue }
+            if rectContainsInclusive(frame, point: pointInWindow, edgeSlop: edgeSlop) {
+                return slotIndex
+            }
+        }
+        return nil
+    }
+
+    /// Hit-tests `pointInWindow` (AppKit bottom-left window coordinates) against injected top-left slot frames
+    /// measured inside a container of height `windowHeight`.
+    public static func hitTestSlotIndex(
+        at pointInWindow: CGPoint,
+        topLeftSlotFrames: [Int: CGRect],
+        windowHeight: CGFloat,
+        edgeSlop: CGFloat = 0
+    ) -> Int? {
+        let windowFrames = appKitWindowSlotFrames(
+            fromTopLeftSlotFrames: topLeftSlotFrames,
+            windowHeight: windowHeight
+        )
+        return hitTestSlotIndex(at: pointInWindow, slotFrames: windowFrames, edgeSlop: edgeSlop)
+    }
+
+    /// Volume step actions and media transport actions keep the notch panel open while the pointer remains
+    /// in the expanded keep-alive region so users can repeat them without re-opening the panel.
+    public static func keepsPanelOpenAfterAction(_ action: SystemQuickAction) -> Bool {
+        switch action {
+        case .volumeUp, .volumeDown, .mediaPrevious, .mediaPlayPause, .mediaNext:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Resolves `item` (including `.slotReference`) against `profile` and returns `true` when triggering the slot
+    /// should keep the notch panel open while the pointer remains in the expanded region.
+    public static func keepsPanelOpenAfterSlotTrigger(
+        item: BarItem?,
+        in profile: ChocliftWorkspaceProfile
+    ) -> Bool {
+        guard let item else { return false }
+        switch profile.resolveBarItem(item) {
+        case .resolved(_, _, _, _, _, let resolvedItem):
+            if case .systemAction(let action, _, _) = resolvedItem.kind {
+                return keepsPanelOpenAfterAction(action)
+            }
+            return false
+        case .missing:
+            return false
+        }
+    }
 }
 
 // MARK: - Pure Show / Hide Hover Timing State Machine

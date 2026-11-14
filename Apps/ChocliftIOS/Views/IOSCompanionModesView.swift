@@ -399,8 +399,9 @@ public struct IOSChocolateBarSurfaceView: View {
             case .macApp(_, _, _, let symbol):
                 DataImageView(pngData: iconData, fallbackSymbol: symbol, tint: palette.secondaryText)
             case .shortcut(_, let emoji, _), .website(_, _, let emoji, _, _),
-                 .flow(_, _, let emoji, _, _), .soundboard(_, _, let emoji, _):
-                Text(emoji).font(.system(size: launcherIconSide * 0.8))
+                 .flow(_, _, let emoji, _, _), .soundboard(_, _, let emoji, _),
+                 .snippet(_, _, let emoji, _):
+                Text(emoji.isEmpty ? "📝" : emoji).font(.system(size: launcherIconSide * 0.8))
             case .systemAction(let action, _, _):
                 Image(systemName: action.sfSymbol)
                     .resizable().scaledToFit().padding(12).foregroundStyle(palette.accent)
@@ -1888,6 +1889,15 @@ public struct IOSGesturePadSurfaceView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                ForEach(SystemQuickAction.allCases) { action in
+                                    Button {
+                                        client.setGestureBinding(gesture, action: action)
+                                    } label: {
+                                        Label(action.title(in: lang), systemImage: action.sfSymbol)
+                                    }
+                                }
+                            }
                             .accessibilityIdentifier("ios-quick-gesture-\(gesture.rawValue)")
                         }
                     }
@@ -2167,18 +2177,86 @@ public struct IOSNowPlayingPage: View {
             ScrollView {
                 VStack(spacing: 24) {
                     VStack(spacing: 12) {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 56, weight: .light))
-                            .foregroundStyle(palette.accent)
-                            .frame(height: 100)
-                        Text(state.nowPlaying?.title ?? state.nowPlaying?.appName ?? L10n.tr("未在播放", "Nothing playing", language: lang))
-                            .font(ChocType.title).foregroundStyle(palette.primaryText)
-                            .multilineTextAlignment(.center)
-                        if let artist = state.nowPlaying?.artist {
-                            Text(artist).font(ChocType.body).foregroundStyle(palette.secondaryText)
+                        if let iconData = client.cachedAppIconData(forBundleIdentifier: state.nowPlaying?.bundleIdentifier),
+                           let appIconImage = DataImageView.swiftUIImage(from: iconData) {
+                            appIconImage
+                                .renderingMode(.original)
+                                .resizable()
+                                .interpolation(.high)
+                                .scaledToFit()
+                                .frame(width: 80, height: 80)
+                                .frame(height: 100)
+                                .accessibilityLabel(resolvedPlayerName ?? L10n.tr("播放器图标", "Player app icon", language: lang))
+                                .accessibilityIdentifier("ios-player-app-icon")
+                        } else {
+                            Image(systemName: "music.note")
+                                .font(.system(size: 56, weight: .light))
+                                .foregroundStyle(palette.accent)
+                                .frame(height: 100)
+                                .accessibilityIdentifier("ios-player-generic-icon")
                         }
-                        if state.nowPlaying?.title != nil, let source = state.nowPlaying?.appName {
-                            Text(source).font(ChocType.caption).foregroundStyle(palette.secondaryText)
+
+                        if let title = state.nowPlaying?.title {
+                            Text(title)
+                                .font(ChocType.title).foregroundStyle(palette.primaryText)
+                                .multilineTextAlignment(.center)
+                            if let artist = state.nowPlaying?.artist {
+                                Text(artist).font(ChocType.body).foregroundStyle(palette.secondaryText)
+                            }
+                            if let source = resolvedPlayerName {
+                                if canActivatePlayerApp {
+                                    Button {
+                                        _ = client.activateNowPlayingApp()
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Text(source)
+                                            Image(systemName: "arrow.up.forward.app")
+                                                .font(.system(size: 11, weight: .semibold))
+                                        }
+                                        .font(ChocType.caption.weight(.medium))
+                                        .foregroundStyle(palette.accent)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(source)
+                                    .accessibilityHint(L10n.tr("在 Mac 上激活 \(source)", "Activate \(source) on Mac", language: lang))
+                                    .accessibilityIdentifier("ios-player-activate-app")
+                                } else {
+                                    Text(source).font(ChocType.caption).foregroundStyle(palette.secondaryText)
+                                }
+                            }
+                        } else if let source = resolvedPlayerName {
+                            if canActivatePlayerApp {
+                                Button {
+                                    _ = client.activateNowPlayingApp()
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text(source)
+                                        Image(systemName: "arrow.up.forward.app")
+                                            .font(.system(size: 14, weight: .semibold))
+                                    }
+                                    .font(ChocType.title)
+                                    .foregroundStyle(palette.primaryText)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(source)
+                                .accessibilityHint(L10n.tr("在 Mac 上激活 \(source)", "Activate \(source) on Mac", language: lang))
+                                .accessibilityIdentifier("ios-player-activate-app")
+                            } else {
+                                Text(source)
+                                    .font(ChocType.title).foregroundStyle(palette.primaryText)
+                                    .multilineTextAlignment(.center)
+                            }
+                        } else {
+                            Text(L10n.tr("未在播放", "Nothing playing", language: lang))
+                                .font(ChocType.title).foregroundStyle(palette.primaryText)
+                                .multilineTextAlignment(.center)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -2204,13 +2282,30 @@ public struct IOSNowPlayingPage: View {
                         }
                     }
 
-                    HStack(spacing: 24) {
-                        transport(.mediaPrevious, symbol: "backward.fill")
-                        transport(.mediaPlayPause, symbol: state.nowPlaying?.isPlaying == true ? "pause.fill" : "play.fill")
-                        transport(.mediaNext, symbol: "forward.fill")
+                    VStack(spacing: 8) {
+                        let supportsModes = state.nowPlaying?.supportsShuffleAndRepeat == true
+                        HStack(spacing: supportsModes ? 12 : 24) {
+                            if supportsModes {
+                                shuffleButton
+                            }
+                            transport(.mediaPrevious, symbol: "backward.fill")
+                            transport(.mediaPlayPause, symbol: state.nowPlaying?.isPlaying == true ? "pause.fill" : "play.fill")
+                            transport(.mediaNext, symbol: "forward.fill")
+                            if supportsModes {
+                                repeatButton
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+
+                        if let modeError = client.lastNowPlayingModeError {
+                            Label(modeError, systemImage: "exclamationmark.triangle.fill")
+                                .font(ChocType.caption)
+                                .foregroundStyle(palette.statusFailure)
+                                .multilineTextAlignment(.center)
+                                .accessibilityIdentifier("ios-player-mode-error")
+                        }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
 
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -2225,17 +2320,49 @@ public struct IOSNowPlayingPage: View {
                             .accessibilityLabel(L10n.tr("音量", "Volume", language: lang))
                             .accessibilityIdentifier("ios-player-volume")
                         }
+                        let isBrightnessDisabled = CompanionBrightnessControlPolicy.isSliderDisabled(
+                            isConnected: client.connectionState.isConnected,
+                            isBrightnessAvailable: state.isBrightnessAvailable
+                        )
                         VStack(alignment: .leading, spacing: 4) {
                             Label(L10n.tr("亮度", "Brightness", language: lang), systemImage: "sun.max")
                                 .font(ChocType.caption)
-                            Slider(value: Binding(get: { brightnessPreview ?? state.brightness }, set: { brightnessPreview = $0 }), in: 0...1, onEditingChanged: { editing in
+                                .foregroundStyle(isBrightnessDisabled ? palette.secondaryText : palette.primaryText)
+                            Slider(value: Binding(
+                                get: { isBrightnessDisabled ? state.brightness : (brightnessPreview ?? state.brightness) },
+                                set: { newValue in
+                                    guard !isBrightnessDisabled else { return }
+                                    brightnessPreview = newValue
+                                }
+                            ), in: 0...1, onEditingChanged: { editing in
+                                guard !isBrightnessDisabled else {
+                                    brightnessPreview = nil
+                                    return
+                                }
                                 if !editing, let level = brightnessPreview {
                                     client.setControlLevel(kind: .brightness, level: level)
                                     brightnessPreview = nil
                                 }
                             })
+                            .disabled(isBrightnessDisabled)
                             .accessibilityLabel(L10n.tr("亮度", "Brightness", language: lang))
                             .accessibilityIdentifier("ios-player-brightness")
+                            if let unavailableCaption = CompanionBrightnessControlPolicy.unavailableCaption(
+                                isConnected: client.connectionState.isConnected,
+                                isBrightnessAvailable: state.isBrightnessAvailable,
+                                language: lang
+                            ) {
+                                Text(unavailableCaption)
+                                    .font(ChocType.caption)
+                                    .foregroundStyle(palette.secondaryText)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .accessibilityIdentifier("ios-player-brightness-unavailable-caption")
+                            }
+                        }
+                        .onChange(of: isBrightnessDisabled) { _, disabled in
+                            if disabled {
+                                brightnessPreview = nil
+                            }
                         }
                         Button { showAudioOutputs = true } label: {
                             HStack(spacing: 12) {
@@ -2261,9 +2388,87 @@ public struct IOSNowPlayingPage: View {
         }
         .tint(palette.accent)
         .sheet(isPresented: $showAudioOutputs) { IOSAudioOutputPickerSheet(client: client) }
-        .onAppear { client.requestControlStripState() }
+        .onAppear {
+            client.requestControlStripState()
+            client.requestNowPlayingAppIconIfNeeded()
+        }
         .onDisappear { client.cancelNowPlayingScrub() }
         .accessibilityIdentifier("ios-now-playing-page")
+    }
+
+    private var canActivatePlayerApp: Bool {
+        guard let bundleID = state.nowPlaying?.bundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return false
+        }
+        return !bundleID.isEmpty
+    }
+
+    private var resolvedPlayerName: String? {
+        if let appName = state.nowPlaying?.appName, !appName.isEmpty {
+            return appName
+        }
+        guard let bundleID = state.nowPlaying?.bundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !bundleID.isEmpty else {
+            return nil
+        }
+        if let target = MacMediaPlaybackModeTargetPlayer(bundleIdentifier: bundleID) {
+            return target.displayName
+        }
+        return client.profile.resolvedAppDisplayName(
+            forBundleIdentifier: bundleID,
+            preferredAppName: nil,
+            recentApps: client.recentApps,
+            catalogApps: client.macCatalogApps
+        )
+    }
+
+    private var shuffleButton: some View {
+        let isOn = state.nowPlaying?.shuffleEnabled == true
+        return Button {
+            _ = client.toggleNowPlayingShuffle()
+        } label: {
+            Image(systemName: "shuffle")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(isOn ? palette.accent : palette.secondaryText)
+                .frame(width: 44, height: 44)
+                .background(
+                    Circle()
+                        .fill(isOn ? palette.accent.opacity(0.16) : Color.clear)
+                )
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.tr("随机播放", "Shuffle", language: lang))
+        .accessibilityValue(isOn ? L10n.tr("开启", "On", language: lang) : L10n.tr("关闭", "Off", language: lang))
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+        .accessibilityIdentifier("ios-player-shuffle")
+    }
+
+    private var repeatButton: some View {
+        let mode = state.nowPlaying?.repeatMode ?? .off
+        let isActive = mode.isActive
+        return Button {
+            _ = client.cycleNowPlayingRepeat()
+        } label: {
+            Image(systemName: mode.symbolName)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(isActive ? palette.accent : palette.secondaryText)
+                .frame(width: 44, height: 44)
+                .background(
+                    Circle()
+                        .fill(isActive ? palette.accent.opacity(0.16) : Color.clear)
+                )
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.tr("循环播放", "Repeat", language: lang))
+        .accessibilityValue(mode.accessibilityValueText(in: lang))
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .accessibilityIdentifier("ios-player-repeat")
     }
 
     private func transport(_ action: SystemQuickAction, symbol: String) -> some View {
@@ -2534,44 +2739,79 @@ public struct IOSPersistentControlStripView: View {
     // MARK: - Brightness (Drag to Set Main Display Brightness)
 
     private var brightnessControlCluster: some View {
-        let available = state.isBrightnessAvailable || !client.connectionState.isConnected
-        let pct = ControlStripLevel.percentage(for: effectiveBrightness)
+        let isDisabled = CompanionBrightnessControlPolicy.isSliderDisabled(
+            isConnected: client.connectionState.isConnected,
+            isBrightnessAvailable: state.isBrightnessAvailable
+        )
+        let available = !isDisabled
+        let displayedBrightness = isDisabled ? ControlStripLevel.clamp(state.brightness) : effectiveBrightness
+        let pct = ControlStripLevel.percentage(for: displayedBrightness)
+        let unavailableCaption = CompanionBrightnessControlPolicy.unavailableCaption(
+            isConnected: client.connectionState.isConnected,
+            isBrightnessAvailable: state.isBrightnessAvailable,
+            language: lang
+        )
 
-        return HStack(spacing: 6) {
-            Image(systemName: effectiveBrightness < 0.45 ? "sun.min.fill" : "sun.max.fill")
-                .font(ChocType.caption)
-                .foregroundStyle(available ? palette.accentEmphasis : palette.secondaryText)
-                .frame(width: 22, height: 34)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: displayedBrightness < 0.45 ? "sun.min.fill" : "sun.max.fill")
+                    .font(ChocType.caption)
+                    .foregroundStyle(available ? palette.accentEmphasis : palette.secondaryText)
+                    .frame(width: 22, height: 34)
 
-            ControlStripDragSlider(
-                level: effectiveBrightness,
-                fillColor: available ? palette.accentEmphasis : palette.secondaryText.opacity(0.4),
-                palette: palette,
-                accessibilityLabel: L10n.tr("主显示器亮度", "Main Display Brightness", language: lang),
-                accessibilityIdentifier: "ios-strip-brightness-slider",
-                onDragChanged: { newLevel in
-                    brightnessDragLevel = newLevel
-                    let now = ProcessInfo.processInfo.systemUptime
-                    _ = brightnessThrottle.updateDrag(to: newLevel, at: now)
-                },
-                onDragEnded: { finalLevel in
-                    let now = ProcessInfo.processInfo.systemUptime
-                    let committed = brightnessThrottle.endDrag(at: finalLevel, at: now)
-                    client.setControlLevel(kind: .brightness, level: committed)
-                    brightnessDragLevel = nil
-                },
-                onAccessibilityStep: { stepped in
-                    client.setControlLevel(kind: .brightness, level: stepped)
-                }
-            )
+                ControlStripDragSlider(
+                    level: displayedBrightness,
+                    fillColor: available ? palette.accentEmphasis : palette.secondaryText.opacity(0.4),
+                    palette: palette,
+                    accessibilityLabel: L10n.tr("主显示器亮度", "Main Display Brightness", language: lang),
+                    accessibilityIdentifier: "ios-strip-brightness-slider",
+                    disabledAccessibilityValue: unavailableCaption,
+                    onDragChanged: { newLevel in
+                        guard !isDisabled else { return }
+                        brightnessDragLevel = newLevel
+                        let now = ProcessInfo.processInfo.systemUptime
+                        _ = brightnessThrottle.updateDrag(to: newLevel, at: now)
+                    },
+                    onDragEnded: { finalLevel in
+                        guard !isDisabled else {
+                            brightnessDragLevel = nil
+                            brightnessThrottle.reset()
+                            return
+                        }
+                        let now = ProcessInfo.processInfo.systemUptime
+                        let committed = brightnessThrottle.endDrag(at: finalLevel, at: now)
+                        client.setControlLevel(kind: .brightness, level: committed)
+                        brightnessDragLevel = nil
+                    },
+                    onAccessibilityStep: { stepped in
+                        guard !isDisabled else { return }
+                        client.setControlLevel(kind: .brightness, level: stepped)
+                    }
+                )
+                .disabled(isDisabled)
 
-            Text("\(pct)%")
-                .font(ChocType.micro)
-                .monospacedDigit()
-                .foregroundStyle(palette.secondaryText)
-                .frame(minWidth: 30, alignment: .trailing)
+                Text(available ? "\(pct)%" : "—")
+                    .font(ChocType.micro)
+                    .monospacedDigit()
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(minWidth: 30, alignment: .trailing)
+            }
+            .opacity(available ? 1.0 : 0.5)
+
+            if let unavailableCaption {
+                Text(unavailableCaption)
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("ios-strip-brightness-unavailable-caption")
+            }
         }
-        .opacity(available ? 1.0 : 0.6)
+        .onChange(of: isDisabled) { _, disabled in
+            if disabled {
+                brightnessDragLevel = nil
+                brightnessThrottle.reset()
+            }
+        }
     }
 
     // MARK: - Now Playing (Title or App Name, Scrubbable Progress for Spotify/Music, Play/Pause, Next)
@@ -2832,11 +3072,14 @@ public struct IOSPersistentControlStripView: View {
 // MARK: - Tactile Throttled Drag Slider
 
 private struct ControlStripDragSlider: View {
+    @Environment(\.isEnabled) private var isEnabled
+
     let level: Double
     let fillColor: Color
     let palette: ChocPalette
     let accessibilityLabel: String
     let accessibilityIdentifier: String
+    var disabledAccessibilityValue: String? = nil
     let onDragChanged: (Double) -> Void
     let onDragEnded: (Double) -> Void
     let onAccessibilityStep: (Double) -> Void
@@ -2877,8 +3120,8 @@ private struct ControlStripDragSlider: View {
                         Circle()
                             .strokeBorder(fillColor, lineWidth: 2)
                     )
-                    .shadow(color: palette.primaryText.opacity(0.12), radius: 2, x: 0, y: 1)
-                    .scaleEffect(isDragging ? 1.14 : 1.0)
+                    .shadow(color: palette.primaryText.opacity(isEnabled ? 0.12 : 0.0), radius: 2, x: 0, y: 1)
+                    .scaleEffect(isEnabled && isDragging ? 1.14 : 1.0)
                     .animation(.easeOut(duration: 0.12), value: isDragging)
                     .offset(x: thumbX)
             }
@@ -2887,23 +3130,37 @@ private struct ControlStripDragSlider: View {
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .updating($isDragging) { _, state, _ in
+                        guard isEnabled else { return }
                         state = true
                     }
                     .onChanged { value in
+                        guard isEnabled else { return }
                         let normalized = ControlStripLevel.clamp(Double(value.location.x / width))
                         activeDraggedLevel = normalized
                         onDragChanged(normalized)
                     }
                     .onEnded { value in
+                        guard isEnabled else {
+                            activeDraggedLevel = nil
+                            return
+                        }
                         let normalized = ControlStripLevel.clamp(Double(value.location.x / width))
                         activeDraggedLevel = nil
                         onDragEnded(normalized)
-                    }
+                    },
+                including: isEnabled ? .all : .none
             )
             .onChange(of: isDragging) { _, dragging in
                 if !dragging, let pending = activeDraggedLevel {
                     activeDraggedLevel = nil
-                    onDragEnded(pending)
+                    if isEnabled {
+                        onDragEnded(pending)
+                    }
+                }
+            }
+            .onChange(of: isEnabled) { _, enabled in
+                if !enabled {
+                    activeDraggedLevel = nil
                 }
             }
         }
@@ -2911,8 +3168,13 @@ private struct ControlStripDragSlider: View {
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier(accessibilityIdentifier)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue("\(ControlStripLevel.percentage(for: level))%")
+        .accessibilityValue(
+            isEnabled
+                ? "\(ControlStripLevel.percentage(for: level))%"
+                : (disabledAccessibilityValue ?? "\(ControlStripLevel.percentage(for: level))%")
+        )
         .accessibilityAdjustableAction { direction in
+            guard isEnabled else { return }
             switch direction {
             case .increment:
                 onAccessibilityStep(ControlStripLevel.clamp(level + 0.05))

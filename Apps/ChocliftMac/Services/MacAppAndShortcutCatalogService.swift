@@ -285,7 +285,10 @@ public final class MacAppAndShortcutCatalogService {
         }.value
     }
 
-    public func runShortcut(named shortcutName: String) async -> (success: Bool, message: String) {
+    public func runShortcut(
+        named shortcutName: String,
+        allowSchemeFallback: Bool = true
+    ) async -> (success: Bool, message: String) {
         let trimmed = shortcutName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return (false, L10n.tr("快捷指令名称为空", "Shortcut name is empty"))
@@ -301,7 +304,7 @@ public final class MacAppAndShortcutCatalogService {
             proc.executableURL = shortcutsBinary
             proc.arguments = ["run", trimmed]
             let errPipe = Pipe()
-            proc.standardOutput = Pipe()
+            proc.standardOutput = FileHandle.nullDevice
             proc.standardError = errPipe
 
             do {
@@ -319,8 +322,10 @@ public final class MacAppAndShortcutCatalogService {
             return (true, L10n.tr("已运行快捷指令「\(trimmed)」", "Ran Shortcut \"\(trimmed)\""))
         }
 
-        // Fallback to shortcuts:// URL scheme (opens Shortcuts app if user hasn't created it yet or needs UI prompt)
-        if let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+        // Fallback to shortcuts:// URL scheme only when the CLI binary could not be launched
+        // and the caller permits fire-and-forget URL scheme invocation.
+        if allowSchemeFallback && !cliResult.ran,
+           let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
            let schemeURL = URL(string: "shortcuts://run-shortcut?name=\(encoded)") {
             let opened = NSWorkspace.shared.open(schemeURL)
             if opened {
@@ -337,20 +342,22 @@ public final class MacAppAndShortcutCatalogService {
     // MARK: - Website Bookmarks + Smart Existing Tab Switcher
 
     public func openWebsite(rawURL: String, switchExistingTab: Bool) async -> (success: Bool, message: String) {
-        let normalizedString: String = {
-            let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.contains("://") {
-                return trimmed
-            }
-            return "https://\(trimmed)"
-        }()
-
-        guard let targetURL = URL(string: normalizedString) else {
+        let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "https://", trimmed != "http://" else {
             return (false, L10n.tr("无效的网址：\(rawURL)", "Invalid URL: \(rawURL)"))
         }
 
-        if switchExistingTab, let host = targetURL.host()?.lowercased() {
-            let cleanedHost = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        let normalizedString = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+
+        guard let targetURL = URL(string: normalizedString),
+              let host = targetURL.host(),
+              !host.isEmpty else {
+            return (false, L10n.tr("无效的网址：\(rawURL)", "Invalid URL: \(rawURL)"))
+        }
+
+        if switchExistingTab {
+            let loweredHost = host.lowercased()
+            let cleanedHost = loweredHost.hasPrefix("www.") ? String(loweredHost.dropFirst(4)) : loweredHost
             let runningBundleIDs = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
             let switched = await Task.detached(priority: .userInitiated) {
                 Self.trySwitchExistingBrowserTab(matchingHost: cleanedHost, runningBundleIDs: runningBundleIDs)
@@ -363,8 +370,8 @@ public final class MacAppAndShortcutCatalogService {
 
         let ok = NSWorkspace.shared.open(targetURL)
         return ok
-            ? (true, L10n.tr("已打开网页 \(targetURL.host() ?? normalizedString)", "Opened \(targetURL.host() ?? normalizedString)"))
-            : (false, L10n.tr("无法打开网址", "Failed to open URL"))
+            ? (true, L10n.tr("已打开网页 \(host)", "Opened \(host)"))
+            : (false, L10n.tr("无法打开网址：\(normalizedString)", "Failed to open URL: \(normalizedString)"))
     }
 
     nonisolated private static func trySwitchExistingBrowserTab(matchingHost: String, runningBundleIDs: Set<String>) -> Bool {

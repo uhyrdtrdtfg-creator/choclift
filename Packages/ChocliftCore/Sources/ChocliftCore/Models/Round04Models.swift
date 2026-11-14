@@ -563,6 +563,10 @@ public struct MacAudioRawDeviceRecord: Equatable, Hashable, Sendable {
     public var isPrivateAggregate: Bool
     public var canBeDefaultOutput: Bool
     public var modelUID: String?
+    public var inputChannelCount: Int
+    public var canBeDefaultInput: Bool
+    public var inputDataSourceCode: UInt32?
+    public var hasHeadsetTerminalStream: Bool
 
     public init(
         audioObjectID: UInt32,
@@ -573,20 +577,29 @@ public struct MacAudioRawDeviceRecord: Equatable, Hashable, Sendable {
         isHidden: Bool = false,
         isPrivateAggregate: Bool = false,
         canBeDefaultOutput: Bool = true,
-        modelUID: String? = nil
+        modelUID: String? = nil,
+        inputChannelCount: Int = 0,
+        canBeDefaultInput: Bool = true,
+        inputDataSourceCode: UInt32? = nil,
+        hasHeadsetTerminalStream: Bool = false
     ) {
         let cleanedUID = uid?.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanedModel = modelUID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackName = (outputChannelCount <= 0 && inputChannelCount > 0) ? "Audio Input" : "Audio Output"
         self.audioObjectID = audioObjectID
         self.uid = (cleanedUID?.isEmpty == false) ? cleanedUID : nil
-        self.name = cleanedName.isEmpty ? "Audio Output" : cleanedName
+        self.name = cleanedName.isEmpty ? fallbackName : cleanedName
         self.transportKind = transportKind
         self.outputChannelCount = max(0, outputChannelCount)
         self.isHidden = isHidden
         self.isPrivateAggregate = isPrivateAggregate
         self.canBeDefaultOutput = canBeDefaultOutput
         self.modelUID = (cleanedModel?.isEmpty == false) ? cleanedModel : nil
+        self.inputChannelCount = max(0, inputChannelCount)
+        self.canBeDefaultInput = canBeDefaultInput
+        self.inputDataSourceCode = inputDataSourceCode
+        self.hasHeadsetTerminalStream = hasHeadsetTerminalStream
     }
 }
 
@@ -1220,6 +1233,598 @@ public enum MacAudioOutputSwitchEngine {
             readBackSystemOutputObjectID: readBackSysObjectID,
             movedProcessCount: movedProcessCount,
             unmovedAppNames: unmovedAppsOrdered
+        )
+    }
+}
+
+// MARK: - 2B. Mac Audio Input (Microphone) Picker Models & Switch Engine
+
+public enum MacAudioInputKind: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
+    case builtInMic
+    case headsetMic
+    case usbMic
+    case displayMic
+    case otherMic
+
+    /// CoreAudio 4-char data-source / terminal codes for external or headset microphones.
+    public static let headsetMicrophoneFourCC: UInt32 = 0x686D6963 // 'hmic'
+    public static let externalMicrophoneFourCC: UInt32 = 0x656D6963 // 'emic'
+    public static let internalMicrophoneFourCC: UInt32 = 0x696D6963 // 'imic'
+
+    public var sfSymbol: String {
+        switch self {
+        case .builtInMic:
+            return "mic.fill"
+        case .headsetMic:
+            return "headphones"
+        case .usbMic:
+            return "cable.connector"
+        case .displayMic:
+            return "display"
+        case .otherMic:
+            return "mic.fill"
+        }
+    }
+
+    public func label(in language: AppLanguage = .system) -> String {
+        switch self {
+        case .builtInMic:
+            return L10n.tr("内置麦克风", "Built-in Mic", language: language)
+        case .headsetMic:
+            return L10n.tr("耳机麦克风", "Headset Mic", language: language)
+        case .usbMic:
+            return L10n.tr("USB 麦克风", "USB Mic", language: language)
+        case .displayMic:
+            return L10n.tr("显示器麦克风", "Display Mic", language: language)
+        case .otherMic:
+            return L10n.tr("麦克风输入", "Audio Input", language: language)
+        }
+    }
+
+    public static func classify(
+        transportKind: MacAudioTransportKind,
+        uid: String? = nil,
+        name: String,
+        modelUID: String? = nil,
+        inputDataSourceCode: UInt32? = nil,
+        hasHeadsetTerminalStream: Bool = false
+    ) -> MacAudioInputKind {
+        if transportKind == .usb {
+            return .usbMic
+        }
+        if transportKind == .bluetooth {
+            return .headsetMic
+        }
+        if hasHeadsetTerminalStream ||
+            inputDataSourceCode == headsetMicrophoneFourCC ||
+            inputDataSourceCode == externalMicrophoneFourCC {
+            return .headsetMic
+        }
+
+        let lowerUID = (uid ?? "").lowercased()
+        let lowerModel = (modelUID ?? "").lowercased()
+        let lowerName = name.lowercased()
+
+        let looksLikeHeadsetOrJack =
+            lowerUID.contains("headphoneinput") ||
+            lowerUID.contains("headset") ||
+            lowerUID.contains("externalmic") ||
+            lowerModel.contains("headset") ||
+            lowerModel.contains("headphone") ||
+            lowerModel.contains("external mic") ||
+            lowerModel.contains("jack") ||
+            lowerName.contains("headset") ||
+            lowerName.contains("external microphone") ||
+            lowerName.contains("earpods") ||
+            lowerName.contains("airpods") ||
+            lowerName.contains("外置麦克风") ||
+            lowerName.contains("耳机")
+
+        if transportKind == .builtIn {
+            if inputDataSourceCode == internalMicrophoneFourCC && !looksLikeHeadsetOrJack {
+                return .builtInMic
+            }
+            return looksLikeHeadsetOrJack ? .headsetMic : .builtInMic
+        }
+
+        if transportKind == .displayAudio {
+            return .displayMic
+        }
+
+        if looksLikeHeadsetOrJack {
+            return .headsetMic
+        }
+        if lowerName.contains("usb") || lowerUID.contains("usb") {
+            return .usbMic
+        }
+        return .otherMic
+    }
+}
+
+public struct MacAudioInputDevice: Codable, Equatable, Hashable, Identifiable, Sendable {
+    public var id: String
+    public var audioObjectID: UInt32
+    public var name: String
+    public var transportKind: MacAudioTransportKind
+    public var inputKind: MacAudioInputKind
+    public var isSelectable: Bool
+    public var modelUID: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case audioObjectID
+        case name
+        case transportKind
+        case inputKind
+        case isSelectable
+        case modelUID
+    }
+
+    public init(
+        id: String,
+        audioObjectID: UInt32,
+        name: String,
+        transportKind: MacAudioTransportKind = .virtualOrOther,
+        inputKind: MacAudioInputKind? = nil,
+        isSelectable: Bool = true,
+        modelUID: String? = nil
+    ) {
+        let trimmedID = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedModel = modelUID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedName = trimmedName.isEmpty ? "Audio Input" : trimmedName
+        let cleanedModel = (trimmedModel?.isEmpty == false) ? trimmedModel : nil
+        self.id = trimmedID.isEmpty
+            ? Self.fallbackID(transportKind: transportKind, name: resolvedName)
+            : trimmedID
+        self.audioObjectID = audioObjectID
+        self.name = resolvedName
+        self.transportKind = transportKind
+        self.inputKind = inputKind ?? MacAudioInputKind.classify(
+            transportKind: transportKind,
+            uid: trimmedID.isEmpty ? nil : trimmedID,
+            name: resolvedName,
+            modelUID: cleanedModel
+        )
+        self.isSelectable = isSelectable
+        self.modelUID = cleanedModel
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rawID = try container.decode(String.self, forKey: .id)
+        let rawObjectID = try container.decode(UInt32.self, forKey: .audioObjectID)
+        let rawName = try container.decode(String.self, forKey: .name)
+        let rawTransport = try container.decode(MacAudioTransportKind.self, forKey: .transportKind)
+        let rawInputKind = try container.decodeIfPresent(MacAudioInputKind.self, forKey: .inputKind)
+        let rawSelectable = try container.decodeIfPresent(Bool.self, forKey: .isSelectable) ?? true
+        let rawModel = try container.decodeIfPresent(String.self, forKey: .modelUID)
+        self.init(
+            id: rawID,
+            audioObjectID: rawObjectID,
+            name: rawName,
+            transportKind: rawTransport,
+            inputKind: rawInputKind,
+            isSelectable: rawSelectable,
+            modelUID: rawModel
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(audioObjectID, forKey: .audioObjectID)
+        try container.encode(name, forKey: .name)
+        try container.encode(transportKind, forKey: .transportKind)
+        try container.encode(inputKind, forKey: .inputKind)
+        if !isSelectable {
+            try container.encode(false, forKey: .isSelectable)
+        }
+        if let modelUID, !modelUID.isEmpty {
+            try container.encode(modelUID, forKey: .modelUID)
+        }
+    }
+
+    public var sfSymbol: String {
+        inputKind.sfSymbol
+    }
+
+    public func inputSubtitle(in language: AppLanguage = .system) -> String {
+        inputKind.label(in: language)
+    }
+
+    /// Stable identity across `coreaudiod` restarts used ONLY when an input device lacks `kAudioDevicePropertyDeviceUID`.
+    public static func fallbackID(transportKind: MacAudioTransportKind, name: String) -> String {
+        let normalizedName = MacAudioOutputDevice.normalizeDisplayNameKey(name)
+        let safeName = normalizedName.isEmpty ? "unnamed" : normalizedName
+        return "fallback-input:\(transportKind.rawValue):\(safeName)"
+    }
+}
+
+public struct MacAudioInputSnapshot: Equatable, Sendable {
+    public var devices: [MacAudioInputDevice]
+    public var selectedID: String?
+    public var canSwitch: Bool
+
+    public init(
+        devices: [MacAudioInputDevice],
+        selectedID: String?,
+        canSwitch: Bool
+    ) {
+        self.devices = devices
+        self.selectedID = ControlStripState.resolvedSelectedAudioInputDeviceID(
+            selectedID: selectedID,
+            devices: devices
+        )
+        self.canSwitch = canSwitch
+    }
+}
+
+public struct MacAudioInputSwitchResult: Equatable, Sendable {
+    public var success: Bool
+    public var title: String
+    public var detail: String
+    public var snapshot: MacAudioInputSnapshot
+    public var defaultInputStatus: Int32?
+    public var readBackDefaultInputObjectID: UInt32
+
+    public init(
+        success: Bool,
+        title: String,
+        detail: String,
+        snapshot: MacAudioInputSnapshot,
+        defaultInputStatus: Int32? = nil,
+        readBackDefaultInputObjectID: UInt32 = 0
+    ) {
+        self.success = success
+        self.title = title
+        self.detail = detail
+        self.snapshot = snapshot
+        self.defaultInputStatus = defaultInputStatus
+        self.readBackDefaultInputObjectID = readBackDefaultInputObjectID
+    }
+}
+
+public protocol MacAudioInputHardwareDriver {
+    func isDefaultInputSettable() -> (isSettable: Bool, status: Int32)
+    func readDefaultInputDevice() -> (objectID: UInt32, status: Int32)
+    func writeDefaultInputDevice(_ objectID: UInt32) -> Int32
+    func readLiveDeviceRecords() -> [MacAudioRawDeviceRecord]
+    func translateUIDToLiveObjectID(_ uid: String) -> UInt32?
+}
+
+public enum MacAudioInputSwitchEngine {
+    public struct ResolvedTarget: Equatable, Sendable {
+        public let record: MacAudioRawDeviceRecord
+        public let resolvedID: String
+    }
+
+    /// Mirrors macOS Sound menu visibility for CoreAudio microphone input records:
+    /// - Always includes the live default input device if `inputChannelCount > 0` so the checkmark matches reality.
+    /// - Excludes private/auto-aggregate system devices (`CADefaultDeviceAggregate`, `isPrivateAggregate`, `tap-`, etc.).
+    /// - Excludes `isHidden` devices unless they are the live default input.
+    /// - Includes visible input devices (`inputChannelCount > 0 && canBeDefaultInput`).
+    public static func shouldIncludeCoreAudioInputRecord(
+        _ record: MacAudioRawDeviceRecord,
+        defaultInputObjectID: UInt32
+    ) -> Bool {
+        guard record.audioObjectID != 0 else { return false }
+
+        let isLiveDefault = (defaultInputObjectID != 0 && record.audioObjectID == defaultInputObjectID)
+        if isLiveDefault {
+            return record.inputChannelCount > 0
+        }
+
+        if MacAudioOutputSwitchEngine.isSystemHiddenAggregate(record) {
+            return false
+        }
+
+        if record.isHidden {
+            return false
+        }
+
+        return record.inputChannelCount > 0 && record.canBeDefaultInput
+    }
+
+    public static func isCoreAudioInputRecordDirectlySelectable(_ record: MacAudioRawDeviceRecord) -> Bool {
+        record.audioObjectID != 0 && record.inputChannelCount > 0 && record.canBeDefaultInput
+    }
+
+    public static func enumerateSnapshot(using driver: MacAudioInputHardwareDriver) -> MacAudioInputSnapshot {
+        let defaultIn = driver.readDefaultInputDevice().objectID
+        let defaultSettable = driver.isDefaultInputSettable().isSettable
+        let records = driver.readLiveDeviceRecords()
+        return enumerateSnapshot(
+            records: records,
+            defaultInputObjectID: defaultIn,
+            isDefaultInputSettable: defaultSettable
+        )
+    }
+
+    public static func enumerateSnapshot(
+        records: [MacAudioRawDeviceRecord],
+        defaultInputObjectID: UInt32,
+        isDefaultInputSettable: Bool
+    ) -> MacAudioInputSnapshot {
+        var inputs: [MacAudioInputDevice] = []
+        var indexByID: [String: Int] = [:]
+        var fallbackBaseCounts: [String: Int] = [:]
+        var resolvedSelectedID: String?
+
+        for record in records where shouldIncludeCoreAudioInputRecord(record, defaultInputObjectID: defaultInputObjectID) {
+            let stableID: String
+            if let uid = record.uid {
+                stableID = uid
+            } else {
+                let base = MacAudioInputDevice.fallbackID(
+                    transportKind: record.transportKind,
+                    name: record.name
+                )
+                let nextCount = (fallbackBaseCounts[base] ?? 0) + 1
+                fallbackBaseCounts[base] = nextCount
+                stableID = nextCount == 1 ? base : "\(base)#\(nextCount)"
+            }
+
+            let classifiedKind = MacAudioInputKind.classify(
+                transportKind: record.transportKind,
+                uid: record.uid,
+                name: record.name,
+                modelUID: record.modelUID,
+                inputDataSourceCode: record.inputDataSourceCode,
+                hasHeadsetTerminalStream: record.hasHeadsetTerminalStream
+            )
+
+            let canSelectDevice = isDefaultInputSettable && isCoreAudioInputRecordDirectlySelectable(record)
+            let candidate = MacAudioInputDevice(
+                id: stableID,
+                audioObjectID: record.audioObjectID,
+                name: record.name,
+                transportKind: record.transportKind,
+                inputKind: classifiedKind,
+                isSelectable: canSelectDevice,
+                modelUID: record.modelUID
+            )
+
+            if let existingIndex = indexByID[stableID] {
+                if record.audioObjectID == defaultInputObjectID {
+                    inputs[existingIndex] = candidate
+                    resolvedSelectedID = stableID
+                }
+                continue
+            }
+
+            indexByID[stableID] = inputs.count
+            inputs.append(candidate)
+
+            if defaultInputObjectID != 0 && record.audioObjectID == defaultInputObjectID {
+                resolvedSelectedID = stableID
+            }
+        }
+
+        let canSwitch = isDefaultInputSettable && inputs.contains(where: \.isSelectable)
+        return MacAudioInputSnapshot(
+            devices: inputs,
+            selectedID: resolvedSelectedID,
+            canSwitch: canSwitch
+        )
+    }
+
+    /// Resolves `requestedID` against live hardware input records:
+    /// 1. Matches by non-empty CoreAudio UID first.
+    /// 2. Falls back to `fallback-input:<transport>:<name>` ONLY for devices whose UID is missing.
+    /// Never matches by raw `AudioObjectID` so a stale object ID cannot select the wrong microphone.
+    public static func resolveTarget(
+        requestedID: String,
+        in records: [MacAudioRawDeviceRecord],
+        defaultInputObjectID: UInt32
+    ) -> ResolvedTarget? {
+        let trimmed = requestedID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let visibleInputRecords = records.filter { record in
+            shouldIncludeCoreAudioInputRecord(record, defaultInputObjectID: defaultInputObjectID)
+        }
+
+        // 1. Exact non-empty CoreAudio UID match first
+        let uidMatches = visibleInputRecords.filter { $0.uid == trimmed }
+        if let matched = uidMatches.first(where: { $0.audioObjectID == defaultInputObjectID }) ?? uidMatches.first {
+            return ResolvedTarget(record: matched, resolvedID: trimmed)
+        }
+
+        // 2. Stable transport+name fallback ONLY when UID is missing on the hardware device
+        var fallbackBaseCounts: [String: Int] = [:]
+        for record in visibleInputRecords where record.uid == nil {
+            let base = MacAudioInputDevice.fallbackID(
+                transportKind: record.transportKind,
+                name: record.name
+            )
+            let nextCount = (fallbackBaseCounts[base] ?? 0) + 1
+            fallbackBaseCounts[base] = nextCount
+            let candidateID = nextCount == 1 ? base : "\(base)#\(nextCount)"
+            if candidateID == trimmed {
+                return ResolvedTarget(record: record, resolvedID: candidateID)
+            }
+        }
+
+        return nil
+    }
+
+    /// Switches `kAudioHardwarePropertyDefaultInputDevice` ONLY after re-resolving by UID immediately before the set.
+    /// Does not fake per-app microphone routing or touch input gain; reports CoreAudio `OSStatus` on failure without moving selection.
+    public static func performSwitch(
+        requestedID: String,
+        language: AppLanguage = .system,
+        using driver: MacAudioInputHardwareDriver
+    ) -> MacAudioInputSwitchResult {
+        let settableCheck = driver.isDefaultInputSettable()
+        let previousDefault = driver.readDefaultInputDevice()
+        let liveRecords = driver.readLiveDeviceRecords()
+        let currentSnapshot = enumerateSnapshot(
+            records: liveRecords,
+            defaultInputObjectID: previousDefault.objectID,
+            isDefaultInputSettable: settableCheck.isSettable
+        )
+
+        guard settableCheck.isSettable else {
+            let statusNote = (settableCheck.status != 0) ? " (CoreAudio OSStatus \(settableCheck.status))" : ""
+            return MacAudioInputSwitchResult(
+                success: false,
+                title: L10n.tr("麦克风输入只读", "Microphone Input Read-Only", language: language),
+                detail: L10n.tr(
+                    "macOS 报告默认麦克风输入属性为只读，无法通过公开 CoreAudio 接口切换\(statusNote)。",
+                    "macOS reported the default microphone input property as read-only via public CoreAudio API\(statusNote).",
+                    language: language
+                ),
+                snapshot: currentSnapshot,
+                defaultInputStatus: settableCheck.status != 0 ? settableCheck.status : nil,
+                readBackDefaultInputObjectID: previousDefault.objectID
+            )
+        }
+
+        guard !currentSnapshot.devices.isEmpty else {
+            return MacAudioInputSwitchResult(
+                success: false,
+                title: L10n.tr("麦克风输入", "Microphone Input", language: language),
+                detail: L10n.tr(
+                    "Mac 当前没有可用的麦克风输入设备。",
+                    "No microphone input devices are currently available on this Mac.",
+                    language: language
+                ),
+                snapshot: currentSnapshot,
+                readBackDefaultInputObjectID: previousDefault.objectID
+            )
+        }
+
+        let trimmedID = requestedID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let resolved = resolveTarget(
+            requestedID: trimmedID,
+            in: liveRecords,
+            defaultInputObjectID: previousDefault.objectID
+        ) else {
+            return MacAudioInputSwitchResult(
+                success: false,
+                title: L10n.tr("麦克风输入", "Microphone Input", language: language),
+                detail: L10n.tr(
+                    "未找到该麦克风输入设备，可能已断开连接。",
+                    "That microphone input device is no longer connected.",
+                    language: language
+                ),
+                snapshot: currentSnapshot,
+                readBackDefaultInputObjectID: previousDefault.objectID
+            )
+        }
+
+        guard isCoreAudioInputRecordDirectlySelectable(resolved.record) else {
+            return MacAudioInputSwitchResult(
+                success: false,
+                title: resolved.record.name,
+                detail: L10n.tr(
+                    "“\(resolved.record.name)”当前无法设为系统默认麦克风输入。",
+                    "“\(resolved.record.name)” cannot be set as the system default microphone input.",
+                    language: language
+                ),
+                snapshot: currentSnapshot,
+                readBackDefaultInputObjectID: previousDefault.objectID
+            )
+        }
+
+        // Re-resolve UID to a live AudioObjectID immediately before AudioObjectSetPropertyData,
+        // never trusting a cached or client-supplied AudioObjectID.
+        let liveTargetObjectID: UInt32
+        if let uid = resolved.record.uid {
+            guard let translated = driver.translateUIDToLiveObjectID(uid),
+                  translated != 0 else {
+                let refreshedSnapshot = enumerateSnapshot(using: driver)
+                let refreshedDefault = driver.readDefaultInputDevice()
+                return MacAudioInputSwitchResult(
+                    success: false,
+                    title: resolved.record.name,
+                    detail: L10n.tr(
+                        "无法通过 UID 解析“\(resolved.record.name)”，该麦克风可能已断开连接。",
+                        "Could not re-resolve UID for “\(resolved.record.name)” before switching; it may have disconnected.",
+                        language: language
+                    ),
+                    snapshot: refreshedSnapshot,
+                    readBackDefaultInputObjectID: refreshedDefault.objectID
+                )
+            }
+            let latestRecords = driver.readLiveDeviceRecords()
+            if let latestMatch = latestRecords.first(where: { $0.audioObjectID == translated }),
+               (latestMatch.inputChannelCount <= 0 ||
+                !latestMatch.canBeDefaultInput ||
+                (latestMatch.uid != nil && latestMatch.uid != uid)) {
+                let refreshedDefault = driver.readDefaultInputDevice()
+                let refreshedSnapshot = enumerateSnapshot(
+                    records: latestRecords,
+                    defaultInputObjectID: refreshedDefault.objectID,
+                    isDefaultInputSettable: settableCheck.isSettable
+                )
+                return MacAudioInputSwitchResult(
+                    success: false,
+                    title: resolved.record.name,
+                    detail: L10n.tr(
+                        "麦克风设备状态已变化，已中止切换以避免选中错误的输入设备。",
+                        "Microphone device state changed before switching; aborted to avoid selecting the wrong input.",
+                        language: language
+                    ),
+                    snapshot: refreshedSnapshot,
+                    readBackDefaultInputObjectID: refreshedDefault.objectID
+                )
+            }
+            liveTargetObjectID = translated
+        } else {
+            liveTargetObjectID = resolved.record.audioObjectID
+        }
+
+        let inStatus = driver.writeDefaultInputDevice(liveTargetObjectID)
+        let readBackIn = driver.readDefaultInputDevice()
+        let afterInSnapshot = enumerateSnapshot(using: driver)
+
+        if inStatus != 0 {
+            return MacAudioInputSwitchResult(
+                success: false,
+                title: resolved.record.name,
+                detail: L10n.tr(
+                    "切换默认麦克风输入失败（CoreAudio OSStatus \(inStatus)）。",
+                    "Failed to switch default microphone input (CoreAudio OSStatus \(inStatus)).",
+                    language: language
+                ),
+                snapshot: afterInSnapshot,
+                defaultInputStatus: inStatus,
+                readBackDefaultInputObjectID: readBackIn.objectID
+            )
+        }
+
+        let didConfirmDefaultSwitch = (readBackIn.objectID == liveTargetObjectID) ||
+            (afterInSnapshot.selectedID == resolved.resolvedID)
+        if !didConfirmDefaultSwitch {
+            let statusToReport = (readBackIn.status != 0) ? readBackIn.status : inStatus
+            return MacAudioInputSwitchResult(
+                success: false,
+                title: resolved.record.name,
+                detail: L10n.tr(
+                    "切换默认麦克风输入未生效（CoreAudio OSStatus \(statusToReport)）。",
+                    "CoreAudio kept the previous default microphone input (OSStatus \(statusToReport)).",
+                    language: language
+                ),
+                snapshot: afterInSnapshot,
+                defaultInputStatus: statusToReport,
+                readBackDefaultInputObjectID: readBackIn.objectID
+            )
+        }
+
+        let detail = L10n.tr(
+            "已切换 Mac 默认麦克风至 \(resolved.record.name)",
+            "Switched Mac default microphone to \(resolved.record.name)",
+            language: language
+        )
+        return MacAudioInputSwitchResult(
+            success: true,
+            title: resolved.record.name,
+            detail: detail,
+            snapshot: afterInSnapshot,
+            defaultInputStatus: inStatus,
+            readBackDefaultInputObjectID: readBackIn.objectID
         )
     }
 }

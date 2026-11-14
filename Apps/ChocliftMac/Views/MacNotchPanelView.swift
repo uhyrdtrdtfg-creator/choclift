@@ -9,6 +9,7 @@ public final class NotchPanelPresentationState: ObservableObject {
     @Published public var pressedSlotIndex: Int?
     @Published public var openFolderSlotIndex: Int?
     @Published public var inlineFeedback: String?
+    public var slotFramesInWindow: [Int: CGRect] = [:]
 
     private var feedbackTask: Task<Void, Never>?
 
@@ -43,10 +44,14 @@ public struct MacNotchPanelView: View {
         )
     }
 
+    private static let windowCoordinateSpaceName = "com.choclift.mac.notchPanelWindow"
+
     @ObservedObject var coordinator: MacAppCoordinator
     @ObservedObject var presentation: NotchPanelPresentationState
     let onTriggerSlot: (Int, BarItem?) -> Void
+    let onTriggerTransport: ((SystemQuickAction) -> Void)?
     let onSlotPressChanged: (Int, Bool) -> Void
+    let onSlotFramesChanged: () -> Void
     let onOpenStudio: () -> Void
     let onDismiss: () -> Void
 
@@ -81,14 +86,18 @@ public struct MacNotchPanelView: View {
         coordinator: MacAppCoordinator,
         presentation: NotchPanelPresentationState,
         onTriggerSlot: @escaping (Int, BarItem?) -> Void,
+        onTriggerTransport: ((SystemQuickAction) -> Void)? = nil,
         onSlotPressChanged: @escaping (Int, Bool) -> Void = { _, _ in },
+        onSlotFramesChanged: @escaping () -> Void = {},
         onOpenStudio: @escaping () -> Void,
         onDismiss: @escaping () -> Void
     ) {
         self.coordinator = coordinator
         self.presentation = presentation
         self.onTriggerSlot = onTriggerSlot
+        self.onTriggerTransport = onTriggerTransport
         self.onSlotPressChanged = onSlotPressChanged
+        self.onSlotFramesChanged = onSlotFramesChanged
         self.onOpenStudio = onOpenStudio
         self.onDismiss = onDismiss
     }
@@ -96,10 +105,7 @@ public struct MacNotchPanelView: View {
     public var body: some View {
         VStack(spacing: 10) {
             headerBar
-            if let title = coordinator.controlStripState.nowPlaying?.primaryDisplayText {
-                Text(title).font(ChocType.title).foregroundStyle(palette.secondaryText)
-                    .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-            }
+            nowPlayingBar
             tileGrid
         }
         .padding(.horizontal, 16)
@@ -125,7 +131,81 @@ public struct MacNotchPanelView: View {
         .padding(.top, Self.shadowTopPadding)
         .padding(.bottom, Self.shadowBottomPadding)
         .frame(width: Self.windowSize.width, height: Self.windowSize.height, alignment: .top)
+        .coordinateSpace(name: Self.windowCoordinateSpaceName)
+        .onPreferenceChange(NotchSlotFramesPreferenceKey.self) { topLeftFrames in
+            let converted = NotchPanelLayout.appKitWindowSlotFrames(
+                fromTopLeftSlotFrames: topLeftFrames,
+                windowHeight: Self.windowSize.height
+            )
+            if presentation.slotFramesInWindow != converted {
+                presentation.slotFramesInWindow = converted
+                let notify = onSlotFramesChanged
+                Task { @MainActor in
+                    notify()
+                }
+            }
+        }
         .preferredColorScheme(.light)
+    }
+
+    @ViewBuilder
+    private var nowPlayingBar: some View {
+        if let nowPlaying = coordinator.controlStripState.nowPlaying,
+           let title = nowPlaying.title,
+           !title.isEmpty {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(ChocType.title)
+                    .foregroundStyle(palette.secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack(spacing: 5) {
+                    transportButton(
+                        action: .mediaPrevious,
+                        symbol: "backward.fill",
+                        label: SystemQuickAction.mediaPrevious.title(in: lang)
+                    )
+                    transportButton(
+                        action: .mediaPlayPause,
+                        symbol: nowPlaying.isPlaying ? "pause.fill" : "play.fill",
+                        label: SystemQuickAction.mediaPlayPause.title(in: lang)
+                    )
+                    transportButton(
+                        action: .mediaNext,
+                        symbol: "forward.fill",
+                        label: SystemQuickAction.mediaNext.title(in: lang)
+                    )
+                }
+            }
+            .frame(height: 28)
+        }
+    }
+
+    private func transportButton(
+        action: SystemQuickAction,
+        symbol: String,
+        label: String
+    ) -> some View {
+        Button {
+            if let onTriggerTransport {
+                onTriggerTransport(action)
+            } else {
+                let sourceName = L10n.tr("Mac 悬浮栏", "Mac Notch Bar", language: lang)
+                _ = coordinator.performLocalQuickAction(action, triggeredBy: sourceName)
+            }
+        } label: {
+            Image(systemName: symbol)
+                .font(ChocType.micro)
+                .foregroundStyle(palette.primaryText)
+                .frame(width: 28, height: 24)
+                .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        }
+        .buttonStyle(NotchTransportButtonStyle(palette: palette))
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("mac-notch-transport-\(action.rawValue)")
     }
 
     private var headerBar: some View {
@@ -382,6 +462,14 @@ public struct MacNotchPanelView: View {
                     isPressed: isPressed
                 )
                 .frame(width: Self.tileSide, height: Self.tileSide)
+                .background(
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: NotchSlotFramesPreferenceKey.self,
+                            value: [slotIdx: proxy.frame(in: .named(Self.windowCoordinateSpaceName))]
+                        )
+                    }
+                )
             }
         }
     }
@@ -471,33 +559,42 @@ public struct MacNotchPanelView: View {
         coordinator.selectedPageIndex = (safePageIndex + delta + count) % count
     }
 
-    /// Computes which of the 8 tile slots (if any) contains `pointInWindow` (AppKit bottom-left view coordinates).
-    public static func hitTestSlotIndex(at pointInWindow: CGPoint) -> Int? {
-        let gridOriginX = shadowHorizontalPadding + 14
-        let gridWidth = (tileSide * 4) + (gridSpacing * 3)
-        let gridHeight = (tileSide * 2) + gridSpacing
-        let contentVStackHeight: CGFloat = 11 + 24 + 10 + gridHeight + 13
-        let verticalSlack = max(0, (cardHeight - contentVStackHeight) / 2)
-        let gridBottomY = shadowBottomPadding + 13 + verticalSlack
+    /// Computes which of the 8 tile slots (if any) contains `pointInWindow` (AppKit bottom-left window coordinates)
+    /// using the real measured `slotFrames`.
+    public static func hitTestSlotIndex(
+        at pointInWindow: CGPoint,
+        slotFrames: [Int: CGRect]
+    ) -> Int? {
+        NotchPanelLayout.hitTestSlotIndex(at: pointInWindow, slotFrames: slotFrames)
+    }
+}
 
-        let relX = pointInWindow.x - gridOriginX
-        let relYFromBottom = pointInWindow.y - gridBottomY
-        guard relX >= 0, relX <= gridWidth, relYFromBottom >= 0, relYFromBottom <= gridHeight else {
-            return nil
-        }
+private struct NotchSlotFramesPreferenceKey: PreferenceKey {
+    static var defaultValue: [Int: CGRect] { [:] }
 
-        let stride = tileSide + gridSpacing
-        let col = Int(relX / stride)
-        let colOffset = relX - CGFloat(col) * stride
-        guard col >= 0, col < 4, colOffset <= tileSide else { return nil }
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+    }
+}
 
-        // Row 0 is top row (higher Y in AppKit bottom-left coordinates); Row 1 is bottom row.
-        let relYFromTop = gridHeight - relYFromBottom
-        let row = Int(relYFromTop / stride)
-        let rowOffset = relYFromTop - CGFloat(row) * stride
-        guard row >= 0, row < 2, rowOffset <= tileSide else { return nil }
+private struct NotchTransportButtonStyle: ButtonStyle {
+    let palette: ChocPalette
 
-        return row * 4 + col
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                (configuration.isPressed ? palette.accent.opacity(0.14) : palette.barSurface.opacity(0.88)),
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(
+                        configuration.isPressed ? palette.accent.opacity(0.55) : palette.subtleCardStroke,
+                        lineWidth: 0.8
+                    )
+            )
+            .scaleEffect(configuration.isPressed ? 0.93 : 1.0)
+            .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
     }
 }
 

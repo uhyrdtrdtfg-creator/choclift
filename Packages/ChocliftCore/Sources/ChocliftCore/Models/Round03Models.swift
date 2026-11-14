@@ -535,6 +535,15 @@ public enum CompanionWorkspaceSearch {
         case .folder(let folder):
             parts.append(folder.title)
             parts.append(folder.emoji)
+        case .snippet(let snippetID, let snapshot, let emoji, _):
+            parts.append(snapshot)
+            parts.append(emoji)
+            if let snippet = profile.snippet(withID: snippetID) {
+                parts.append(snippet.title)
+                parts.append(snippet.displayTitle(in: .english))
+                parts.append(snippet.displayTitle(in: .chinese))
+                parts.append(snippet.body)
+            }
         }
         return parts
     }

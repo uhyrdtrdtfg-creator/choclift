@@ -168,6 +168,12 @@ public final class MacMenuBarStatusController: NSObject {
         updateItem.isEnabled = coordinator.updaterService.canCheckForUpdates
         menu.addItem(updateItem)
 
+        if let updateSubtitle = coordinator.updaterService.menuStatusSubtitle(in: lang) {
+            let updateStatusItem = NSMenuItem(title: updateSubtitle, action: nil, keyEquivalent: "")
+            updateStatusItem.isEnabled = false
+            menu.addItem(updateStatusItem)
+        }
+
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(
