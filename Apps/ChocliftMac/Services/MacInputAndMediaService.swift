@@ -266,6 +266,14 @@ public final class MacInputAndMediaService {
         case .toggleFullscreen:
             return windowService.performWindowOperation(.toggleFullscreen, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
 
+        case .switchToNextWindow, .switchToPreviousWindow:
+            guard ensureAccessibilityOrPrompt() else { return accessibilityDeniedResult() }
+            guard let stroke = WindowCycleKeystrokeRouting.keystroke(for: action) else {
+                return (false, action.title())
+            }
+            postKeyStroke(virtualKey: stroke.virtualKey, flags: stroke.flags)
+            return (true, action.title())
+
         case .copySelection:
             guard ensureAccessibilityOrPrompt() else {
                 return accessibilityDeniedResult()

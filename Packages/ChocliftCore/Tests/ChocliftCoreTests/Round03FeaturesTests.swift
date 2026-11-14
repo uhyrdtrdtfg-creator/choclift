@@ -218,6 +218,8 @@ final class Round03FeaturesTests: XCTestCase {
 
     func testSystemActionShortcutPreviewOnlyExistsForRealKeyboardShortcuts() {
         let expectedShortcuts: [SystemQuickAction: String] = [
+            .switchToNextWindow: "⌘`",
+            .switchToPreviousWindow: "⇧⌘`",
             .copySelection: "⌘C",
             .pasteClipboard: "⌘V",
             .cutSelection: "⌘X",
@@ -468,6 +470,12 @@ final class Round03FeaturesTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(20))
         }
         XCTAssertEqual(delegate.triggeredSoundIDs, [clip.id, clip.id])
+
+        // Simulate an older Mac that silently ignores a newly introduced action.
+        phoneClient.performQuickAction(.switchToNextWindow)
+        try await Task.sleep(for: .milliseconds(2200))
+        XCTAssertEqual(phoneClient.lastFeedback?.success, false)
+        XCTAssertTrue(phoneClient.connectionState.isConnected)
 
         // 4. Send unknown post-auth frame from raw client & unknown server frame to phone -> both stay connected
         let unknownClientPayload = Data(#"{"futureRound99Message":{"alpha":1}}"#.utf8)

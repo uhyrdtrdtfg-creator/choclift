@@ -188,6 +188,7 @@ public final class CompanionClientEngine: ObservableObject {
     private var heartbeatTask: Task<Void, Never>?
     private var pinGlitchExpiryTask: Task<Void, Never>?
     private var pinSubmissionWatchdogTask: Task<Void, Never>?
+    private var windowCycleFeedbackTask: Task<Void, Never>?
     private var tileFeedbackTracker = TileActionFeedbackTracker()
     private var tileFeedbackExpiryTask: Task<Void, Never>?
     private var maintenanceConfirmExpiryTask: Task<Void, Never>?
@@ -2026,12 +2027,35 @@ public final class CompanionClientEngine: ObservableObject {
 
     public func performGesture(_ gesture: TouchGestureType) {
         tileFeedbackTracker.clearPendingWithoutFeedback()
+        let action = profile.gestureConfig.action(for: gesture)
+        let isUnrecognizedWindowGesture = action == nil &&
+            (gesture == .threeFingerSwipeLeft || gesture == .threeFingerSwipeRight)
+        if action == .switchToNextWindow || action == .switchToPreviousWindow || isUnrecognizedWindowGesture {
+            beginWindowCycleFeedbackTimeout()
+        }
         send(.performGesture(gesture))
     }
 
     public func performQuickAction(_ action: SystemQuickAction) {
         tileFeedbackTracker.clearPendingWithoutFeedback()
+        if action == .switchToNextWindow || action == .switchToPreviousWindow {
+            beginWindowCycleFeedbackTimeout()
+        }
         send(.performQuickAction(action))
+    }
+
+    private func beginWindowCycleFeedbackTimeout() {
+        windowCycleFeedbackTask?.cancel()
+        windowCycleFeedbackTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let self, !Task.isCancelled else { return }
+            self.lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("未能切换窗口", "Could not switch windows"),
+                detail: L10n.tr("请更新 Mac 端后重试。", "Update the Mac app and try again.")
+            )
+            self.windowCycleFeedbackTask = nil
+        }
     }
 
     public func requestControlStripState() {
@@ -2904,6 +2928,8 @@ public final class CompanionClientEngine: ObservableObject {
             }
 
         case .actionFeedback(let success, let title, let detail):
+            windowCycleFeedbackTask?.cancel()
+            windowCycleFeedbackTask = nil
             if let resolvedTileBanner = tileFeedbackTracker.resolvePending(success: success) {
                 publishTileFeedback(resolvedTileBanner)
             }

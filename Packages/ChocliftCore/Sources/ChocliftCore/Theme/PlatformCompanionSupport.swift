@@ -475,10 +475,9 @@ public final class CompanionMultiTouchCoordinator: NSObject, UIGestureRecognizer
             didFireCurrentThreeFingerPan = false
         case .changed:
             guard !didFireCurrentThreeFingerPan else { return }
-            let threshold: CGFloat = 52
-            if abs(translation.y) >= threshold && abs(translation.y) > abs(translation.x) {
+            if let gesture = ThreeFingerPanRouting.gesture(translation: translation) {
                 didFireCurrentThreeFingerPan = true
-                onGestureTriggered(translation.y < 0 ? .threeFingerSwipeUp : .threeFingerSwipeDown)
+                onGestureTriggered(gesture)
             }
         default:
             didFireCurrentThreeFingerPan = false
