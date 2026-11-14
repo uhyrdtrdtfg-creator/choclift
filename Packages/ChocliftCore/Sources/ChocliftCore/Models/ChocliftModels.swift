@@ -1,5 +1,10 @@
 import Foundation
 
+#if os(macOS)
+import CoreGraphics
+import Carbon.HIToolbox
+#endif
+
 // MARK: - Language & Localization
 
 public enum AppLanguage: String, Codable, CaseIterable, Sendable, Identifiable {
@@ -65,6 +70,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case minimizeWindow = "minimize_window"
     case snapWindowLeft = "snap_window_left"
     case snapWindowRight = "snap_window_right"
+    case switchToNextWindow = "switch_to_next_window"
+    case switchToPreviousWindow = "switch_to_previous_window"
     case centerWindow = "center_window"
     case toggleFullscreen = "toggle_fullscreen"
     case copySelection = "copy_selection"
@@ -93,6 +100,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .minimizeWindow: return "minus.square.fill"
         case .snapWindowLeft: return "rectangle.lefthalf.inset.filled"
         case .snapWindowRight: return "rectangle.righthalf.inset.filled"
+        case .switchToNextWindow: return "arrow.right.square"
+        case .switchToPreviousWindow: return "arrow.left.square"
         case .centerWindow: return "rectangle.center.inset.filled"
         case .toggleFullscreen: return "rectangle.expand.vertical"
         case .copySelection: return "doc.on.doc.fill"
@@ -117,7 +126,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public var accentHex: String {
         switch self {
-        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen:
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow:
             return "#EDF6FF"
         case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
             return "#F3EEFF"
@@ -160,7 +169,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return true
         }
         switch self {
-        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp:
+        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp, .switchToNextWindow, .switchToPreviousWindow:
             return true
         default:
             return false
@@ -171,6 +180,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     /// Window AX frames, process launches, NSRunningApplication.terminate(), and NX media keys return `nil`.
     public var sentKeyboardShortcut: String? {
         switch self {
+        case .switchToNextWindow: return "⌘`"
+        case .switchToPreviousWindow: return "⇧⌘`"
         case .copySelection:
             return "⌘C"
         case .pasteClipboard:
@@ -199,6 +210,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .minimizeWindow: return L10n.tr("最小化窗口", "Minimize Window", language: lang)
         case .snapWindowLeft: return L10n.tr("窗口贴靠左半屏", "Snap Window Left", language: lang)
         case .snapWindowRight: return L10n.tr("窗口贴靠右半屏", "Snap Window Right", language: lang)
+        case .switchToNextWindow: return L10n.tr("下一个窗口", "Next Window", language: lang)
+        case .switchToPreviousWindow: return L10n.tr("上一个窗口", "Previous Window", language: lang)
         case .centerWindow: return L10n.tr("窗口居中", "Center Window", language: lang)
         case .toggleFullscreen: return L10n.tr("切换全屏", "Toggle Fullscreen", language: lang)
         case .copySelection: return L10n.tr("复制", "Copy", language: lang)
@@ -227,6 +240,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .minimizeWindow: return L10n.tr("最小化", "Minimize", language: lang)
         case .snapWindowLeft: return L10n.tr("左半屏", "Snap Left", language: lang)
         case .snapWindowRight: return L10n.tr("右半屏", "Snap Right", language: lang)
+        case .switchToNextWindow: return L10n.tr("下一个窗口", "Next Window", language: lang)
+        case .switchToPreviousWindow: return L10n.tr("上一个窗口", "Previous Window", language: lang)
         case .centerWindow: return L10n.tr("居中", "Center", language: lang)
         case .toggleFullscreen: return L10n.tr("全屏", "Fullscreen", language: lang)
         case .copySelection: return L10n.tr("复制", "Copy", language: lang)
@@ -900,6 +915,8 @@ public enum TouchGestureType: String, Codable, CaseIterable, Sendable, Identifia
     case twoFingerDoubleTap = "two_finger_double_tap"
     case threeFingerSwipeUp = "three_finger_swipe_up"
     case threeFingerSwipeDown = "three_finger_swipe_down"
+    case threeFingerSwipeLeft = "three_finger_swipe_left"
+    case threeFingerSwipeRight = "three_finger_swipe_right"
 
     public var id: String { rawValue }
 
@@ -914,6 +931,8 @@ public enum TouchGestureType: String, Codable, CaseIterable, Sendable, Identifia
         case .twoFingerDoubleTap: return "hand.tap.fill"
         case .threeFingerSwipeUp: return "chevron.up.2"
         case .threeFingerSwipeDown: return "chevron.down.2"
+        case .threeFingerSwipeLeft: return "chevron.left.2"
+        case .threeFingerSwipeRight: return "chevron.right.2"
         }
     }
 
@@ -927,6 +946,8 @@ public enum TouchGestureType: String, Codable, CaseIterable, Sendable, Identifia
         case .threeFingerPinchOut: return L10n.tr("三指张开 (投送)", "Three-Finger Spread (Drop)", language: lang)
         case .twoFingerDoubleTap: return L10n.tr("双指双击", "Two-Finger Double Tap", language: lang)
         case .threeFingerSwipeUp: return L10n.tr("三指上滑", "Three-Finger Swipe Up", language: lang)
+        case .threeFingerSwipeLeft: return L10n.tr("三指左滑", "Three-Finger Swipe Left", language: lang)
+        case .threeFingerSwipeRight: return L10n.tr("三指右滑", "Three-Finger Swipe Right", language: lang)
         case .threeFingerSwipeDown: return L10n.tr("三指下滑", "Three-Finger Swipe Down", language: lang)
         }
     }
@@ -941,6 +962,8 @@ public enum TouchGestureType: String, Codable, CaseIterable, Sendable, Identifia
         case .threeFingerPinchOut: return L10n.tr("像放下内容一样三指向外张开", "Spread outward with 3 fingers to paste", language: lang)
         case .twoFingerDoubleTap: return L10n.tr("双指轻点屏幕两次", "Double-tap quickly with 2 fingers", language: lang)
         case .threeFingerSwipeUp: return L10n.tr("三指向上滑动呼出全局视图", "Swipe up with 3 fingers", language: lang)
+        case .threeFingerSwipeLeft: return L10n.tr("三指向左滑动切换到上一个窗口", "Swipe left with 3 fingers for the previous window", language: lang)
+        case .threeFingerSwipeRight: return L10n.tr("三指向右滑动切换到下一个窗口", "Swipe right with 3 fingers for the next window", language: lang)
         case .threeFingerSwipeDown: return L10n.tr("三指向下滑动快速收起", "Swipe down with 3 fingers", language: lang)
         }
     }
@@ -967,6 +990,19 @@ public struct GestureConfiguration: Codable, Equatable, Hashable, Sendable {
     public init(isGlobalOverlayEnabled: Bool = true, bindings: [GestureBinding]) {
         self.isGlobalOverlayEnabled = isGlobalOverlayEnabled
         self.bindings = bindings
+    }
+
+    private enum CodingKeys: String, CodingKey { case isGlobalOverlayEnabled, bindings }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isGlobalOverlayEnabled = try container.decode(Bool.self, forKey: .isGlobalOverlayEnabled)
+        bindings = try container.decode([GestureBinding].self, forKey: .bindings)
+        // Existing profiles gain new gestures while retaining explicit custom/disabled bindings.
+        for binding in [GestureBinding(gesture: .threeFingerSwipeLeft, action: .switchToPreviousWindow),
+                        GestureBinding(gesture: .threeFingerSwipeRight, action: .switchToNextWindow)] {
+            if !bindings.contains(where: { $0.gesture == binding.gesture }) { bindings.append(binding) }
+        }
     }
 
     public func action(for gesture: TouchGestureType) -> SystemQuickAction? {
@@ -2239,6 +2275,8 @@ public enum ChocliftDefaults {
                 GestureBinding(gesture: .threeFingerPinchIn, action: .copySelection, isEnabled: true),
                 GestureBinding(gesture: .threeFingerPinchOut, action: .pasteClipboard, isEnabled: true),
                 GestureBinding(gesture: .twoFingerDoubleTap, action: .undoAction, isEnabled: true),
+                GestureBinding(gesture: .threeFingerSwipeLeft, action: .switchToPreviousWindow),
+                GestureBinding(gesture: .threeFingerSwipeRight, action: .switchToNextWindow),
                 GestureBinding(gesture: .threeFingerSwipeUp, action: .missionControl, isEnabled: true),
                 GestureBinding(gesture: .threeFingerSwipeDown, action: .showDesktop, isEnabled: true)
             ]
@@ -2334,3 +2372,29 @@ public enum ChocliftDefaults {
         )
     }
 }
+
+
+/// Shared by the UIKit recognizer and platform-independent direction tests.
+public enum ThreeFingerPanRouting {
+    public static func gesture(translation: CGPoint) -> TouchGestureType? {
+        if abs(translation.x) >= 52 && abs(translation.x) > abs(translation.y) {
+            return translation.x < 0 ? .threeFingerSwipeLeft : .threeFingerSwipeRight
+        }
+        if abs(translation.y) >= 52 && abs(translation.y) > abs(translation.x) {
+            return translation.y < 0 ? .threeFingerSwipeUp : .threeFingerSwipeDown
+        }
+        return nil
+    }
+}
+
+#if os(macOS)
+public enum WindowCycleKeystrokeRouting {
+    public static func keystroke(for action: SystemQuickAction) -> (virtualKey: CGKeyCode, flags: CGEventFlags)? {
+        switch action {
+        case .switchToNextWindow: return (CGKeyCode(kVK_ANSI_Grave), .maskCommand)
+        case .switchToPreviousWindow: return (CGKeyCode(kVK_ANSI_Grave), [.maskCommand, .maskShift])
+        default: return nil
+        }
+    }
+}
+#endif

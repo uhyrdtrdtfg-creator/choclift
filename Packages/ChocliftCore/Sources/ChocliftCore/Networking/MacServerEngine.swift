@@ -860,6 +860,8 @@ public final class MacServerEngine: ObservableObject {
                     to: session
                 )
                 cleanupSession(sessionID: session.id)
+            } else {
+                send(.actionFeedback(success: false, title: L10n.tr("不支持此操作", "Unsupported action"), detail: nil), to: session)
             }
 
         default:

@@ -1852,7 +1852,7 @@ public struct IOSGesturePadSurfaceView: View {
                             .font(.system(size: 44, weight: .light))
                             .foregroundStyle(palette.accent)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        Text(L10n.tr("双指滑动调整窗口 · 三指捏合复制与粘贴", "Swipe with two fingers to move windows · Pinch with three to copy or paste", language: lang))
+                        Text(L10n.tr("双指滑动调整窗口 · 三指左右滑动切换窗口", "Swipe with two fingers to move windows · Swipe with three to switch windows", language: lang))
                             .font(ChocType.caption)
                             .foregroundStyle(palette.secondaryText)
                             .multilineTextAlignment(.center)
@@ -1868,13 +1868,17 @@ public struct IOSGesturePadSurfaceView: View {
 
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
                         ForEach([TouchGestureType.twoFingerSwipeUp, .twoFingerSwipeDown, .twoFingerSwipeLeft, .twoFingerSwipeRight,
-                                 .threeFingerPinchIn, .threeFingerPinchOut, .twoFingerDoubleTap, .threeFingerSwipeUp]) { gesture in
+                                 .threeFingerPinchIn, .threeFingerPinchOut, .twoFingerDoubleTap, .threeFingerSwipeUp, .threeFingerSwipeDown, .threeFingerSwipeLeft, .threeFingerSwipeRight]) { gesture in
                             let mapped = client.profile.gestureConfig.action(for: gesture)
                             Button { onTriggerGesture(gesture) } label: {
                                 VStack(spacing: 8) {
                                     Image(systemName: mapped?.sfSymbol ?? gesture.sfSymbol)
                                         .font(.system(size: 26, weight: .medium))
                                         .foregroundStyle(palette.accent)
+                                    Text(gesture.title(in: lang))
+                                        .font(ChocType.micro)
+                                        .foregroundStyle(palette.secondaryText)
+                                        .lineLimit(2)
                                     Text(mapped?.compactTitle(in: lang) ?? gesture.title(in: lang))
                                         .font(ChocType.micro)
                                         .foregroundStyle(palette.primaryText)
