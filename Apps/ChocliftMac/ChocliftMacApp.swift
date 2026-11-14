@@ -14,6 +14,10 @@ struct ChocliftMacApp: App {
         .defaultSize(width: 1120, height: 700)
         .commands {
             CommandGroup(after: .appInfo) {
+                Button(SystemQuickAction.sendSelectionToOrca.title(in: coordinator.lang)) {
+                    coordinator.sendSelectionToOrca()
+                }
+
                 CheckForUpdatesMenuItemView(
                     updater: coordinator.updaterService,
                     language: coordinator.lang

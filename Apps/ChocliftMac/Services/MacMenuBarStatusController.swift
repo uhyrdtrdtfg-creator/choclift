@@ -147,6 +147,10 @@ public final class MacMenuBarStatusController: NSObject {
 
         menu.addItem(.separator())
 
+        let selectionItem = NSMenuItem(title: SystemQuickAction.sendSelectionToOrca.title(in: lang), action: #selector(handleSendSelectionToOrca), keyEquivalent: "")
+        selectionItem.target = self
+        menu.addItem(selectionItem)
+
         let openItem = NSMenuItem(
             title: L10n.tr("打开 Choclift 窗口", "Open Choclift Window", language: lang),
             action: #selector(handleOpenMainWindowFromMenu),
@@ -177,6 +181,11 @@ public final class MacMenuBarStatusController: NSObject {
         statusItem.menu = menu
         button.performClick(nil)
         statusItem.menu = nil
+    }
+
+    @objc
+    private func handleSendSelectionToOrca() {
+        coordinator?.sendSelectionToOrca()
     }
 
     @objc

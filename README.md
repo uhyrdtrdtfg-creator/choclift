@@ -234,3 +234,11 @@ Configure the following repository secrets in **Settings → Secrets and variabl
 - **Two-Repo Public Distribution Note (macOS)**:
   - Because no separate public distribution repository exists yet, `.github/workflows/release.yml` currently sets `public_repo: "uhyrdtrdtfg-creator/choclift"` and `download_url_prefix: "https://github.com/uhyrdtrdtfg-creator/choclift/releases/download/"` so the Mac artifact ZIP and `appcast.xml` stay inside this private repository.
   - To enable the full Kown-style two-repo public distribution flow (private source repo → public Sparkle release repo), create a dedicated public repository (e.g. `choclift-mac`), grant `RELEASE_REPO_PAT` write access to that public repository, and update `public_repo` and `download_url_prefix` in `.github/workflows/release.yml`.
+
+### Send selected text to Orca
+
+Use **Send Selection to Orca / 将选中文字发给 Orca** from the Mac app or status-bar menu, or the same system action in the companion tools list. Choclift requires Accessibility permission and reads the frontmost external app’s selected text directly through AX; it never copies that selection to the clipboard or sends it to the phone. Empty selections fail before dispatch.
+
+The Mac writes a private temporary spec (at most 8,000 characters, including source app context) and removes it after dispatch. Recognized credentials and local absolute paths are redacted. Orca uses the active Git workspace’s repository to create an independent workspace. When Kiro is available as an Orca agent, dispatch uses `orchestration worker-start --spec-file`; otherwise Orca creates a top-level worktree and a terminal running the fixed command `true`, then Choclift starts `kiro-cli chat --no-interactive --trust-tools= --trust-workspace` directly with an argument array in that worktree. The report never enters a shell, and the Mac records the dispatch or terminal handle.
+
+Install Orca and `kiro-cli`, then run `kiro-cli login` before use. A missing Kiro login is reported as a failure, with that login instruction; no credentials are stored by Choclift. Fallback Kiro output remains local to the Mac process rather than streaming into the placeholder Orca terminal.

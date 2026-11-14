@@ -74,6 +74,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case switchToPreviousWindow = "switch_to_previous_window"
     case centerWindow = "center_window"
     case toggleFullscreen = "toggle_fullscreen"
+    case sendSelectionToOrca = "send_selection_to_orca"
     case copySelection = "copy_selection"
     case pasteClipboard = "paste_clipboard"
     case cutSelection = "cut_selection"
@@ -104,6 +105,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .switchToPreviousWindow: return "arrow.left.square"
         case .centerWindow: return "rectangle.center.inset.filled"
         case .toggleFullscreen: return "rectangle.expand.vertical"
+        case .sendSelectionToOrca: return "paperplane.fill"
         case .copySelection: return "doc.on.doc.fill"
         case .pasteClipboard: return "doc.on.clipboard.fill"
         case .cutSelection: return "scissors"
@@ -128,7 +130,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         switch self {
         case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow:
             return "#EDF6FF"
-        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
+        case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
             return "#F3EEFF"
         case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker:
             return "#FFF1EC"
@@ -199,7 +201,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
              .centerWindow, .toggleFullscreen, .missionControl, .showDesktop,
              .screenshotInteractive, .mediaPlayPause, .mediaNext, .mediaPrevious,
-             .volumeUp, .volumeDown, .volumeMute, .quitApp:
+             .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca:
             return nil
         }
     }
@@ -214,6 +216,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .switchToPreviousWindow: return L10n.tr("上一个窗口", "Previous Window", language: lang)
         case .centerWindow: return L10n.tr("窗口居中", "Center Window", language: lang)
         case .toggleFullscreen: return L10n.tr("切换全屏", "Toggle Fullscreen", language: lang)
+        case .sendSelectionToOrca: return L10n.tr("将选中文字发给 Orca", "Send Selection to Orca", language: lang)
         case .copySelection: return L10n.tr("复制", "Copy", language: lang)
         case .pasteClipboard: return L10n.tr("粘贴", "Paste", language: lang)
         case .cutSelection: return L10n.tr("剪切", "Cut", language: lang)
@@ -244,6 +247,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .switchToPreviousWindow: return L10n.tr("上一个窗口", "Previous Window", language: lang)
         case .centerWindow: return L10n.tr("居中", "Center", language: lang)
         case .toggleFullscreen: return L10n.tr("全屏", "Fullscreen", language: lang)
+        case .sendSelectionToOrca: return L10n.tr("将选中文字发给 Orca", "Send Selection to Orca", language: lang)
         case .copySelection: return L10n.tr("复制", "Copy", language: lang)
         case .pasteClipboard: return L10n.tr("粘贴", "Paste", language: lang)
         case .cutSelection: return L10n.tr("剪切", "Cut", language: lang)

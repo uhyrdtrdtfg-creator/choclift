@@ -252,3 +252,25 @@ public final class MacOrcaStatusService {
         }
     }
 }
+
+/// Shell-free execution for local selection dispatch. Output stays on the Mac.
+public enum MacSelectionProcessRunner {
+    public static func run(_ command: OrcaCommandSpec, directory: URL?) async throws -> OrcaSelectionCommandResult {
+        try await Task.detached {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: command.executablePath)
+            process.arguments = command.arguments
+            process.currentDirectoryURL = directory
+            process.environment = OrcaCommandBuilder.cleanSubprocessEnvironment()
+            let output = Pipe()
+            process.standardOutput = output
+            process.standardError = output
+            process.standardInput = FileHandle.nullDevice
+            try process.run()
+            // Drain while running so a verbose CLI cannot fill its pipe and deadlock.
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            return OrcaSelectionCommandResult(exitCode: process.terminationStatus, output: String(decoding: data, as: UTF8.self))
+        }.value
+    }
+}
