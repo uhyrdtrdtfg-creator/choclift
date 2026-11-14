@@ -471,46 +471,58 @@ public struct ChocliftBrandIconView: View {
 
     public var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(hex: "#6B3418"), Color(hex: "#381808")],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-                        .strokeBorder(Color(hex: "#9A5633").opacity(0.65), lineWidth: max(1, size * 0.03))
-                )
-
-            VStack {
-                Spacer()
-                HStack {
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(hex: "#D62828"), Color(hex: "#F4A261")],
-                                startPoint: .bottomLeading,
-                                endPoint: .topTrailing
-                            )
-                        )
-                        .frame(width: size * 0.72, height: size * 0.22)
-                        .rotationEffect(.degrees(16))
-                        .offset(x: -size * 0.08, y: size * 0.06)
-                    Spacer()
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
-
-            Text("c")
-                .font(.system(size: size * 0.62, weight: .black, design: .serif))
-                .italic()
-                .foregroundStyle(Color(hex: "#FFF3E2"))
-                .shadow(color: .black.opacity(0.4), radius: size * 0.05, x: 0, y: size * 0.03)
-                .offset(y: -size * 0.04)
+            LinearGradient(colors: [Color(hex: "#6B3418"), Color(hex: "#381808")],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            brandPath(.foil).fill(Color(hex: "#F4A261"))
+            brandPath(.ribbon).fill(Color(hex: "#D62828"))
+            brandPath(.letter).fill(Color(hex: "#FFF3E2"))
         }
         .frame(width: size, height: size)
+        .clipShape(brandPath(.tile))
+    }
+
+    private enum Outline { case letter, foil, ribbon, tile }
+
+    // Unit-square vector artwork matches Scripts/generate_icons.swift.
+    private func brandPath(_ outline: Outline) -> Path {
+        var p = Path()
+        switch outline {
+        case .tile:
+            p.move(to: CGPoint(x: size * 0.5, y: 0))
+            p.addCurve(to: CGPoint(x: size, y: size * 0.5), control1: CGPoint(x: size * 0.94, y: 0), control2: CGPoint(x: size, y: size * 0.06))
+            p.addCurve(to: CGPoint(x: size * 0.5, y: size), control1: CGPoint(x: size, y: size * 0.94), control2: CGPoint(x: size * 0.94, y: size))
+            p.addCurve(to: CGPoint(x: 0, y: size * 0.5), control1: CGPoint(x: size * 0.06, y: size), control2: CGPoint(x: 0, y: size * 0.94))
+            p.addCurve(to: CGPoint(x: size * 0.5, y: 0), control1: CGPoint(x: 0, y: size * 0.06), control2: CGPoint(x: size * 0.06, y: 0))
+            p.closeSubpath()
+        case .letter:
+            p.move(to: CGPoint(x: size * 0.718, y: size * 0.255))
+            p.addCurve(to: CGPoint(x: size * 0.419, y: size * 0.222), control1: CGPoint(x: size * 0.655, y: size * 0.175), control2: CGPoint(x: size * 0.521, y: size * 0.167))
+            p.addCurve(to: CGPoint(x: size * 0.285, y: size * 0.548), control1: CGPoint(x: size * 0.304, y: size * 0.284), control2: CGPoint(x: size * 0.256, y: size * 0.438))
+            p.addCurve(to: CGPoint(x: size * 0.602, y: size * 0.625), control1: CGPoint(x: size * 0.316, y: size * 0.671), control2: CGPoint(x: size * 0.483, y: size * 0.698))
+            p.addCurve(to: CGPoint(x: size * 0.701, y: size * 0.521), control1: CGPoint(x: size * 0.647, y: size * 0.598), control2: CGPoint(x: size * 0.679, y: size * 0.561))
+            p.addLine(to: CGPoint(x: size * 0.626, y: size * 0.475))
+            p.addCurve(to: CGPoint(x: size * 0.488, y: size * 0.566), control1: CGPoint(x: size * 0.586, y: size * 0.535), control2: CGPoint(x: size * 0.54, y: size * 0.566))
+            p.addCurve(to: CGPoint(x: size * 0.427, y: size * 0.42), control1: CGPoint(x: size * 0.416, y: size * 0.566), control2: CGPoint(x: size * 0.406, y: size * 0.497))
+            p.addCurve(to: CGPoint(x: size * 0.549, y: size * 0.284), control1: CGPoint(x: size * 0.45, y: size * 0.332), control2: CGPoint(x: size * 0.494, y: size * 0.284))
+            p.addCurve(to: CGPoint(x: size * 0.6, y: size * 0.332), control1: CGPoint(x: size * 0.583, y: size * 0.284), control2: CGPoint(x: size * 0.598, y: size * 0.303))
+            p.addLine(to: CGPoint(x: size * 0.694, y: size * 0.332))
+            p.closeSubpath()
+        case .foil:
+            p.move(to: CGPoint(x: size * 0.168, y: size * 0.742))
+            p.addCurve(to: CGPoint(x: size * 0.82, y: size * 0.701), control1: CGPoint(x: size * 0.354, y: size * 0.667), control2: CGPoint(x: size * 0.561, y: size * 0.819))
+            p.addLine(to: CGPoint(x: size * 0.8, y: size * 0.817))
+            p.addCurve(to: CGPoint(x: size * 0.188, y: size * 0.85), control1: CGPoint(x: size * 0.552, y: size * 0.921), control2: CGPoint(x: size * 0.349, y: size * 0.769))
+            p.addLine(to: CGPoint(x: size * 0.207, y: size * 0.794))
+            p.closeSubpath()
+        case .ribbon:
+            p.move(to: CGPoint(x: size * 0.183, y: size * 0.76))
+            p.addCurve(to: CGPoint(x: size * 0.816, y: size * 0.722), control1: CGPoint(x: size * 0.366, y: size * 0.697), control2: CGPoint(x: size * 0.568, y: size * 0.841))
+            p.addLine(to: CGPoint(x: size * 0.803, y: size * 0.794))
+            p.addCurve(to: CGPoint(x: size * 0.189, y: size * 0.829), control1: CGPoint(x: size * 0.559, y: size * 0.899), control2: CGPoint(x: size * 0.355, y: size * 0.751))
+            p.addLine(to: CGPoint(x: size * 0.219, y: size * 0.789))
+            p.closeSubpath()
+        }
+        return p
     }
 }
 
