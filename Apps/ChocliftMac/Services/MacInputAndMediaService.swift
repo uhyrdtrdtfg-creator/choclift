@@ -164,18 +164,44 @@ public final class MacInputAndMediaService {
             )
 
         case .typeKeys:
-            // Typing mode is only available when a field is focused. If no field is focused, do nothing.
             guard windowService.isAccessibilityTrusted() else {
-                return (false, false, "")
+                return (
+                    false,
+                    true,
+                    L10n.tr(
+                        "请在系统设置 → 辅助功能中授权 Choclift 后输入到光标处",
+                        "Grant Accessibility permission in System Settings to insert at the cursor",
+                        language: language
+                    )
+                )
             }
-            let hasFocusedField = (windowService.focusedTextInput(excludingPID: myPID) != nil)
+            let resolvedFocus: MacAccessibilityAndWindowService.FocusedTextInputTarget? = {
+                if let direct = windowService.focusedTextInput(excludingPID: myPID) {
+                    return direct
+                }
+                if allowActivatingPreferredPID,
+                   let preferredPID,
+                   preferredPID != myPID,
+                   let app = NSRunningApplication(processIdentifier: preferredPID),
+                   !app.isTerminated {
+                    app.activate()
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.06))
+                    return windowService.focusedTextInput(inApplicationPID: preferredPID)
+                }
+                return nil
+            }()
             let plan = SnippetInsertPolicy.evaluate(
                 body: clamped,
                 mode: .typeKeys,
-                isFieldFocused: hasFocusedField
+                isFieldFocused: resolvedFocus != nil
             )
             guard case .typeThroughKeyPath(let textToType) = plan else {
-                return (false, false, "")
+                let message = SnippetInsertPolicy.rejectionMessage(for: plan, language: language) ?? L10n.tr(
+                    "未检测到焦点输入框，请先在 Mac 中点击文本框",
+                    "No text field focused on Mac — click a text field first",
+                    language: language
+                )
+                return (false, true, message)
             }
             typeStringThroughKeyPath(textToType)
             return (

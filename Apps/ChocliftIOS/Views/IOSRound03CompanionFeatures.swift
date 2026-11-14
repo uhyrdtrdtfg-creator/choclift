@@ -813,6 +813,14 @@ public struct IOSWorkspaceSearchSheet: View {
                     .foregroundStyle(palette.secondaryText)
                     .frame(width: 34, height: 34)
                     .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            case .snippet(_, _, let emoji, let hex):
+                Text(emoji.isEmpty ? "📝" : emoji)
+                    .font(ChocType.title)
+                    .frame(width: 34, height: 34)
+                    .background(
+                        ChocSwatch.resolvedTileColor(hex: hex),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    )
             }
         case .snippet:
             Image(systemName: "text.quote")

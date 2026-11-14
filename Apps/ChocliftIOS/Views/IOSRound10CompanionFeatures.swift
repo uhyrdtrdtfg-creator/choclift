@@ -826,6 +826,7 @@ private struct IOSFolderChildPickerSheet: View {
         case flows
         case sounds
         case shortcuts
+        case snippets
 
         var id: String { rawValue }
     }
@@ -849,6 +850,7 @@ private struct IOSFolderChildPickerSheet: View {
                     Text(L10n.tr("动作流", "Flows", language: lang)).tag(SourceSegment.flows)
                     Text(L10n.tr("音效", "Sounds", language: lang)).tag(SourceSegment.sounds)
                     Text(L10n.tr("指令", "Shortcuts", language: lang)).tag(SourceSegment.shortcuts)
+                    Text(L10n.tr("片段", "Snippets", language: lang)).tag(SourceSegment.snippets)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal, 14)
@@ -925,6 +927,17 @@ private struct IOSFolderChildPickerSheet: View {
                                             )
                                         )
                                     )
+                                    dismiss()
+                                }
+                            }
+                        case .snippets:
+                            ForEach(client.profile.snippets) { snippet in
+                                childChoiceRow(
+                                    title: "📝 \(snippet.displayTitle(in: lang))",
+                                    symbol: "text.quote",
+                                    identifier: "ios-folder-pick-snippet-\(snippet.id.uuidString)"
+                                ) {
+                                    onPick(client.profile.makeBarItem(for: snippet))
                                     dismiss()
                                 }
                             }

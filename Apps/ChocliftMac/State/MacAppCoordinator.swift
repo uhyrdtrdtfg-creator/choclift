@@ -788,6 +788,97 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         recordActivity(deviceName: deviceName, summary: msg, isSuccess: true)
     }
 
+    // MARK: - Text Snippet Studio & Slot Helpers
+
+    @discardableResult
+    public func saveSnippet(_ snippet: TextSnippet) -> Bool {
+        var didSave = false
+        mutateProfile { draft in
+            didSave = draft.upsertSnippet(snippet)
+        }
+        return didSave
+    }
+
+    @discardableResult
+    public func renameSnippet(id: UUID, title: String) -> Bool {
+        var didRename = false
+        mutateProfile { draft in
+            didRename = draft.renameSnippet(id: id, title: title)
+        }
+        return didRename
+    }
+
+    @discardableResult
+    public func setSnippetInsertMode(id: UUID, mode: SnippetInsertMode) -> Bool {
+        var didUpdate = false
+        mutateProfile { draft in
+            didUpdate = draft.setSnippetInsertMode(id: id, mode: mode)
+        }
+        return didUpdate
+    }
+
+    @discardableResult
+    public func deleteSnippet(id: UUID) -> Bool {
+        var didDelete = false
+        mutateProfile { draft in
+            didDelete = draft.deleteSnippet(id: id)
+        }
+        return didDelete
+    }
+
+    public func assignSnippetToSlot(
+        _ snippet: TextSnippet,
+        emoji: String = "📝",
+        backgroundHex: String = "#F3EEFF",
+        pageIndex: Int,
+        slotIndex: Int
+    ) {
+        guard profile.pages.indices.contains(pageIndex),
+              profile.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
+        mutateProfile { draft in
+            let existingID = draft.pages[pageIndex].slots[slotIndex]?.id ?? UUID()
+            let item = draft.makeBarItem(
+                for: snippet,
+                emoji: emoji,
+                backgroundHex: backgroundHex,
+                id: existingID
+            )
+            _ = draft.setSlotItem(item, pageIndex: pageIndex, slotIndex: slotIndex)
+        }
+    }
+
+    @discardableResult
+    public func runSnippetByID(
+        _ snippetID: UUID,
+        fallbackName: String? = nil,
+        triggeredBy deviceName: String = "Mac Studio"
+    ) -> (success: Bool, title: String, detail: String) {
+        guard let snippet = profile.snippet(withID: snippetID) else {
+            let label = (fallbackName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+                ? fallbackName!
+                : L10n.tr("文本片段", "Snippet", language: lang)
+            let missingMsg = L10n.tr(
+                "未找到文本片段「\(label)」，可能已被删除",
+                "Snippet \"\(label)\" was not found (it may have been deleted)",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: missingMsg, isSuccess: false)
+            return (false, label, missingMsg)
+        }
+
+        let allowActivatePreferred = (deviceName == "Mac Studio") &&
+            (NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier)
+        let res = inputService.executeSnippet(
+            snippet.body,
+            mode: snippet.insertMode,
+            preferredPID: timeTravel.lastExternalAppPID,
+            allowActivatingPreferredPID: allowActivatePreferred,
+            language: lang
+        )
+        recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
+        return (res.success, snippet.displayTitle(in: lang), res.message)
+    }
+
     public func setSlotItem(_ item: BarItem?, pageIndex: Int, slotIndex: Int) {
         guard profile.pages.indices.contains(pageIndex),
               profile.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
@@ -1044,6 +1135,13 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 // Quiet missing state: do not run anything and do not raise a failure toast.
                 return (true, "", "")
             }
+
+        case .snippet(let snippetID, let titleSnapshot, _, _):
+            return runSnippetByID(
+                snippetID,
+                fallbackName: titleSnapshot,
+                triggeredBy: deviceName
+            )
         }
     }
 
@@ -1404,8 +1502,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 allowActivatingPreferredPID: false,
                 language: lang
             )
-            // When typing mode is triggered with no focused field, do nothing quietly.
-            guard res.didPerformAction else { return }
+            guard res.didPerformAction || !res.message.isEmpty else { return }
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
             let label = MacInputAndMediaService.previewLabel(for: text)
             reply(.actionFeedback(

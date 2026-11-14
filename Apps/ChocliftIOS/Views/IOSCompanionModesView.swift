@@ -399,8 +399,9 @@ public struct IOSChocolateBarSurfaceView: View {
             case .macApp(_, _, _, let symbol):
                 DataImageView(pngData: iconData, fallbackSymbol: symbol, tint: palette.secondaryText)
             case .shortcut(_, let emoji, _), .website(_, _, let emoji, _, _),
-                 .flow(_, _, let emoji, _, _), .soundboard(_, _, let emoji, _):
-                Text(emoji).font(.system(size: launcherIconSide * 0.8))
+                 .flow(_, _, let emoji, _, _), .soundboard(_, _, let emoji, _),
+                 .snippet(_, _, let emoji, _):
+                Text(emoji.isEmpty ? "📝" : emoji).font(.system(size: launcherIconSide * 0.8))
             case .systemAction(let action, _, _):
                 Image(systemName: action.sfSymbol)
                     .resizable().scaledToFit().padding(12).foregroundStyle(palette.accent)

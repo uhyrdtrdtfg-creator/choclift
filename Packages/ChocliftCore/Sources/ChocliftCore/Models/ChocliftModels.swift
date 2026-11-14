@@ -320,6 +320,13 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
     )
     /// Opens up to 8 concrete child actions without adding a new `BarPage` (at most 1 folder per page).
     case folder(TileFolder)
+    /// Inserts or types a saved `TextSnippet` using its configured `SnippetInsertMode`.
+    case snippet(
+        snippetID: UUID,
+        titleSnapshot: String,
+        emoji: String = "📝",
+        backgroundHex: String = "#F3EEFF"
+    )
 
     private enum CodingKeys: String, CodingKey {
         case macApp
@@ -330,6 +337,7 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
         case soundboard
         case slotReference
         case folder
+        case snippet
     }
 
     private enum MacAppKeys: String, CodingKey {
@@ -377,6 +385,13 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
     private enum SlotReferenceKeys: String, CodingKey {
         case targetPageID
         case targetSlotIndex
+    }
+
+    private enum SnippetKeys: String, CodingKey {
+        case snippetID
+        case titleSnapshot
+        case emoji
+        case backgroundHex
     }
 
     public init(from decoder: Decoder) throws {
@@ -464,6 +479,18 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
         } else if container.contains(.folder) {
             let decodedFolder = try container.decode(TileFolder.self, forKey: .folder)
             self = .folder(decodedFolder)
+        } else if container.contains(.snippet) {
+            let nested = try container.nestedContainer(keyedBy: SnippetKeys.self, forKey: .snippet)
+            let snippetID = try nested.decode(UUID.self, forKey: .snippetID)
+            let titleSnapshot = try nested.decodeIfPresent(String.self, forKey: .titleSnapshot) ?? ""
+            let emoji = try nested.decodeIfPresent(String.self, forKey: .emoji) ?? "📝"
+            let backgroundHex = try nested.decodeIfPresent(String.self, forKey: .backgroundHex) ?? "#F3EEFF"
+            self = .snippet(
+                snippetID: snippetID,
+                titleSnapshot: titleSnapshot,
+                emoji: emoji,
+                backgroundHex: backgroundHex
+            )
         } else {
             throw DecodingError.dataCorrupted(
                 DecodingError.Context(
@@ -526,6 +553,13 @@ public enum BarItemKind: Codable, Equatable, Hashable, Sendable {
 
         case .folder(let folder):
             try container.encode(folder, forKey: .folder)
+
+        case .snippet(let snippetID, let titleSnapshot, let emoji, let backgroundHex):
+            var nested = container.nestedContainer(keyedBy: SnippetKeys.self, forKey: .snippet)
+            try nested.encode(snippetID, forKey: .snippetID)
+            try nested.encode(titleSnapshot, forKey: .titleSnapshot)
+            try nested.encode(emoji, forKey: .emoji)
+            try nested.encode(backgroundHex, forKey: .backgroundHex)
         }
     }
 }
@@ -573,6 +607,9 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
             return L10n.tr("引用 #\(targetSlotIndex + 1)", "Ref #\(targetSlotIndex + 1)", language: lang)
         case .folder(let folder):
             return folder.displayTitle(in: lang)
+        case .snippet(_, let titleSnapshot, _, _):
+            let trimmed = titleSnapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? L10n.tr("文本片段", "Snippet", language: lang) : trimmed
         }
     }
 
@@ -592,6 +629,13 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     public var soundID: UUID? {
         if case .soundboard(let id, _, _, _) = kind {
+            return id
+        }
+        return nil
+    }
+
+    public var snippetID: UUID? {
+        if case .snippet(let id, _, _, _) = kind {
             return id
         }
         return nil
@@ -640,7 +684,7 @@ public struct BarItem: Codable, Equatable, Hashable, Identifiable, Sendable {
                 in: profile,
                 from: SlotCoordinate(pageID: pageID, slotIndex: slotIdx)
             )
-        case .macApp, .shortcut, .website, .soundboard, .folder:
+        case .macApp, .shortcut, .website, .soundboard, .folder, .snippet:
             return false
         }
     }
@@ -1408,6 +1452,24 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         snippets.first(where: { $0.id == id })
     }
 
+    public func makeBarItem(
+        for snippet: TextSnippet,
+        emoji: String = "📝",
+        backgroundHex: String = "#F3EEFF",
+        id: UUID = UUID()
+    ) -> BarItem {
+        let trimmedEmoji = emoji.trimmingCharacters(in: .whitespacesAndNewlines)
+        return BarItem(
+            id: id,
+            kind: .snippet(
+                snippetID: snippet.id,
+                titleSnapshot: snippet.displayTitle(in: settings.language),
+                emoji: trimmedEmoji.isEmpty ? "📝" : trimmedEmoji,
+                backgroundHex: backgroundHex
+            )
+        )
+    }
+
     @discardableResult
     public mutating func upsertSnippet(_ snippet: TextSnippet) -> Bool {
         let clampedBody = TextSnippet.clampBody(snippet.body)
@@ -1423,12 +1485,14 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         )
         if let idx = snippets.firstIndex(where: { $0.id == normalized.id }) {
             snippets[idx] = normalized
+            syncSnippetBarItems(for: normalized)
             return true
         }
         guard snippets.count < TextSnippet.maxLibraryCount else {
             return false
         }
         snippets.append(normalized)
+        syncSnippetBarItems(for: normalized)
         return true
     }
 
@@ -1453,6 +1517,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
             language: settings.language
         )
         snippets[idx].updatedAt = Date()
+        syncSnippetBarItems(for: snippets[idx])
         return true
     }
 
@@ -1460,7 +1525,66 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     public mutating func deleteSnippet(id: UUID) -> Bool {
         let before = snippets.count
         snippets.removeAll { $0.id == id }
-        return snippets.count != before
+        var removedFromSlot = false
+        for pIdx in pages.indices {
+            for sIdx in pages[pIdx].slots.indices {
+                if pages[pIdx].slots[sIdx]?.snippetID == id {
+                    pages[pIdx].slots[sIdx] = nil
+                    removedFromSlot = true
+                } else if let slot = pages[pIdx].slots[sIdx], var folder = slot.folder {
+                    let beforeChildren = folder.children.count
+                    folder.children.removeAll { $0.snippetID == id }
+                    if folder.children.count != beforeChildren {
+                        pages[pIdx].slots[sIdx] = BarItem(id: slot.id, kind: .folder(folder))
+                        removedFromSlot = true
+                    }
+                }
+            }
+        }
+        if removedFromSlot {
+            pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
+        }
+        return snippets.count != before || removedFromSlot
+    }
+
+    private mutating func syncSnippetBarItems(for snippet: TextSnippet) {
+        let updatedTitle = snippet.displayTitle(in: settings.language)
+        for pIdx in pages.indices {
+            for sIdx in pages[pIdx].slots.indices {
+                guard let existing = pages[pIdx].slots[sIdx] else { continue }
+                if case .snippet(let snippetID, _, let emoji, let hex) = existing.kind, snippetID == snippet.id {
+                    pages[pIdx].slots[sIdx] = BarItem(
+                        id: existing.id,
+                        kind: .snippet(
+                            snippetID: snippet.id,
+                            titleSnapshot: updatedTitle,
+                            emoji: emoji,
+                            backgroundHex: hex
+                        )
+                    )
+                } else if var folder = existing.folder {
+                    var changed = false
+                    for cIdx in folder.children.indices {
+                        if case .snippet(let snippetID, _, let emoji, let hex) = folder.children[cIdx].kind,
+                           snippetID == snippet.id {
+                            folder.children[cIdx] = BarItem(
+                                id: folder.children[cIdx].id,
+                                kind: .snippet(
+                                    snippetID: snippet.id,
+                                    titleSnapshot: updatedTitle,
+                                    emoji: emoji,
+                                    backgroundHex: hex
+                                )
+                            )
+                            changed = true
+                        }
+                    }
+                    if changed {
+                        pages[pIdx].slots[sIdx] = BarItem(id: existing.id, kind: .folder(folder))
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - Action Flow Profile Helpers
@@ -1774,6 +1898,11 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         case .flow(let flowID, _, _, _, _):
             if let flow = flow(withID: flowID) {
                 return flow.name
+            }
+            return item.displayTitle(in: lang)
+        case .snippet(let snippetID, _, _, _):
+            if let snippet = snippet(withID: snippetID) {
+                return snippet.displayTitle(in: lang)
             }
             return item.displayTitle(in: lang)
         default:

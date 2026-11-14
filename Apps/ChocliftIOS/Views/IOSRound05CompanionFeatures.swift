@@ -726,6 +726,9 @@ public struct IOSPinnedStripTilesRow: View {
             Image(systemName: "arrow.turn.up.right")
                 .font(ChocType.micro)
                 .foregroundStyle(palette.accent)
+        case .snippet(_, _, let emoji, _):
+            Text(emoji.isEmpty ? "📝" : emoji)
+                .font(ChocType.caption)
         }
     }
 
