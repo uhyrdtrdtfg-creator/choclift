@@ -471,46 +471,60 @@ public struct ChocliftBrandIconView: View {
 
     public var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color(hex: "#6B3418"), Color(hex: "#381808")],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-                        .strokeBorder(Color(hex: "#9A5633").opacity(0.65), lineWidth: max(1, size * 0.03))
-                )
-
-            VStack {
-                Spacer()
-                HStack {
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color(hex: "#D62828"), Color(hex: "#F4A261")],
-                                startPoint: .bottomLeading,
-                                endPoint: .topTrailing
-                            )
-                        )
-                        .frame(width: size * 0.72, height: size * 0.22)
-                        .rotationEffect(.degrees(16))
-                        .offset(x: -size * 0.08, y: size * 0.06)
-                    Spacer()
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
-
-            Text("c")
-                .font(.system(size: size * 0.62, weight: .black, design: .serif))
-                .italic()
-                .foregroundStyle(Color(hex: "#FFF3E2"))
-                .shadow(color: .black.opacity(0.4), radius: size * 0.05, x: 0, y: size * 0.03)
-                .offset(y: -size * 0.04)
+            LinearGradient(colors: [Color(hex: "#6B3418"), Color(hex: "#381808")],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            brandPath(.foil).fill(Color(hex: "#F4A261"))
+            brandPath(.ribbon).fill(Color(hex: "#D62828"))
+            brandPath(.letter).fill(Color(hex: "#FFF3E2"))
         }
         .frame(width: size, height: size)
+        .clipShape(brandPath(.tile))
+    }
+
+    private enum Outline { case letter, foil, ribbon, tile }
+
+    // Unit-square vector artwork matches Scripts/generate_icons.swift.
+    private func brandPath(_ outline: Outline) -> Path {
+        var p = Path()
+        switch outline {
+        case .tile:
+            p.move(to: CGPoint(x: size * 0.5, y: 0))
+            p.addCurve(to: CGPoint(x: size, y: size * 0.5), control1: CGPoint(x: size * 0.94, y: 0), control2: CGPoint(x: size, y: size * 0.06))
+            p.addCurve(to: CGPoint(x: size * 0.5, y: size), control1: CGPoint(x: size, y: size * 0.94), control2: CGPoint(x: size * 0.94, y: size))
+            p.addCurve(to: CGPoint(x: 0, y: size * 0.5), control1: CGPoint(x: size * 0.06, y: size), control2: CGPoint(x: 0, y: size * 0.94))
+            p.addCurve(to: CGPoint(x: size * 0.5, y: 0), control1: CGPoint(x: 0, y: size * 0.06), control2: CGPoint(x: size * 0.06, y: 0))
+            p.closeSubpath()
+        case .letter:
+            // Same compact italic c as the generated platform icons.
+            p.move(to: CGPoint(x: size * 0.704, y: size * 0.354))
+            p.addCurve(to: CGPoint(x: size * 0.572, y: size * 0.265), control1: CGPoint(x: size * 0.711, y: size * 0.293), control2: CGPoint(x: size * 0.655, y: size * 0.258))
+            p.addCurve(to: CGPoint(x: size * 0.309, y: size * 0.491), control1: CGPoint(x: size * 0.435, y: size * 0.265), control2: CGPoint(x: size * 0.337, y: size * 0.365))
+            p.addCurve(to: CGPoint(x: size * 0.439, y: size * 0.659), control1: CGPoint(x: size * 0.284, y: size * 0.597), control2: CGPoint(x: size * 0.331, y: size * 0.659))
+            p.addCurve(to: CGPoint(x: size * 0.695, y: size * 0.537), control1: CGPoint(x: size * 0.541, y: size * 0.659), control2: CGPoint(x: size * 0.642, y: size * 0.613))
+            p.addLine(to: CGPoint(x: size * 0.647, y: size * 0.499))
+            p.addCurve(to: CGPoint(x: size * 0.483, y: size * 0.581), control1: CGPoint(x: size * 0.592, y: size * 0.556), control2: CGPoint(x: size * 0.535, y: size * 0.581))
+            p.addCurve(to: CGPoint(x: size * 0.437, y: size * 0.483), control1: CGPoint(x: size * 0.429, y: size * 0.581), control2: CGPoint(x: size * 0.422, y: size * 0.542))
+            p.addCurve(to: CGPoint(x: size * 0.559, y: size * 0.329), control1: CGPoint(x: size * 0.455, y: size * 0.397), control2: CGPoint(x: size * 0.503, y: size * 0.329))
+            p.addCurve(to: CGPoint(x: size * 0.592, y: size * 0.364), control1: CGPoint(x: size * 0.585, y: size * 0.329), control2: CGPoint(x: size * 0.595, y: size * 0.343))
+            p.addCurve(to: CGPoint(x: size * 0.646, y: size * 0.409), control1: CGPoint(x: size * 0.584, y: size * 0.394), control2: CGPoint(x: size * 0.607, y: size * 0.413))
+            p.addCurve(to: CGPoint(x: size * 0.704, y: size * 0.354), control1: CGPoint(x: size * 0.679, y: size * 0.407), control2: CGPoint(x: size * 0.699, y: size * 0.385))
+            p.closeSubpath()
+        case .foil:
+            p.move(to: CGPoint(x: size * 0.168, y: size * 0.742))
+            p.addCurve(to: CGPoint(x: size * 0.82, y: size * 0.701), control1: CGPoint(x: size * 0.354, y: size * 0.667), control2: CGPoint(x: size * 0.561, y: size * 0.819))
+            p.addLine(to: CGPoint(x: size * 0.8, y: size * 0.817))
+            p.addCurve(to: CGPoint(x: size * 0.188, y: size * 0.85), control1: CGPoint(x: size * 0.552, y: size * 0.921), control2: CGPoint(x: size * 0.349, y: size * 0.769))
+            p.addLine(to: CGPoint(x: size * 0.207, y: size * 0.794))
+            p.closeSubpath()
+        case .ribbon:
+            p.move(to: CGPoint(x: size * 0.183, y: size * 0.76))
+            p.addCurve(to: CGPoint(x: size * 0.816, y: size * 0.722), control1: CGPoint(x: size * 0.366, y: size * 0.697), control2: CGPoint(x: size * 0.568, y: size * 0.841))
+            p.addLine(to: CGPoint(x: size * 0.803, y: size * 0.794))
+            p.addCurve(to: CGPoint(x: size * 0.189, y: size * 0.829), control1: CGPoint(x: size * 0.559, y: size * 0.899), control2: CGPoint(x: size * 0.355, y: size * 0.751))
+            p.addLine(to: CGPoint(x: size * 0.219, y: size * 0.789))
+            p.closeSubpath()
+        }
+        return p
     }
 }
 
@@ -1343,5 +1357,193 @@ public struct MaxWidthPillTitleLayout: Layout {
             anchor: .leading,
             proposal: ProposedViewSize(width: bounds.width, height: bounds.height)
         )
+    }
+}
+
+// MARK: - Bright Palette Now-Playing Scrub Track & Local Gesture Surface
+
+/// Draggable bright-palette playback progress bar rendered ONLY when `NowPlayingStatus.isSeekable` is true.
+public struct ChocNowPlayingProgressTrack: View {
+    public let progressFraction: Double
+    public let palette: ChocPalette
+    public var isScrubbing: Bool
+    public var compact: Bool
+
+    public init(
+        progressFraction: Double,
+        palette: ChocPalette,
+        isScrubbing: Bool = false,
+        compact: Bool = false
+    ) {
+        self.progressFraction = ControlStripLevel.clamp(progressFraction)
+        self.palette = palette
+        self.isScrubbing = isScrubbing
+        self.compact = compact
+    }
+
+    public var body: some View {
+        let railHeight: CGFloat = compact ? (isScrubbing ? 5 : 3.5) : (isScrubbing ? 6 : 4)
+        let thumbDiameter: CGFloat = compact ? (isScrubbing ? 9.5 : 7) : (isScrubbing ? 11 : 8)
+
+        GeometryReader { geo in
+            let width = max(thumbDiameter, geo.size.width)
+            let clamped = ControlStripLevel.clamp(progressFraction)
+            let fillWidth = max(railHeight, width * CGFloat(clamped))
+            let thumbTravel = max(0, width - thumbDiameter)
+            let thumbX = thumbTravel * CGFloat(clamped)
+
+            ZStack(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(palette.tileBorderHighlight.opacity(0.72))
+                    .frame(height: railHeight)
+
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                palette.accent,
+                                palette.accentEmphasis.opacity(isScrubbing ? 0.95 : 0.78)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: min(width, fillWidth), height: railHeight)
+
+                Circle()
+                    .fill(palette.barSurface)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(isScrubbing ? palette.accentEmphasis : palette.accent, lineWidth: compact ? 1.6 : 2.0)
+                    )
+                    .frame(width: thumbDiameter, height: thumbDiameter)
+                    .offset(x: thumbX)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+        .frame(height: compact ? 10 : 12)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct ChocScrubWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 1
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(1, nextValue())
+    }
+}
+
+/// Local (non-fullscreen) touch/pointer scrub wrapper with at least a 44pt hit height by default,
+/// claiming horizontal one-finger drags locally via `.highPriorityGesture` so parent page-swipe gestures
+/// never steal progress scrubbing, and committing at most one seek when the finger lifts.
+public struct ChocNowPlayingScrubSurface<Content: View>: View {
+    public let isSeekable: Bool
+    public let minimumHitHeight: CGFloat
+    public let horizontalInset: CGFloat
+    public let onScrubChanged: (Double) -> Void
+    public let onScrubEnded: (Double) -> Void
+    public let onScrubCancelled: () -> Void
+    private let content: Content
+
+    @GestureState private var isFingerDown: Bool = false
+    @State private var measuredWidth: CGFloat = 180
+    @State private var activeDragFraction: Double?
+
+    public init(
+        isSeekable: Bool,
+        minimumHitHeight: CGFloat = 44,
+        horizontalInset: CGFloat = 10,
+        onScrubChanged: @escaping (Double) -> Void,
+        onScrubEnded: @escaping (Double) -> Void,
+        onScrubCancelled: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.isSeekable = isSeekable
+        self.minimumHitHeight = max(32, minimumHitHeight)
+        self.horizontalInset = max(0, horizontalInset)
+        self.onScrubChanged = onScrubChanged
+        self.onScrubEnded = onScrubEnded
+        self.onScrubCancelled = onScrubCancelled
+        self.content = content()
+    }
+
+    public var body: some View {
+        let base = content
+            .frame(minHeight: minimumHitHeight)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: ChocScrubWidthPreferenceKey.self, value: max(1, proxy.size.width))
+                }
+            )
+            .onPreferenceChange(ChocScrubWidthPreferenceKey.self) { newWidth in
+                measuredWidth = max(1, newWidth)
+            }
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .updating($isFingerDown) { _, state, _ in
+                        state = true
+                    }
+                    .onChanged { value in
+                        guard isSeekable else { return }
+                        let fraction = normalizedFraction(forLocalX: value.location.x)
+                        activeDragFraction = fraction
+                        onScrubChanged(fraction)
+                    }
+                    .onEnded { value in
+                        guard isSeekable else {
+                            activeDragFraction = nil
+                            return
+                        }
+                        guard activeDragFraction != nil else { return }
+                        let fraction = normalizedFraction(forLocalX: value.location.x)
+                        activeDragFraction = nil
+                        onScrubEnded(fraction)
+                    }
+            )
+            .onDisappear {
+                if activeDragFraction != nil {
+                    activeDragFraction = nil
+                    onScrubCancelled()
+                }
+            }
+
+        #if os(macOS)
+        base.onChange(of: isFingerDown) { fingerDown in
+            handleFingerDownChanged(fingerDown)
+        }
+        .onChange(of: isSeekable) { seekable in
+            if !seekable, activeDragFraction != nil {
+                activeDragFraction = nil
+                onScrubCancelled()
+            }
+        }
+        #else
+        base.onChange(of: isFingerDown) { _, fingerDown in
+            handleFingerDownChanged(fingerDown)
+        }
+        .onChange(of: isSeekable) { _, seekable in
+            if !seekable, activeDragFraction != nil {
+                activeDragFraction = nil
+                onScrubCancelled()
+            }
+        }
+        #endif
+    }
+
+    private func normalizedFraction(forLocalX x: CGFloat) -> Double {
+        let usableWidth = max(1, measuredWidth - horizontalInset * 2)
+        let shifted = x - horizontalInset
+        return ControlStripLevel.clamp(Double(shifted / usableWidth))
+    }
+
+    private func handleFingerDownChanged(_ fingerDown: Bool) {
+        guard !fingerDown else { return }
+        DispatchQueue.main.async {
+            if activeDragFraction != nil {
+                activeDragFraction = nil
+                onScrubCancelled()
+            }
+        }
     }
 }

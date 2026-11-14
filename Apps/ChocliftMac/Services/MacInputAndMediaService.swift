@@ -13,6 +13,8 @@ public final class MacInputAndMediaService {
 
     /// Supplies live Now Playing / active audio client context from `MacSystemControlService`.
     public var mediaTransportContextProvider: (() -> MacMediaTransportContext)?
+    /// Supplies live Now Playing bundle + duration context for playback scrubbing (`MacMediaSeekRouter`).
+    public var mediaSeekContextProvider: (() -> MacMediaSeekContext)?
 
     public init(windowService: MacAccessibilityAndWindowService) {
         self.windowService = windowService
@@ -621,6 +623,117 @@ public final class MacInputAndMediaService {
         }
     }
 
+    /// Seeks the active Now Playing session to `requestedPositionSeconds` (`0...duration`) using the same
+    /// background `NSAppleScript` / AppleEvent pattern as `playpause` for Spotify and Music.
+    /// Never activates or launches any player, never posts HID media keys or track skips, and returns
+    /// explicit failure for missing duration or unsupported apps on macOS 13.
+    public func seekNowPlaying(
+        to requestedPositionSeconds: Double,
+        language: AppLanguage = .system
+    ) -> (success: Bool, appliedPositionSeconds: Double?, message: String) {
+        let context = mediaSeekContextProvider?() ?? Self.fallbackMediaSeekContext()
+        let route = MacMediaSeekRouter.chooseRoute(
+            requestedPositionSeconds: requestedPositionSeconds,
+            context: context
+        )
+
+        switch route {
+        case .spotifyScript(let clampedSeconds):
+            let timestampText = NowPlayingProgressFormatter.formatTimestamp(Int(clampedSeconds.rounded(.down)))
+            switch executePlayerSeekAppleScript(target: .spotify, positionSeconds: clampedSeconds) {
+            case .delivered:
+                return (
+                    true,
+                    clampedSeconds,
+                    L10n.tr("已将 Spotify 跳转至 \(timestampText)", "Seeked Spotify to \(timestampText)", language: language)
+                )
+            case .notRunning:
+                return (
+                    false,
+                    nil,
+                    MacMediaSeekRejectionReason.playerNotRunning(bundleID: MacMediaSeekRouter.spotifyBundleIdentifier)
+                        .message(in: language)
+                )
+            case .failed(let errorMessage):
+                return (
+                    false,
+                    nil,
+                    L10n.tr(
+                        "无法跳转 Spotify 播放进度：\(errorMessage)",
+                        "Could not seek Spotify playback: \(errorMessage)",
+                        language: language
+                    )
+                )
+            }
+
+        case .musicScript(let clampedSeconds):
+            let timestampText = NowPlayingProgressFormatter.formatTimestamp(Int(clampedSeconds.rounded(.down)))
+            switch executePlayerSeekAppleScript(target: .music, positionSeconds: clampedSeconds) {
+            case .delivered:
+                return (
+                    true,
+                    clampedSeconds,
+                    L10n.tr("已将 Music 跳转至 \(timestampText)", "Seeked Music to \(timestampText)", language: language)
+                )
+            case .notRunning:
+                return (
+                    false,
+                    nil,
+                    MacMediaSeekRejectionReason.playerNotRunning(bundleID: MacMediaSeekRouter.musicBundleIdentifier)
+                        .message(in: language)
+                )
+            case .failed(let errorMessage):
+                return (
+                    false,
+                    nil,
+                    L10n.tr(
+                        "无法跳转 Music 播放进度：\(errorMessage)",
+                        "Could not seek Music playback: \(errorMessage)",
+                        language: language
+                    )
+                )
+            }
+
+        case .rejected(let reason):
+            return (false, nil, reason.message(in: language))
+        }
+    }
+
+    private func executePlayerSeekAppleScript(
+        target: MacMediaSeekTargetPlayer,
+        positionSeconds: Double
+    ) -> PlayerScriptOutcome {
+        guard Self.isAppRunning(bundleID: target.bundleIdentifier) else {
+            return .notRunning
+        }
+
+        let source = """
+        with timeout of 3 seconds
+            \(target.scriptSource(positionSeconds: positionSeconds))
+        end timeout
+        """
+        guard let script = NSAppleScript(source: source) else {
+            return .failed("AppleScript initialization failed")
+        }
+
+        var errorDict: NSDictionary?
+        let descriptor = script.executeAndReturnError(&errorDict)
+        if let errorDict {
+            let errNum = (errorDict[NSAppleScript.errorNumber] as? Int) ?? 0
+            if errNum == -600 {
+                return .notRunning
+            }
+            let reason = (errorDict[NSAppleScript.errorBriefMessage] as? String)
+                ?? (errorDict[NSAppleScript.errorMessage] as? String)
+                ?? "AppleEvent error (\(errNum))"
+            return .failed(reason)
+        }
+        if descriptor.stringValue == "NOT_RUNNING" {
+            return .notRunning
+        }
+        return .delivered
+    }
+
     /// Sends a background AppleEvent/AppleScript command (`playpause` / `next track` / `previous track`)
     /// without activating the target app or stealing focus, and never launches the app if it is not running.
     private func executePlayerAppleScript(bundleID: String, verb: String) -> PlayerScriptOutcome {
@@ -683,6 +796,15 @@ public final class MacInputAndMediaService {
             isSpotifyPlaying: false,
             frontmostBundleID: frontmostID,
             hasOtherActiveMediaClient: false
+        )
+    }
+
+    private static func fallbackMediaSeekContext() -> MacMediaSeekContext {
+        MacMediaSeekContext(
+            nowPlayingBundleID: nil,
+            durationSeconds: nil,
+            isSpotifyRunning: isAppRunning(bundleID: MacMediaSeekRouter.spotifyBundleIdentifier),
+            isMusicRunning: isAppRunning(bundleID: MacMediaSeekRouter.musicBundleIdentifier)
         )
     }
 

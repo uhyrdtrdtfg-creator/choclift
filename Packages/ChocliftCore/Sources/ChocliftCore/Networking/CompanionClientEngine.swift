@@ -114,6 +114,7 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var recentlyTriggeredTiles: [RecentlyTriggeredTileEntry] = []
     @Published public private(set) var maintenanceConfirmController = Round08MaintenanceConfirmController()
     @Published public private(set) var lockScreenConfirmController = Round09LockScreenConfirmController()
+    @Published public private(set) var nowPlayingScrub = NowPlayingScrubController()
     @Published public private(set) var hapticQuietHours: HapticQuietHoursSettings = .disabled
     @Published public private(set) var observedClipboardPreviewTexts: Set<String> = []
     @Published public var lastFeedback: CompanionFeedbackToast?
@@ -1456,6 +1457,7 @@ public final class CompanionClientEngine: ObservableObject {
         disconnectedStrip.ejectableExternalVolumeCount = 0
         disconnectedStrip.frontmostAppName = nil
         controlStripState = disconnectedStrip
+        nowPlayingScrub.cancel()
         disarmMaintenanceConfirmation()
         disarmLockMacScreenConfirmation()
         tileFeedbackTracker.clearPendingWithoutFeedback()
@@ -1587,6 +1589,7 @@ public final class CompanionClientEngine: ObservableObject {
             disconnectedStrip.wifiSSID = nil
             disconnectedStrip.ejectableExternalVolumeCount = 0
             controlStripState = disconnectedStrip
+            nowPlayingScrub.cancel()
             disarmMaintenanceConfirmation()
             tileFeedbackTracker.clearPendingWithoutFeedback()
             connectionState = .disconnected
@@ -1655,6 +1658,7 @@ public final class CompanionClientEngine: ObservableObject {
         disconnectedStrip.ejectableExternalVolumeCount = 0
         disconnectedStrip.frontmostAppName = nil
         controlStripState = disconnectedStrip
+        nowPlayingScrub.cancel()
         disarmMaintenanceConfirmation()
         disarmLockMacScreenConfirmation()
         if let failedBanner = tileFeedbackTracker.failPendingOnDisconnect() {
@@ -2032,6 +2036,84 @@ public final class CompanionClientEngine: ObservableObject {
 
     public func requestControlStripState() {
         send(.requestControlStripState)
+    }
+
+    /// Updates the local Now Playing scrub preview while the user's finger drags across the track.
+    /// Never sends a network seek frame during drag.
+    @discardableResult
+    public func updateNowPlayingScrub(normalizedProgress: Double) -> Double? {
+        nowPlayingScrub.updateDrag(
+            normalizedProgress: normalizedProgress,
+            for: controlStripState.nowPlaying
+        )
+    }
+
+    /// Updates the local Now Playing scrub preview in absolute seconds (`0...duration`) while dragging.
+    /// Never sends a network seek frame during drag.
+    @discardableResult
+    public func updateNowPlayingScrub(toPositionSeconds rawSeconds: Double) -> Double? {
+        nowPlayingScrub.updateDrag(
+            toPositionSeconds: rawSeconds,
+            for: controlStripState.nowPlaying
+        )
+    }
+
+    /// Cancels any active local Now Playing scrub preview without sending a seek command.
+    public func cancelNowPlayingScrub() {
+        guard nowPlayingScrub.isScrubbing || nowPlayingScrub.previewPositionSeconds != nil else { return }
+        nowPlayingScrub.cancel()
+    }
+
+    /// Commits a scrub gesture on finger lift and sends at most ONE `.seekNowPlaying` command
+    /// (clamped to `0...duration`, only when the current session is seekable).
+    @discardableResult
+    public func commitNowPlayingScrub(normalizedProgress: Double) -> Double? {
+        guard let targetSeconds = nowPlayingScrub.endDrag(
+            normalizedProgress: normalizedProgress,
+            for: controlStripState.nowPlaying
+        ) else {
+            return nil
+        }
+        return sendClampedNowPlayingSeek(targetSeconds)
+    }
+
+    /// Commits a scrub gesture at an absolute target position on finger lift and sends at most ONE
+    /// `.seekNowPlaying` command (clamped to `0...duration`, only when the current session is seekable).
+    @discardableResult
+    public func commitNowPlayingScrub(atPositionSeconds rawSeconds: Double) -> Double? {
+        guard let targetSeconds = nowPlayingScrub.endDrag(
+            atPositionSeconds: rawSeconds,
+            for: controlStripState.nowPlaying
+        ) else {
+            return nil
+        }
+        return sendClampedNowPlayingSeek(targetSeconds)
+    }
+
+    private func sendClampedNowPlayingSeek(_ rawTargetSeconds: Double) -> Double? {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("播放进度", "Playback Position", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return nil
+        }
+        guard var nowPlaying = controlStripState.nowPlaying,
+              nowPlaying.isSeekable,
+              let duration = nowPlaying.durationSeconds,
+              duration > 0 else {
+            return nil
+        }
+        let clampedSeconds = MacMediaSeekRouter.clampPosition(rawTargetSeconds, durationSeconds: duration)
+        nowPlaying.elapsedSeconds = clampedSeconds
+        var next = controlStripState
+        next.nowPlaying = nowPlaying
+        controlStripState = next
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.seekNowPlaying(positionSeconds: clampedSeconds))
+        return clampedSeconds
     }
 
     public func setControlLevel(kind: ControlLevelKind, level: Double) {
@@ -2835,6 +2917,7 @@ public final class CompanionClientEngine: ObservableObject {
 
         case .controlStripStateUpdated(let state):
             controlStripState = state
+            nowPlayingScrub.reconcile(with: state.nowPlaying)
             profile.soundboardVolume = state.soundboardVolume
             if state.ejectableExternalVolumeCount <= 0,
                maintenanceConfirmController.gate.armedTargetID == Round08MaintenanceAction.ejectExternalDisks.rawValue {

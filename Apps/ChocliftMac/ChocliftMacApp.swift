@@ -13,6 +13,13 @@ struct ChocliftMacApp: App {
         }
         .defaultSize(width: 1120, height: 700)
         .commands {
+            CommandGroup(after: .appInfo) {
+                CheckForUpdatesMenuItemView(
+                    updater: coordinator.updaterService,
+                    language: coordinator.lang
+                )
+            }
+
             CommandGroup(after: .toolbar) {
                 Toggle(
                     L10n.tr("顶部刘海悬浮巧克力栏", "Notch Chocolate Bar Panel", language: coordinator.lang),

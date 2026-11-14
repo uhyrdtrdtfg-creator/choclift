@@ -253,10 +253,24 @@ public enum NowPlayingProgressFormatter {
     public static func rowDisplayContent(
         for status: NowPlayingStatus?
     ) -> (title: String, progressText: String?)? {
+        rowDisplayContent(for: status, overrideElapsedSeconds: nil)
+    }
+
+    /// Resolves the text components for the Now Playing strip row, optionally substituting an in-progress
+    /// local scrub preview timestamp while preserving the missing-duration -> title-only rule.
+    public static func rowDisplayContent(
+        for status: NowPlayingStatus?,
+        overrideElapsedSeconds: Double?
+    ) -> (title: String, progressText: String?)? {
         guard let status, let title = status.primaryDisplayText else {
             return nil
         }
-        return (title, status.formattedProgressText)
+        let elapsed = overrideElapsedSeconds ?? status.elapsedSeconds
+        let formatted = formattedProgress(
+            elapsedSeconds: elapsed,
+            durationSeconds: status.durationSeconds
+        )
+        return (title, formatted)
     }
 }
 

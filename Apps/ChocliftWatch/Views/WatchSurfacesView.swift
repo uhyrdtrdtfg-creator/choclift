@@ -1003,6 +1003,10 @@ public struct WatchQuickActionsView: View {
                 // Media & Volume Strip (Clean iconic transport buttons >= 46pt)
                 sectionHeader(L10n.tr("媒体与音量", "Media & Volume", language: lang), symbol: "speaker.wave.2.fill")
 
+                if client.controlStripState.nowPlaying != nil {
+                    WatchNowPlayingProgressRow(client: client)
+                }
+
                 tripleMediaStrip([.mediaPrevious, .mediaPlayPause, .mediaNext])
                 tripleMediaStrip([.volumeDown, .volumeMute, .volumeUp])
                 watchAudioOutputButton
@@ -1345,6 +1349,95 @@ public struct WatchQuickActionsView: View {
                     detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
                 )
             }
+        }
+    }
+}
+
+public struct WatchNowPlayingProgressRow: View {
+    @ObservedObject var client: CompanionClientEngine
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
+    public init(client: CompanionClientEngine) {
+        self.client = client
+    }
+
+    public var body: some View {
+        let activeMedia = client.controlStripState.nowPlaying
+        let isSeekable = client.connectionState.isConnected && (activeMedia?.isSeekable == true)
+        let isScrubbing = isSeekable && client.nowPlayingScrub.isScrubbing
+        let overrideElapsed = client.nowPlayingScrub.effectiveElapsedSeconds(for: activeMedia)
+        let rowContent = NowPlayingProgressFormatter.rowDisplayContent(
+            for: activeMedia,
+            overrideElapsedSeconds: overrideElapsed
+        )
+        let progressFraction = isSeekable ? client.nowPlayingScrub.effectiveProgressFraction(for: activeMedia) : nil
+
+        if let rowContent {
+            ChocNowPlayingScrubSurface(
+                isSeekable: isSeekable,
+                minimumHitHeight: 46,
+                horizontalInset: 8,
+                onScrubChanged: { fraction in
+                    _ = client.updateNowPlayingScrub(normalizedProgress: fraction)
+                },
+                onScrubEnded: { fraction in
+                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                    _ = client.commitNowPlayingScrub(normalizedProgress: fraction)
+                },
+                onScrubCancelled: {
+                    client.cancelNowPlayingScrub()
+                }
+            ) {
+                VStack(alignment: .leading, spacing: progressFraction != nil ? 4 : 2) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 10.5, weight: .bold))
+                            .foregroundStyle(palette.accent)
+                        Text(rowContent.title)
+                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(palette.primaryText)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 2)
+                    }
+
+                    if let progressText = rowContent.progressText {
+                        Text(progressText)
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(isScrubbing ? palette.accent : palette.secondaryText)
+                            .lineLimit(1)
+                            .accessibilityIdentifier("watch-now-playing-progress")
+                    }
+
+                    if let progressFraction {
+                        ChocNowPlayingProgressTrack(
+                            progressFraction: progressFraction,
+                            palette: palette,
+                            isScrubbing: isScrubbing,
+                            compact: true
+                        )
+                    }
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
+                .background(
+                    palette.barSurface,
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(
+                            isScrubbing ? palette.accent : palette.subtleCardStroke,
+                            lineWidth: isScrubbing ? 1.5 : 1
+                        )
+                )
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("watch-now-playing-row")
         }
     }
 }

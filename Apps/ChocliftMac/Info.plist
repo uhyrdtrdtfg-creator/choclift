@@ -24,10 +24,6 @@
 	<string>public.app-category.productivity</string>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>choclift 使用自动化脚本在后台控制 Spotify / 音乐播放以及切换到已打开的浏览器标签页。</string>
-	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>choclift 以只读方式显示你的下一条日历日程标题与开始时间，不会新建或修改任何日程。</string>
-	<key>NSCalendarsUsageDescription</key>
-	<string>choclift 以只读方式显示你的下一条日历日程标题与开始时间，不会新建或修改任何日程。</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>choclift 在不处于同一 Wi-Fi 时通过蓝牙低功耗 (BLE) 广播配对服务，接收来自 iPhone、iPad 或 Apple Watch 的触控栏指令。</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
@@ -38,9 +34,21 @@
 		<string>_raop._tcp</string>
 		<string>_airplay._tcp</string>
 	</array>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>choclift 以只读方式显示你的下一条日历日程标题与开始时间，不会新建或修改任何日程。</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>choclift 以只读方式显示你的下一条日历日程标题与开始时间，不会新建或修改任何日程。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>choclift 通过本地局域网连接你的 iPhone、iPad 或 Apple Watch 触控栏。</string>
+	<key>SUAllowsAutomaticUpdates</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/uhyrdtrdtfg-creator/choclift/main/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>sW8VDD67w99pj0oQLD8p5nIWgkEzM2FV/sBbmnu5vxw=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>

@@ -86,6 +86,8 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
     public var elapsedSeconds: Double?
     /// System-reported track duration in seconds (`nil` when missing or non-positive).
     public var durationSeconds: Double?
+    /// Bundle identifier of the active Now Playing application when known (`com.spotify.client`, `com.apple.Music`, etc.).
+    public var bundleIdentifier: String?
 
     private enum CodingKeys: String, CodingKey {
         case title
@@ -94,6 +96,7 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         case isPlaying
         case elapsedSeconds
         case durationSeconds
+        case bundleIdentifier
     }
 
     public init(
@@ -102,7 +105,8 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         appName: String? = nil,
         isPlaying: Bool = false,
         elapsedSeconds: Double? = nil,
-        durationSeconds: Double? = nil
+        durationSeconds: Double? = nil,
+        bundleIdentifier: String? = nil
     ) {
         self.title = Self.clean(title)
         self.artist = Self.clean(artist)
@@ -111,6 +115,7 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         let validDuration = Self.cleanDuration(durationSeconds)
         self.durationSeconds = validDuration
         self.elapsedSeconds = Self.cleanElapsed(elapsedSeconds, cappedBy: validDuration)
+        self.bundleIdentifier = Self.clean(bundleIdentifier)
     }
 
     public init(from decoder: Decoder) throws {
@@ -124,6 +129,7 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         let validDuration = Self.cleanDuration(rawDuration)
         self.durationSeconds = validDuration
         self.elapsedSeconds = Self.cleanElapsed(rawElapsed, cappedBy: validDuration)
+        self.bundleIdentifier = Self.clean(try container.decodeIfPresent(String.self, forKey: .bundleIdentifier))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -136,6 +142,7 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         let validElapsed = Self.cleanElapsed(elapsedSeconds, cappedBy: validDuration)
         try container.encodeIfPresent(validElapsed, forKey: .elapsedSeconds)
         try container.encodeIfPresent(validDuration, forKey: .durationSeconds)
+        try container.encodeIfPresent(Self.clean(bundleIdentifier), forKey: .bundleIdentifier)
     }
 
     /// Track title if available, otherwise the active media app name.
@@ -170,6 +177,27 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         )
     }
 
+    /// True ONLY when `durationSeconds` is present (`> 0` and finite) AND the current Now Playing
+    /// app supports background playback position seeking on macOS 13 (`Spotify` or `Music`).
+    public var isSeekable: Bool {
+        guard let validDuration = Self.cleanDuration(durationSeconds),
+              validDuration > 0,
+              let cleanedBundle = Self.clean(bundleIdentifier) else {
+            return false
+        }
+        return MacMediaSeekRouter.isSupportedSeekBundleIdentifier(cleanedBundle)
+    }
+
+    /// Normalized `0.0...1.0` playback fraction when `durationSeconds` is present (`> 0`); `nil` when duration is missing.
+    public var progressFraction: Double? {
+        guard let validDuration = Self.cleanDuration(durationSeconds),
+              validDuration > 0 else {
+            return nil
+        }
+        let validElapsed = Self.cleanElapsed(elapsedSeconds, cappedBy: validDuration) ?? 0.0
+        return ControlStripLevel.clamp(validElapsed / validDuration)
+    }
+
     public var hasActiveMedia: Bool {
         primaryDisplayText != nil
     }
@@ -198,6 +226,145 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
             return min(nonNegative, duration)
         }
         return nonNegative
+    }
+}
+
+/// Pure, unit-testable playback scrub state machine that tracks local preview position while dragging
+/// (sending zero network/player commands per pixel) and emits a single clamped position on finger release.
+public struct NowPlayingScrubController: Equatable, Sendable {
+    public private(set) var isScrubbing: Bool = false
+    public private(set) var previewPositionSeconds: Double?
+    public private(set) var scrubbedTrackTitle: String?
+    public private(set) var scrubbedBundleIdentifier: String?
+
+    public init() {}
+
+    /// Updates local preview position from a normalized `0.0...1.0` drag fraction without emitting a seek command.
+    @discardableResult
+    public mutating func updateDrag(
+        normalizedProgress: Double,
+        for status: NowPlayingStatus?
+    ) -> Double? {
+        guard let status,
+              status.isSeekable,
+              let duration = status.durationSeconds,
+              duration > 0 else {
+            cancel()
+            return nil
+        }
+        let clampedFraction = ControlStripLevel.clamp(normalizedProgress)
+        return updateDrag(toPositionSeconds: clampedFraction * duration, for: status)
+    }
+
+    /// Updates local preview position in absolute seconds (`0...duration`) without emitting a seek command.
+    @discardableResult
+    public mutating func updateDrag(
+        toPositionSeconds rawSeconds: Double,
+        for status: NowPlayingStatus?
+    ) -> Double? {
+        guard let status,
+              status.isSeekable,
+              let duration = status.durationSeconds,
+              duration > 0 else {
+            cancel()
+            return nil
+        }
+        let clamped = MacMediaSeekRouter.clampPosition(rawSeconds, durationSeconds: duration)
+        isScrubbing = true
+        previewPositionSeconds = clamped
+        scrubbedTrackTitle = status.primaryDisplayText
+        scrubbedBundleIdentifier = status.bundleIdentifier
+        return clamped
+    }
+
+    /// Completes a scrub gesture from a normalized `0.0...1.0` release fraction and returns the single
+    /// clamped seek position (`0...duration`) to send once when the finger lifts.
+    public mutating func endDrag(
+        normalizedProgress: Double,
+        for status: NowPlayingStatus?
+    ) -> Double? {
+        defer { cancel() }
+        guard let status,
+              status.isSeekable,
+              let duration = status.durationSeconds,
+              duration > 0 else {
+            return nil
+        }
+        let clampedFraction = ControlStripLevel.clamp(normalizedProgress)
+        return MacMediaSeekRouter.clampPosition(clampedFraction * duration, durationSeconds: duration)
+    }
+
+    /// Completes a scrub gesture at an absolute release position and returns the single clamped
+    /// seek position (`0...duration`) to send once when the finger lifts.
+    public mutating func endDrag(
+        atPositionSeconds rawSeconds: Double,
+        for status: NowPlayingStatus?
+    ) -> Double? {
+        defer { cancel() }
+        guard let status,
+              status.isSeekable,
+              let duration = status.durationSeconds,
+              duration > 0 else {
+            return nil
+        }
+        return MacMediaSeekRouter.clampPosition(rawSeconds, durationSeconds: duration)
+    }
+
+    /// Keeps in-progress local drag preview stable across periodic status refreshes of the same seekable track,
+    /// and cancels immediately if the player stops, switches tracks/apps, or loses duration.
+    public mutating func reconcile(with status: NowPlayingStatus?) {
+        guard isScrubbing else { return }
+        guard let status,
+              status.isSeekable,
+              let duration = status.durationSeconds,
+              duration > 0 else {
+            cancel()
+            return
+        }
+        if let scrubbedBundleIdentifier,
+           let incomingBundle = status.bundleIdentifier,
+           scrubbedBundleIdentifier.caseInsensitiveCompare(incomingBundle) != .orderedSame {
+            cancel()
+            return
+        }
+        if let scrubbedTrackTitle,
+           let incomingTitle = status.primaryDisplayText,
+           scrubbedTrackTitle != incomingTitle {
+            cancel()
+            return
+        }
+        if let currentPreview = previewPositionSeconds {
+            previewPositionSeconds = MacMediaSeekRouter.clampPosition(currentPreview, durationSeconds: duration)
+        }
+    }
+
+    public mutating func cancel() {
+        isScrubbing = false
+        previewPositionSeconds = nil
+        scrubbedTrackTitle = nil
+        scrubbedBundleIdentifier = nil
+    }
+
+    public func effectiveElapsedSeconds(for status: NowPlayingStatus?) -> Double? {
+        guard let status else { return nil }
+        if isScrubbing,
+           status.isSeekable,
+           let previewPositionSeconds,
+           let duration = status.durationSeconds,
+           duration > 0 {
+            return MacMediaSeekRouter.clampPosition(previewPositionSeconds, durationSeconds: duration)
+        }
+        return status.elapsedSeconds
+    }
+
+    public func effectiveProgressFraction(for status: NowPlayingStatus?) -> Double? {
+        guard let status,
+              let duration = status.durationSeconds,
+              duration > 0 else {
+            return nil
+        }
+        let elapsed = effectiveElapsedSeconds(for: status) ?? 0.0
+        return ControlStripLevel.clamp(elapsed / duration)
     }
 }
 
@@ -701,5 +868,211 @@ public enum MacMediaTransportRouter {
         }
 
         return .failure(.noActiveMediaPlayer)
+    }
+}
+
+// MARK: - Playback Scrub / Seek Router (Spotify & Music Background AppleEvent Only; macOS 13)
+
+public enum MacMediaSeekTargetPlayer: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
+    case spotify
+    case music
+
+    public var bundleIdentifier: String {
+        switch self {
+        case .spotify:
+            return MacMediaTransportRouter.spotifyBundleIdentifier
+        case .music:
+            return MacMediaTransportRouter.musicBundleIdentifier
+        }
+    }
+
+    public var displayName: String {
+        switch self {
+        case .spotify:
+            return "Spotify"
+        case .music:
+            return "Music"
+        }
+    }
+
+    public init?(bundleIdentifier raw: String?) {
+        guard let cleaned = MacMediaTransportContext.normalizedBundleID(raw) else {
+            return nil
+        }
+        if cleaned.caseInsensitiveCompare(MacMediaTransportRouter.spotifyBundleIdentifier) == .orderedSame {
+            self = .spotify
+        } else if cleaned.caseInsensitiveCompare(MacMediaTransportRouter.musicBundleIdentifier) == .orderedSame {
+            self = .music
+        } else {
+            return nil
+        }
+    }
+
+    /// Background AppleScript source using `if application id "<bundleID>" is running` so the player
+    /// is never launched, never activated, and never steals focus.
+    public func scriptSource(positionSeconds: Double) -> String {
+        let literal = MacMediaSeekRouter.formattedScriptSeconds(positionSeconds)
+        return """
+        if application id "\(bundleIdentifier)" is running then
+            tell application id "\(bundleIdentifier)" to set player position to \(literal)
+            return "OK"
+        else
+            return "NOT_RUNNING"
+        end if
+        """
+    }
+}
+
+public enum MacMediaSeekRejectionReason: Equatable, Hashable, Sendable {
+    case missingDuration
+    case noActiveMediaPlayer
+    case playerNotRunning(bundleID: String)
+    case unsupportedPlayer(bundleID: String)
+
+    public func message(in language: AppLanguage = .system) -> String {
+        switch self {
+        case .missingDuration:
+            return L10n.tr(
+                "当前曲目未提供总时长，无法拖动跳转",
+                "Track duration is unavailable for seeking",
+                language: language
+            )
+        case .noActiveMediaPlayer:
+            return L10n.tr(
+                "当前没有正在播放的媒体会话",
+                "No active Now Playing session to seek",
+                language: language
+            )
+        case .playerNotRunning(let bundleID):
+            let appName = MacMediaSeekTargetPlayer(bundleIdentifier: bundleID)?.displayName ?? bundleID
+            return L10n.tr(
+                "\(appName) 当前未在运行",
+                "\(appName) is not currently running",
+                language: language
+            )
+        case .unsupportedPlayer:
+            return L10n.tr(
+                "当前播放器在 macOS 13 上不支持直接跳转进度",
+                "Seeking is not supported for this player on macOS 13",
+                language: language
+            )
+        }
+    }
+}
+
+public enum MacMediaSeekRoute: Equatable, Hashable, Sendable {
+    case spotifyScript(positionSeconds: Double)
+    case musicScript(positionSeconds: Double)
+    case rejected(MacMediaSeekRejectionReason)
+}
+
+public struct MacMediaSeekContext: Equatable, Hashable, Sendable {
+    public var nowPlayingBundleID: String?
+    public var durationSeconds: Double?
+    public var isSpotifyRunning: Bool
+    public var isMusicRunning: Bool
+
+    public init(
+        nowPlayingBundleID: String? = nil,
+        durationSeconds: Double? = nil,
+        isSpotifyRunning: Bool = false,
+        isMusicRunning: Bool = false
+    ) {
+        self.nowPlayingBundleID = MacMediaTransportContext.normalizedBundleID(nowPlayingBundleID)
+        if let durationSeconds, durationSeconds.isFinite, !durationSeconds.isNaN, durationSeconds > 0 {
+            self.durationSeconds = durationSeconds
+        } else {
+            self.durationSeconds = nil
+        }
+        self.isSpotifyRunning = isSpotifyRunning
+        self.isMusicRunning = isMusicRunning
+    }
+}
+
+/// Pure, unit-testable seek router for playback scrubbing:
+/// - `com.spotify.client` + running + valid duration -> background Spotify `player position` AppleEvent
+/// - `com.apple.Music` + running + valid duration -> background Music `player position` AppleEvent
+/// - Missing/invalid duration -> `.rejected(.missingDuration)`
+/// - Any other bundle or nil bundle -> `.rejected(...)` (no script, no HID keys, no fake success)
+public enum MacMediaSeekRouter {
+    public static let spotifyBundleIdentifier = MacMediaTransportRouter.spotifyBundleIdentifier
+    public static let musicBundleIdentifier = MacMediaTransportRouter.musicBundleIdentifier
+
+    public static func isSupportedSeekBundleIdentifier(_ raw: String?) -> Bool {
+        MacMediaSeekTargetPlayer(bundleIdentifier: raw) != nil
+    }
+
+    /// Clamps any requested playback position in seconds to `0...durationSeconds`
+    /// (`NaN` and negative values map to `0`; `+infinity` and past-end values map to `durationSeconds`).
+    public static func clampPosition(_ requestedSeconds: Double, durationSeconds: Double) -> Double {
+        guard durationSeconds.isFinite, !durationSeconds.isNaN, durationSeconds > 0 else {
+            return 0.0
+        }
+        if requestedSeconds.isNaN || requestedSeconds <= 0.0 {
+            return 0.0
+        }
+        if requestedSeconds >= durationSeconds {
+            return durationSeconds
+        }
+        return min(durationSeconds, max(0.0, requestedSeconds))
+    }
+
+    /// Locale-independent decimal seconds literal for AppleScript (`en_US_POSIX`).
+    public static func formattedScriptSeconds(_ positionSeconds: Double) -> String {
+        let safe = (positionSeconds.isFinite && !positionSeconds.isNaN) ? max(0.0, positionSeconds) : 0.0
+        return String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), safe)
+    }
+
+    public static func chooseRoute(
+        requestedPositionSeconds: Double,
+        nowPlayingBundleID: String?,
+        durationSeconds: Double?,
+        isSpotifyRunning: Bool,
+        isMusicRunning: Bool
+    ) -> MacMediaSeekRoute {
+        chooseRoute(
+            requestedPositionSeconds: requestedPositionSeconds,
+            context: MacMediaSeekContext(
+                nowPlayingBundleID: nowPlayingBundleID,
+                durationSeconds: durationSeconds,
+                isSpotifyRunning: isSpotifyRunning,
+                isMusicRunning: isMusicRunning
+            )
+        )
+    }
+
+    public static func chooseRoute(
+        requestedPositionSeconds: Double,
+        context: MacMediaSeekContext
+    ) -> MacMediaSeekRoute {
+        guard let validDuration = context.durationSeconds,
+              validDuration.isFinite,
+              !validDuration.isNaN,
+              validDuration > 0 else {
+            return .rejected(.missingDuration)
+        }
+
+        let clampedPosition = clampPosition(requestedPositionSeconds, durationSeconds: validDuration)
+
+        guard let bundleID = MacMediaTransportContext.normalizedBundleID(context.nowPlayingBundleID) else {
+            return .rejected(.noActiveMediaPlayer)
+        }
+
+        guard let target = MacMediaSeekTargetPlayer(bundleIdentifier: bundleID) else {
+            return .rejected(.unsupportedPlayer(bundleID: bundleID))
+        }
+
+        switch target {
+        case .spotify:
+            guard context.isSpotifyRunning else {
+                return .rejected(.playerNotRunning(bundleID: spotifyBundleIdentifier))
+            }
+            return .spotifyScript(positionSeconds: clampedPosition)
+        case .music:
+            guard context.isMusicRunning else {
+                return .rejected(.playerNotRunning(bundleID: musicBundleIdentifier))
+            }
+            return .musicScript(positionSeconds: clampedPosition)
+        }
     }
 }

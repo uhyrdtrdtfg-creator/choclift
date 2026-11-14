@@ -155,6 +155,15 @@ public final class MacMenuBarStatusController: NSObject {
         openItem.target = self
         menu.addItem(openItem)
 
+        let updateItem = NSMenuItem(
+            title: MacUpdateConfiguration.checkForUpdatesMenuTitle(in: lang),
+            action: coordinator.updaterService.canCheckForUpdates ? #selector(handleCheckForUpdatesFromMenu) : nil,
+            keyEquivalent: ""
+        )
+        updateItem.target = coordinator.updaterService.canCheckForUpdates ? self : nil
+        updateItem.isEnabled = coordinator.updaterService.canCheckForUpdates
+        menu.addItem(updateItem)
+
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(
@@ -173,6 +182,11 @@ public final class MacMenuBarStatusController: NSObject {
     @objc
     private func handleOpenMainWindowFromMenu() {
         coordinator?.openMainStudioWindow()
+    }
+
+    @objc
+    private func handleCheckForUpdatesFromMenu() {
+        coordinator?.updaterService.checkForUpdates()
     }
 
     @objc
