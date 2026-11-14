@@ -50,6 +50,7 @@ public struct IOSRootTouchBarView: View {
     @State private var deckSwitchHighlightTask: Task<Void, Never>?
     @State private var currentEmojiSlideIndex: Int = 0
     @State private var currentEmojiSegment: IOSEmojiBarSegment = .emoji
+    @State private var showNowPlaying = false
     @State private var showToolsSheet = false
     @State private var toolsQuery = ""
     @State private var showPairingSheet: Bool = false
@@ -217,6 +218,7 @@ public struct IOSRootTouchBarView: View {
             }
             #if DEBUG
             if let review = ProcessInfo.processInfo.environment["CHOCLIFT_REVIEW_SURFACE"] {
+                showNowPlaying = review == "nowPlaying"
                 activeMode = IOSActiveSurfaceMode(rawValue: review) ?? .chocolateBar
                 showPairingSheet = review == "pairing"
                 showToolsSheet = review == "tools"
@@ -316,7 +318,9 @@ public struct IOSRootTouchBarView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(L10n.tr("更多控制", "More Controls", language: lang))
                     Group {
-                        if activeMode == .chocolateBar || activeMode == .emojiBar {
+                        if showNowPlaying {
+                            Text(L10n.tr("正在播放", "Now Playing", language: lang)).font(ChocType.title)
+                        } else if activeMode == .chocolateBar || activeMode == .emojiBar {
                             portraitPageStepperBar
                         } else {
                             Text(activeMode.shortTitle(in: lang)).font(ChocType.title)
@@ -326,6 +330,15 @@ public struct IOSRootTouchBarView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    Button { showNowPlaying.toggle() } label: {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundStyle(showNowPlaying ? palette.accent : palette.secondaryText)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L10n.tr("正在播放", "Now Playing", language: lang))
+                    .accessibilityIdentifier("ios-now-playing-button")
                     connectionStatusPillButton
                 }
                 .padding(.horizontal, 16)
@@ -446,11 +459,12 @@ public struct IOSRootTouchBarView: View {
         // Bottom Mode Switcher Dock (>= 44pt touch targets)
         HStack(spacing: 0) {
             ForEach(IOSActiveSurfaceMode.allCases) { mode in
-                let selected = (activeMode == mode)
+                let selected = (activeMode == mode) && !showNowPlaying
                 Button {
                     CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
                     modeBeforeAutoEmoji = nil
                     withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
+                        showNowPlaying = false
                         activeMode = mode
                     }
                 } label: {
@@ -561,54 +575,58 @@ public struct IOSRootTouchBarView: View {
 
     @ViewBuilder
     private func activeMainContent(isLandscape: Bool) -> some View {
-        switch activeMode {
-        case .chocolateBar:
-            IOSChocolateBarSurfaceView(
-                client: client,
-                currentPageIndex: manualPageSelectionBinding,
-                isFollowingFrontmostApp: deckFollower.isFollowingFrontmostApp,
-                isDeckSwitchHighlighted: isDeckSwitchHighlighted,
-                onFollowFrontmostApp: resumeFollowingFrontmostApp,
-                isLandscape: isLandscape,
-                onPromptHUD: { message in
-                    flashHUD(message)
+        if showNowPlaying {
+            IOSNowPlayingPage(client: client)
+        } else {
+            switch activeMode {
+            case .chocolateBar:
+                IOSChocolateBarSurfaceView(
+                    client: client,
+                    currentPageIndex: manualPageSelectionBinding,
+                    isFollowingFrontmostApp: deckFollower.isFollowingFrontmostApp,
+                    isDeckSwitchHighlighted: isDeckSwitchHighlighted,
+                    onFollowFrontmostApp: resumeFollowingFrontmostApp,
+                    isLandscape: isLandscape,
+                    onPromptHUD: { message in
+                        flashHUD(message)
+                    }
+                ) { slot in
+                    editingSlot = slot
                 }
-            ) { slot in
-                editingSlot = slot
-            }
-        case .soundboard:
-            IOSSoundboardSurfaceView(
-                client: client,
-                currentBarPageIndex: currentPageIndex,
-                isLandscape: isLandscape,
-                onPromptHUD: { message in
-                    flashHUD(message)
-                },
-                onRequestPairing: { showPairingSheet = true }
-            )
-        case .timeTravel:
-            IOSTimeTravelSurfaceView(
-                client: client,
-                isLandscape: isLandscape,
-                currentBarPageIndex: currentPageIndex,
-                onRequestPairing: { showPairingSheet = true },
-                onPromptHUD: { message in
-                    flashHUD(message)
+            case .soundboard:
+                IOSSoundboardSurfaceView(
+                    client: client,
+                    currentBarPageIndex: currentPageIndex,
+                    isLandscape: isLandscape,
+                    onPromptHUD: { message in
+                        flashHUD(message)
+                    },
+                    onRequestPairing: { showPairingSheet = true }
+                )
+            case .timeTravel:
+                IOSTimeTravelSurfaceView(
+                    client: client,
+                    isLandscape: isLandscape,
+                    currentBarPageIndex: currentPageIndex,
+                    onRequestPairing: { showPairingSheet = true },
+                    onPromptHUD: { message in
+                        flashHUD(message)
+                    }
+                )
+            case .emojiBar:
+                IOSEmojiBarSurfaceView(
+                    client: client,
+                    currentSlideIndex: $currentEmojiSlideIndex,
+                    activeSegment: $currentEmojiSegment,
+                    isLandscape: isLandscape
+                )
+            case .gesturePad:
+                IOSGesturePadSurfaceView(
+                    client: client,
+                    isLandscape: isLandscape
+                ) { gesture in
+                    triggerCompanionGesture(gesture)
                 }
-            )
-        case .emojiBar:
-            IOSEmojiBarSurfaceView(
-                client: client,
-                currentSlideIndex: $currentEmojiSlideIndex,
-                activeSegment: $currentEmojiSegment,
-                isLandscape: isLandscape
-            )
-        case .gesturePad:
-            IOSGesturePadSurfaceView(
-                client: client,
-                isLandscape: isLandscape
-            ) { gesture in
-                triggerCompanionGesture(gesture)
             }
         }
     }
@@ -910,6 +928,12 @@ public struct IOSRootTouchBarView: View {
         let titles = isEmoji ? client.profile.emojiSlides.map(\.title) : client.profile.pages.map(\.title)
         let title = titles.indices.contains(index) ? titles[index] : L10n.tr("页面", "Page", language: lang)
         return Menu {
+            Button { showNowPlaying = true } label: {
+                Label(L10n.tr("正在播放", "Now Playing", language: lang), systemImage: "play.circle.fill")
+            }
+            .accessibilityIdentifier("ios-page-menu-now-playing")
+            Divider()
+
             ForEach(0..<count, id: \.self) { page in
                 Button {
                     selectPageDot(index: page, count: count, isEmoji: isEmoji)

@@ -2146,6 +2146,136 @@ public struct IOSIPadChocolateBarDeckView: View {
     }
 }
 
+// MARK: - Dedicated, always discoverable media page
+
+public struct IOSNowPlayingPage: View {
+    @ObservedObject var client: CompanionClientEngine
+    @State private var volumePreview: Double?
+    @State private var brightnessPreview: Double?
+    @State private var showAudioOutputs = false
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+    private var state: ControlStripState { client.controlStripState }
+
+    public var body: some View {
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 24) {
+                    VStack(spacing: 12) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 56, weight: .light))
+                            .foregroundStyle(palette.accent)
+                            .frame(height: 100)
+                        Text(state.nowPlaying?.title ?? state.nowPlaying?.appName ?? L10n.tr("未在播放", "Nothing playing", language: lang))
+                            .font(ChocType.title).foregroundStyle(palette.primaryText)
+                            .multilineTextAlignment(.center)
+                        if let artist = state.nowPlaying?.artist {
+                            Text(artist).font(ChocType.body).foregroundStyle(palette.secondaryText)
+                        }
+                        if state.nowPlaying?.title != nil, let source = state.nowPlaying?.appName {
+                            Text(source).font(ChocType.caption).foregroundStyle(palette.secondaryText)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 16)
+
+                    if let media = state.nowPlaying, let duration = media.durationSeconds, duration > 0 {
+                        let fraction = client.nowPlayingScrub.effectiveProgressFraction(for: media) ?? 0
+                        VStack(spacing: 4) {
+                            Slider(value: Binding(get: { fraction }, set: {
+                                _ = client.updateNowPlayingScrub(normalizedProgress: $0)
+                            }), in: 0...1, onEditingChanged: { editing in
+                                // Preview during drag; send exactly once when the user releases.
+                                if !editing {
+                                    _ = client.commitNowPlayingScrub(normalizedProgress: client.nowPlayingScrub.effectiveProgressFraction(for: state.nowPlaying) ?? fraction)
+                                }
+                            })
+                            .accessibilityLabel(L10n.tr("播放进度", "Playback position", language: lang))
+                            .accessibilityIdentifier("ios-player-seek")
+                            .disabled(!media.isSeekable)
+                            if let times = NowPlayingProgressFormatter.rowDisplayContent(for: media, overrideElapsedSeconds: client.nowPlayingScrub.effectiveElapsedSeconds(for: media))?.progressText {
+                                Text(times).font(ChocType.micro.monospacedDigit()).foregroundStyle(palette.secondaryText)
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 24) {
+                        transport(.mediaPrevious, symbol: "backward.fill")
+                        transport(.mediaPlayPause, symbol: state.nowPlaying?.isPlaying == true ? "pause.fill" : "play.fill")
+                        transport(.mediaNext, symbol: "forward.fill")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(L10n.tr("音量", "Volume", language: lang), systemImage: "speaker.wave.2")
+                                .font(ChocType.caption)
+                            Slider(value: Binding(get: { volumePreview ?? state.volume }, set: { volumePreview = $0 }), in: 0...1, onEditingChanged: { editing in
+                                if !editing, let level = volumePreview {
+                                    client.setControlLevel(kind: .volume, level: level)
+                                    volumePreview = nil
+                                }
+                            })
+                            .accessibilityLabel(L10n.tr("音量", "Volume", language: lang))
+                            .accessibilityIdentifier("ios-player-volume")
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(L10n.tr("亮度", "Brightness", language: lang), systemImage: "sun.max")
+                                .font(ChocType.caption)
+                            Slider(value: Binding(get: { brightnessPreview ?? state.brightness }, set: { brightnessPreview = $0 }), in: 0...1, onEditingChanged: { editing in
+                                if !editing, let level = brightnessPreview {
+                                    client.setControlLevel(kind: .brightness, level: level)
+                                    brightnessPreview = nil
+                                }
+                            })
+                            .accessibilityLabel(L10n.tr("亮度", "Brightness", language: lang))
+                            .accessibilityIdentifier("ios-player-brightness")
+                        }
+                        Button { showAudioOutputs = true } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "hifispeaker.2")
+                                Text(L10n.tr("音频输出", "Audio Output", language: lang))
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                            }
+                            .font(ChocType.body)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("ios-player-audio-output")
+                    }
+                    .foregroundStyle(palette.primaryText)
+                    .padding(16)
+                    .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                }
+                .frame(maxWidth: .infinity, minHeight: geo.size.height)
+            }
+        }
+        .tint(palette.accent)
+        .sheet(isPresented: $showAudioOutputs) { IOSAudioOutputPickerSheet(client: client) }
+        .onAppear { client.requestControlStripState() }
+        .onDisappear { client.cancelNowPlayingScrub() }
+        .accessibilityIdentifier("ios-now-playing-page")
+    }
+
+    private func transport(_ action: SystemQuickAction, symbol: String) -> some View {
+        Button { client.performQuickAction(action) } label: {
+            Image(systemName: symbol)
+                .font(.system(size: action == .mediaPlayPause ? 32 : 24, weight: .semibold))
+                .foregroundStyle(palette.accent)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(action.title(in: lang))
+        .accessibilityIdentifier("ios-player-\(action.rawValue)")
+    }
+}
+
 // MARK: - 6. Persistent Control Strip (Volume, Brightness, Now Playing, Mic Mute, Clock)
 
 public struct IOSPersistentControlStripView: View {
@@ -2219,7 +2349,7 @@ public struct IOSPersistentControlStripView: View {
                 }
             } else if primarySurface {
                 if client.connectionState.isConnected {
-                    if state.nowPlaying?.primaryDisplayText != nil { nowPlayingCluster }
+                    nowPlayingCluster
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L10n.tr("音量", "Volume", language: lang)).font(ChocType.caption)
                         volumeControlCluster

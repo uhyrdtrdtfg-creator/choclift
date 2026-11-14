@@ -303,7 +303,7 @@ public struct WatchChocolateBarView: View {
                     WatchOrcaComplicationLine(client: client, status: orcaStatus)
                 }
 
-                if client.controlStripState.nowPlaying?.primaryDisplayText != nil {
+                if client.connectionState.isConnected || client.controlStripState.nowPlaying != nil {
                     WatchNowPlayingProgressRow(client: client)
                 }
                 pageSwitcherBar
@@ -967,7 +967,7 @@ public struct WatchQuickActionsView: View {
                 // Media & Volume Strip (Clean iconic transport buttons >= 46pt)
                 sectionHeader(L10n.tr("媒体与音量", "Media & Volume", language: lang), symbol: "speaker.wave.2.fill")
 
-                if client.controlStripState.nowPlaying != nil {
+                if client.connectionState.isConnected || client.controlStripState.nowPlaying != nil {
                     WatchNowPlayingProgressRow(client: client)
                 }
 
@@ -1324,18 +1324,31 @@ public struct WatchNowPlayingProgressRow: View {
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
     public init(client: CompanionClientEngine) { self.client = client }
     public var body: some View {
-        if let media = client.controlStripState.nowPlaying, let title = media.primaryDisplayText {
-            NavigationLink {
-                WatchMediaPlayer(client: client)
-            } label: {
-                Label(title, systemImage: media.isPlaying ? "waveform" : "music.note")
-                    .font(ChocType.title).lineLimit(2).frame(maxWidth: .infinity, minHeight: 44)
+        VStack(spacing: 4) {
+            NavigationLink { WatchMediaPlayer(client: client) } label: {
+                Label(client.controlStripState.nowPlaying?.primaryDisplayText ?? L10n.tr("未在播放", "Nothing playing", language: client.profile.settings.language), systemImage: "music.note")
+                    .font(ChocType.caption).lineLimit(2).frame(maxWidth: .infinity, minHeight: 32)
                     .foregroundStyle(palette.primaryText)
             }
-            .listRowBackground(palette.barSurface)
             .accessibilityIdentifier("watch-now-playing-row")
+            HStack(spacing: 6) {
+                transport(.mediaPrevious, "backward.fill")
+                transport(.mediaPlayPause, client.controlStripState.nowPlaying?.isPlaying == true ? "pause.fill" : "play.fill")
+                transport(.mediaNext, "forward.fill")
+            }
         }
     }
+
+    private func transport(_ action: SystemQuickAction, _ symbol: String) -> some View {
+        Button { client.performQuickAction(action) } label: {
+            Image(systemName: symbol).font(ChocType.body).frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(palette.accent)
+        .accessibilityLabel(action.title(in: client.profile.settings.language))
+        .accessibilityIdentifier("watch-player-\(action.rawValue)")
+    }
+
 }
 
 private struct WatchMediaPlayer: View {
@@ -1346,14 +1359,15 @@ private struct WatchMediaPlayer: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 10) {
+                Text(client.controlStripState.nowPlaying?.primaryDisplayText ?? L10n.tr("未在播放", "Nothing playing", language: client.profile.settings.language))
+                    .font(ChocType.title).lineLimit(2)
+                HStack(spacing: 6) {
+                    transport(.mediaPrevious, symbol: "backward.fill")
+                    transport(.mediaPlayPause, symbol: client.controlStripState.nowPlaying?.isPlaying == true ? "pause.fill" : "play.fill")
+                    transport(.mediaNext, symbol: "forward.fill")
+                }
                 if let media = client.controlStripState.nowPlaying {
-                    Text(media.primaryDisplayText ?? "").font(ChocType.title).lineLimit(2)
                     if let artist = media.artist { Text(artist).font(ChocType.caption) }
-                    HStack(spacing: 6) {
-                        transport(.mediaPrevious, symbol: "backward.fill")
-                        transport(.mediaPlayPause, symbol: media.isPlaying ? "pause.fill" : "play.fill")
-                        transport(.mediaNext, symbol: "forward.fill")
-                    }
                     if media.isSeekable, let fraction = client.nowPlayingScrub.effectiveProgressFraction(for: media) {
                         Slider(value: Binding(get: { fraction }, set: {
                             _ = client.updateNowPlayingScrub(normalizedProgress: $0)
