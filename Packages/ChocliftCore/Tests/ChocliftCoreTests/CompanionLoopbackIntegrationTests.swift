@@ -567,16 +567,19 @@ final class CompanionLoopbackIntegrationTests: XCTestCase {
         let server = MacServerEngine(macID: "gap-mac", macName: "Gap Mac")
         let delegate = MockMacServerDelegate()
         server.delegate = delegate
-        // Scale production 15/16-second budgets to 150/160ms; gap is 300ms.
-        server.bluetoothSessionTimeoutSeconds = 0.75
-        server.heartbeatSweepIntervalSeconds = 0.02
+        // Client heartbeat polls cannot run faster than 0.5s. A 300ms scripted
+        // gap is shorter than one poll, so CI drops the session before the
+        // assertions. Keep the silence inside the BLE budget and past one
+        // Wi-Fi poll (old 15/16s budgets, scaled to the 0.5s floor).
+        server.bluetoothSessionTimeoutSeconds = 4.0
+        server.heartbeatSweepIntervalSeconds = 0.05
         server.start(preferredPort: 0, advertiseBonjour: false, advertiseBluetooth: false)
         defer { server.stop() }
         let client = CompanionClientEngine(deviceID: "gap-watch", deviceName: "Watch", platform: .appleWatch,
                                            userDefaults: defaults, storageKeyPrefix: "gap")
         client.heartbeatIntervalSeconds = 0.05
-        client.heartbeatTimeoutSeconds = 0.15
-        client.bluetoothHeartbeatTimeoutSeconds = 0.6
+        client.heartbeatTimeoutSeconds = 0.55
+        client.bluetoothHeartbeatTimeoutSeconds = 3.5
         defer { client.disconnect() }
         let (serverPipe, clientPipe) = SimulatedBLECompanionPipe.pair()
         server.acceptCompanionTransport(serverPipe, link: .bluetooth)
@@ -600,9 +603,13 @@ final class CompanionLoopbackIntegrationTests: XCTestCase {
         let state = client.connectionState
         clientPipe.maxChunksPerFlush = 0
         serverPipe.maxChunksPerFlush = 0
-        // Multiple ping opportunities pass with neither writes nor notifications delivered.
-        for _ in 0..<15 {
-            try await Task.sleep(for: .milliseconds(20))
+        // Hold past one Wi-Fi poll (0.5s floor) and inside the BLE idle budget.
+        let gap = Duration.milliseconds(900)
+        let step = Duration.milliseconds(50)
+        var waited = Duration.zero
+        while waited < gap {
+            try await Task.sleep(for: step)
+            waited += step
             XCTAssertEqual(client.connectionState, state)
             XCTAssertEqual(server.connectedDeviceCount, 1)
         }
