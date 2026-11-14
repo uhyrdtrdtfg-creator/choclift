@@ -32,7 +32,7 @@ public struct EmojiBarStudioView: View {
                 emojiCatalogPicker
             }
         }
-        .padding(.horizontal, 26)
+        .padding(.horizontal, 16)
         .padding(.vertical, 18)
     }
 
@@ -110,12 +110,7 @@ public struct EmojiBarStudioView: View {
                         }
                         .padding(.horizontal, isSelected ? 13 : 10)
                         .padding(.vertical, 6.5)
-                        .background(isSelected ? palette.tileFillTop : palette.barSurface.opacity(0.75), in: Capsule())
-                        .foregroundStyle(isSelected ? palette.primaryText : palette.secondaryText)
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(isSelected ? palette.accent.opacity(0.85) : palette.subtleCardStroke, lineWidth: 1)
-                        )
+                        .foregroundStyle(isSelected ? palette.accent : palette.secondaryText)
                         .contentShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -159,26 +154,14 @@ public struct EmojiBarStudioView: View {
                             selectedEmojiSlot = slotIdx
                         } label: {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [palette.tileFillTop, palette.tileFillBottom],
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                            .strokeBorder(
-                                                isSelected ? palette.accent : palette.tileBorderHighlight.opacity(0.48),
-                                                lineWidth: isSelected ? 2.4 : 1
-                                            )
-                                    )
-
                                 Text(emoji)
-                                    .font(ChocType.title)
+                                    .font(.system(size: 52))
                             }
-                            .aspectRatio(1.0, contentMode: .fit)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 80)
+                            .overlay(alignment: .bottom) {
+                                if isSelected { Rectangle().fill(palette.accent).frame(width: 20, height: 2) }
+                            }
                             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                         }
                         .buttonStyle(.plain)
@@ -204,14 +187,14 @@ public struct EmojiBarStudioView: View {
                 RoundedRectangle(cornerRadius: 26, style: .continuous)
                     .fill(
                         LinearGradient(
-                            colors: [palette.backgroundTop, palette.backgroundBottom],
+                            colors: [palette.barSurface, palette.barSurface],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 26, style: .continuous)
-                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1.5)
+                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
                     )
             )
         }
@@ -240,12 +223,7 @@ public struct EmojiBarStudioView: View {
                             }
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5.5)
-                            .background(isSel ? palette.tileFillTop : palette.barSurface.opacity(0.75), in: Capsule())
-                            .foregroundStyle(isSel ? palette.primaryText : palette.secondaryText)
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(isSel ? palette.accent.opacity(0.75) : palette.subtleCardStroke, lineWidth: 1)
-                            )
+                            .foregroundStyle(isSel ? palette.accent : palette.secondaryText)
                             .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)

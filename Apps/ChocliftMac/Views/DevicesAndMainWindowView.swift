@@ -418,7 +418,7 @@ public struct DevicesAndSettingsView: View {
                     .frame(width: 300)
                 }
             }
-            .padding(.horizontal, 26)
+            .padding(.horizontal, 16)
             .padding(.vertical, 20)
         }
     }
@@ -642,7 +642,7 @@ public struct DevicesAndSettingsView: View {
                 Circle()
                     .fill(isOnline ? palette.statusConnected : palette.secondaryText.opacity(0.55))
                     .frame(width: 9, height: 9)
-                    .overlay(Circle().strokeBorder(palette.barSurface, lineWidth: 1.5))
+                    .overlay(Circle().strokeBorder(palette.barSurface, lineWidth: 1))
                     .offset(x: 2, y: 2)
             }
 
@@ -716,7 +716,7 @@ public struct DevicesAndSettingsView: View {
                     Circle()
                         .fill(palette.tileFillTop)
                         .frame(width: 14, height: 14)
-                        .overlay(Circle().strokeBorder(palette.accent, lineWidth: 1.5))
+                        .overlay(Circle().strokeBorder(palette.accent, lineWidth: 1))
 
                     Picker(
                         "",
@@ -1084,6 +1084,7 @@ public struct MacMainWindowView: View {
             )
             .ignoresSafeArea()
         )
+        .groupBoxStyle(ChocSurfaceGroupBoxStyle(palette: palette))
         .tint(palette.accent)
         .onAppear {
             coordinator.openStudioWindowAction = { [openWindow] in

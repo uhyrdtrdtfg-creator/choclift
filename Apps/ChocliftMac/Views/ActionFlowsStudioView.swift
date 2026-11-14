@@ -241,7 +241,7 @@ public struct ActionFlowsStudioView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .strokeBorder(isSelected ? palette.accent.opacity(0.7) : palette.subtleCardStroke, lineWidth: 1.2)
+                .strokeBorder(isSelected ? palette.accent.opacity(0.7) : palette.subtleCardStroke, lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -329,7 +329,7 @@ public struct ActionFlowsStudioView: View {
 
             Spacer()
         }
-        .padding(30)
+        .padding(16)
     }
 
     private func openNewBlankFlow() {
@@ -412,7 +412,7 @@ private struct MacFlowDetailWorkspaceView: View {
                 slotPlacementCard
                 stepsPipelineCard
             }
-            .padding(22)
+            .padding(16)
         }
         .sheet(item: $stepEditorTarget) { target in
             MacFlowStepEditorSheet(

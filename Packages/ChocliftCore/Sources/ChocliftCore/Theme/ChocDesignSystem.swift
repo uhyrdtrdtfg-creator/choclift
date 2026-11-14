@@ -15,11 +15,30 @@ public enum ChocType {
     public static let micro: Font = .system(size: 11, weight: .medium, design: .rounded)
 
     public static func tileName(side: CGFloat) -> Font {
-        side < 44
-            ? .system(size: max(9, min(11, side * 0.25)), weight: .medium, design: .rounded)
-            : micro
+        micro
     }
 }
+
+#if !os(watchOS)
+/// One surface and one outline for grouped controls across the studio and companion.
+public struct ChocSurfaceGroupBoxStyle: GroupBoxStyle {
+    public let palette: ChocPalette
+
+    public init(palette: ChocPalette) { self.palette = palette }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            configuration.label.font(ChocType.title).foregroundStyle(palette.primaryText)
+            configuration.content.font(ChocType.body).foregroundStyle(palette.primaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(16)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+    }
+}
+
+#endif
 
 // MARK: - Hex Color Extension
 
@@ -593,108 +612,52 @@ public struct ChocBarTileCard: View {
 
     public var body: some View {
         GeometryReader { geo in
-            let side = min(geo.size.width, geo.size.height)
-            let corner = max(side < 68 ? 13 : 16, side * 0.22)
-            let isMicro = side < 68
-
-            ZStack {
-                if let item {
-                    filledTile(for: item, side: side, corner: corner)
-                } else {
-                    emptyMoldedSquare(side: side, corner: corner)
-                }
-
-                if isAwaitingConfirmation && item != nil {
-                    RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .strokeBorder(palette.statusFailure, lineWidth: 2.0)
-
-                    VStack {
-                        Spacer()
-                        HStack(spacing: 3) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(ChocType.tileName(side: side))
-                            Text(L10n.tr("再点确认", "Tap Again", language: language))
-                                .font(ChocType.tileName(side: side))
-                                .lineLimit(1)
-                        }
-                        .foregroundStyle(palette.emphasisForeground)
-                        .padding(.horizontal, isMicro ? 6 : 8)
-                        .padding(.vertical, isMicro ? 2.5 : 3.5)
-                        .background(palette.statusFailure, in: Capsule())
-                        .padding(.bottom, isMicro ? 4 : 6)
-                    }
-                } else if let lastRunOutcome, item != nil {
-                    let outcomeTint = (lastRunOutcome == .success) ? palette.statusConnected : palette.statusFailure
-                    RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .fill(outcomeTint.opacity(0.11))
-                        .allowsHitTesting(false)
-
-                    RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .strokeBorder(outcomeTint, lineWidth: 2.0)
-                        .allowsHitTesting(false)
-
-                    VStack {
-                        Spacer()
-                        HStack(spacing: 3) {
-                            Image(systemName: lastRunOutcome == .success ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                                .font(ChocType.tileName(side: side))
-                            Text(
-                                lastRunOutcome == .success
-                                    ? L10n.tr("已执行", "Done", language: language)
-                                    : L10n.tr("失败", "Failed", language: language)
-                            )
-                            .font(ChocType.tileName(side: side))
-                            .lineLimit(1)
-                        }
-                        .foregroundStyle(palette.emphasisForeground)
-                        .padding(.horizontal, isMicro ? 6 : 8)
-                        .padding(.vertical, isMicro ? 2.5 : 3.5)
-                        .background(outcomeTint, in: Capsule())
-                        .padding(.bottom, isMicro ? 4 : 6)
-                    }
-                    .allowsHitTesting(false)
-                } else if let lastTriggeredText, !lastTriggeredText.isEmpty, let item {
-                    VStack {
-                        if item.isSlotReference {
-                            Spacer()
-                            HStack {
-                                Spacer()
-                                lastTriggeredPill(lastTriggeredText, side: side, isMicro: isMicro)
-                                    .padding(isMicro ? 4 : 6)
-                            }
-                        } else {
-                            HStack {
-                                lastTriggeredPill(lastTriggeredText, side: side, isMicro: isMicro)
-                                    .padding(isMicro ? 4 : 6)
-                                Spacer()
-                            }
-                            Spacer()
-                        }
-                    }
-                    .allowsHitTesting(false)
-                }
+            let side = min(compact ? 48.0 : 64.0, max(24, geo.size.height - 16), geo.size.width)
+            let resolved = item.flatMap { value in
+                profile?.resolveBarItem(value, from: slotOrigin).resolvedItem ?? value
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-            .animation(.easeInOut(duration: 0.18), value: lastRunOutcome)
+            VStack(spacing: 2) {
+                Group {
+                    if let resolved {
+                        switch resolved.kind {
+                        case .macApp(_, _, _, let symbol):
+                            DataImageView(pngData: resolvedIconData(for: resolved), fallbackSymbol: symbol, tint: palette.secondaryText)
+                        case .shortcut(_, let emoji, _), .website(_, _, let emoji, _, _),
+                             .flow(_, _, let emoji, _, _), .soundboard(_, _, let emoji, _):
+                            Text(emoji).font(.system(size: side * 0.8))
+                        case .systemAction(let action, _, _):
+                            Image(systemName: action.sfSymbol).resizable().scaledToFit().padding(8).foregroundStyle(palette.accent)
+                        case .folder(let folder):
+                            Text(folder.emoji).font(.system(size: side * 0.8))
+                        case .slotReference:
+                            Image(systemName: "link").foregroundStyle(palette.secondaryText)
+                        }
+                    } else {
+                        Image(systemName: "plus").font(ChocType.title).foregroundStyle(palette.secondaryText)
+                    }
+                }
+                .frame(width: side, height: side)
+                .overlay(alignment: .topTrailing) {
+                    if isAwaitingConfirmation {
+                        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(palette.statusFailure)
+                    } else if let lastRunOutcome {
+                        Image(systemName: lastRunOutcome == .success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                            .foregroundStyle(lastRunOutcome == .success ? palette.statusConnected : palette.statusFailure)
+                    } else if isFrontmostApp {
+                        Circle().fill(palette.accent).frame(width: 5, height: 5)
+                    }
+                }
+                Text(item.map { value in
+                    profile?.displayTitle(for: value, from: slotOrigin, in: language) ?? value.displayTitle(in: language)
+                } ?? L10n.tr("添加", "Add", language: language))
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .contentShape(Rectangle())
+            .opacity(isPressed ? 0.65 : 1)
         }
-    }
-
-    private func tileSymbolSize(side: CGFloat, micro: CGFloat, regular: CGFloat) -> CGFloat {
-        #if os(watchOS)
-        return side * (side < 68 ? micro : regular)
-        #else
-        return side * (side < 68 ? micro : max(regular, 0.55))
-        #endif
-    }
-
-    private func appIconSide(for side: CGFloat) -> CGFloat {
-        #if os(watchOS)
-        return side * (side < 68 ? 0.44 : 0.48)
-        #else
-        // Leave eight points around the artwork and room for the shared micro label.
-        return side < 68 ? side * 0.44 : min(side * 0.72, side - 38)
-        #endif
     }
 
     private func resolvedIconData(for targetItem: BarItem) -> Data? {
@@ -710,479 +673,6 @@ public struct ChocBarTileCard: View {
         return nil
     }
 
-    @ViewBuilder
-    private func filledTile(for item: BarItem, side: CGFloat, corner: CGFloat) -> some View {
-        let isMicro = side < 68
-
-        switch item.kind {
-        case .slotReference:
-            if let profile,
-               case .resolved(_, _, _, _, _, let targetItem) = profile.resolveBarItem(item, from: slotOrigin) {
-                ZStack {
-                    concreteTile(for: targetItem, side: side, corner: corner)
-
-                    VStack {
-                        HStack {
-                            HStack(spacing: 2) {
-                                Image(systemName: "arrow.turn.up.right")
-                                    .font(ChocType.tileName(side: side))
-                            }
-                            .foregroundStyle(palette.secondaryText)
-                            .padding(.horizontal, isMicro ? 4 : 5)
-                            .padding(.vertical, 2.5)
-                            .background(palette.barSurface.opacity(0.92), in: Capsule())
-                            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
-                            .padding(isMicro ? 4 : 6)
-
-                            Spacer()
-                        }
-                        Spacer()
-                    }
-                }
-            } else {
-                quietMissingReferenceTile(side: side, corner: corner)
-            }
-
-        default:
-            concreteTile(for: item, side: side, corner: corner)
-        }
-    }
-
-    @ViewBuilder
-    private func concreteTile(for item: BarItem, side: CGFloat, corner: CGFloat) -> some View {
-        let isMicro = side < 68
-
-        switch item.kind {
-        case .macApp(_, let appName, _, let fallbackSymbol):
-            ZStack {
-                moldedBaseShape(
-                    corner: corner,
-                    top: palette.tileFillTop,
-                    bottom: palette.tileFillBottom,
-                    borderColor: isFrontmostApp ? palette.accent : palette.tileBorderHighlight,
-                    borderWidth: isFrontmostApp ? 2.0 : 1.15,
-                    shadowColor: palette.primaryText.opacity(0.06)
-                )
-
-                VStack(spacing: isMicro ? 3 : (compact ? 4 : 6)) {
-                    DataImageView(
-                        pngData: resolvedIconData(for: item),
-                        fallbackSymbol: fallbackSymbol,
-                        tint: palette.secondaryText
-                    )
-                    .frame(width: appIconSide(for: side), height: appIconSide(for: side))
-
-                    Text(appName)
-                        .font(ChocType.tileName(side: side))
-                        .foregroundStyle(palette.primaryText)
-                        .lineLimit(1)
-                        .padding(.horizontal, isMicro ? 5 : 8)
-                }
-
-                if isFrontmostApp {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Circle()
-                                .fill(palette.accent)
-                                .frame(width: isMicro ? 5.5 : 7, height: isMicro ? 5.5 : 7)
-                                .shadow(color: palette.accent.opacity(0.45), radius: 3)
-                                .padding(isMicro ? 6 : 8)
-                        }
-                        Spacer()
-                    }
-                }
-            }
-
-        case .shortcut(let shortcutName, let emoji, let backgroundHex):
-            let base = ChocSwatch.resolvedTileColor(hex: backgroundHex, fallbackHex: "#F3EEFF")
-            ZStack {
-                moldedBaseShape(
-                    corner: corner,
-                    top: palette.tileFillTop,
-                    bottom: base,
-                    borderColor: palette.tileBorderHighlight,
-                    borderWidth: 1.15,
-                    shadowColor: palette.primaryText.opacity(0.06)
-                )
-
-                VStack {
-                    HStack {
-                        Spacer()
-                        Image(systemName: "bolt.fill")
-                            .font(ChocType.tileName(side: side))
-                            .foregroundStyle(palette.accentEmphasis)
-                            .padding(isMicro ? 5 : 7)
-                    }
-                    Spacer()
-                }
-
-                VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
-                    Text(emoji.isEmpty ? "⚡️" : emoji)
-                        .font(.system(size: tileSymbolSize(side: side, micro: 0.30, regular: 0.32)))
-
-                    Text(shortcutName)
-                        .font(ChocType.tileName(side: side))
-                        .foregroundStyle(palette.primaryText)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(isMicro ? 1 : 2)
-                        .padding(.horizontal, isMicro ? 5 : 7)
-                }
-            }
-
-        case .website(let url, let title, let emoji, let backgroundHex, let switchExistingTab):
-            let base = ChocSwatch.resolvedTileColor(hex: backgroundHex, fallbackHex: "#FFF1EC")
-            ZStack {
-                moldedBaseShape(
-                    corner: corner,
-                    top: palette.tileFillTop,
-                    bottom: base,
-                    borderColor: palette.tileBorderHighlight,
-                    borderWidth: 1.15,
-                    shadowColor: palette.primaryText.opacity(0.06)
-                )
-
-                VStack {
-                    HStack {
-                        Spacer()
-                        Image(systemName: switchExistingTab ? "arrow.triangle.2.circlepath" : "safari.fill")
-                            .font(ChocType.tileName(side: side))
-                            .foregroundStyle(palette.accent)
-                            .padding(isMicro ? 5 : 7)
-                    }
-                    Spacer()
-                }
-
-                VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
-                    Text(emoji.isEmpty ? "🌐" : emoji)
-                        .font(.system(size: tileSymbolSize(side: side, micro: 0.30, regular: 0.32)))
-
-                    Text(title.isEmpty ? cleanHost(from: url) : title)
-                        .font(ChocType.tileName(side: side))
-                        .foregroundStyle(palette.primaryText)
-                        .lineLimit(1)
-                        .padding(.horizontal, isMicro ? 5 : 7)
-                }
-            }
-
-        case .systemAction(let action, let customTitle, let customHex):
-            let base = ChocSwatch.resolvedTileColor(hex: customHex ?? action.accentHex, fallbackHex: "#EDF6FF")
-            let shortcutText = action.sentKeyboardShortcut
-            ZStack {
-                moldedBaseShape(
-                    corner: corner,
-                    top: palette.tileFillTop,
-                    bottom: base,
-                    borderColor: palette.tileBorderHighlight,
-                    borderWidth: 1.15,
-                    shadowColor: palette.primaryText.opacity(0.06)
-                )
-
-                if let shortcutText {
-                    VStack {
-                        HStack {
-                            Spacer()
-                            Text(shortcutText)
-                                .font(ChocType.tileName(side: side))
-                                .foregroundStyle(palette.primaryText)
-                                .lineLimit(1)
-                                .padding(.horizontal, isMicro ? 4 : 5.5)
-                                .padding(.vertical, 2)
-                                .background(palette.barSurface.opacity(0.92), in: Capsule())
-                                .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
-                                .padding(isMicro ? 4 : 6)
-                        }
-                        Spacer()
-                    }
-                }
-
-                VStack(spacing: isMicro ? 3 : (compact ? 4 : 6)) {
-                    Image(systemName: action.sfSymbol)
-                        .font(.system(size: tileSymbolSize(side: side, micro: 0.24, regular: 0.26), weight: .semibold))
-                        .foregroundStyle(palette.accent)
-
-                    let defaultActionLabel: String = {
-                        if shortcutText != nil || isMicro {
-                            return action.compactTitle(in: language)
-                        }
-                        return action.title(in: language)
-                    }()
-                    Text((customTitle?.isEmpty == false ? customTitle! : defaultActionLabel))
-                        .font(ChocType.tileName(side: side))
-                        .foregroundStyle(palette.primaryText)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(isMicro ? 1 : 2)
-                        .padding(.horizontal, isMicro ? 4 : 6)
-                }
-            }
-
-        case .flow(let flowID, _, let emoji, let backgroundHex, let stepCountSnapshot):
-            let liveFlow = profile?.flow(withID: flowID)
-            let resolvedEmoji = liveFlow?.emoji ?? emoji
-            let resolvedHex = liveFlow?.backgroundHex ?? backgroundHex
-            let resolvedStepCount = liveFlow?.enabledStepCount ?? stepCountSnapshot
-            let resolvedTitle = liveFlow?.name ?? item.displayTitle(in: language)
-            let base = ChocSwatch.resolvedTileColor(hex: resolvedHex, fallbackHex: "#ECFAFE")
-            ZStack {
-                moldedBaseShape(
-                    corner: corner,
-                    top: palette.tileFillTop,
-                    bottom: base,
-                    borderColor: palette.tileBorderHighlight,
-                    borderWidth: 1.15,
-                    shadowColor: palette.primaryText.opacity(0.06)
-                )
-
-                VStack {
-                    HStack {
-                        Spacer()
-                        HStack(spacing: 2) {
-                            Image(systemName: "arrow.triangle.branch")
-                                .font(ChocType.tileName(side: side))
-                            if resolvedStepCount > 0 && side >= 54 {
-                                Text("\(resolvedStepCount)")
-                                    .font(ChocType.tileName(side: side))
-                            }
-                        }
-                        .foregroundStyle(palette.accent)
-                        .padding(.horizontal, isMicro ? 4 : 5)
-                        .padding(.vertical, 2)
-                        .background(palette.accent.opacity(0.12), in: Capsule())
-                        .padding(isMicro ? 4 : 6)
-                    }
-                    Spacer()
-                }
-
-                VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
-                    Text(resolvedEmoji.isEmpty ? "⚡️" : resolvedEmoji)
-                        .font(.system(size: tileSymbolSize(side: side, micro: 0.30, regular: 0.32)))
-
-                    Text(resolvedTitle)
-                        .font(ChocType.tileName(side: side))
-                        .foregroundStyle(palette.primaryText)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(isMicro ? 1 : 2)
-                        .padding(.horizontal, isMicro ? 5 : 7)
-                }
-            }
-
-        case .soundboard(let soundID, _, let emoji, let backgroundHex):
-            let liveClip = profile?.soundboardClip(withID: soundID)
-            let resolvedEmoji = liveClip?.emoji ?? emoji
-            let resolvedHex = liveClip?.backgroundHex ?? backgroundHex
-            let resolvedTitle = liveClip?.name ?? item.displayTitle(in: language)
-            let base = ChocSwatch.resolvedTileColor(hex: resolvedHex, fallbackHex: "#ECFAEE")
-            ZStack {
-                moldedBaseShape(
-                    corner: corner,
-                    top: palette.tileFillTop,
-                    bottom: base,
-                    borderColor: palette.tileBorderHighlight,
-                    borderWidth: 1.15,
-                    shadowColor: palette.primaryText.opacity(0.06)
-                )
-
-                VStack {
-                    HStack {
-                        Spacer()
-                        Image(systemName: "speaker.wave.2.fill")
-                            .font(ChocType.tileName(side: side))
-                            .foregroundStyle(palette.accent)
-                            .padding(.horizontal, isMicro ? 4 : 5)
-                            .padding(.vertical, 2)
-                            .background(palette.accent.opacity(0.12), in: Capsule())
-                            .padding(isMicro ? 4 : 6)
-                    }
-                    Spacer()
-                }
-
-                VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
-                    Text(resolvedEmoji.isEmpty ? "🔊" : resolvedEmoji)
-                        .font(.system(size: tileSymbolSize(side: side, micro: 0.30, regular: 0.32)))
-
-                    Text(resolvedTitle)
-                        .font(ChocType.tileName(side: side))
-                        .foregroundStyle(palette.primaryText)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(isMicro ? 1 : 2)
-                        .padding(.horizontal, isMicro ? 5 : 7)
-                }
-            }
-
-        case .folder(let folder):
-            let base = ChocSwatch.resolvedTileColor(hex: folder.backgroundHex, fallbackHex: "#FFF6E3")
-            ZStack {
-                moldedBaseShape(
-                    corner: corner,
-                    top: palette.tileFillTop,
-                    bottom: base,
-                    borderColor: palette.tileBorderHighlight,
-                    borderWidth: 1.15,
-                    shadowColor: palette.primaryText.opacity(0.06)
-                )
-
-                VStack {
-                    HStack {
-                        Spacer()
-                        HStack(spacing: 2.5) {
-                            Image(systemName: "square.grid.2x2.fill")
-                                .font(ChocType.tileName(side: side))
-                            Text("\(folder.children.count)")
-                                .font(ChocType.tileName(side: side))
-                                .monospacedDigit()
-                        }
-                        .foregroundStyle(palette.accent)
-                        .padding(.horizontal, isMicro ? 4 : 5.5)
-                        .padding(.vertical, 2)
-                        .background(palette.accent.opacity(0.12), in: Capsule())
-                        .padding(isMicro ? 4 : 6)
-                    }
-                    Spacer()
-                }
-
-                VStack(spacing: isMicro ? 2 : (compact ? 3 : 5)) {
-                    Text(folder.emoji.isEmpty ? TileFolder.defaultEmoji : folder.emoji)
-                        .font(.system(size: tileSymbolSize(side: side, micro: 0.30, regular: 0.32)))
-
-                    Text(folder.displayTitle(in: language))
-                        .font(ChocType.tileName(side: side))
-                        .foregroundStyle(palette.primaryText)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(isMicro ? 1 : 2)
-                        .padding(.horizontal, isMicro ? 5 : 7)
-                }
-            }
-
-        case .slotReference:
-            quietMissingReferenceTile(side: side, corner: corner)
-        }
-    }
-
-    private func lastTriggeredPill(_ text: String, side: CGFloat, isMicro: Bool) -> some View {
-        Text(text)
-            .font(ChocType.tileName(side: side))
-            .monospacedDigit()
-            .foregroundStyle(palette.secondaryText)
-            .lineLimit(1)
-            .padding(.horizontal, isMicro ? 4 : 5)
-            .padding(.vertical, 1.8)
-            .background(palette.barSurface.opacity(0.92), in: Capsule())
-            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 0.75))
-    }
-
-    private func quietMissingReferenceTile(side: CGFloat, corner: CGFloat) -> some View {
-        let isMicro = side < 68
-        return ZStack {
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .fill(palette.barSurface.opacity(0.84))
-                .overlay(
-                    RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .strokeBorder(
-                            palette.subtleCardStroke,
-                            style: StrokeStyle(lineWidth: 1.2, dash: [4, 3])
-                        )
-                )
-
-            VStack(spacing: isMicro ? 3 : 5) {
-                Image(systemName: "link")
-                    .font(.system(size: tileSymbolSize(side: side, micro: 0.22, regular: 0.24), weight: .semibold))
-                    .foregroundStyle(palette.secondaryText.opacity(0.72))
-
-                Text(L10n.tr("原槽位已空", "Target Missing", language: language))
-                    .font(ChocType.tileName(side: side))
-                    .foregroundStyle(palette.secondaryText.opacity(0.85))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(isMicro ? 1 : 2)
-                    .padding(.horizontal, isMicro ? 4 : 6)
-            }
-        }
-    }
-
-    private func moldedBaseShape(
-        corner: CGFloat,
-        top: Color,
-        bottom: Color,
-        borderColor: Color,
-        borderWidth: CGFloat,
-        shadowColor: Color
-    ) -> some View {
-        let resolvedTop = isPressed ? palette.tileFillBottom : top
-        let resolvedBorderColor = isPressed ? palette.accent : borderColor
-        let resolvedBorderWidth = isPressed ? 2.0 : borderWidth
-
-        return RoundedRectangle(cornerRadius: corner, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [resolvedTop, bottom],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .strokeBorder(resolvedBorderColor, lineWidth: resolvedBorderWidth)
-            )
-            .shadow(color: shadowColor, radius: 6, x: 0, y: 2)
-    }
-
-    private func emptyMoldedSquare(side: CGFloat, corner: CGFloat) -> some View {
-        let isMicro = side < 68
-        let fillColors = isPressed
-            ? [palette.tileFillBottom, palette.tileFillBottom]
-            : [palette.barSurface.opacity(0.76), palette.tileFillBottom.opacity(0.68)]
-        let strokeColor = isPressed ? palette.accent : palette.subtleCardStroke
-        let strokeWidth: CGFloat = isPressed ? 1.8 : 1.1
-        let addLabel = EmptySlotHintPolicy.hintLabel(for: nil, language: language)
-
-        return ZStack {
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: fillColors,
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .strokeBorder(
-                            strokeColor,
-                            style: StrokeStyle(lineWidth: strokeWidth, dash: [5, 4])
-                        )
-                )
-
-            VStack(spacing: isMicro ? 2.5 : 4) {
-                if let plusSymbol = EmptySlotHintPolicy.plusSymbolName(for: nil) {
-                    Image(systemName: plusSymbol)
-                        .font(ChocType.caption)
-                        .foregroundStyle(isPressed ? palette.primaryText : palette.secondaryText.opacity(0.78))
-                        .frame(width: isMicro ? 22 : 26, height: isMicro ? 22 : 26)
-                        .background(
-                            palette.tileFillBottom.opacity(isPressed ? 0.95 : 0.72),
-                            in: Circle()
-                        )
-                        .overlay(
-                            Circle()
-                                .strokeBorder(palette.subtleCardStroke.opacity(0.85), lineWidth: 0.8)
-                        )
-                }
-
-                if let addLabel, side >= 38 {
-                    Text(addLabel)
-                        .font(ChocType.micro)
-                        .foregroundStyle(isPressed ? palette.primaryText : palette.secondaryText.opacity(0.82))
-                        .lineLimit(1)
-                }
-            }
-        }
-    }
-
-    private func cleanHost(from rawURL: String) -> String {
-        if let url = URL(string: rawURL), let host = url.host() {
-            return host.replacingOccurrences(of: "www.", with: "")
-        }
-        return rawURL
-    }
 }
 
 // MARK: - Touch-Down & Cancel-Safe Pressed Key Feedback

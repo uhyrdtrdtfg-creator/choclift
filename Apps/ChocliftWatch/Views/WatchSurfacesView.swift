@@ -299,9 +299,7 @@ public struct WatchChocolateBarView: View {
     public var body: some View {
         ScrollView {
             VStack(spacing: 8) {
-                if !client.connectionState.isConnected {
-                    WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
-                } else if let orcaStatus = client.orcaStatus {
+                if let orcaStatus = client.orcaStatus {
                     WatchOrcaComplicationLine(client: client, status: orcaStatus)
                 }
 
@@ -516,57 +514,20 @@ public struct WatchChocolateBarView: View {
     }
 
     private var pageSwitcherBar: some View {
-        HStack(spacing: 6) {
-            Button {
-                stepPage(by: -1)
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(ChocType.caption)
-                    .foregroundStyle(palette.primaryText)
-                    .frame(width: 36, height: 36)
-                    .background(palette.tileFillBottom, in: Circle())
-                    .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                    .contentShape(Circle())
+        Button {
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            showPagePickerSheet = true
+        } label: {
+            HStack {
+                Text(activePage.title).font(ChocType.title)
+                Image(systemName: "chevron.down").font(ChocType.micro)
+                Spacer()
             }
-            .buttonStyle(.plain)
-
-            Button {
-                CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
-                showPagePickerSheet = true
-            } label: {
-                HStack(spacing: 5) {
-                    Text(activePage.iconEmoji)
-                        .font(ChocType.caption)
-                    Text(activePage.title)
-                        .font(ChocType.caption)
-                        .foregroundStyle(palette.primaryText)
-                        .lineLimit(1)
-                    Text("\(safePageIndex + 1)/\(client.profile.pages.count)")
-                        .font(ChocType.micro)
-                        .foregroundStyle(palette.secondaryText)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 36)
-                .padding(.horizontal, 6)
-                .background(palette.barSurface, in: Capsule())
-                .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                stepPage(by: 1)
-            } label: {
-                Image(systemName: "chevron.right")
-                    .font(ChocType.caption)
-                    .foregroundStyle(palette.primaryText)
-                    .frame(width: 36, height: 36)
-                    .background(palette.tileFillBottom, in: Circle())
-                    .overlay(Circle().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
+            .foregroundStyle(palette.primaryText)
+            .frame(minHeight: 32)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
     private var pageDotsBar: some View {

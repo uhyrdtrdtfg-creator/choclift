@@ -8,6 +8,7 @@ public struct IOSSoundboardSurfaceView: View {
     let currentBarPageIndex: Int
     let isLandscape: Bool
     var onPromptHUD: ((String) -> Void)?
+    var onRequestPairing: (() -> Void)?
 
     @State private var searchQuery: String = ""
     @State private var pressedPadID: String?
@@ -33,25 +34,27 @@ public struct IOSSoundboardSurfaceView: View {
         client: CompanionClientEngine,
         currentBarPageIndex: Int,
         isLandscape: Bool,
-        onPromptHUD: ((String) -> Void)? = nil
+        onPromptHUD: ((String) -> Void)? = nil,
+        onRequestPairing: (() -> Void)? = nil
     ) {
         self.client = client
         self.currentBarPageIndex = currentBarPageIndex
         self.isLandscape = isLandscape
         self.onPromptHUD = onPromptHUD
+        self.onRequestPairing = onRequestPairing
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: isLandscape ? 8 : 10) {
             headerBar
-                .padding(.horizontal, isLandscape ? 14 : 16)
+                .padding(.horizontal, 0)
                 .padding(.top, isLandscape ? 6 : 8)
 
             soundboardVolumeCard
-                .padding(.horizontal, isLandscape ? 14 : 16)
+                .padding(.horizontal, 0)
 
             soundSearchField
-                .padding(.horizontal, isLandscape ? 14 : 16)
+                .padding(.horizontal, 0)
 
             if allClips.isEmpty {
                 emptyBoardState
@@ -280,24 +283,20 @@ public struct IOSSoundboardSurfaceView: View {
     // MARK: - Pad Grid & Empty States
 
     private var soundPadGrid: some View {
-        let colCount = isLandscape ? 4 : 2
+        let colCount = isLandscape ? 6 : 4
         let cols = Array(repeating: GridItem(.flexible(), spacing: 10), count: colCount)
 
-        return ScrollView {
-            LazyVGrid(columns: cols, spacing: 10) {
-                ForEach(filteredClips) { clip in
-                    soundPadButton(clip)
-                }
+        return LazyVGrid(columns: cols, spacing: 12) {
+            ForEach(filteredClips) { clip in
+                soundPadButton(clip)
             }
-            .padding(.horizontal, isLandscape ? 14 : 16)
-            .padding(.bottom, 12)
         }
+        .padding(.bottom, 12)
     }
 
     private func soundPadButton(_ clip: SoundboardClip) -> some View {
         let key = clip.id.uuidString
         let isPressed = (pressedPadID == key)
-        let tintColor = ChocSwatch.resolvedTileColor(hex: clip.backgroundHex, fallbackHex: "#ECFAEE")
 
         return Button {
             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
@@ -312,54 +311,18 @@ public struct IOSSoundboardSurfaceView: View {
                 )
             }
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .top) {
-                    Text(clip.emoji)
-                        .font(ChocType.title)
-
-                    Spacer(minLength: 4)
-
-                    HStack(spacing: 3) {
-                        Image(systemName: "waveform")
-                            .font(ChocType.micro)
-                        Text(clip.formattedDuration)
-                            .font(ChocType.micro)
-                    }
-                    .foregroundStyle(palette.secondaryText)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(palette.barSurface.opacity(0.75), in: Capsule())
-                }
-
-                Spacer(minLength: 2)
-
+            VStack(spacing: 2) {
+                Text(clip.emoji)
+                    .font(.system(size: 52))
+                    .frame(height: 64)
                 Text(clip.name)
-                    .font(ChocType.caption)
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.primaryText)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+                    .lineLimit(1)
             }
-            .padding(11)
-            .frame(maxWidth: .infinity, minHeight: isLandscape ? 74 : 84, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [tintColor, palette.tileFillBottom],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(
-                                isPressed ? palette.accent : palette.subtleCardStroke,
-                                lineWidth: isPressed ? 2 : 1
-                            )
-                    )
-            )
-            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .scaleEffect(isPressed ? 0.95 : 1.0)
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .scaleEffect(isPressed ? 0.95 : 1)
         }
         .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedPadID, key: key))
         .accessibilityIdentifier("ios-soundboard-pad-\(clip.id.uuidString)")
@@ -407,18 +370,12 @@ public struct IOSSoundboardSurfaceView: View {
                 .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.primaryText)
 
-            Text(
-                L10n.tr(
-                    "在 Mac 端 Choclift「音效板」添加本机短音频（最长 8 秒、最多 24 个）。音频直接在 Mac 扬声器播放，不会从手机上传或串流。",
-                    "Add short local audio files in Choclift on your Mac (up to 8s each, max 24 sounds). Playback stays on Mac speakers with no audio upload.",
-                    language: lang
-                )
-            )
-            .font(ChocType.caption)
-            .foregroundStyle(palette.secondaryText)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: 380)
-            .padding(.horizontal, 18)
+            Button(L10n.tr("连接 Mac", "Connect Mac", language: lang)) {
+                onRequestPairing?()
+            }
+            .font(ChocType.body)
+            .buttonStyle(.borderedProminent)
+            .tint(palette.accent)
 
             Spacer(minLength: 6)
         }

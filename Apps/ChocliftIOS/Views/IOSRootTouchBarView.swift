@@ -91,12 +91,7 @@ public struct IOSRootTouchBarView: View {
             let isIPadWide = UIDevice.current.userInterfaceIdiom == .pad && geo.size.width >= 680 && geo.size.height >= 480
 
             ZStack {
-                LinearGradient(
-                    colors: [palette.backgroundTop, palette.backgroundBottom],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
+                palette.backgroundTop.ignoresSafeArea()
 
                 if isIPadWide {
                     iPadExpandedWorkspace(size: geo.size)
@@ -182,15 +177,9 @@ public struct IOSRootTouchBarView: View {
                         .frame(minHeight: 44)
                         .buttonStyle(.bordered)
                         IOSPageReorderControls(client: client, activePageIndex: currentPageIndex, compact: false) { moveActiveBarPage($0) }
-                        GroupBox(L10n.tr("媒体与显示", "Media & Display", language: lang)) {
-                            IOSPersistentControlStripView(client: client, preferSingleRow: false, secondaryOnly: true, onPromptHUD: { flashHUD($0) })
-                        }
-                        GroupBox(L10n.tr("剪贴板、截屏与工作区", "Clipboard, Capture & Workspace", language: lang)) {
-                            IOSCompanionBarRibbon(client: client, compact: false, onPromptHUD: { flashHUD($0) })
-                        }
-                        GroupBox(L10n.tr("编辑与最近应用", "Editing & Recent Apps", language: lang)) {
-                            IOSCompactKeyAndRecentsBar(client: client, showInlineRecentChips: true, onPromptHUD: { flashHUD($0) })
-                        }
+                        IOSPersistentControlStripView(client: client, preferSingleRow: false, secondaryOnly: true, onPromptHUD: { flashHUD($0) })
+                        IOSCompanionBarRibbon(client: client, compact: false, onPromptHUD: { flashHUD($0) })
+                        IOSCompactKeyAndRecentsBar(client: client, showInlineRecentChips: true, onPromptHUD: { flashHUD($0) })
                         IOSPinnedStripTilesRow(client: client, onPromptHUD: { flashHUD($0) }, onEditSlot: { selection in
                             showToolsSheet = false
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { editingSlot = selection }
@@ -199,7 +188,7 @@ public struct IOSRootTouchBarView: View {
                         IOSPrivacyCaptureStripBadge(client: client)
                         if client.orcaStatus != nil { IOSOrcaTaskStatusBar(client: client, compact: false) }
                     }
-                    .padding(20)
+                    .padding(16)
                 }
                 .background(palette.backgroundTop)
                 .navigationBarTitleDisplayMode(.inline)
@@ -214,6 +203,7 @@ public struct IOSRootTouchBarView: View {
                 } }
             }
             .tint(palette.accent)
+            .groupBoxStyle(ChocSurfaceGroupBoxStyle(palette: palette))
         }
         .sheet(isPresented: $showPairingSheet) {
             IOSPairingAndConnectionSheet(client: client)
@@ -252,6 +242,13 @@ public struct IOSRootTouchBarView: View {
             if !client.connectionState.isConnected && client.savedMacs.isEmpty {
                 showPairingSheet = true
             }
+            #if DEBUG
+            if let review = ProcessInfo.processInfo.environment["CHOCLIFT_REVIEW_SURFACE"] {
+                activeMode = IOSActiveSurfaceMode(rawValue: review) ?? .chocolateBar
+                showPairingSheet = review == "pairing"
+                showToolsSheet = review == "tools"
+            }
+            #endif
         }
         .onChange(of: client.frontmostBundleID) { _, newBundleID in
             let previousPageID = deckFollower.currentPageID
@@ -338,43 +335,35 @@ public struct IOSRootTouchBarView: View {
     private func portraitWorkspace(isWide: Bool) -> some View {
         VStack(spacing: 0) {
             ScrollView {
-                VStack(spacing: 8) {
-                    // One line leaves the device name room to truncate.
+                VStack(spacing: 12) {
+                    // The active page and navigation share one header.
                     HStack(spacing: 8) {
-                        ChocliftBrandIconView(size: 30)
-                        Text(connectionDeviceName)
-                            .font(ChocType.caption)
+                        Button { showToolsSheet = true } label: {
+                            ChocliftBrandIconView(size: 30).frame(width: 44, height: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(L10n.tr("更多控制", "More Controls", language: lang))
+                        Group {
+                            if activeMode == .chocolateBar || activeMode == .emojiBar {
+                                portraitPageStepperBar
+                            } else {
+                                Text(activeMode.shortTitle(in: lang)).font(ChocType.title)
+                            }
+                        }
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                             .truncationMode(.tail)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         connectionStatusPillButton
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 16)
                     .padding(.top, 10)
 
 
-                    if client.connectionState.isConnected {
-                        IOSPersistentControlStripView(
-                            client: client,
-                            preferSingleRow: false,
-                            primarySurface: true,
-                            onMore: { showToolsSheet = true },
-                            onReconnect: { showPairingSheet = true },
-                            onPromptHUD: { flashHUD($0) },
-                            onEditSlot: { editingSlot = $0 }
-                        )
-                        .padding(.horizontal, 20)
-
-                    }
-
                     VStack(spacing: 8) {
-                        if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
-                            portraitPageStepperBar
-                        }
                         activeMainContent(isLandscape: isWide)
                     }
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 16)
 
                 }
                 .padding(.bottom, 12)
@@ -400,7 +389,7 @@ public struct IOSRootTouchBarView: View {
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: mode.sfSymbol)
-                            .font(ChocType.body.weight(.semibold))
+                            .font(.system(size: 22, weight: .semibold))
                         Text(mode.shortTitle(in: lang))
                             .font(ChocType.micro)
                             .lineLimit(1)
@@ -414,7 +403,7 @@ public struct IOSRootTouchBarView: View {
                 .accessibilityIdentifier("ios-mode-\(mode.rawValue)")
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
         .background(palette.barSurface.ignoresSafeArea(edges: .bottom))
         .overlay(alignment: .top) {
             Rectangle().fill(palette.subtleCardStroke).frame(height: 1)
@@ -527,7 +516,8 @@ public struct IOSRootTouchBarView: View {
                 isLandscape: isLandscape,
                 onPromptHUD: { message in
                     flashHUD(message)
-                }
+                },
+                onRequestPairing: { showPairingSheet = true }
             )
         case .timeTravel:
             IOSTimeTravelSurfaceView(
@@ -877,15 +867,11 @@ public struct IOSRootTouchBarView: View {
                     }
                     .disabled(!client.connectionState.isConnected)
                     .accessibilityIdentifier("ios-follow-frontmost-app-button")
-                    if !client.connectionState.isConnected {
-                        Text(L10n.tr("连接 Mac 后可跟随前台应用", "Connect your Mac to follow the frontmost app", language: lang))
-                            .font(ChocType.caption)
-                    }
                 }
             }
         } label: {
             HStack(spacing: 5) {
-                Text(title).font(ChocType.body.weight(.semibold)).lineLimit(1)
+                Text(title).font(ChocType.title).lineLimit(1)
                 Image(systemName: "chevron.down").font(ChocType.micro)
             }
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)

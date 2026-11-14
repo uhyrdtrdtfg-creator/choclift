@@ -69,7 +69,7 @@ public struct ChocolateBarStudioView: View {
 
             bottomHintBar
         }
-        .padding(.horizontal, 28)
+        .padding(.horizontal, 16)
         .padding(.vertical, 18)
         .sheet(item: $editingSlot) { target in
             let existing = coordinator.profile.pages[target.pageIndex].slots[target.slotIndex]
@@ -536,114 +536,16 @@ public struct ChocolateBarStudioView: View {
 
     private var chocolateHardwarePreview: some View {
         let pageIdx = currentPage.index
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 15), count: 4)
-        let activeLink = coordinator.server.pairedDevices.first(where: \.isCurrentlyConnected)?.activeLink
-
-        return HStack(spacing: 16) {
-            LazyVGrid(columns: columns, spacing: 15) {
-                ForEach(0..<BarPage.slotsPerPage, id: \.self) { slotIdx in
-                    let slotItem = currentPage.slots[slotIdx]
-                    let iconData = slotItem?.bundleIdentifier.flatMap { coordinator.catalogService.iconData(forBundleID: $0) }
-                    let isFrontmost = (slotItem?.bundleIdentifier != nil && slotItem?.bundleIdentifier == coordinator.timeTravel.frontmostBundleID)
-
-                    slotCell(
-                        pageIndex: pageIdx,
-                        slotIndex: slotIdx,
-                        item: slotItem,
-                        iconData: iconData,
-                        isFrontmost: isFrontmost
-                    )
-                    .aspectRatio(1.0, contentMode: .fit)
-                }
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 16)], alignment: .leading, spacing: 16) {
+            ForEach(0..<BarPage.slotsPerPage, id: \.self) { slotIdx in
+                let item = currentPage.slots[slotIdx]
+                slotCell(pageIndex: pageIdx, slotIndex: slotIdx, item: item,
+                         iconData: item?.bundleIdentifier.flatMap { coordinator.catalogService.iconData(forBundleID: $0) },
+                         isFrontmost: item?.bundleIdentifier != nil && item?.bundleIdentifier == coordinator.timeTravel.frontmostBundleID)
+                    .frame(height: 80)
             }
-            .frame(maxWidth: 600)
-
-            // Companion Side Rail Preview (mirrors the iPhone landscape rail)
-            VStack(spacing: 12) {
-                Button {
-                    coordinator.showPairingPopover = true
-                } label: {
-                    ZStack {
-                        Circle()
-                            .fill(palette.tileFillTop)
-                            .frame(width: 30, height: 30)
-                        if let activeLink {
-                            Image(systemName: activeLink.sfSymbol)
-                                .font(ChocType.micro)
-                                .foregroundStyle(activeLink == .bluetooth ? palette.statusBluetooth : palette.statusConnected)
-                        } else {
-                            Circle()
-                                .fill(coordinator.server.connectedDeviceCount > 0 ? palette.statusConnected : palette.secondaryText)
-                                .frame(width: 8, height: 8)
-                        }
-                    }
-                    .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .help(L10n.tr("查看伴侣连接与配对码", "Companion Link & Pairing PIN", language: lang))
-
-                VStack(spacing: 3) {
-                    ForEach(0..<BarPage.maxPages, id: \.self) { dotIdx in
-                        Button {
-                            coordinator.selectedPageIndex = dotIdx
-                        } label: {
-                            Circle()
-                                .fill(dotIdx == pageIdx ? palette.accent : palette.secondaryText.opacity(0.35))
-                                .frame(width: dotIdx == pageIdx ? 6.5 : 4.5, height: dotIdx == pageIdx ? 6.5 : 4.5)
-                                .frame(width: 22, height: 12)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-
-                Button {
-                    coordinator.selectedSection = .timeTravel
-                } label: {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(ChocType.caption)
-                        .foregroundStyle(palette.secondaryText)
-                        .frame(width: 30, height: 30)
-                        .background(palette.tileFillBottom.opacity(0.75), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .help(L10n.tr("切换到应用时间旅行", "Open App Time Travel", language: lang))
-
-                Button {
-                    coordinator.selectedSection = .emojiBar
-                } label: {
-                    Image(systemName: "face.smiling.fill")
-                        .font(ChocType.caption)
-                        .foregroundStyle(palette.secondaryText)
-                        .frame(width: 30, height: 30)
-                        .background(palette.tileFillBottom.opacity(0.75), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .help(L10n.tr("切换到表情栏编辑", "Open Emoji Bar Editor", language: lang))
-            }
-            .padding(.vertical, 14)
-            .padding(.horizontal, 8)
-            .background(palette.backgroundBottom.opacity(0.7), in: Capsule())
-            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
         }
-        .padding(24)
-        .background(
-            RoundedRectangle(cornerRadius: 32, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [palette.backgroundTop, palette.backgroundBottom],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .strokeBorder(palette.tileBorderHighlight, lineWidth: 1.8)
-                )
-                .shadow(color: palette.primaryText.opacity(0.08), radius: 16, x: 0, y: 8)
-        )
+        .padding(16)
     }
 
     private func slotCell(

@@ -38,7 +38,7 @@ public struct SoundboardStudioView: View {
                 soundPadsGrid
             }
         }
-        .padding(22)
+        .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDroppedAudioProviders(providers)
@@ -285,7 +285,6 @@ public struct SoundboardStudioView: View {
 
     private func soundPadCard(_ clip: SoundboardClip) -> some View {
         let isActive = soundboardService.isPlaying && soundboardService.activeSoundID == clip.id
-        let baseTone = ChocSwatch.resolvedTileColor(hex: clip.backgroundHex, fallbackHex: "#ECFAEE")
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -371,18 +370,12 @@ public struct SoundboardStudioView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [palette.tileFillTop, baseTone],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(palette.barSurface)
                 .overlay(
                     RoundedRectangle(cornerRadius: 15, style: .continuous)
                         .strokeBorder(
                             isActive ? palette.accent : palette.tileBorderHighlight,
-                            lineWidth: isActive ? 2.0 : 1.1
+                            lineWidth: 1
                         )
                 )
         )

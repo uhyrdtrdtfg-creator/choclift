@@ -207,9 +207,9 @@ public struct IOSChocolateBarSurfaceView: View {
 
     private var tileColumnCount: Int {
         #if os(iOS)
-        UIDevice.current.userInterfaceIdiom == .pad ? 4 : 2
+        UIDevice.current.userInterfaceIdiom == .pad ? 6 : 4
         #else
-        isLandscape ? 4 : 2
+        isLandscape ? 6 : 4
         #endif
     }
 
@@ -220,8 +220,8 @@ public struct IOSChocolateBarSurfaceView: View {
         guard page.slots.contains(where: { $0 != nil }) else { return 44 }
         let columns = tileColumnCount
         let rows = (visibleSlotCount(for: page) + columns - 1) / columns
-        let side = max(1, (tileRegionWidth - CGFloat(columns - 1) * 16) / CGFloat(columns))
-        return CGFloat(rows) * (min(side * 0.72, 96) + 4 + 14) + CGFloat(max(0, rows - 1)) * 16
+        let side = max(1, (tileRegionWidth - CGFloat(columns - 1) * 12) / CGFloat(columns))
+        return CGFloat(rows) * (min(side, 64) + 2 + 14) + CGFloat(max(0, rows - 1)) * 12
     }
 
     private var barHorizontalPager: some View {
@@ -325,9 +325,9 @@ public struct IOSChocolateBarSurfaceView: View {
             .buttonStyle(.plain)
             .foregroundStyle(palette.accent)
         } else {
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: tileColumnCount)
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: tileColumnCount)
             TimelineView(.periodic(from: .now, by: 15.0)) { timeline in
-                LazyVGrid(columns: columns, spacing: 16) {
+                LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(0..<visibleSlotCount(for: page), id: \.self) { slotIdx in
                         let item = page.slots[slotIdx]
                         let key = "\(pageOffset)-\(slotIdx)"
@@ -352,11 +352,11 @@ public struct IOSChocolateBarSurfaceView: View {
     }
 
     private var launcherIconSide: CGFloat {
-        let cellWidth = max(1, (tileRegionWidth - CGFloat(tileColumnCount - 1) * 16) / CGFloat(tileColumnCount))
-        return min(cellWidth * 0.72, 96)
+        let cellWidth = max(1, (tileRegionWidth - CGFloat(tileColumnCount - 1) * 12) / CGFloat(tileColumnCount))
+        return min(cellWidth, 64)
     }
 
-    private var launcherCellHeight: CGFloat { launcherIconSide + 4 + 14 }
+    private var launcherCellHeight: CGFloat { launcherIconSide + 2 + 14 }
 
     @ViewBuilder
     private func launcherArtwork(for item: BarItem?, iconData: Data?) -> some View {
@@ -415,7 +415,7 @@ public struct IOSChocolateBarSurfaceView: View {
                 item: item
             )
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: 2) {
                 launcherArtwork(for: effectiveItem, iconData: iconData)
                     .frame(width: launcherIconSide, height: launcherIconSide)
                     .overlay(alignment: .topTrailing) {
@@ -602,7 +602,7 @@ public struct IOSTimeTravelSurfaceView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label(L10n.tr("应用时间旅行", "App Time Travel", language: lang), systemImage: "clock.arrow.circlepath")
+                Label(L10n.tr("最近应用", "Recent Apps", language: lang), systemImage: "clock.arrow.circlepath")
                     .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
 
@@ -613,7 +613,7 @@ public struct IOSTimeTravelSurfaceView: View {
                     .foregroundStyle(palette.secondaryText)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 0)
             .padding(.top, 8)
 
             if client.recentApps.isEmpty {
@@ -623,23 +623,12 @@ public struct IOSTimeTravelSurfaceView: View {
                         .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
 
-                    Text(
-                        client.connectionState.isConnected
-                            ? L10n.tr("暂无最近切换的 Mac 应用", "No Recent Mac Apps Yet", language: lang)
-                            : L10n.tr("连接 Mac 后开启时间旅行", "Connect Your Mac for Time Travel", language: lang)
-                    )
-                    .font(ChocType.body.weight(.semibold))
-                    .foregroundStyle(palette.primaryText)
-
-                    Text(
-                        client.connectionState.isConnected
-                            ? L10n.tr("在 Mac 上任意切换窗口后，最近使用的应用会立即出现在这里。", "Switch windows on your Mac and recent apps will appear here automatically.", language: lang)
-                            : L10n.tr("配对并连接 Mac 后，无需按 ⌘Tab 即可在此一键穿梭最近打开的窗口。", "Pair your Mac to jump across recently active windows with a single tap.", language: lang)
-                    )
-                    .font(ChocType.caption)
-                    .foregroundStyle(palette.secondaryText)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 320)
+                    Text(client.connectionState.isConnected
+                         ? L10n.tr("切换 Mac 窗口后，最近应用将显示在这里。", "Switch Mac windows to see recent apps here.", language: lang)
+                         : L10n.tr("连接 Mac 即可切换最近使用的应用。", "Connect your Mac to switch recent apps.", language: lang))
+                        .font(ChocType.body)
+                        .foregroundStyle(palette.secondaryText)
+                        .multilineTextAlignment(.center)
 
                     if !client.connectionState.isConnected, let onRequestPairing {
                         Button {
@@ -658,10 +647,10 @@ public struct IOSTimeTravelSurfaceView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 0)
                 Spacer()
             } else {
-                let cols = Array(repeating: GridItem(.flexible(), spacing: 12), count: isLandscape ? 4 : 2)
+                let cols = Array(repeating: GridItem(.flexible(), spacing: 12), count: isLandscape ? 6 : 4)
                 ScrollView {
                     VStack(spacing: 12) {
                         IOSFrontmostWindowsInlineCard(client: client)
@@ -672,7 +661,7 @@ public struct IOSTimeTravelSurfaceView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 0)
                     .padding(.bottom, 14)
                 }
             }
@@ -916,8 +905,6 @@ public struct IOSEmojiBarSurfaceView: View {
     public var body: some View {
         VStack(spacing: 6) {
             emojiAndSnippetsHeader
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
 
             switch activeSegment {
             case .emoji:
@@ -1017,66 +1004,36 @@ public struct IOSEmojiBarSurfaceView: View {
                 }
             )
         }
+        .frame(height: 170)
     }
 
     private var emojiAndSnippetsHeader: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                segmentSwitcher
-                macCursorFocusHintPill
-                Spacer(minLength: 4)
-                trailingHeaderControl
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    segmentSwitcher
-                    Spacer(minLength: 6)
-                    trailingHeaderControl
-                }
-
-                HStack(spacing: 8) {
-                    macCursorFocusHintPill
-                    Spacer(minLength: 0)
-                    secondaryMetadataLabel
-                }
-            }
+        HStack(spacing: 8) {
+            segmentSwitcher
+            Spacer(minLength: 4)
+            trailingHeaderControl
         }
     }
 
     private var segmentSwitcher: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 12) {
             ForEach(IOSEmojiBarSegment.allCases) { segment in
-                let isSelected = (activeSegment == segment)
                 Button {
                     CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                    withAnimation(.spring(response: 0.22, dampingFraction: 0.84)) {
-                        activeSegment = segment
-                    }
+                    activeSegment = segment
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: segment.sfSymbol)
-                            .font(ChocType.micro)
-                        Text(segment.title(in: lang))
-                            .font(ChocType.caption)
-                            .lineLimit(1)
-                    }
-                    .foregroundStyle(isSelected ? palette.accentForeground : palette.secondaryText)
-                    .padding(.horizontal, 9)
-                    .frame(height: 44)
-                    .background(
-                        isSelected ? palette.accent : Color.clear,
-                        in: Capsule()
-                    )
-                    .contentShape(Capsule())
+                    Text(segment.title(in: lang))
+                        .font(ChocType.micro)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .foregroundStyle(activeSegment == segment ? palette.accent : palette.secondaryText)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("ios-emoji-segment-\(segment.rawValue)")
             }
         }
-        .padding(3)
-        .background(palette.tileFillBottom, in: Capsule())
-        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
     }
 
     @ViewBuilder
@@ -1154,8 +1111,8 @@ public struct IOSEmojiBarSurfaceView: View {
                 customizingSlotIndex = nil
                 showAllCatalogSheet = true
             } label: {
-                Label(L10n.tr("全部分类", "All Emojis", language: lang), systemImage: "magnifyingglass")
-                    .font(ChocType.caption)
+                Label(L10n.tr("浏览", "Browse", language: lang), systemImage: "magnifyingglass")
+                    .font(ChocType.micro)
                     .padding(.horizontal, 12)
                     .frame(minHeight: 44)
                     .background(palette.tileFillTop, in: Capsule())
@@ -1455,12 +1412,12 @@ public struct IOSEmojiBarSurfaceView: View {
     }
 
     private func emojiSlideGrid(_ slide: EmojiSlide, slideOffset: Int) -> some View {
-        let colCount = isLandscape ? 4 : 2
-        let rowCount = isLandscape ? 2 : 4
+        let colCount = isLandscape ? 6 : 4
+        let rowCount = (slide.emojis.count + colCount - 1) / colCount
 
         return GeometryReader { geo in
             let spacing: CGFloat = 12
-            let hPad: CGFloat = 14
+            let hPad: CGFloat = 0
             let vPad: CGFloat = 8
             let tileW = max(50, (geo.size.width - hPad * 2 - spacing * CGFloat(colCount - 1)) / CGFloat(colCount))
             let tileH = max(50, (geo.size.height - vPad * 2 - spacing * CGFloat(rowCount - 1)) / CGFloat(rowCount))
@@ -1470,7 +1427,7 @@ public struct IOSEmojiBarSurfaceView: View {
                     HStack(spacing: spacing) {
                         ForEach(0..<colCount, id: \.self) { c in
                             let idx = r * colCount + c
-                            let emoji = slide.emojis[idx]
+                            let emoji = slide.emojis.indices.contains(idx) ? slide.emojis[idx] : ""
                             let key = "\(slideOffset)-\(idx)"
                             let isPressed = (pressedEmojiKey == key)
 
@@ -1492,24 +1449,8 @@ public struct IOSEmojiBarSurfaceView: View {
                                 }
                             } label: {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [isPressed ? palette.tileFillBottom : palette.tileFillTop, palette.tileFillBottom],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                                .strokeBorder(
-                                                    isPressed ? palette.accent : palette.tileBorderHighlight.opacity(0.5),
-                                                    lineWidth: isPressed ? 2.0 : 1.1
-                                                )
-                                        )
-
                                     Text(emoji)
-                                        .font(.system(size: min(tileW, tileH) * 0.48))
+                                        .font(.system(size: min(58, min(tileW, tileH) * 0.8)))
                                 }
                                 .frame(width: tileW, height: tileH)
                                 .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -1957,7 +1898,8 @@ public struct IOSGesturePadSurfaceView: View {
                 )
             }
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity)
+            .frame(height: 200)
 
             // Tactile Quick Trigger Grid (>= 46pt height for crisp 1-finger taps)
             let quickGestures: [TouchGestureType] = [
@@ -1986,7 +1928,7 @@ public struct IOSGesturePadSurfaceView: View {
                         }
                         .padding(.horizontal, 10)
                         .frame(minHeight: 46)
-                        .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                         .overlay(
                             RoundedRectangle(cornerRadius: 13, style: .continuous)
                                 .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
@@ -1999,7 +1941,7 @@ public struct IOSGesturePadSurfaceView: View {
             }
             .frame(maxWidth: isLandscape ? 268 : .infinity)
         }
-        .padding(14)
+        .padding(.vertical, 0)
     }
 }
 

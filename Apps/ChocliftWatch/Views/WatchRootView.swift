@@ -148,6 +148,11 @@ public struct WatchRootView: View {
             if !client.connectionState.isConnected && client.savedMacs.isEmpty {
                 showPairingSheet = true
             }
+            #if DEBUG
+            if let review = ProcessInfo.processInfo.environment["CHOCLIFT_REVIEW_SURFACE"] {
+                showPairingSheet = review == "pairing"
+            }
+            #endif
         }
         .onChange(of: client.frontmostBundleID) { _, newBundleID in
             let previousPageID = deckFollower.currentPageID
