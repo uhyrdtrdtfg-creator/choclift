@@ -62,7 +62,7 @@ public struct IOSPairingAndConnectionSheet: View {
                             }
                         }
                     }
-                    .padding(18)
+                    .padding(16)
                 }
             }
             .navigationTitle(L10n.tr("连接你的 Mac", "Connect to Mac", language: lang))

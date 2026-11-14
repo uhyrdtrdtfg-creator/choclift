@@ -418,8 +418,8 @@ public struct DevicesAndSettingsView: View {
                     .frame(width: 300)
                 }
             }
-            .padding(.horizontal, 26)
-            .padding(.vertical, 20)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
         }
     }
 
@@ -642,7 +642,7 @@ public struct DevicesAndSettingsView: View {
                 Circle()
                     .fill(isOnline ? palette.statusConnected : palette.secondaryText.opacity(0.55))
                     .frame(width: 9, height: 9)
-                    .overlay(Circle().strokeBorder(palette.barSurface, lineWidth: 1.5))
+                    .overlay(Circle().strokeBorder(palette.barSurface, lineWidth: 1))
                     .offset(x: 2, y: 2)
             }
 
@@ -716,7 +716,7 @@ public struct DevicesAndSettingsView: View {
                     Circle()
                         .fill(palette.tileFillTop)
                         .frame(width: 14, height: 14)
-                        .overlay(Circle().strokeBorder(palette.accent, lineWidth: 1.5))
+                        .overlay(Circle().strokeBorder(palette.accent, lineWidth: 1))
 
                     Picker(
                         "",
@@ -1084,6 +1084,7 @@ public struct MacMainWindowView: View {
             )
             .ignoresSafeArea()
         )
+        .groupBoxStyle(ChocSurfaceGroupBoxStyle(palette: palette))
         .tint(palette.accent)
         .onAppear {
             coordinator.openStudioWindowAction = { [openWindow] in
@@ -1335,7 +1336,7 @@ public struct MacMenuBarPopoverView: View {
             .foregroundStyle(palette.accentForeground)
 
         }
-        .padding(14)
+        .padding(16)
         .frame(width: 292)
         .background(
             LinearGradient(
@@ -1451,7 +1452,7 @@ struct MacStudioSystemStatusRow: View {
         .font(ChocType.caption)
         .foregroundStyle(palette.secondaryText)
         .lineLimit(1)
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14))
     }

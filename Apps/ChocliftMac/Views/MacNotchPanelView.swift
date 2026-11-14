@@ -29,9 +29,9 @@ public final class NotchPanelPresentationState: ObservableObject {
 
 public struct MacNotchPanelView: View {
     public static let tileSide: CGFloat = 76
-    public static let gridSpacing: CGFloat = 10
-    public static let cardWidth: CGFloat = (tileSide * 4) + (gridSpacing * 3) + 28 // 362
-    public static let cardHeight: CGFloat = 252
+    public static let gridSpacing: CGFloat = 16
+    public static let cardWidth: CGFloat = (tileSide * 4) + (gridSpacing * 3) + 32
+    public static let cardHeight: CGFloat = 272
     public static let shadowHorizontalPadding: CGFloat = 16
     public static let shadowBottomPadding: CGFloat = 18
     public static let shadowTopPadding: CGFloat = 2
@@ -102,9 +102,9 @@ public struct MacNotchPanelView: View {
             }
             tileGrid
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 11)
-        .padding(.bottom, 13)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 16)
         .frame(width: Self.cardWidth)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)

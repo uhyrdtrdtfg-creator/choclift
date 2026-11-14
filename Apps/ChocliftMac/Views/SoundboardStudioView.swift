@@ -26,9 +26,10 @@ public struct SoundboardStudioView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            headerToolbar
-
-            soundboardVolumeAndSearchRow
+            if !coordinator.profile.soundboardClips.isEmpty {
+                headerToolbar
+                soundboardVolumeAndSearchRow
+            }
 
             if coordinator.profile.soundboardClips.isEmpty {
                 emptyBoardDropCard
@@ -38,7 +39,7 @@ public struct SoundboardStudioView: View {
                 soundPadsGrid
             }
         }
-        .padding(22)
+        .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onDrop(of: [.fileURL], isTargeted: $isDropTargeted) { providers in
             handleDroppedAudioProviders(providers)
@@ -197,47 +198,21 @@ public struct SoundboardStudioView: View {
     }
 
     private var emptyBoardDropCard: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             Spacer()
-
-            Image(systemName: "speaker.wave.2.bubble.left.fill")
-                .font(ChocType.title)
-                .foregroundStyle(palette.accent)
-
-            Text(L10n.tr("将 Mac 上的短音频文件拖入此处", "Drop Short Mac Audio Files Here", language: lang))
-                .font(ChocType.title)
-                .foregroundStyle(palette.primaryText)
-
-            Text(
-                L10n.tr(
-                    "支持 WAV、MP3、M4A、AIFF、CAF、AAC、FLAC，单文件不超过 8 秒，上限 24 个。",
-                    "Supports WAV, MP3, M4A, AIFF, CAF, AAC, and FLAC — up to 8 seconds per clip and 24 sounds total.",
-                    language: lang
-                )
-            )
-            .font(ChocType.body)
-            .foregroundStyle(palette.secondaryText)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: 460)
-
-            HStack(spacing: 10) {
-                Button {
-                    coordinator.chooseAndAddLocalSoundFiles()
-                } label: {
-                    Label(L10n.tr("选择本地音频文件…", "Choose Audio Files…", language: lang), systemImage: "folder.badge.plus")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(palette.accent)
-
-                Button {
-                    coordinator.importBuiltInMacSounds()
-                } label: {
-                    Label(L10n.tr("一键导入 macOS 系统音效", "Import macOS System Sounds", language: lang), systemImage: "sparkles")
-                }
-                .buttonStyle(.bordered)
+            Text(L10n.tr("拖入短音频，或添加 Mac 上的音效。", "Drop short audio files here, or add sounds from your Mac.", language: lang))
+                .font(ChocType.body).foregroundStyle(palette.secondaryText)
+            Menu(L10n.tr("添加音效", "Add Sounds", language: lang)) {
+                Button(L10n.tr("选择音频文件", "Choose Audio Files", language: lang)) { coordinator.chooseAndAddLocalSoundFiles() }
+                Button(L10n.tr("导入系统音效", "Import macOS Sounds", language: lang)) { coordinator.importBuiltInMacSounds() }
             }
-            .padding(.top, 4)
-
+            .menuStyle(.borderlessButton)
+            .font(ChocType.body)
+            .fixedSize()
+            .padding(.horizontal, 16)
+            .frame(height: 44)
+            .background(palette.accent, in: RoundedRectangle(cornerRadius: 10))
+            .foregroundStyle(palette.accentForeground)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -285,7 +260,6 @@ public struct SoundboardStudioView: View {
 
     private func soundPadCard(_ clip: SoundboardClip) -> some View {
         let isActive = soundboardService.isPlaying && soundboardService.activeSoundID == clip.id
-        let baseTone = ChocSwatch.resolvedTileColor(hex: clip.backgroundHex, fallbackHex: "#ECFAEE")
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -371,18 +345,12 @@ public struct SoundboardStudioView: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [palette.tileFillTop, baseTone],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(palette.barSurface)
                 .overlay(
                     RoundedRectangle(cornerRadius: 15, style: .continuous)
                         .strokeBorder(
                             isActive ? palette.accent : palette.tileBorderHighlight,
-                            lineWidth: isActive ? 2.0 : 1.1
+                            lineWidth: 1
                         )
                 )
         )

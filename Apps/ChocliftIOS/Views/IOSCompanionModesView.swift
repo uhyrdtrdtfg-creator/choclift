@@ -177,9 +177,43 @@ public struct IOSChocolateBarSurfaceView: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            barHorizontalPager
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                barHorizontalPager
+                ForEach(Array(client.profile.pages.enumerated()), id: \.element.id) { index, page in
+                    if index != currentPageIndex && page.slots.contains(where: { $0 != nil }) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(page.title).font(ChocType.caption).foregroundStyle(palette.secondaryText)
+                            pageGrid(for: page, pageOffset: index)
+                                .frame(height: tileRegionHeight(for: page))
+                        }
+                    }
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(L10n.tr("Mac 控制", "Mac Controls", language: lang))
+                        .font(ChocType.caption).foregroundStyle(palette.secondaryText)
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: tileColumnCount), spacing: 12) {
+                        ForEach(SystemQuickAction.allCases.filter { !$0.requiresDestructiveConfirmation }) { action in
+                            Button { client.performQuickAction(action) } label: {
+                                VStack(spacing: 2) {
+                                    Image(systemName: action.sfSymbol)
+                                        .font(.system(size: 32, weight: .medium))
+                                        .foregroundStyle(palette.accent)
+                                        .frame(height: 64)
+                                    Text(action.compactTitle(in: lang))
+                                        .font(ChocType.micro).foregroundStyle(palette.primaryText).lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 80)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .padding(.bottom, 2)
         }
+        .id(currentPageIndex)
         .onChange(of: currentPageIndex) { _, _ in
             confirmGate.disarm()
         }
@@ -207,21 +241,21 @@ public struct IOSChocolateBarSurfaceView: View {
 
     private var tileColumnCount: Int {
         #if os(iOS)
-        UIDevice.current.userInterfaceIdiom == .pad ? 4 : 2
+        UIDevice.current.userInterfaceIdiom == .pad ? 6 : 4
         #else
-        isLandscape ? 4 : 2
+        isLandscape ? 6 : 4
         #endif
     }
 
     private var activeTileRegionHeight: CGFloat {
         guard !client.profile.pages.isEmpty else { return 44 }
-        let index = min(max(0, currentPageIndex), client.profile.pages.count - 1)
-        let page = client.profile.pages[index]
+        return tileRegionHeight(for: client.profile.pages[min(max(0, currentPageIndex), client.profile.pages.count - 1)])
+    }
+
+    private func tileRegionHeight(for page: BarPage) -> CGFloat {
         guard page.slots.contains(where: { $0 != nil }) else { return 44 }
-        let columns = tileColumnCount
-        let rows = (visibleSlotCount(for: page) + columns - 1) / columns
-        let side = max(1, (tileRegionWidth - CGFloat(columns - 1) * 16) / CGFloat(columns))
-        return CGFloat(rows) * (min(side * 0.72, 96) + 4 + 14) + CGFloat(max(0, rows - 1)) * 16
+        let rows = (visibleSlotCount(for: page) + tileColumnCount - 1) / tileColumnCount
+        return CGFloat(rows) * launcherCellHeight + CGFloat(max(0, rows - 1)) * 12
     }
 
     private var barHorizontalPager: some View {
@@ -325,9 +359,9 @@ public struct IOSChocolateBarSurfaceView: View {
             .buttonStyle(.plain)
             .foregroundStyle(palette.accent)
         } else {
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 16), count: tileColumnCount)
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: tileColumnCount)
             TimelineView(.periodic(from: .now, by: 15.0)) { timeline in
-                LazyVGrid(columns: columns, spacing: 16) {
+                LazyVGrid(columns: columns, spacing: 12) {
                     ForEach(0..<visibleSlotCount(for: page), id: \.self) { slotIdx in
                         let item = page.slots[slotIdx]
                         let key = "\(pageOffset)-\(slotIdx)"
@@ -352,11 +386,11 @@ public struct IOSChocolateBarSurfaceView: View {
     }
 
     private var launcherIconSide: CGFloat {
-        let cellWidth = max(1, (tileRegionWidth - CGFloat(tileColumnCount - 1) * 16) / CGFloat(tileColumnCount))
-        return min(cellWidth * 0.72, 96)
+        let cellWidth = max(1, (tileRegionWidth - CGFloat(tileColumnCount - 1) * 12) / CGFloat(tileColumnCount))
+        return min(cellWidth, 64)
     }
 
-    private var launcherCellHeight: CGFloat { launcherIconSide + 4 + 14 }
+    private var launcherCellHeight: CGFloat { launcherIconSide + 2 + 14 }
 
     @ViewBuilder
     private func launcherArtwork(for item: BarItem?, iconData: Data?) -> some View {
@@ -415,7 +449,7 @@ public struct IOSChocolateBarSurfaceView: View {
                 item: item
             )
         } label: {
-            VStack(spacing: 4) {
+            VStack(spacing: 2) {
                 launcherArtwork(for: effectiveItem, iconData: iconData)
                     .frame(width: launcherIconSide, height: launcherIconSide)
                     .overlay(alignment: .topTrailing) {
@@ -601,8 +635,9 @@ public struct IOSTimeTravelSurfaceView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if !client.recentApps.isEmpty {
             HStack {
-                Label(L10n.tr("应用时间旅行", "App Time Travel", language: lang), systemImage: "clock.arrow.circlepath")
+                Label(L10n.tr("最近应用", "Recent Apps", language: lang), systemImage: "clock.arrow.circlepath")
                     .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
 
@@ -613,33 +648,20 @@ public struct IOSTimeTravelSurfaceView: View {
                     .foregroundStyle(palette.secondaryText)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 0)
             .padding(.top, 8)
+
+            }
 
             if client.recentApps.isEmpty {
                 Spacer()
                 VStack(spacing: 10) {
-                    Image(systemName: client.connectionState.isConnected ? "clock" : "laptopcomputer.slash")
-                        .font(ChocType.title)
+                    Text(client.connectionState.isConnected
+                         ? L10n.tr("切换 Mac 窗口后，最近应用将显示在这里。", "Switch Mac windows to see recent apps here.", language: lang)
+                         : L10n.tr("连接 Mac 即可切换最近使用的应用。", "Connect your Mac to switch recent apps.", language: lang))
+                        .font(ChocType.body)
                         .foregroundStyle(palette.secondaryText)
-
-                    Text(
-                        client.connectionState.isConnected
-                            ? L10n.tr("暂无最近切换的 Mac 应用", "No Recent Mac Apps Yet", language: lang)
-                            : L10n.tr("连接 Mac 后开启时间旅行", "Connect Your Mac for Time Travel", language: lang)
-                    )
-                    .font(ChocType.body.weight(.semibold))
-                    .foregroundStyle(palette.primaryText)
-
-                    Text(
-                        client.connectionState.isConnected
-                            ? L10n.tr("在 Mac 上任意切换窗口后，最近使用的应用会立即出现在这里。", "Switch windows on your Mac and recent apps will appear here automatically.", language: lang)
-                            : L10n.tr("配对并连接 Mac 后，无需按 ⌘Tab 即可在此一键穿梭最近打开的窗口。", "Pair your Mac to jump across recently active windows with a single tap.", language: lang)
-                    )
-                    .font(ChocType.caption)
-                    .foregroundStyle(palette.secondaryText)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 320)
+                        .multilineTextAlignment(.center)
 
                     if !client.connectionState.isConnected, let onRequestPairing {
                         Button {
@@ -658,10 +680,10 @@ public struct IOSTimeTravelSurfaceView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 0)
                 Spacer()
             } else {
-                let cols = Array(repeating: GridItem(.flexible(), spacing: 12), count: isLandscape ? 4 : 2)
+                let cols = Array(repeating: GridItem(.flexible(), spacing: 12), count: isLandscape ? 6 : 4)
                 ScrollView {
                     VStack(spacing: 12) {
                         IOSFrontmostWindowsInlineCard(client: client)
@@ -672,7 +694,7 @@ public struct IOSTimeTravelSurfaceView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 0)
                     .padding(.bottom, 14)
                 }
             }
@@ -916,8 +938,6 @@ public struct IOSEmojiBarSurfaceView: View {
     public var body: some View {
         VStack(spacing: 6) {
             emojiAndSnippetsHeader
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
 
             switch activeSegment {
             case .emoji:
@@ -950,133 +970,56 @@ public struct IOSEmojiBarSurfaceView: View {
     }
 
     private var emojiHorizontalPager: some View {
-        GeometryReader { pagerGeo in
-            let pageWidth = max(1, pagerGeo.size.width)
-            let pageHeight = max(1, pagerGeo.size.height)
-            let slides = client.profile.emojiSlides
-            let slideCount = slides.count
-            let safeIdx = slideCount > 0 ? min(max(0, currentSlideIndex), slideCount - 1) : 0
-            let dragOffset: CGFloat = {
-                guard BarTouchGestureThresholds.shouldCancelPress(translation: activeEmojiDragTranslation),
-                      abs(activeEmojiDragTranslation.width) >= abs(activeEmojiDragTranslation.height) else {
-                    return 0
-                }
-                let raw = activeEmojiDragTranslation.width
-                let atStart = safeIdx <= 0 && raw > 0
-                let atEnd = safeIdx >= max(0, slideCount - 1) && raw < 0
-                let damped = (atStart || atEnd) ? (raw * 0.28) : raw
-                return min(max(damped, -pageWidth * 0.92), pageWidth * 0.92)
-            }()
-
-            HStack(spacing: 0) {
-                ForEach(Array(slides.enumerated()), id: \.element.id) { slideOffset, slide in
-                    emojiSlideGrid(slide, slideOffset: slideOffset)
-                        .frame(width: pageWidth, height: pageHeight)
-                        .allowsHitTesting(slideOffset == safeIdx)
-                        .accessibilityHidden(slideOffset != safeIdx)
+        let favorites = client.profile.emojiSlides.indices.contains(currentSlideIndex)
+            ? client.profile.emojiSlides[currentSlideIndex].emojis : []
+        let ordered = favorites + EmojiCatalog.categories.flatMap(\.emojis)
+        let emojis = ordered.reduce(into: [String]()) { result, emoji in
+            if !result.contains(emoji) { result.append(emoji) }
+        }
+        return ScrollView {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 12) {
+                ForEach(emojis, id: \.self) { emoji in
+                    Button {
+                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                        client.insertEmoji(emoji)
+                    } label: {
+                        Text(emoji).font(.system(size: 42))
+                            .frame(maxWidth: .infinity, minHeight: 58)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .offset(x: -CGFloat(safeIdx) * pageWidth + dragOffset)
-            .animation(.interactiveSpring(response: 0.24, dampingFraction: 0.88), value: activeEmojiDragTranslation)
-            .frame(width: pageWidth, height: pageHeight, alignment: .leading)
-            .clipped()
-            .contentShape(Rectangle())
-            .simultaneousGesture(
-                DragGesture(
-                    minimumDistance: BarTouchGestureThresholds.maxTapMovementPoints,
-                    coordinateSpace: .local
-                )
-                .updating($activeEmojiDragTranslation) { value, state, _ in
-                    state = value.translation
-                }
-                .onChanged { value in
-                    if BarTouchGestureThresholds.shouldCancelPress(translation: value.translation) {
-                        if !didCancelEmojiTapInActiveDrag {
-                            didCancelEmojiTapInActiveDrag = true
-                        }
-                        if let currentKey = pressedEmojiKey {
-                            ChocPressFeedback.cancelPressImmediately(key: currentKey, pressedKey: $pressedEmojiKey)
-                        }
-                    }
-                }
-                .onEnded { value in
-                    let targetIdx = BarTouchGestureThresholds.resolvedPageIndex(
-                        currentIndex: safeIdx,
-                        pageCount: slideCount,
-                        translation: value.translation
-                    )
-                    if targetIdx != safeIdx {
-                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                        withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                            currentSlideIndex = targetIdx
-                        }
-                    }
-                    DispatchQueue.main.async {
-                        didCancelEmojiTapInActiveDrag = false
-                    }
-                }
-            )
         }
     }
 
     private var emojiAndSnippetsHeader: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 8) {
-                segmentSwitcher
-                macCursorFocusHintPill
-                Spacer(minLength: 4)
-                trailingHeaderControl
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    segmentSwitcher
-                    Spacer(minLength: 6)
-                    trailingHeaderControl
-                }
-
-                HStack(spacing: 8) {
-                    macCursorFocusHintPill
-                    Spacer(minLength: 0)
-                    secondaryMetadataLabel
-                }
-            }
+        HStack(spacing: 8) {
+            segmentSwitcher
+            Spacer(minLength: 4)
+            trailingHeaderControl
         }
     }
 
     private var segmentSwitcher: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 12) {
             ForEach(IOSEmojiBarSegment.allCases) { segment in
-                let isSelected = (activeSegment == segment)
                 Button {
                     CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                    withAnimation(.spring(response: 0.22, dampingFraction: 0.84)) {
-                        activeSegment = segment
-                    }
+                    activeSegment = segment
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: segment.sfSymbol)
-                            .font(ChocType.micro)
-                        Text(segment.title(in: lang))
-                            .font(ChocType.caption)
-                            .lineLimit(1)
-                    }
-                    .foregroundStyle(isSelected ? palette.accentForeground : palette.secondaryText)
-                    .padding(.horizontal, 9)
-                    .frame(height: 44)
-                    .background(
-                        isSelected ? palette.accent : Color.clear,
-                        in: Capsule()
-                    )
-                    .contentShape(Capsule())
+                    Text(segment.title(in: lang))
+                        .font(ChocType.micro)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .foregroundStyle(activeSegment == segment ? palette.accent : palette.secondaryText)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("ios-emoji-segment-\(segment.rawValue)")
             }
         }
-        .padding(3)
-        .background(palette.tileFillBottom, in: Capsule())
-        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
     }
 
     @ViewBuilder
@@ -1154,8 +1097,8 @@ public struct IOSEmojiBarSurfaceView: View {
                 customizingSlotIndex = nil
                 showAllCatalogSheet = true
             } label: {
-                Label(L10n.tr("全部分类", "All Emojis", language: lang), systemImage: "magnifyingglass")
-                    .font(ChocType.caption)
+                Label(L10n.tr("浏览", "Browse", language: lang), systemImage: "magnifyingglass")
+                    .font(ChocType.micro)
                     .padding(.horizontal, 12)
                     .frame(minHeight: 44)
                     .background(palette.tileFillTop, in: Capsule())
@@ -1455,12 +1398,12 @@ public struct IOSEmojiBarSurfaceView: View {
     }
 
     private func emojiSlideGrid(_ slide: EmojiSlide, slideOffset: Int) -> some View {
-        let colCount = isLandscape ? 4 : 2
-        let rowCount = isLandscape ? 2 : 4
+        let colCount = isLandscape ? 6 : 4
+        let rowCount = (slide.emojis.count + colCount - 1) / colCount
 
         return GeometryReader { geo in
             let spacing: CGFloat = 12
-            let hPad: CGFloat = 14
+            let hPad: CGFloat = 0
             let vPad: CGFloat = 8
             let tileW = max(50, (geo.size.width - hPad * 2 - spacing * CGFloat(colCount - 1)) / CGFloat(colCount))
             let tileH = max(50, (geo.size.height - vPad * 2 - spacing * CGFloat(rowCount - 1)) / CGFloat(rowCount))
@@ -1470,7 +1413,7 @@ public struct IOSEmojiBarSurfaceView: View {
                     HStack(spacing: spacing) {
                         ForEach(0..<colCount, id: \.self) { c in
                             let idx = r * colCount + c
-                            let emoji = slide.emojis[idx]
+                            let emoji = slide.emojis.indices.contains(idx) ? slide.emojis[idx] : ""
                             let key = "\(slideOffset)-\(idx)"
                             let isPressed = (pressedEmojiKey == key)
 
@@ -1492,24 +1435,8 @@ public struct IOSEmojiBarSurfaceView: View {
                                 }
                             } label: {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [isPressed ? palette.tileFillBottom : palette.tileFillTop, palette.tileFillBottom],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                                                .strokeBorder(
-                                                    isPressed ? palette.accent : palette.tileBorderHighlight.opacity(0.5),
-                                                    lineWidth: isPressed ? 2.0 : 1.1
-                                                )
-                                        )
-
                                     Text(emoji)
-                                        .font(.system(size: min(tileW, tileH) * 0.48))
+                                        .font(.system(size: min(58, min(tileW, tileH) * 0.8)))
                                 }
                                 .frame(width: tileW, height: tileH)
                                 .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -1909,98 +1836,62 @@ public struct IOSGesturePadSurfaceView: View {
     }
 
     public var body: some View {
-        let layout = isLandscape ? AnyLayout(HStackLayout(spacing: 12)) : AnyLayout(VStackLayout(spacing: 12))
-
-        layout {
-            // Multi-touch interactive canvas
-            ZStack {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [palette.tileFillTop.opacity(0.72), palette.backgroundBottom.opacity(0.9)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .strokeBorder(palette.tileBorderHighlight.opacity(0.55), lineWidth: 1.3)
-                    )
-
-                VStack(spacing: 7) {
-                    Image(systemName: client.profile.gestureConfig.isGlobalOverlayEnabled ? "hand.draw.fill" : "hand.raised.slash.fill")
-                        .font(ChocType.title)
-                        .foregroundStyle(client.profile.gestureConfig.isGlobalOverlayEnabled ? palette.accent : palette.secondaryText)
-
-                    Text(
-                        client.profile.gestureConfig.isGlobalOverlayEnabled
-                            ? L10n.tr("多指触控手势板", "Multi-Touch Gesture Pad", language: lang)
-                            : L10n.tr("多指手势已在 Mac 端暂停", "Multi-Touch Paused on Mac", language: lang)
-                    )
-                    .font(ChocType.body.weight(.semibold))
-                    .foregroundStyle(palette.primaryText)
-
-                    VStack(spacing: 2) {
-                        Text(L10n.tr("双指上/下滑：最大化与最小化  ·  双指左/右滑：贴靠半屏", "2-Finger Up/Down: Max & Min  ·  2-Finger L/R: Snap Half", language: lang))
-                        Text(L10n.tr("三指捏合/张开：复制与粘贴  ·  单指可直接点按快捷按钮", "Pinch In/Out: Copy & Paste  ·  1-Finger taps quick buttons", language: lang))
-                    }
-                    .font(ChocType.micro)
-                    .foregroundStyle(palette.secondaryText)
-                    .multilineTextAlignment(.center)
-                }
-                .padding(12)
-                .allowsHitTesting(false)
-
-                MultiTouchGestureCaptureView(
-                    isEnabled: client.profile.gestureConfig.isGlobalOverlayEnabled,
-                    onGestureTriggered: onTriggerGesture
-                )
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // Tactile Quick Trigger Grid (>= 46pt height for crisp 1-finger taps)
-            let quickGestures: [TouchGestureType] = [
-                .twoFingerSwipeUp, .twoFingerSwipeDown,
-                .twoFingerSwipeLeft, .twoFingerSwipeRight,
-                .threeFingerPinchIn, .threeFingerPinchOut,
-                .twoFingerDoubleTap, .threeFingerSwipeUp
-            ]
-
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-                ForEach(quickGestures) { gesture in
-                    let mapped = client.profile.gestureConfig.action(for: gesture)
-                    Button {
-                        onTriggerGesture(gesture)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: mapped?.sfSymbol ?? gesture.sfSymbol)
-                                .font(ChocType.caption)
-                                .foregroundStyle(palette.secondaryText)
-                                .frame(width: 18)
-                            Text(mapped?.compactTitle(in: lang) ?? gesture.title(in: lang))
-                                .font(ChocType.micro)
-                                .foregroundStyle(palette.primaryText)
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 12) {
+                    ZStack(alignment: .bottom) {
+                        palette.accent.opacity(0.08)
+                        Canvas { context, size in
+                            for x in stride(from: 16.0, to: size.width, by: 24) {
+                                for y in stride(from: 16.0, to: size.height, by: 24) {
+                                    context.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 2, height: 2)), with: .color(palette.accent.opacity(0.22)))
+                                }
+                            }
                         }
-                        .padding(.horizontal, 10)
-                        .frame(minHeight: 46)
-                        .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                        Image(systemName: "hand.draw")
+                            .font(.system(size: 44, weight: .light))
+                            .foregroundStyle(palette.accent)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        Text(L10n.tr("双指滑动调整窗口 · 三指捏合复制与粘贴", "Swipe with two fingers to move windows · Pinch with three to copy or paste", language: lang))
+                            .font(ChocType.caption)
+                            .foregroundStyle(palette.secondaryText)
+                            .multilineTextAlignment(.center)
+                            .padding(16)
+                        MultiTouchGestureCaptureView(
+                            isEnabled: client.profile.gestureConfig.isGlobalOverlayEnabled,
+                            onGestureTriggered: onTriggerGesture
                         )
-                        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("ios-quick-gesture-\(gesture.rawValue)")
+                    .frame(height: max(180, geo.size.height - 176))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .accessibilityLabel(L10n.tr("手势板", "Gesture Pad", language: lang))
+
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 4), spacing: 12) {
+                        ForEach([TouchGestureType.twoFingerSwipeUp, .twoFingerSwipeDown, .twoFingerSwipeLeft, .twoFingerSwipeRight,
+                                 .threeFingerPinchIn, .threeFingerPinchOut, .twoFingerDoubleTap, .threeFingerSwipeUp]) { gesture in
+                            let mapped = client.profile.gestureConfig.action(for: gesture)
+                            Button { onTriggerGesture(gesture) } label: {
+                                VStack(spacing: 8) {
+                                    Image(systemName: mapped?.sfSymbol ?? gesture.sfSymbol)
+                                        .font(.system(size: 26, weight: .medium))
+                                        .foregroundStyle(palette.accent)
+                                    Text(mapped?.compactTitle(in: lang) ?? gesture.title(in: lang))
+                                        .font(ChocType.micro)
+                                        .foregroundStyle(palette.primaryText)
+                                        .lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 76)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("ios-quick-gesture-\(gesture.rawValue)")
+                        }
+                    }
                 }
             }
-            .frame(maxWidth: isLandscape ? 268 : .infinity)
         }
-        .padding(14)
     }
+
 }
 
 // MARK: - 5. iPad Chocolate Bar Deck with Pinned Control Strip
@@ -2255,6 +2146,136 @@ public struct IOSIPadChocolateBarDeckView: View {
     }
 }
 
+// MARK: - Dedicated, always discoverable media page
+
+public struct IOSNowPlayingPage: View {
+    @ObservedObject var client: CompanionClientEngine
+    @State private var volumePreview: Double?
+    @State private var brightnessPreview: Double?
+    @State private var showAudioOutputs = false
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+    private var state: ControlStripState { client.controlStripState }
+
+    public var body: some View {
+        GeometryReader { geo in
+            ScrollView {
+                VStack(spacing: 24) {
+                    VStack(spacing: 12) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 56, weight: .light))
+                            .foregroundStyle(palette.accent)
+                            .frame(height: 100)
+                        Text(state.nowPlaying?.title ?? state.nowPlaying?.appName ?? L10n.tr("未在播放", "Nothing playing", language: lang))
+                            .font(ChocType.title).foregroundStyle(palette.primaryText)
+                            .multilineTextAlignment(.center)
+                        if let artist = state.nowPlaying?.artist {
+                            Text(artist).font(ChocType.body).foregroundStyle(palette.secondaryText)
+                        }
+                        if state.nowPlaying?.title != nil, let source = state.nowPlaying?.appName {
+                            Text(source).font(ChocType.caption).foregroundStyle(palette.secondaryText)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 16)
+
+                    if let media = state.nowPlaying, let duration = media.durationSeconds, duration > 0 {
+                        let fraction = client.nowPlayingScrub.effectiveProgressFraction(for: media) ?? 0
+                        VStack(spacing: 4) {
+                            Slider(value: Binding(get: { fraction }, set: {
+                                _ = client.updateNowPlayingScrub(normalizedProgress: $0)
+                            }), in: 0...1, onEditingChanged: { editing in
+                                // Preview during drag; send exactly once when the user releases.
+                                if !editing {
+                                    _ = client.commitNowPlayingScrub(normalizedProgress: client.nowPlayingScrub.effectiveProgressFraction(for: state.nowPlaying) ?? fraction)
+                                }
+                            })
+                            .accessibilityLabel(L10n.tr("播放进度", "Playback position", language: lang))
+                            .accessibilityIdentifier("ios-player-seek")
+                            .disabled(!media.isSeekable)
+                            if let times = NowPlayingProgressFormatter.rowDisplayContent(for: media, overrideElapsedSeconds: client.nowPlayingScrub.effectiveElapsedSeconds(for: media))?.progressText {
+                                Text(times).font(ChocType.micro.monospacedDigit()).foregroundStyle(palette.secondaryText)
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 24) {
+                        transport(.mediaPrevious, symbol: "backward.fill")
+                        transport(.mediaPlayPause, symbol: state.nowPlaying?.isPlaying == true ? "pause.fill" : "play.fill")
+                        transport(.mediaNext, symbol: "forward.fill")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+
+                    VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(L10n.tr("音量", "Volume", language: lang), systemImage: "speaker.wave.2")
+                                .font(ChocType.caption)
+                            Slider(value: Binding(get: { volumePreview ?? state.volume }, set: { volumePreview = $0 }), in: 0...1, onEditingChanged: { editing in
+                                if !editing, let level = volumePreview {
+                                    client.setControlLevel(kind: .volume, level: level)
+                                    volumePreview = nil
+                                }
+                            })
+                            .accessibilityLabel(L10n.tr("音量", "Volume", language: lang))
+                            .accessibilityIdentifier("ios-player-volume")
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(L10n.tr("亮度", "Brightness", language: lang), systemImage: "sun.max")
+                                .font(ChocType.caption)
+                            Slider(value: Binding(get: { brightnessPreview ?? state.brightness }, set: { brightnessPreview = $0 }), in: 0...1, onEditingChanged: { editing in
+                                if !editing, let level = brightnessPreview {
+                                    client.setControlLevel(kind: .brightness, level: level)
+                                    brightnessPreview = nil
+                                }
+                            })
+                            .accessibilityLabel(L10n.tr("亮度", "Brightness", language: lang))
+                            .accessibilityIdentifier("ios-player-brightness")
+                        }
+                        Button { showAudioOutputs = true } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "hifispeaker.2")
+                                Text(L10n.tr("音频输出", "Audio Output", language: lang))
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                            }
+                            .font(ChocType.body)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("ios-player-audio-output")
+                    }
+                    .foregroundStyle(palette.primaryText)
+                    .padding(16)
+                    .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 16))
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                }
+                .frame(maxWidth: .infinity, minHeight: geo.size.height)
+            }
+        }
+        .tint(palette.accent)
+        .sheet(isPresented: $showAudioOutputs) { IOSAudioOutputPickerSheet(client: client) }
+        .onAppear { client.requestControlStripState() }
+        .onDisappear { client.cancelNowPlayingScrub() }
+        .accessibilityIdentifier("ios-now-playing-page")
+    }
+
+    private func transport(_ action: SystemQuickAction, symbol: String) -> some View {
+        Button { client.performQuickAction(action) } label: {
+            Image(systemName: symbol)
+                .font(.system(size: action == .mediaPlayPause ? 32 : 24, weight: .semibold))
+                .foregroundStyle(palette.accent)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(action.title(in: lang))
+        .accessibilityIdentifier("ios-player-\(action.rawValue)")
+    }
+}
+
 // MARK: - 6. Persistent Control Strip (Volume, Brightness, Now Playing, Mic Mute, Clock)
 
 public struct IOSPersistentControlStripView: View {
@@ -2328,7 +2349,7 @@ public struct IOSPersistentControlStripView: View {
                 }
             } else if primarySurface {
                 if client.connectionState.isConnected {
-                    if state.nowPlaying?.primaryDisplayText != nil { nowPlayingCluster }
+                    nowPlayingCluster
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L10n.tr("音量", "Volume", language: lang)).font(ChocType.caption)
                         volumeControlCluster
