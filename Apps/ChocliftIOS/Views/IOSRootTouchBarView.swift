@@ -112,18 +112,18 @@ public struct IOSRootTouchBarView: View {
                     VStack {
                         HStack(spacing: 7) {
                             Image(systemName: hud.isFailure ? "exclamationmark.triangle.fill" : "sparkles")
-                                .font(.caption.bold())
+                                .font(ChocType.caption)
                                 .foregroundStyle(hud.isFailure ? palette.statusFailure : palette.accent)
 
                             VStack(alignment: .leading, spacing: 1.5) {
                                 Text(hud.primaryText)
-                                    .font(.system(.caption, design: .rounded, weight: .bold))
+                                    .font(ChocType.caption)
                                     .foregroundStyle(palette.primaryText)
                                     .lineLimit(hud.secondaryText == nil ? 2 : 1)
 
                                 if let secondary = hud.secondaryText {
                                     Text(secondary)
-                                        .font(.caption2.weight(.medium))
+                                        .font(ChocType.micro)
                                         .foregroundStyle(hud.isFailure ? palette.statusFailure : palette.secondaryText)
                                         .lineLimit(2)
                                 }
@@ -206,7 +206,7 @@ public struct IOSRootTouchBarView: View {
                 .toolbar {
                     ToolbarItem(placement: .principal) {
                         Text(L10n.tr("Mac 控制", "Mac Controls", language: lang))
-                            .font(.headline)
+                            .font(ChocType.title)
                             .foregroundStyle(palette.primaryText)
                     }
                     ToolbarItem(placement: .confirmationAction) {
@@ -314,7 +314,7 @@ public struct IOSRootTouchBarView: View {
     private var toolsButton: some View {
         Button { showToolsSheet = true } label: {
             Image(systemName: "slider.horizontal.3")
-                .font(.system(size: 16, weight: .semibold))
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.secondaryText)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
@@ -342,7 +342,7 @@ public struct IOSRootTouchBarView: View {
                 HStack(spacing: 8) {
                     ChocliftBrandIconView(size: 30)
                     Text("choclift")
-                        .font(.system(.headline, design: .rounded, weight: .black))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
 
                     Spacer(minLength: 4)
@@ -369,7 +369,6 @@ public struct IOSRootTouchBarView: View {
                         portraitPageStepperBar
                     }
                     activeMainContent(isLandscape: isWide)
-                        .frame(minHeight: isWide ? 300 : 310)
                 }
                 .padding(.horizontal, 16)
 
@@ -386,9 +385,9 @@ public struct IOSRootTouchBarView: View {
                         } label: {
                             VStack(spacing: 3) {
                                 Image(systemName: mode.sfSymbol)
-                                    .font(.system(size: 15, weight: .bold))
+                                    .font(ChocType.body.weight(.semibold))
                                 Text(mode.shortTitle(in: lang))
-                                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                    .font(ChocType.micro)
                                     .lineLimit(1)
                             }
                             .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
@@ -428,12 +427,12 @@ public struct IOSRootTouchBarView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Label(L10n.tr("时间旅行 · 最近应用", "App Time Travel", language: lang), systemImage: "clock.arrow.circlepath")
-                    .font(.caption.bold())
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                 Spacer()
                 if !client.recentApps.isEmpty {
                     Text("\(client.recentApps.count)")
-                        .font(.caption2.monospacedDigit().bold())
+                        .font(ChocType.micro.monospacedDigit())
                         .foregroundStyle(palette.secondaryText)
                 }
             }
@@ -441,14 +440,14 @@ public struct IOSRootTouchBarView: View {
             if client.recentApps.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: client.connectionState.isConnected ? "clock" : "laptopcomputer.slash")
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                     Text(
                         client.connectionState.isConnected
                             ? L10n.tr("在 Mac 上切换应用后将实时显示在此", "Switch apps on your Mac to populate Time Travel", language: lang)
                             : L10n.tr("连接 Mac 后即可一键切换最近打开的窗口", "Connect your Mac for one-tap recent window switching", language: lang)
                     )
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     Spacer()
                 }
@@ -466,12 +465,12 @@ public struct IOSRootTouchBarView: View {
                                     DataImageView(pngData: icon, fallbackSymbol: "app.fill", tint: palette.primaryText)
                                         .frame(width: 28, height: 28)
                                     Text(entry.appName)
-                                        .font(.system(.caption, design: .rounded, weight: .bold))
+                                        .font(ChocType.caption)
                                         .foregroundStyle(palette.primaryText)
                                         .lineLimit(1)
                                     if entry.isPinned {
                                         Image(systemName: "pin.fill")
-                                            .font(.system(size: 9))
+                                            .font(ChocType.micro)
                                             .foregroundStyle(palette.secondaryText)
                                     }
                                 }
@@ -559,7 +558,7 @@ public struct IOSRootTouchBarView: View {
             showWorkspaceSearchSheet = true
         } label: {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 13.5, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.primaryText)
                 .frame(width: 44, height: 32)
                 .background(
@@ -583,7 +582,7 @@ public struct IOSRootTouchBarView: View {
             showWorkspaceSearchSheet = true
         } label: {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 13.5, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.primaryText)
                 .frame(width: 38, height: 38)
                 .background(palette.tileFillTop.opacity(0.9), in: Circle())
@@ -603,7 +602,7 @@ public struct IOSRootTouchBarView: View {
             showFlowsManagerSheet = true
         } label: {
             Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 13.5, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.accent)
                 .frame(width: 44, height: 32)
                 .background(
@@ -627,7 +626,7 @@ public struct IOSRootTouchBarView: View {
             showFlowsManagerSheet = true
         } label: {
             Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 13.5, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.accent)
                 .frame(width: 38, height: 38)
                 .background(palette.tileFillTop.opacity(0.9), in: Circle())
@@ -654,16 +653,15 @@ public struct IOSRootTouchBarView: View {
                         .tint(tint)
                 } else {
                     Image(systemName: visualState.sfSymbol)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(tint)
                         .frame(height: 15)
                 }
 
                 Text(visualState.railShortBadge(in: lang))
-                    .font(.system(size: 8.5, weight: .heavy, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(visualState.isFailure ? tint : palette.secondaryText)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.75)
             }
             .frame(width: 44, height: 42)
             .background(
@@ -703,16 +701,16 @@ public struct IOSRootTouchBarView: View {
                         .fill(palette.statusConnected)
                         .frame(width: 7, height: 7)
                     Image(systemName: link.sfSymbol)
-                        .font(.system(size: 11, weight: .bold))
+                        .font(ChocType.micro)
                         .foregroundStyle(tint)
                 } else {
                     Image(systemName: visualState.sfSymbol)
-                        .font(.system(size: 11.5, weight: .bold))
+                        .font(ChocType.micro)
                         .foregroundStyle(tint)
                 }
 
                 Text(visualState.compactPillLabel(in: lang))
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
             }
@@ -755,24 +753,24 @@ public struct IOSRootTouchBarView: View {
                         .tint(tint)
                 } else {
                     Image(systemName: visualState.sfSymbol)
-                        .font(.system(size: 14, weight: .bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(tint)
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(visualState.bannerTitle(in: lang))
-                        .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
 
                     if !compact, let subtitle = visualState.bannerSubtitle(in: lang) {
                         Text(subtitle)
-                            .font(.system(size: 11))
+                            .font(ChocType.micro)
                             .foregroundStyle(visualState.isFailure ? tint.opacity(0.95) : palette.secondaryText)
                             .lineLimit(2)
                     } else if compact, visualState.isFailure, let subtitle = visualState.bannerSubtitle(in: lang) {
                         Text(subtitle)
-                            .font(.system(size: 10.5))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                             .lineLimit(1)
                     }
@@ -789,7 +787,7 @@ public struct IOSRootTouchBarView: View {
                                 ? L10n.tr("详情", "Status", language: lang)
                                 : L10n.tr("连接", "Pair", language: lang)))
                 )
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.emphasisForeground)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
@@ -845,7 +843,7 @@ public struct IOSRootTouchBarView: View {
         } label: {
             VStack(spacing: 3) {
                 Text(activeName)
-                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -887,8 +885,8 @@ public struct IOSRootTouchBarView: View {
                 }
             } label: {
                 HStack(spacing: 5) {
-                    Text(title).font(.system(.callout, design: .rounded, weight: .semibold)).lineLimit(1)
-                    Image(systemName: "chevron.down").font(.caption2)
+                    Text(title).font(ChocType.body.weight(.semibold)).lineLimit(1)
+                    Image(systemName: "chevron.down").font(ChocType.micro)
                 }
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             }
@@ -914,7 +912,7 @@ public struct IOSRootTouchBarView: View {
                 stepPortraitPage(by: -1, count: count, isEmoji: isEmoji, current: activeIdx)
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .frame(width: 34, height: 32)
                     .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
@@ -947,7 +945,7 @@ public struct IOSRootTouchBarView: View {
                 stepPortraitPage(by: 1, count: count, isEmoji: isEmoji, current: activeIdx)
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .frame(width: 34, height: 32)
                     .background(palette.tileFillBottom.opacity(0.88), in: Capsule())
@@ -996,18 +994,18 @@ public struct IOSRootTouchBarView: View {
                         } label: {
                             HStack(spacing: 4) {
                                 Text(icon)
-                                    .font(.system(size: compact ? 11.5 : 12.5))
+                                    .font(ChocType.caption)
 
                                 MaxWidthPillTitleLayout(maxWidth: compact ? 96 : 112) {
                                     Text(displayTitle)
-                                        .font(.system(size: compact ? 11.5 : 12.5, weight: isSelected ? .bold : .semibold, design: .rounded))
+                                        .font(ChocType.caption)
                                         .lineLimit(1)
                                         .truncationMode(.tail)
                                 }
 
                                 if hasBoundApp {
                                     Image(systemName: "macwindow")
-                                        .font(.system(size: 8.5, weight: .bold))
+                                        .font(ChocType.micro)
                                         .opacity(isSelected ? 0.92 : 0.68)
                                 }
                             }

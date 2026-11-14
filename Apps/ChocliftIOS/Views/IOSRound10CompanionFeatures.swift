@@ -163,10 +163,10 @@ public struct IOSTileFolderSheet: View {
                 } else {
                     VStack(spacing: 10) {
                         Image(systemName: "folder")
-                            .font(.system(size: 30, weight: .semibold))
+                            .font(ChocType.title)
                             .foregroundStyle(palette.secondaryText)
                         Text(L10n.tr("该文件夹已移除", "Folder Removed", language: lang))
-                            .font(.headline)
+                            .font(ChocType.title)
                             .foregroundStyle(palette.primaryText)
                     }
                 }
@@ -195,7 +195,7 @@ public struct IOSTileFolderSheet: View {
                         }
                     } label: {
                         Label(L10n.tr("编辑文件夹", "Edit Folder", language: lang), systemImage: "slider.horizontal.3")
-                            .font(.caption.weight(.bold))
+                            .font(ChocType.caption)
                     }
                     .foregroundStyle(palette.accent)
                     .accessibilityIdentifier("ios-folder-edit-button")
@@ -226,7 +226,7 @@ public struct IOSTileFolderSheet: View {
                     ),
                     systemImage: "square.grid.2x2.fill"
                 )
-                .font(.system(.caption, design: .rounded, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.accent)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
@@ -242,7 +242,7 @@ public struct IOSTileFolderSheet: View {
                         language: lang
                     )
                 )
-                .font(.caption2)
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
                 .lineLimit(1)
             }
@@ -253,10 +253,10 @@ public struct IOSTileFolderSheet: View {
                 VStack(spacing: 12) {
                     Spacer(minLength: 12)
                     Image(systemName: "folder.badge.plus")
-                        .font(.system(size: 32, weight: .semibold))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.accent)
                     Text(L10n.tr("文件夹暂为空", "This Folder Is Empty", language: lang))
-                        .font(.system(.subheadline, design: .rounded, weight: .bold))
+                        .font(ChocType.body.weight(.semibold))
                         .foregroundStyle(palette.primaryText)
                     Text(
                         L10n.tr(
@@ -265,7 +265,7 @@ public struct IOSTileFolderSheet: View {
                             language: lang
                         )
                     )
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
@@ -278,7 +278,7 @@ public struct IOSTileFolderSheet: View {
                         }
                     } label: {
                         Label(L10n.tr("添加子动作", "Add Actions", language: lang), systemImage: "plus")
-                            .font(.system(.caption, design: .rounded, weight: .bold))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.accentForeground)
                             .padding(.horizontal, 16)
                             .frame(height: 38)
@@ -515,10 +515,10 @@ public struct IOSFolderSlotEditorView: View {
                 VStack(spacing: 12) {
                     Spacer(minLength: 16)
                     Image(systemName: "folder.badge.exclamationmark")
-                        .font(.system(size: 32, weight: .semibold))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.accent)
                     Text(L10n.tr("每页最多 1 个文件夹", "One Folder Per Page", language: lang))
-                        .font(.system(.headline, design: .rounded, weight: .bold))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(
                         L10n.tr(
@@ -527,7 +527,7 @@ public struct IOSFolderSlotEditorView: View {
                             language: lang
                         )
                     )
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 24)
@@ -540,7 +540,7 @@ public struct IOSFolderSlotEditorView: View {
                                 L10n.tr("编辑槽位 #\(existingIdx + 1) 的文件夹", "Edit Folder in Slot #\(existingIdx + 1)", language: lang),
                                 systemImage: "folder.fill"
                             )
-                            .font(.system(.caption, design: .rounded, weight: .bold))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.accentForeground)
                             .padding(.horizontal, 16)
                             .frame(height: 40)
@@ -579,7 +579,7 @@ public struct IOSFolderSlotEditorView: View {
     private var folderAppearanceCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(L10n.tr("文件夹外观", "Folder Appearance", language: lang))
-                .font(.system(.caption, design: .rounded, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
 
             TextField(
@@ -587,7 +587,7 @@ public struct IOSFolderSlotEditorView: View {
                 text: $folderTitle
             )
             .textFieldStyle(.plain)
-            .font(.system(.subheadline, design: .rounded, weight: .semibold))
+            .font(ChocType.body.weight(.semibold))
             .padding(.horizontal, 12)
             .frame(height: 40)
             .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
@@ -605,7 +605,7 @@ public struct IOSFolderSlotEditorView: View {
                             folderEmoji = emoji
                         } label: {
                             Text(emoji)
-                                .font(.system(size: 19))
+                                .font(ChocType.title)
                                 .frame(width: 38, height: 38)
                                 .background(
                                     selected ? palette.accent.opacity(0.16) : palette.tileFillBottom,
@@ -664,7 +664,7 @@ public struct IOSFolderSlotEditorView: View {
                         language: lang
                     )
                 )
-                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.primaryText)
                 .accessibilityIdentifier("ios-folder-count-badge")
 
@@ -675,13 +675,13 @@ public struct IOSFolderSlotEditorView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(ChocType.caption)
                         Text(
                             isFull
                                 ? L10n.tr("已满 8/8", "Full 8/8", language: lang)
                                 : L10n.tr("添加动作", "Add Action", language: lang)
                         )
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(ChocType.caption)
                     }
                     .foregroundStyle(isFull ? palette.secondaryText : palette.accentForeground)
                     .padding(.horizontal, 12)
@@ -702,7 +702,7 @@ public struct IOSFolderSlotEditorView: View {
                         language: lang
                     )
                 )
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 .padding(.vertical, 6)
             } else {
@@ -710,12 +710,12 @@ public struct IOSFolderSlotEditorView: View {
                     ForEach(Array(children.enumerated()), id: \.element.id) { idx, child in
                         HStack(spacing: 8) {
                             Text("#\(idx + 1)")
-                                .font(.caption2.monospacedDigit().weight(.bold))
+                                .font(ChocType.micro.monospacedDigit())
                                 .foregroundStyle(palette.secondaryText)
                                 .frame(width: 22, alignment: .leading)
 
                             Text(client.profile.displayTitle(for: child, in: lang))
-                                .font(.system(.subheadline, design: .rounded, weight: .semibold))
+                                .font(ChocType.body.weight(.semibold))
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
 
@@ -726,7 +726,7 @@ public struct IOSFolderSlotEditorView: View {
                                 children.swapAt(idx, idx - 1)
                             } label: {
                                 Image(systemName: "arrow.up")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(ChocType.micro)
                                     .foregroundStyle(idx > 0 ? palette.primaryText : palette.secondaryText.opacity(0.35))
                                     .frame(width: 28, height: 28)
                                     .background(palette.tileFillBottom, in: Circle())
@@ -739,7 +739,7 @@ public struct IOSFolderSlotEditorView: View {
                                 children.swapAt(idx, idx + 1)
                             } label: {
                                 Image(systemName: "arrow.down")
-                                    .font(.system(size: 11, weight: .bold))
+                                    .font(ChocType.micro)
                                     .foregroundStyle(idx + 1 < children.count ? palette.primaryText : palette.secondaryText.opacity(0.35))
                                     .frame(width: 28, height: 28)
                                     .background(palette.tileFillBottom, in: Circle())
@@ -751,7 +751,7 @@ public struct IOSFolderSlotEditorView: View {
                                 children.remove(at: idx)
                             } label: {
                                 Image(systemName: "trash")
-                                    .font(.system(size: 11.5, weight: .bold))
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.statusFailure)
                                     .frame(width: 30, height: 30)
                                     .background(palette.statusFailure.opacity(0.12), in: Circle())
@@ -790,9 +790,9 @@ public struct IOSFolderSlotEditorView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "folder.fill.badge.plus")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(ChocType.caption)
                 Text(L10n.tr("保存文件夹磁贴", "Save Folder Tile", language: lang))
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
             }
             .foregroundStyle(palette.accentForeground)
             .frame(maxWidth: .infinity)
@@ -965,12 +965,12 @@ private struct IOSFolderChildPickerSheet: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
-                    .font(.system(size: 13, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.accent)
                     .frame(width: 30, height: 30)
                     .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 Text(title)
-                    .font(.system(.subheadline, design: .rounded, weight: .semibold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                 Spacer()
@@ -1025,10 +1025,10 @@ public struct IOSPageReorderControls: View {
             } label: {
                 HStack(spacing: 2) {
                     Image(systemName: "arrow.left.to.line")
-                        .font(.system(size: compact ? 10 : 10.5, weight: .bold))
+                        .font(ChocType.micro)
                     if !compact {
                         Text(L10n.tr("左移", "Left", language: lang))
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .font(ChocType.micro)
                             .lineLimit(1)
                     }
                 }
@@ -1054,11 +1054,11 @@ public struct IOSPageReorderControls: View {
                 HStack(spacing: 2) {
                     if !compact {
                         Text(L10n.tr("右移", "Right", language: lang))
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .font(ChocType.micro)
                             .lineLimit(1)
                     }
                     Image(systemName: "arrow.right.to.line")
-                        .font(.system(size: compact ? 10 : 10.5, weight: .bold))
+                        .font(ChocType.micro)
                 }
                 .foregroundStyle(canRight ? palette.primaryText : palette.secondaryText.opacity(0.38))
                 .padding(.horizontal, compact ? 7 : 8)
@@ -1131,14 +1131,14 @@ public struct IOSHapticQuietHoursCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: client.hapticQuietHours.isEnabled ? "moon.zzz.fill" : "moon.zzz")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.accent)
                     .frame(width: 32, height: 32)
                     .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.tr("震动免打扰时段", "Haptic Quiet Hours", language: lang))
-                        .font(.system(.subheadline, design: .rounded, weight: .bold))
+                        .font(ChocType.body.weight(.semibold))
                         .foregroundStyle(palette.primaryText)
 
                     Text(
@@ -1148,7 +1148,7 @@ public struct IOSHapticQuietHoursCard: View {
                             language: lang
                         )
                     )
-                    .font(.caption2)
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                 }
 
@@ -1164,7 +1164,7 @@ public struct IOSHapticQuietHoursCard: View {
                 HStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L10n.tr("开始时间", "Start Time", language: lang))
-                            .font(.caption2.weight(.semibold))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                         DatePicker(
                             "",
@@ -1179,7 +1179,7 @@ public struct IOSHapticQuietHoursCard: View {
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L10n.tr("结束时间", "End Time", language: lang))
-                            .font(.caption2.weight(.semibold))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                         DatePicker(
                             "",
@@ -1209,7 +1209,7 @@ public struct IOSHapticQuietHoursCard: View {
                                 language: lang
                             )
                     )
-                    .font(.caption2.weight(.semibold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                 }
                 .accessibilityIdentifier("ios-quiet-hours-status")

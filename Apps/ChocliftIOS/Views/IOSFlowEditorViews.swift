@@ -27,7 +27,7 @@ public struct IOSFlowsManagerSheet: View {
                 if client.controlStripState.shouldShowDisplayPicker {
                     HStack(spacing: 8) {
                         Text(L10n.tr("贴靠与分屏目标屏幕", "Target Display for Snap & Split", language: lang))
-                            .font(.caption.weight(.semibold))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.secondaryText)
                         Spacer()
                         IOSDisplayTargetPickerMenu(client: client, compact: false)
@@ -188,7 +188,7 @@ public struct IOSFlowsManagerSheet: View {
                             L10n.tr("放入此槽位", "Place Flow in Slot", language: lang),
                             systemImage: "square.grid.2x2.fill"
                         )
-                        .font(.body.weight(.semibold))
+                        .font(ChocType.body.weight(.semibold))
                         .foregroundStyle(palette.accentEmphasis)
                     }
                 }
@@ -263,7 +263,7 @@ public struct IOSFlowsSlotTabView: View {
         VStack(spacing: 0) {
             HStack {
                 Text(L10n.tr("轻点动作流即可放入当前槽位", "Tap a flow to place it in Slot #\(slotIndex + 1)", language: lang))
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                 Spacer()
                 Menu {
@@ -314,7 +314,7 @@ public struct IOSFlowsSlotTabView: View {
                     }
                 } label: {
                     Label(L10n.tr("新建动作流", "New Flow", language: lang), systemImage: "plus.circle.fill")
-                        .font(.subheadline.bold())
+                        .font(ChocType.body.weight(.semibold))
                         .foregroundStyle(palette.accent)
                 }
             }
@@ -324,7 +324,7 @@ public struct IOSFlowsSlotTabView: View {
             if client.controlStripState.shouldShowDisplayPicker {
                 HStack(spacing: 8) {
                     Text(L10n.tr("目标屏幕", "Target Display", language: lang))
-                        .font(.caption.weight(.semibold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                     Spacer()
                     IOSDisplayTargetPickerMenu(client: client, compact: false)
@@ -396,10 +396,10 @@ private struct IOSFlowsListContent: View {
             VStack(spacing: 14) {
                 Spacer()
                 Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 40))
+                    .font(ChocType.title)
                     .foregroundStyle(palette.accent)
                 Text(L10n.tr("尚无动作流", "No Saved Flows Yet", language: lang))
-                    .font(.headline)
+                    .font(ChocType.title)
                     .foregroundStyle(palette.primaryText)
                 Text(
                     L10n.tr(
@@ -408,7 +408,7 @@ private struct IOSFlowsListContent: View {
                         language: lang
                     )
                 )
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)
@@ -426,7 +426,7 @@ private struct IOSFlowsListContent: View {
                         onRequestEdit(IOSFlowEditSession(flow: tpl, isNew: true))
                     } label: {
                         Text(L10n.tr("示例 1：前置最大化", "Example 1: Maximize", language: lang))
-                            .font(.caption.bold())
+                            .font(ChocType.caption)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(palette.accent)
@@ -450,7 +450,7 @@ private struct IOSFlowsListContent: View {
                         onRequestEdit(IOSFlowEditSession(flow: tpl, isNew: true))
                     } label: {
                         Text(L10n.tr("示例 2：左右分屏", "Example 2: Split", language: lang))
-                            .font(.caption.bold())
+                            .font(ChocType.caption)
                     }
                     .buttonStyle(.bordered)
                 }
@@ -478,12 +478,12 @@ private struct IOSFlowsListContent: View {
                                                 .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
                                         )
                                     Text(flow.emoji.isEmpty ? "⚡️" : flow.emoji)
-                                        .font(.system(size: 20))
+                                        .font(ChocType.title)
                                 }
 
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(flow.name)
-                                        .font(.body.weight(.semibold))
+                                        .font(ChocType.body.weight(.semibold))
                                         .foregroundStyle(palette.primaryText)
                                     Text(
                                         flow.steps
@@ -491,7 +491,7 @@ private struct IOSFlowsListContent: View {
                                             .map { $0.displayTitle(in: lang) }
                                             .joined(separator: " → ")
                                     )
-                                    .font(.caption2)
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.secondaryText)
                                     .lineLimit(2)
                                 }
@@ -518,7 +518,7 @@ private struct IOSFlowsListContent: View {
                                 }
                             } label: {
                                 Text(L10n.tr("再点确认", "Tap Again", language: lang))
-                                    .font(.caption2.bold())
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.emphasisForeground)
                                     .padding(.horizontal, 9)
                                     .padding(.vertical, 5)
@@ -614,7 +614,7 @@ private struct IOSFlowsListContent: View {
                             }
                         } label: {
                             Image(systemName: "ellipsis.circle")
-                                .font(.title3)
+                                .font(ChocType.title)
                                 .foregroundStyle(palette.secondaryText)
                                 .frame(width: 44, height: 44)
                         }
@@ -729,7 +729,7 @@ public struct IOSFlowEditorSheet: View {
                                             )
                                         if isSel {
                                             Image(systemName: "checkmark")
-                                                .font(.system(size: 11, weight: .black))
+                                                .font(ChocType.micro)
                                                 .foregroundStyle(palette.primaryText)
                                         }
                                     }
@@ -746,14 +746,14 @@ public struct IOSFlowEditorSheet: View {
                 Section {
                     if draft.steps.isEmpty {
                         Text(L10n.tr("点击下方按钮按顺序添加步骤。若某一步执行失败，Mac 会立即停止并反馈失败步骤。", "Add ordered steps below. Execution halts immediately if any step fails.", language: lang))
-                            .font(.caption)
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.secondaryText)
                             .listRowBackground(palette.barSurface)
                     } else {
                         ForEach(Array(draft.steps.enumerated()), id: \.element.id) { idx, step in
                             HStack(spacing: 10) {
                                 Text("\(idx + 1)")
-                                    .font(.caption2.monospaced().bold())
+                                    .font(ChocType.micro)
                                     .foregroundStyle(.white)
                                     .frame(width: 22, height: 22)
                                     .background(Color(hex: step.accentHex).opacity(step.isEnabled ? 1 : 0.4), in: Circle())
@@ -766,11 +766,11 @@ public struct IOSFlowEditorSheet: View {
                                 } label: {
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(step.displayTitle(in: lang))
-                                            .font(.callout.weight(.semibold))
+                                            .font(ChocType.body.weight(.semibold))
                                             .foregroundStyle(step.isEnabled ? palette.primaryText : palette.secondaryText)
                                             .strikethrough(!step.isEnabled)
                                         Text(step.subtitle(in: lang))
-                                            .font(.caption2)
+                                            .font(ChocType.micro)
                                             .foregroundStyle(palette.secondaryText)
                                     }
                                 }
@@ -784,7 +784,7 @@ public struct IOSFlowEditorSheet: View {
                                     draft.steps.insert(moved, at: idx - 1)
                                 } label: {
                                     Image(systemName: "chevron.up")
-                                        .font(.caption.bold())
+                                        .font(ChocType.caption)
                                 }
                                 .buttonStyle(.borderless)
                                 .disabled(idx == 0)
@@ -795,7 +795,7 @@ public struct IOSFlowEditorSheet: View {
                                     draft.steps.insert(moved, at: idx + 1)
                                 } label: {
                                     Image(systemName: "chevron.down")
-                                        .font(.caption.bold())
+                                        .font(ChocType.caption)
                                 }
                                 .buttonStyle(.borderless)
                                 .disabled(idx + 1 >= draft.steps.count)
@@ -823,7 +823,7 @@ public struct IOSFlowEditorSheet: View {
                         Text(L10n.tr("顺序执行步骤", "Sequential Steps", language: lang))
                         Spacer()
                         EditButton()
-                            .font(.caption)
+                            .font(ChocType.caption)
                     }
                 }
             }
@@ -933,7 +933,7 @@ public struct IOSFlowEditorSheet: View {
             }
         } label: {
             Label(L10n.tr("添加步骤…", "Add Step…", language: lang), systemImage: "plus.circle.fill")
-                .font(.body.weight(.semibold))
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.accent)
         }
     }
@@ -1165,7 +1165,7 @@ public struct IOSFlowStepEditorSheet: View {
                                 .frame(width: 28, height: 28)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(row.appName).foregroundStyle(palette.primaryText)
-                                Text(row.bundleID).font(.caption2).foregroundStyle(palette.secondaryText)
+                                Text(row.bundleID).font(ChocType.micro).foregroundStyle(palette.secondaryText)
                             }
                             Spacer()
                             if bundleID == row.bundleID {
@@ -1199,7 +1199,7 @@ public struct IOSFlowStepEditorSheet: View {
                         .foregroundStyle(palette.primaryText)
                     Spacer()
                     Text(ActionFlowStep.formatSeconds(timeoutSeconds))
-                        .font(.body.monospacedDigit().bold())
+                        .font(ChocType.body.weight(.semibold).monospacedDigit())
                         .foregroundStyle(palette.primaryText)
                 }
                 Slider(value: $timeoutSeconds, in: 0.2...ActionFlowStep.maxTimeoutSeconds, step: 0.2)
@@ -1262,7 +1262,7 @@ public struct IOSFlowStepEditorSheet: View {
                             language: lang
                         )
                     )
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                 }
             }
@@ -1278,7 +1278,7 @@ public struct IOSFlowStepEditorSheet: View {
                     .foregroundStyle(palette.primaryText)
                 Spacer()
                 Text(ActionFlowStep.formatSeconds(delaySeconds))
-                    .font(.headline.monospacedDigit())
+                    .font(ChocType.title.monospacedDigit())
                     .foregroundStyle(palette.primaryText)
             }
             Slider(value: $delaySeconds, in: 0.1...ActionFlowStep.maxDelaySeconds, step: 0.1)

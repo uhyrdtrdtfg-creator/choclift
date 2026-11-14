@@ -89,7 +89,7 @@ public struct ActionFlowsStudioView: View {
                     L10n.tr("动作流列表", "Action Flows", language: lang),
                     systemImage: "arrow.triangle.branch"
                 )
-                .font(.headline)
+                .font(ChocType.title)
                 .foregroundStyle(palette.primaryText)
 
                 Spacer()
@@ -122,7 +122,7 @@ public struct ActionFlowsStudioView: View {
                     }
                 } label: {
                     Label(L10n.tr("新建", "New", language: lang), systemImage: "plus")
-                        .font(.caption.bold())
+                        .font(ChocType.caption)
                 }
                 .menuStyle(.borderedButton)
                 .fixedSize()
@@ -135,10 +135,10 @@ public struct ActionFlowsStudioView: View {
                 VStack(spacing: 10) {
                     Spacer()
                     Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 30))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("尚无动作流", "No Flows Yet", language: lang))
-                        .font(.subheadline.bold())
+                        .font(ChocType.body.weight(.semibold))
                         .foregroundStyle(palette.primaryText)
                     Text(
                         L10n.tr(
@@ -147,7 +147,7 @@ public struct ActionFlowsStudioView: View {
                             language: lang
                         )
                     )
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16)
@@ -183,12 +183,12 @@ public struct ActionFlowsStudioView: View {
                             .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
                     )
                 Text(flow.emoji.isEmpty ? "⚡️" : flow.emoji)
-                    .font(.system(size: 18))
+                    .font(ChocType.title)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(flow.name)
-                    .font(.system(.callout, design: .rounded, weight: .semibold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                 Text(
@@ -198,7 +198,7 @@ public struct ActionFlowsStudioView: View {
                         language: lang
                     )
                 )
-                .font(.caption2)
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
             }
 
@@ -214,7 +214,7 @@ public struct ActionFlowsStudioView: View {
                         coordinator.moveFlow(from: index, to: index - 1)
                     } label: {
                         Image(systemName: "chevron.up")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                     }
                     .buttonStyle(.plain)
@@ -225,7 +225,7 @@ public struct ActionFlowsStudioView: View {
                         coordinator.moveFlow(from: index, to: index + 1)
                     } label: {
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                     }
                     .buttonStyle(.plain)
@@ -277,11 +277,11 @@ public struct ActionFlowsStudioView: View {
             Spacer()
 
             Image(systemName: "arrow.triangle.branch")
-                .font(.system(size: 46, weight: .semibold))
+                .font(ChocType.title)
                 .foregroundStyle(palette.accent)
 
             Text(L10n.tr("创建可组合的 Mac 动作流", "Build Composable Mac Action Flows", language: lang))
-                .font(.title2.bold())
+                .font(ChocType.title)
                 .foregroundStyle(palette.primaryText)
 
             Text(
@@ -291,7 +291,7 @@ public struct ActionFlowsStudioView: View {
                     language: lang
                 )
             )
-            .font(.callout)
+            .font(ChocType.body)
             .foregroundStyle(palette.secondaryText)
             .multilineTextAlignment(.center)
             .frame(maxWidth: 520)
@@ -444,7 +444,7 @@ private struct MacFlowDetailWorkspaceView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(flow.name)
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .font(ChocType.title)
                     .foregroundStyle(palette.primaryText)
 
                 Text(
@@ -454,7 +454,7 @@ private struct MacFlowDetailWorkspaceView: View {
                         language: lang
                     )
                 )
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
 
                 HStack(spacing: 10) {
@@ -508,7 +508,7 @@ private struct MacFlowDetailWorkspaceView: View {
                 L10n.tr("放置到巧克力栏槽位（iPhone / iPad / Watch 可直接点按触发）", "Place on Chocolate Bar Slot (Trigger from iPhone, iPad & Watch)", language: lang),
                 systemImage: "square.grid.2x2.fill"
             )
-            .font(.subheadline.bold())
+            .font(ChocType.body.weight(.semibold))
             .foregroundStyle(palette.primaryText)
 
             HStack(spacing: 12) {
@@ -552,11 +552,11 @@ private struct MacFlowDetailWorkspaceView: View {
             if !placedLocations.isEmpty {
                 HStack(spacing: 6) {
                     Text(L10n.tr("当前已放置于：", "Currently placed at:", language: lang))
-                        .font(.caption2)
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                     ForEach(Array(placedLocations.enumerated()), id: \.offset) { _, loc in
                         Text("\(loc.pageTitle) #\(loc.slotIndex + 1)")
-                            .font(.caption2.bold())
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.primaryText)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)
@@ -580,7 +580,7 @@ private struct MacFlowDetailWorkspaceView: View {
                     L10n.tr("顺序执行步骤 (Sequential Steps)", "Sequential Execution Steps", language: lang),
                     systemImage: "list.number"
                 )
-                .font(.headline)
+                .font(ChocType.title)
                 .foregroundStyle(palette.primaryText)
 
                 Spacer()
@@ -591,7 +591,7 @@ private struct MacFlowDetailWorkspaceView: View {
             if flow.steps.isEmpty {
                 VStack(spacing: 8) {
                     Text(L10n.tr("暂无步骤，点击右上角「添加步骤」开始编排。", "No steps yet. Click \"Add Step\" above to add your first Mac action.", language: lang))
-                        .font(.callout)
+                        .font(ChocType.body)
                         .foregroundStyle(palette.secondaryText)
                 }
                 .frame(maxWidth: .infinity)
@@ -671,23 +671,23 @@ private struct MacFlowDetailWorkspaceView: View {
     private func stepPipelineRow(step: ActionFlowStep, index: Int) -> some View {
         HStack(spacing: 12) {
             Text("\(index + 1)")
-                .font(.system(.caption, design: .monospaced, weight: .black))
+                .font(ChocType.caption)
                 .foregroundStyle(.white)
                 .frame(width: 24, height: 24)
                 .background(Color(hex: step.accentHex).opacity(step.isEnabled ? 1.0 : 0.4), in: Circle())
 
             Image(systemName: step.sfSymbol)
-                .font(.system(size: 16, weight: .semibold))
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(Color(hex: step.accentHex))
                 .frame(width: 26)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(step.displayTitle(in: lang))
-                    .font(.system(.body, design: .rounded, weight: .semibold))
+                    .font(ChocType.body.weight(.semibold))
                     .strikethrough(!step.isEnabled)
                     .foregroundStyle(step.isEnabled ? palette.primaryText : palette.secondaryText)
                 Text(step.subtitle(in: lang))
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
             }
 
@@ -829,7 +829,7 @@ public struct MacFlowEditorSheet: View {
                         ? L10n.tr("新建动作流", "New Action Flow", language: lang)
                         : L10n.tr("编辑动作流", "Edit Action Flow", language: lang)
                 )
-                .font(.headline)
+                .font(ChocType.title)
                 .foregroundStyle(palette.primaryText)
 
                 Spacer()
@@ -882,7 +882,7 @@ public struct MacFlowEditorSheet: View {
                     }
                 } label: {
                     Label(L10n.tr("快速模板", "Templates", language: lang), systemImage: "sparkles")
-                        .font(.caption)
+                        .font(ChocType.caption)
                 }
                 .menuStyle(.borderedButton)
                 .fixedSize()
@@ -926,7 +926,7 @@ public struct MacFlowEditorSheet: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text(L10n.tr("卡片颜色", "Tile Color", language: lang))
-                            .font(.caption)
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.secondaryText)
                         LazyVGrid(columns: Array(repeating: GridItem(.fixed(26), spacing: 8), count: 6), alignment: .leading, spacing: 8) {
                             ForEach(ChocSwatch.tileColors, id: \.self) { hex in
@@ -944,7 +944,7 @@ public struct MacFlowEditorSheet: View {
                                             )
                                         if isSel {
                                             Image(systemName: "checkmark")
-                                                .font(.system(size: 9.5, weight: .black))
+                                                .font(ChocType.micro)
                                                 .foregroundStyle(palette.primaryText)
                                         }
                                     }
@@ -965,7 +965,7 @@ public struct MacFlowEditorSheet: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text(L10n.tr("执行步骤顺序", "Ordered Steps", language: lang))
-                            .font(.subheadline.bold())
+                            .font(ChocType.body.weight(.semibold))
                             .foregroundStyle(palette.primaryText)
                         Spacer()
                         addDraftStepMenu
@@ -975,10 +975,10 @@ public struct MacFlowEditorSheet: View {
                         VStack(spacing: 8) {
                             Spacer()
                             Image(systemName: "list.bullet.rectangle")
-                                .font(.title)
+                                .font(ChocType.title)
                                 .foregroundStyle(palette.secondaryText)
                             Text(L10n.tr("点击右上角「添加步骤」或「快速模板」编排动作流", "Add steps or choose a template above", language: lang))
-                                .font(.caption)
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.secondaryText)
                                 .multilineTextAlignment(.center)
                             Spacer()
@@ -990,18 +990,18 @@ public struct MacFlowEditorSheet: View {
                                 ForEach(Array(draft.steps.enumerated()), id: \.element.id) { idx, step in
                                     HStack(spacing: 8) {
                                         Text("\(idx + 1)")
-                                            .font(.caption2.monospaced().bold())
+                                            .font(ChocType.micro)
                                             .foregroundStyle(.white)
                                             .frame(width: 20, height: 20)
                                             .background(Color(hex: step.accentHex), in: Circle())
 
                                         VStack(alignment: .leading, spacing: 1) {
                                             Text(step.displayTitle(in: lang))
-                                                .font(.callout.weight(.semibold))
+                                                .font(ChocType.body.weight(.semibold))
                                                 .foregroundStyle(palette.primaryText)
                                                 .lineLimit(1)
                                             Text(step.subtitle(in: lang))
-                                                .font(.caption2)
+                                                .font(ChocType.micro)
                                                 .foregroundStyle(palette.secondaryText)
                                                 .lineLimit(1)
                                         }
@@ -1167,7 +1167,7 @@ public struct MacFlowEditorSheet: View {
             }
         } label: {
             Label(L10n.tr("添加步骤", "Add Step", language: lang), systemImage: "plus")
-                .font(.caption.bold())
+                .font(ChocType.caption)
         }
         .menuStyle(.borderedButton)
         .fixedSize()
@@ -1293,7 +1293,7 @@ public struct MacFlowStepEditorSheet: View {
         VStack(spacing: 0) {
             HStack {
                 Text(L10n.tr("配置步骤", "Configure Flow Step", language: lang))
-                    .font(.headline)
+                    .font(ChocType.title)
                     .foregroundStyle(palette.primaryText)
                 Spacer()
                 Picker("", selection: $selectedTag) {
@@ -1401,10 +1401,10 @@ public struct MacFlowStepEditorSheet: View {
                             .frame(width: 26, height: 26)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(app.appName)
-                                .font(.callout.weight(.semibold))
+                                .font(ChocType.body.weight(.semibold))
                                 .foregroundStyle(palette.primaryText)
                             Text(app.bundleIdentifier)
-                                .font(.caption2)
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.secondaryText)
                         }
                         Spacer()
@@ -1461,10 +1461,10 @@ public struct MacFlowStepEditorSheet: View {
                     } label: {
                         HStack {
                             Text(app.appName)
-                                .font(.callout.weight(.medium))
+                                .font(ChocType.body)
                                 .foregroundStyle(palette.primaryText)
                             Text(app.bundleIdentifier)
-                                .font(.caption2)
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.secondaryText)
                             Spacer()
                             if bundleID == app.bundleIdentifier {
@@ -1498,17 +1498,17 @@ public struct MacFlowStepEditorSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(L10n.tr("最长等待超时", "Maximum Wait Timeout", language: lang))
-                        .font(.callout.weight(.medium))
+                        .font(ChocType.body)
                         .foregroundStyle(palette.primaryText)
                     Spacer()
                     Text(ActionFlowStep.formatSeconds(timeoutSeconds))
-                        .font(.callout.monospacedDigit().bold())
+                        .font(ChocType.body.weight(.semibold).monospacedDigit())
                         .foregroundStyle(palette.primaryText)
                 }
                 Slider(value: $timeoutSeconds, in: 0.2...ActionFlowStep.maxTimeoutSeconds, step: 0.2)
                     .tint(palette.accent)
                 Text(L10n.tr("若超时后该应用仍未处于前台，动作流将立即停止并提示该步骤失败。", "If the app does not become frontmost before timeout, the flow stops and reports this step.", language: lang))
-                    .font(.caption2)
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
             }
 
@@ -1555,10 +1555,10 @@ public struct MacFlowStepEditorSheet: View {
                         } label: {
                             HStack {
                                 Text(app.appName)
-                                    .font(.callout)
+                                    .font(ChocType.body)
                                     .foregroundStyle(palette.primaryText)
                                 Text(app.bundleIdentifier)
-                                    .font(.caption2)
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.secondaryText)
                                 Spacer()
                                 if bundleID == app.bundleIdentifier {
@@ -1584,7 +1584,7 @@ public struct MacFlowStepEditorSheet: View {
                             language: lang
                         )
                     )
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                 }
             }
@@ -1597,11 +1597,11 @@ public struct MacFlowStepEditorSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text(L10n.tr("等待时长（上限 10 秒）", "Bounded Delay (Max 10s)", language: lang))
-                    .font(.headline)
+                    .font(ChocType.title)
                     .foregroundStyle(palette.primaryText)
                 Spacer()
                 Text(ActionFlowStep.formatSeconds(delaySeconds))
-                    .font(.title3.monospacedDigit().bold())
+                    .font(ChocType.title.monospacedDigit())
                     .foregroundStyle(palette.primaryText)
             }
 
@@ -1624,7 +1624,7 @@ public struct MacFlowStepEditorSheet: View {
                     language: lang
                 )
             )
-            .font(.caption)
+            .font(ChocType.caption)
             .foregroundStyle(palette.secondaryText)
 
             Spacer()

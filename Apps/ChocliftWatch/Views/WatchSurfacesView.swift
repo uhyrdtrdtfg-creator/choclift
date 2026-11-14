@@ -32,19 +32,19 @@ private struct WatchConnectionStateBanner: View {
                         .tint(tint)
                 } else {
                     Image(systemName: state.sfSymbol)
-                        .font(.system(size: 13, weight: .bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(tint)
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(state.bannerTitle(in: lang))
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
 
                     if state.isFailure, let detail = state.bannerSubtitle(in: lang) {
                         Text(detail)
-                            .font(.system(size: 10.5))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                             .lineLimit(1)
                     }
@@ -53,7 +53,7 @@ private struct WatchConnectionStateBanner: View {
                 Spacer(minLength: 2)
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
             }
             .padding(.horizontal, 10)
@@ -85,10 +85,10 @@ private struct WatchOrcaComplicationLine: View {
         if !status.isOrcaRunning {
             HStack(spacing: 5) {
                 Image(systemName: "terminal")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                 Text(L10n.tr("Orca 未运行", "Orca is not running", language: lang))
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -124,11 +124,11 @@ private struct WatchOrcaComplicationLine: View {
     private func lineBody(state: OrcaTaskState, tint: Color, summary: String, canFocus: Bool, isPressed: Bool) -> some View {
         HStack(spacing: 5) {
             Image(systemName: state.sfSymbol)
-                .font(.system(size: 10.5, weight: .bold))
+                .font(ChocType.micro)
                 .foregroundStyle(tint)
 
             Text(summary)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.primaryText)
                 .lineLimit(1)
 
@@ -136,7 +136,7 @@ private struct WatchOrcaComplicationLine: View {
 
             if canFocus {
                 Image(systemName: "macwindow.on.rectangle")
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.accent)
             }
         }
@@ -185,10 +185,10 @@ private struct WatchCalendarComplicationLine: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "calendar")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.accent)
                         Text(event.title)
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                         Spacer(minLength: 2)
@@ -199,7 +199,7 @@ private struct WatchCalendarComplicationLine: View {
                                 language: lang
                             )
                         )
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .font(ChocType.micro)
                         .monospacedDigit()
                         .foregroundStyle(palette.secondaryText)
                         .lineLimit(1)
@@ -224,10 +224,10 @@ private struct WatchCalendarComplicationLine: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "calendar.badge.exclamationmark")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("日历权限未开启", "Calendar access off", language: lang))
-                        .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                         .lineLimit(1)
                     Spacer(minLength: 0)
@@ -341,14 +341,12 @@ public struct WatchChocolateBarView: View {
                 .id(activePage.id)
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.22), value: safePageIndex)
+
+                watchCrownVolumeBar
+                    .padding(.bottom, 2)
             }
             .padding(.horizontal, 6)
             .padding(.bottom, 8)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 4) {
-            watchCrownVolumeBar
-                .padding(.horizontal, 6)
-                .padding(.bottom, 2)
         }
         .onAppear {
             crownVolume = ControlStripLevel.clamp(client.controlStripState.volume)
@@ -420,7 +418,7 @@ public struct WatchChocolateBarView: View {
                 isVolumeCrownFocused = true
             } label: {
                 Image(systemName: (isMuted || displayedLevel <= 0.001) ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 12.5, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(isMuted ? palette.emphasisForeground : palette.accent)
                     .frame(width: 32, height: 30)
                     .background(
@@ -469,7 +467,7 @@ public struct WatchChocolateBarView: View {
             .frame(height: 16)
 
             Text("\(pct)%")
-                .font(.system(size: 11, weight: .bold, design: .rounded))
+                .font(ChocType.micro)
                 .monospacedDigit()
                 .foregroundStyle(isMuted ? palette.secondaryText : palette.primaryText)
                 .frame(minWidth: 31, alignment: .trailing)
@@ -523,7 +521,7 @@ public struct WatchChocolateBarView: View {
                 stepPage(by: -1)
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .frame(width: 36, height: 36)
                     .background(palette.tileFillBottom, in: Circle())
@@ -538,13 +536,13 @@ public struct WatchChocolateBarView: View {
             } label: {
                 HStack(spacing: 5) {
                     Text(activePage.iconEmoji)
-                        .font(.system(size: 13))
+                        .font(ChocType.caption)
                     Text(activePage.title)
-                        .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
                     Text("\(safePageIndex + 1)/\(client.profile.pages.count)")
-                        .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                 }
                 .frame(maxWidth: .infinity)
@@ -560,7 +558,7 @@ public struct WatchChocolateBarView: View {
                 stepPage(by: 1)
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .frame(width: 36, height: 36)
                     .background(palette.tileFillBottom, in: Circle())
@@ -612,9 +610,9 @@ public struct WatchChocolateBarView: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 10.5, weight: .bold))
+                    .font(ChocType.micro)
                 Text(L10n.tr("跟随前台应用", "Follow Frontmost App", language: lang))
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
@@ -631,7 +629,7 @@ public struct WatchChocolateBarView: View {
     private func followingAppBadge(appName: String, page: BarPage) -> some View {
         HStack(spacing: 4) {
             Image(systemName: "macwindow")
-                .font(.system(size: 9.5, weight: .bold))
+                .font(ChocType.micro)
             Text(
                 L10n.tr(
                     "跟随 \(appName) · \(page.iconEmoji) \(page.title)",
@@ -639,7 +637,7 @@ public struct WatchChocolateBarView: View {
                     language: lang
                 )
             )
-            .font(.system(size: 10.5, weight: .bold, design: .rounded))
+            .font(ChocType.micro)
             .lineLimit(1)
         }
         .padding(.horizontal, 9)
@@ -776,16 +774,16 @@ public struct WatchChocolateBarView: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.accent)
                     Text(L10n.tr("跟随前台应用", "Follow Frontmost App", language: lang))
-                        .font(.system(size: 13, weight: deckFollower.isFollowingFrontmostApp ? .bold : .medium, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
                     Spacer()
                     if deckFollower.isFollowingFrontmostApp {
                         Image(systemName: "checkmark")
-                            .font(.caption.bold())
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.accent)
                     }
                 }
@@ -802,15 +800,15 @@ public struct WatchChocolateBarView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Text(page.iconEmoji)
-                            .font(.system(size: 15))
+                            .font(ChocType.body)
                         Text(page.title)
-                            .font(.system(size: 13.5, weight: isSelected ? .bold : .medium, design: .rounded))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                         Spacer()
                         if pageOffset == safePageIndex {
                             Image(systemName: deckFollower.isFollowingFrontmostApp ? "macwindow" : "checkmark")
-                                .font(.caption.bold())
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.accent)
                         }
                     }
@@ -854,11 +852,11 @@ private struct WatchSlotQuickAssignSheet: View {
                                 Text(flow.emoji.isEmpty ? "⚡️" : flow.emoji)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(flow.name)
-                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        .font(ChocType.caption)
                                         .foregroundStyle(palette.primaryText)
                                         .lineLimit(1)
                                     Text(L10n.tr("\(flow.enabledStepCount) 步", "\(flow.enabledStepCount) steps", language: lang))
-                                        .font(.caption2)
+                                        .font(ChocType.micro)
                                         .foregroundStyle(palette.secondaryText)
                                 }
                             }
@@ -887,7 +885,7 @@ private struct WatchSlotQuickAssignSheet: View {
                                 )
                                 .frame(width: 22, height: 22)
                                 Text(entry.appName)
-                                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                    .font(ChocType.caption)
                                     .foregroundStyle(palette.primaryText)
                                     .lineLimit(1)
                             }
@@ -908,11 +906,11 @@ private struct WatchSlotQuickAssignSheet: View {
                                 Text(clip.emoji)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(clip.name)
-                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        .font(ChocType.caption)
                                         .foregroundStyle(palette.primaryText)
                                         .lineLimit(1)
                                     Text(clip.formattedDuration)
-                                        .font(.caption2.monospacedDigit())
+                                        .font(ChocType.micro.monospacedDigit())
                                         .foregroundStyle(palette.secondaryText)
                                 }
                             }
@@ -930,12 +928,12 @@ private struct WatchSlotQuickAssignSheet: View {
                     } label: {
                         HStack(spacing: 6) {
                             Label(action.compactTitle(in: lang), systemImage: action.sfSymbol)
-                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.primaryText)
                             Spacer(minLength: 2)
                             if let shortcut = action.sentKeyboardShortcut {
                                 Text(shortcut)
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.secondaryText)
                             }
                         }
@@ -1064,15 +1062,15 @@ public struct WatchQuickActionsView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(current != nil ? palette.accent : palette.secondaryText)
                 Text(state.currentAudioOutputLabel(in: lang))
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                 Spacer(minLength: 2)
                 Image(systemName: state.canSwitchAudioOutput ? "chevron.up.chevron.down" : "lock.fill")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
             }
             .padding(.horizontal, 10)
@@ -1098,15 +1096,15 @@ public struct WatchQuickActionsView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "display.2")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(hasOverride ? palette.accent : palette.secondaryText)
                 Text(state.selectedDisplayLabel(in: lang))
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                 Spacer(minLength: 2)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
             }
             .padding(.horizontal, 10)
@@ -1134,12 +1132,12 @@ public struct WatchQuickActionsView: View {
             } label: {
                 HStack(spacing: 8) {
                     Text(L10n.tr("当前窗口屏幕", "Frontmost Window", language: lang))
-                        .font(.system(size: 13, weight: selectedID == nil ? .bold : .medium, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                     Spacer()
                     if selectedID == nil {
                         Image(systemName: "checkmark")
-                            .font(.caption.bold())
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.accent)
                     }
                 }
@@ -1156,13 +1154,13 @@ public struct WatchQuickActionsView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Text(display.name)
-                            .font(.system(size: 13, weight: isSelected ? .bold : .medium, design: .rounded))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                         Spacer()
                         if isSelected {
                             Image(systemName: "checkmark")
-                                .font(.caption.bold())
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.accent)
                         }
                     }
@@ -1191,13 +1189,12 @@ public struct WatchQuickActionsView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.uturn.backward")
-                    .font(.system(size: 12.5, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(canUndo ? palette.accent : palette.secondaryText)
                 Text(L10n.tr("撤销上次窗口移动", "Undo Last Window Move", language: lang))
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(canUndo ? palette.primaryText : palette.secondaryText)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
@@ -1224,10 +1221,10 @@ public struct WatchQuickActionsView: View {
     private func sectionHeader(_ text: String, symbol: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: symbol)
-                .font(.system(size: 11, weight: .bold))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
             Text(text)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
         }
         .padding(.top, 2)
@@ -1245,7 +1242,7 @@ public struct WatchQuickActionsView: View {
                     trigger(action)
                 } label: {
                     Image(systemName: action.sfSymbol)
-                        .font(.system(size: isPrimary ? 18 : 16, weight: .bold))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                         .frame(maxWidth: .infinity)
                         .frame(height: 46)
@@ -1291,7 +1288,7 @@ public struct WatchQuickActionsView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: isArmed ? "exclamationmark.triangle.fill" : action.sfSymbol)
-                            .font(.system(size: 13.5, weight: .bold))
+                            .font(ChocType.caption)
                             .foregroundStyle(isArmed ? palette.statusFailure : palette.primaryText)
                             .frame(width: 18)
 
@@ -1300,10 +1297,9 @@ public struct WatchQuickActionsView: View {
                                 ? L10n.tr("再点确认", "Tap Again", language: lang)
                                 : action.compactTitle(in: lang)
                         )
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(ChocType.body)
                         .foregroundStyle(isArmed ? palette.statusFailure : palette.primaryText)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.78)
 
                         Spacer(minLength: 0)
                     }
@@ -1372,7 +1368,7 @@ public struct WatchNowPlayingProgressRow: View {
                 WatchMediaPlayer(client: client)
             } label: {
                 Label(title, systemImage: media.isPlaying ? "waveform" : "music.note")
-                    .font(.headline).lineLimit(2).frame(maxWidth: .infinity, minHeight: 44)
+                    .font(ChocType.title).lineLimit(2).frame(maxWidth: .infinity, minHeight: 44)
                     .foregroundStyle(palette.primaryText)
             }
             .listRowBackground(palette.barSurface)
@@ -1390,8 +1386,8 @@ private struct WatchMediaPlayer: View {
         ScrollView {
             VStack(spacing: 10) {
                 if let media = client.controlStripState.nowPlaying {
-                    Text(media.primaryDisplayText ?? "").font(.headline).lineLimit(2)
-                    if let artist = media.artist { Text(artist).font(.caption) }
+                    Text(media.primaryDisplayText ?? "").font(ChocType.title).lineLimit(2)
+                    if let artist = media.artist { Text(artist).font(ChocType.caption) }
                     HStack(spacing: 6) {
                         transport(.mediaPrevious, symbol: "backward.fill")
                         transport(.mediaPlayPause, symbol: media.isPlaying ? "pause.fill" : "play.fill")
@@ -1405,7 +1401,7 @@ private struct WatchMediaPlayer: View {
                         }).tint(palette.accent)
                     }
                     if let times = NowPlayingProgressFormatter.rowDisplayContent(for: media, overrideElapsedSeconds: client.nowPlayingScrub.effectiveElapsedSeconds(for: media))?.progressText {
-                        Text(times).font(.caption.monospacedDigit())
+                        Text(times).font(ChocType.caption.monospacedDigit())
                     }
                 }
             }.padding(8)
@@ -1467,20 +1463,20 @@ public struct WatchTimeTravelView: View {
                 }
 
                 Label(L10n.tr("最近应用", "Recent Apps", language: lang), systemImage: "clock.arrow.circlepath")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
 
                 if client.recentApps.isEmpty {
                     VStack(spacing: 8) {
                         Image(systemName: "clock.badge.questionmark")
-                            .font(.title3)
+                            .font(ChocType.title)
                             .foregroundStyle(palette.secondaryText)
                         Text(
                             client.connectionState.isConnected
                                 ? L10n.tr("在 Mac 上切换窗口后即会同步至此", "Switch windows on your Mac to sync here", language: lang)
                                 : L10n.tr("连接 Mac 后可腕上一键切换窗口", "Connect your Mac to switch windows from your wrist", language: lang)
                         )
-                        .font(.system(size: 12, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                         .multilineTextAlignment(.center)
                     }
@@ -1511,7 +1507,7 @@ public struct WatchTimeTravelView: View {
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text(entry.appName)
-                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
                         Text(
@@ -1519,7 +1515,7 @@ public struct WatchTimeTravelView: View {
                                 ? L10n.tr("当前前台", "Active", language: lang)
                                 : (entry.isRunning ? L10n.tr("运行中", "Running", language: lang) : L10n.tr("已固定", "Pinned", language: lang))
                         )
-                        .font(.system(size: 10.5, weight: .medium))
+                        .font(ChocType.micro)
                         .foregroundStyle(entry.isFrontmost ? palette.accent : palette.secondaryText)
                     }
 
@@ -1535,7 +1531,7 @@ public struct WatchTimeTravelView: View {
                 client.togglePinRecentApp(entry)
             } label: {
                 Image(systemName: entry.isPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(ChocType.caption)
                     .foregroundStyle(entry.isPinned ? palette.accent : palette.secondaryText.opacity(0.75))
                     .frame(width: 36, height: 36)
                     .background(palette.tileFillBottom.opacity(0.7), in: Circle())
@@ -1595,9 +1591,9 @@ public struct WatchEmojiBarView: View {
                 } else if client.isEditingTextOnMac {
                     HStack(spacing: 4) {
                         Image(systemName: "character.cursor.ibeam")
-                            .font(.system(size: 10.5, weight: .bold))
+                            .font(ChocType.micro)
                         Text(L10n.tr("正在 \(client.focusedMacAppName ?? "Mac") 输入", "Typing in \(client.focusedMacAppName ?? "Mac")", language: lang))
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .font(ChocType.micro)
                             .lineLimit(1)
                     }
                     .padding(.horizontal, 10)
@@ -1607,9 +1603,9 @@ public struct WatchEmojiBarView: View {
                 } else {
                     HStack(spacing: 4) {
                         Image(systemName: "character.cursor.ibeam")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(ChocType.micro)
                         Text(L10n.tr("请先在 Mac 点击输入框", "Focus a Mac text field", language: lang))
-                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                            .font(ChocType.micro)
                             .lineLimit(1)
                     }
                     .padding(.horizontal, 9)
@@ -1649,10 +1645,10 @@ public struct WatchEmojiBarView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "doc.on.clipboard")
-                    .font(.system(size: 12.5, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.accent)
                 Text(L10n.tr("粘贴剪贴板", "Paste Clipboard", language: lang))
-                    .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -1704,9 +1700,9 @@ public struct WatchEmojiBarView: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: symbol)
-                    .font(.system(size: 10.5, weight: .bold))
+                    .font(ChocType.micro)
                 Text(label)
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .lineLimit(1)
             }
             .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
@@ -1725,7 +1721,7 @@ public struct WatchEmojiBarView: View {
                 stepSlide(by: -1)
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .frame(width: 36, height: 36)
                     .background(palette.tileFillBottom, in: Circle())
@@ -1736,9 +1732,9 @@ public struct WatchEmojiBarView: View {
 
             HStack(spacing: 5) {
                 Text(activeSlide.iconEmoji)
-                    .font(.system(size: 13))
+                    .font(ChocType.caption)
                 Text(activeSlide.title)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
             }
@@ -1752,7 +1748,7 @@ public struct WatchEmojiBarView: View {
                 stepSlide(by: 1)
             } label: {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .frame(width: 36, height: 36)
                     .background(palette.tileFillBottom, in: Circle())
@@ -1781,7 +1777,7 @@ public struct WatchEmojiBarView: View {
                     }
                 } label: {
                     Text(emoji)
-                        .font(.system(size: 26))
+                        .font(ChocType.title)
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
                         .background(
@@ -1812,7 +1808,7 @@ public struct WatchEmojiBarView: View {
         if client.profile.snippets.isEmpty {
             VStack(spacing: 6) {
                 Image(systemName: "text.quote")
-                    .font(.title3)
+                    .font(ChocType.title)
                     .foregroundStyle(palette.secondaryText)
                 Text(
                     L10n.tr(
@@ -1821,7 +1817,7 @@ public struct WatchEmojiBarView: View {
                         language: lang
                     )
                 )
-                .font(.system(size: 11.5, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
                 .multilineTextAlignment(.center)
             }
@@ -1846,12 +1842,12 @@ public struct WatchEmojiBarView: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(snippet.displayTitle(in: lang))
-                            .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
 
                         Text(snippet.singleLinePreview)
-                            .font(.system(size: 10.5))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                             .lineLimit(1)
                     }
@@ -1913,7 +1909,7 @@ private struct WatchTileFolderSheet: View {
                 Section("\(ctx.folder.emoji) \(ctx.folder.displayTitle(in: lang))") {
                     if ctx.folder.children.isEmpty {
                         Text(L10n.tr("暂无子动作", "No Child Actions", language: lang))
-                            .font(.caption)
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.secondaryText)
                     } else {
                         ForEach(ctx.folder.children) { child in
@@ -1935,13 +1931,13 @@ private struct WatchTileFolderSheet: View {
                             } label: {
                                 HStack {
                                     Text(client.profile.displayTitle(for: child, in: lang))
-                                        .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                        .font(ChocType.caption)
                                         .foregroundStyle(palette.primaryText)
                                         .lineLimit(1)
                                     Spacer()
                                     if let ago = client.lastTriggeredText(for: child) {
                                         Text(ago)
-                                            .font(.caption2.monospacedDigit())
+                                            .font(ChocType.micro.monospacedDigit())
                                             .foregroundStyle(palette.secondaryText)
                                     }
                                 }
@@ -1978,15 +1974,15 @@ public struct WatchAudioOutputPickerSheet: View {
             if let feedback = sheetFeedback {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: feedback.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .font(.caption.bold())
+                        .font(ChocType.caption)
                         .foregroundStyle(feedback.success ? palette.statusConnected : palette.statusFailure)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(feedback.title)
-                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.primaryText)
                         if let detail = feedback.detail, !detail.isEmpty {
                             Text(detail)
-                                .font(.system(size: 10.5, weight: .medium))
+                                .font(ChocType.micro)
                                 .foregroundStyle(feedback.success ? palette.secondaryText : palette.statusFailure)
                         }
                     }
@@ -1996,16 +1992,16 @@ public struct WatchAudioOutputPickerSheet: View {
 
             if !isConnected {
                 Text(L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang))
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .listRowBackground(palette.barSurface)
             } else if !state.canSwitchAudioOutput {
                 HStack(spacing: 6) {
                     Image(systemName: "lock.fill")
-                        .font(.caption2.bold())
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.accentEmphasis)
                     Text(L10n.tr("音频输出只读", "Audio Output Read-Only", language: lang))
-                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                 }
                 .listRowBackground(palette.tileFillBottom)
@@ -2013,7 +2009,7 @@ public struct WatchAudioOutputPickerSheet: View {
 
             if isConnected && state.audioOutputDevices.isEmpty {
                 Text(L10n.tr("无可用音频输出设备", "No Audio Outputs", language: lang))
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .listRowBackground(palette.barSurface)
             } else if isConnected {
@@ -2030,26 +2026,26 @@ public struct WatchAudioOutputPickerSheet: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 7) {
                                 Image(systemName: device.sfSymbol)
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(ChocType.caption)
                                     .foregroundStyle(isSelected ? palette.statusConnected : (isRowEnabled ? palette.accent : palette.secondaryText))
                                 Text(device.name)
-                                    .font(.system(size: 12.5, weight: isSelected ? .bold : .medium, design: .rounded))
+                                    .font(ChocType.caption)
                                     .foregroundStyle(isRowEnabled || isSelected ? palette.primaryText : palette.secondaryText)
                                     .lineLimit(2)
                                 Spacer(minLength: 4)
                                 if isSelected {
                                     Image(systemName: "checkmark")
-                                        .font(.caption.bold())
+                                        .font(ChocType.caption)
                                         .foregroundStyle(palette.statusConnected)
                                 } else if !isRowEnabled {
                                     Image(systemName: device.isAirPlay ? "airplayaudio" : "lock")
-                                        .font(.caption2.bold())
+                                        .font(ChocType.micro)
                                         .foregroundStyle(palette.secondaryText.opacity(0.65))
                                 }
                             }
                             if let unavailableDetail = device.selectionUnavailableReason(in: lang) {
                                 Text(unavailableDetail)
-                                    .font(.system(size: 9.5, weight: .regular, design: .rounded))
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.secondaryText)
                                     .lineLimit(2)
                             }

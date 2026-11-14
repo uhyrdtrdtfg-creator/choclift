@@ -33,7 +33,7 @@ public struct IOSKeepMacAwakeTogglePill: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: isAwakeActive ? "cup.and.saucer.fill" : "cup.and.saucer")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(isAwakeActive ? palette.accentForeground : palette.accentEmphasis)
 
                 if isAwakeActive {
@@ -47,7 +47,7 @@ public struct IOSKeepMacAwakeTogglePill: View {
                         ? L10n.tr("常亮中", "Awake", language: lang)
                         : L10n.tr("防休眠", "Awake", language: lang)
                 )
-                .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(isAwakeActive ? palette.accentForeground : palette.primaryText)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
@@ -117,12 +117,12 @@ public struct IOSAudioOutputPickerButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: iconName)
-                    .font(.system(size: 13.5, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(currentDevice != nil ? palette.accent : palette.secondaryText)
 
                 if !compact, let currentDevice {
                     Text(currentDevice.name)
-                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
                         .frame(maxWidth: 108)
@@ -242,17 +242,17 @@ public struct IOSAudioOutputPickerSheet: View {
         let tint = feedback.success ? palette.statusConnected : palette.statusFailure
         return HStack(alignment: .top, spacing: 10) {
             Image(systemName: feedback.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .font(.subheadline.bold())
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(tint)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(feedback.title)
-                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
 
                 if let detail = feedback.detail, !detail.isEmpty {
                     Text(detail)
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(feedback.success ? palette.secondaryText : palette.statusFailure)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -274,14 +274,14 @@ public struct IOSAudioOutputPickerSheet: View {
         let current = isConnected ? state.currentAudioOutputDevice : nil
         return HStack(spacing: 12) {
             Image(systemName: current?.transportKind.sfSymbol ?? "hifispeaker.2.fill")
-                .font(.system(size: 20, weight: .bold))
+                .font(ChocType.title)
                 .foregroundStyle(isConnected ? palette.accent : palette.secondaryText)
                 .frame(width: 42, height: 42)
                 .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(L10n.tr("当前默认输出", "Current Default Output", language: lang))
-                    .font(.caption.weight(.semibold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
 
                 Text(
@@ -289,7 +289,7 @@ public struct IOSAudioOutputPickerSheet: View {
                         ? (current?.name ?? L10n.tr("系统默认输出", "System Default Output", language: lang))
                         : L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
                 )
-                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.primaryText)
                 .lineLimit(2)
             }
@@ -298,7 +298,7 @@ public struct IOSAudioOutputPickerSheet: View {
 
             if isConnected && !state.canSwitchAudioOutput {
                 Text(L10n.tr("只读", "Read-Only", language: lang))
-                    .font(.caption2.bold())
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -317,7 +317,7 @@ public struct IOSAudioOutputPickerSheet: View {
     private var readOnlyBanner: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "lock.fill")
-                .font(.subheadline.bold())
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.accentEmphasis)
 
             Text(
@@ -327,7 +327,7 @@ public struct IOSAudioOutputPickerSheet: View {
                     language: lang
                 )
             )
-            .font(.caption)
+            .font(ChocType.caption)
             .foregroundStyle(palette.secondaryText)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -344,10 +344,10 @@ public struct IOSAudioOutputPickerSheet: View {
     private var offlineStateCard: some View {
         VStack(spacing: 8) {
             Image(systemName: "laptopcomputer.slash")
-                .font(.system(size: 26))
+                .font(ChocType.title)
                 .foregroundStyle(palette.secondaryText)
             Text(L10n.tr("连接 Mac 后即可查看并切换扬声器、耳机或显示器音频输出", "Connect to your Mac to view and switch speakers, headphones, or display audio outputs.", language: lang))
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 .multilineTextAlignment(.center)
         }
@@ -363,7 +363,7 @@ public struct IOSAudioOutputPickerSheet: View {
 
     private var emptyDevicesCard: some View {
         Text(L10n.tr("Mac 当前未报告可用的音频输出设备。", "No audio output devices reported by your Mac.", language: lang))
-            .font(.caption)
+            .font(ChocType.caption)
             .foregroundStyle(palette.secondaryText)
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -389,7 +389,7 @@ public struct IOSAudioOutputPickerSheet: View {
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: device.sfSymbol)
-                            .font(.system(size: 16, weight: .bold))
+                            .font(ChocType.body.weight(.semibold))
                             .foregroundStyle(isSelected ? palette.statusConnected : (isRowEnabled ? palette.accent : palette.secondaryText))
                             .frame(width: 34, height: 34)
                             .background(
@@ -399,19 +399,19 @@ public struct IOSAudioOutputPickerSheet: View {
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(device.name)
-                                .font(.system(.subheadline, design: .rounded, weight: .bold))
+                                .font(ChocType.body.weight(.semibold))
                                 .foregroundStyle(isRowEnabled || isSelected ? palette.primaryText : palette.secondaryText)
                                 .lineLimit(1)
 
                             if let unavailableDetail = device.selectionUnavailableReason(in: lang) {
                                 Text("\(device.transportSubtitle(in: lang)) · \(unavailableDetail)")
-                                    .font(.caption2)
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.secondaryText)
                                     .lineLimit(2)
                                     .multilineTextAlignment(.leading)
                             } else {
                                 Text(device.transportSubtitle(in: lang))
-                                    .font(.caption2)
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.secondaryText)
                             }
                         }
@@ -420,11 +420,11 @@ public struct IOSAudioOutputPickerSheet: View {
 
                         if isSelected {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 18, weight: .bold))
+                                .font(ChocType.title)
                                 .foregroundStyle(palette.statusConnected)
                         } else if !isRowEnabled {
                             Image(systemName: device.isAirPlay ? "airplayaudio" : "lock")
-                                .font(.caption.bold())
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.secondaryText.opacity(0.6))
                         }
                     }
@@ -484,18 +484,18 @@ public struct IOSFrontmostWindowsRibbonButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "macwindow.on.rectangle")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.accent)
 
                 Text(compact ? L10n.tr("窗口", "Wins", language: lang) : L10n.tr("窗口", "Windows", language: lang))
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
 
                 if isConnected && count > 0 {
                     Text(snapshot.isCapped ? "\(FrontmostAppWindowSnapshot.maxWindows)+" : "\(count)")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.accent)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 1.5)
@@ -579,7 +579,7 @@ public struct IOSFrontmostAppWindowsSheet: View {
                                         language: lang
                                     )
                                 )
-                                .font(.caption2)
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.secondaryText)
                                 .padding(.horizontal, 4)
                             }
@@ -630,7 +630,7 @@ public struct IOSFrontmostAppWindowsSheet: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(isConnected ? appName : L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang))
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
 
@@ -639,7 +639,7 @@ public struct IOSFrontmostAppWindowsSheet: View {
                         ? L10n.tr("点按任意窗口将其在 Mac 上置顶（最多显示 12 个）", "Tap a window to raise it on your Mac (capped at 12)", language: lang)
                         : L10n.tr("连接 Mac 后即可查看当前前台应用的窗口列表", "Connect to your Mac to list windows of the frontmost app", language: lang)
                 )
-                .font(.caption2)
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
                 .lineLimit(2)
             }
@@ -658,10 +658,10 @@ public struct IOSFrontmostAppWindowsSheet: View {
     private var offlineState: some View {
         VStack(spacing: 8) {
             Image(systemName: "macwindow.badge.plus")
-                .font(.system(size: 26))
+                .font(ChocType.title)
                 .foregroundStyle(palette.secondaryText)
             Text(L10n.tr("配对并连接 Mac 后，这里会显示前台应用的窗口标题（上限 12 个），点按即可置顶。", "Pair and connect your Mac to see up to 12 window titles for the active app and tap to raise.", language: lang))
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 .multilineTextAlignment(.center)
         }
@@ -686,7 +686,7 @@ public struct IOSFrontmostAppWindowsSheet: View {
                     language: lang
                 )
             )
-            .font(.caption)
+            .font(ChocType.caption)
             .foregroundStyle(palette.secondaryText)
         }
         .padding(14)
@@ -700,7 +700,7 @@ public struct IOSFrontmostAppWindowsSheet: View {
 
     private var emptyWindowsCard: some View {
         Text(L10n.tr("当前前台应用没有打开的窗口。", "The frontmost app currently has no open windows.", language: lang))
-            .font(.caption)
+            .font(ChocType.caption)
             .foregroundStyle(palette.secondaryText)
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -719,26 +719,26 @@ public struct IOSFrontmostAppWindowsSheet: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: win.isMinimized ? "minus.rectangle" : (win.isMainOrFocused ? "macwindow.badge.plus" : "macwindow"))
-                    .font(.system(size: 15, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(win.isMainOrFocused ? palette.accent : palette.secondaryText)
                     .frame(width: 30, height: 30)
                     .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(win.title)
-                        .font(.system(.subheadline, design: .rounded, weight: .semibold))
+                        .font(ChocType.body.weight(.semibold))
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
 
                     HStack(spacing: 6) {
                         if win.isMainOrFocused {
                             Text(L10n.tr("当前焦点", "Focused", language: lang))
-                                .font(.caption2.bold())
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.accent)
                         }
                         if win.isMinimized {
                             Text(L10n.tr("已最小化 · 点按恢复置顶", "Minimized · Tap to Raise", language: lang))
-                                .font(.caption2)
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.secondaryText)
                         }
                     }
@@ -747,7 +747,7 @@ public struct IOSFrontmostAppWindowsSheet: View {
                 Spacer(minLength: 8)
 
                 Image(systemName: "arrow.up.forward.app.fill")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.accent)
             }
             .padding(.horizontal, 12)
@@ -794,7 +794,7 @@ public struct IOSFrontmostWindowsInlineCard: View {
                         ),
                         systemImage: "macwindow.on.rectangle"
                     )
-                    .font(.caption.bold())
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
 
@@ -805,7 +805,7 @@ public struct IOSFrontmostWindowsInlineCard: View {
                         client.requestFrontmostAppWindows()
                     } label: {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.accent)
                             .frame(width: 28, height: 28)
                             .background(palette.tileFillBottom, in: Circle())
@@ -821,7 +821,7 @@ public struct IOSFrontmostWindowsInlineCard: View {
                             ? L10n.tr("当前前台应用暂无可列出的窗口", "No open windows in the frontmost app", language: lang)
                             : L10n.tr("授权辅助功能后可列出并置顶窗口", "Grant Accessibility on Mac to list and raise windows", language: lang)
                     )
-                    .font(.caption2)
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                 } else {
                     VStack(spacing: 6) {
@@ -832,18 +832,18 @@ public struct IOSFrontmostWindowsInlineCard: View {
                             } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: win.isMinimized ? "minus.rectangle" : "macwindow")
-                                        .font(.system(size: 12, weight: .bold))
+                                        .font(ChocType.caption)
                                         .foregroundStyle(win.isMainOrFocused ? palette.accent : palette.secondaryText)
 
                                     Text(win.title)
-                                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                        .font(ChocType.caption)
                                         .foregroundStyle(palette.primaryText)
                                         .lineLimit(1)
 
                                     Spacer(minLength: 4)
 
                                     Text(L10n.tr("置顶", "Raise", language: lang))
-                                        .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                        .font(ChocType.micro)
                                         .foregroundStyle(palette.accent)
                                         .padding(.horizontal, 7)
                                         .padding(.vertical, 3)

@@ -20,10 +20,10 @@ public struct TimeTravelStudioView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L10n.tr("应用时间旅行", "App Time Travel", language: lang))
-                        .font(.system(.title3, design: .rounded, weight: .bold))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("动态记录最近激活的 Mac 应用，固定高频窗口，一键直达而无需循环按 ⌘Tab。", "Tracks recently active Mac apps with favorites pinning for one-tap window switching.", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                 }
                 Spacer()
@@ -33,13 +33,13 @@ public struct TimeTravelStudioView: View {
                 Spacer()
                 VStack(spacing: 10) {
                     Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 36))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("尚未捕获最近切换的应用", "No Recent Apps Yet", language: lang))
-                        .font(.headline)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("在任意 Mac 应用之间切换一次，应用时间旅行列表即会实时出现并同步到伴侣设备。", "Switch between any Mac apps to populate the live Time Travel strip across your companions.", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 420)
@@ -50,7 +50,7 @@ public struct TimeTravelStudioView: View {
                 // Live 8-card Companion Time Travel Strip Preview
                 VStack(alignment: .leading, spacing: 8) {
                     Text(L10n.tr("伴侣端实时时间旅行预览（前 8 项）", "Companion Time Travel Strip Preview (Top 8)", language: lang))
-                        .font(.caption.weight(.semibold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
 
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 8), spacing: 10) {
@@ -71,7 +71,7 @@ public struct TimeTravelStudioView: View {
                                             .frame(width: 38, height: 38)
                                         if entry.isPinned {
                                             Image(systemName: "pin.fill")
-                                                .font(.system(size: 8.5, weight: .bold))
+                                                .font(ChocType.micro)
                                                 .foregroundStyle(palette.secondaryText)
                                                 .padding(3)
                                                 .background(palette.backgroundBottom.opacity(0.85), in: Circle())
@@ -79,7 +79,7 @@ public struct TimeTravelStudioView: View {
                                         }
                                     }
                                     Text(entry.appName)
-                                        .font(.caption2.weight(.semibold))
+                                        .font(ChocType.micro)
                                         .foregroundStyle(palette.primaryText)
                                         .lineLimit(1)
                                 }
@@ -117,11 +117,11 @@ public struct TimeTravelStudioView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 6) {
                                 Text(entry.appName)
-                                    .font(.body.weight(.semibold))
+                                    .font(ChocType.body.weight(.semibold))
                                     .foregroundStyle(palette.primaryText)
                                 if entry.isFrontmost {
                                     Text(L10n.tr("当前前台", "Frontmost", language: lang))
-                                        .font(.caption2.bold())
+                                        .font(ChocType.micro)
                                         .padding(.horizontal, 6)
                                         .padding(.vertical, 1)
                                         .background(palette.statusConnected.opacity(0.18), in: Capsule())
@@ -129,12 +129,12 @@ public struct TimeTravelStudioView: View {
                                 }
                                 if !entry.isRunning {
                                     Text(L10n.tr("未运行", "Not Running", language: lang))
-                                        .font(.caption2)
+                                        .font(ChocType.micro)
                                         .foregroundStyle(palette.secondaryText)
                                 }
                             }
                             Text(entry.bundleIdentifier)
-                                .font(.caption2)
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.secondaryText)
                         }
 
@@ -149,7 +149,7 @@ public struct TimeTravelStudioView: View {
                                     : L10n.tr("固定", "Pin", language: lang),
                                 systemImage: entry.isPinned ? "pin.slash.fill" : "pin"
                             )
-                            .font(.caption)
+                            .font(ChocType.caption)
                         }
                         .buttonStyle(.bordered)
                         .tint(entry.isPinned ? palette.accent : nil)
@@ -158,7 +158,7 @@ public struct TimeTravelStudioView: View {
                             addAppToFirstAvailableSlot(entry)
                         } label: {
                             Label(L10n.tr("加入巧克力栏", "Add to Bar", language: lang), systemImage: "plus.square.on.square")
-                                .font(.caption)
+                                .font(ChocType.caption)
                         }
                         .buttonStyle(.bordered)
 
@@ -172,7 +172,7 @@ public struct TimeTravelStudioView: View {
                             }
                         } label: {
                             Text(L10n.tr("切换", "Switch", language: lang))
-                                .font(.caption.bold())
+                                .font(ChocType.caption)
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(palette.accent)
@@ -225,10 +225,10 @@ public struct GestureStudioView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L10n.tr("多指触控手势", "Multi-Touch Finger Gestures", language: lang))
-                        .font(.system(.title3, design: .rounded, weight: .bold))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("在 iPhone / iPad 任意区域执行双指或三指手势控制 Mac 窗口与剪贴板，单指点按仍直达底层按钮。", "Use 2- or 3-finger gestures anywhere on iPhone/iPad while 1-finger taps pass straight through to controls.", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                 }
 
@@ -253,7 +253,7 @@ public struct GestureStudioView: View {
                     L10n.tr("全局多指手势已暂停 — iPhone / iPad 手势板中的快捷触发按钮仍可正常点按使用。", "Global multi-touch gestures are paused — quick-trigger buttons on the Gesture Pad remain active.", language: lang),
                     systemImage: "pause.circle.fill"
                 )
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -266,7 +266,7 @@ public struct GestureStudioView: View {
                     ForEach(Array(coordinator.profile.gestureConfig.bindings.enumerated()), id: \.element.id) { idx, binding in
                         HStack(spacing: 12) {
                             Image(systemName: binding.gesture.sfSymbol)
-                                .font(.title3.weight(.semibold))
+                                .font(ChocType.title)
                                 .foregroundStyle(binding.isEnabled ? palette.primaryText : palette.secondaryText.opacity(0.6))
                                 .frame(width: 40, height: 40)
                                 .background(
@@ -282,10 +282,10 @@ public struct GestureStudioView: View {
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(binding.gesture.title(in: lang))
-                                    .font(.subheadline.bold())
+                                    .font(ChocType.body.weight(.semibold))
                                     .foregroundStyle(palette.primaryText)
                                 Text(binding.gesture.subtitle(in: lang))
-                                    .font(.caption2)
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.secondaryText)
                                     .lineLimit(1)
 
@@ -326,7 +326,7 @@ public struct GestureStudioView: View {
                                     _ = coordinator.executeGesture(binding.gesture, triggeredBy: "Mac Gesture Test")
                                 } label: {
                                     Image(systemName: "play.fill")
-                                        .font(.caption2)
+                                        .font(ChocType.micro)
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)

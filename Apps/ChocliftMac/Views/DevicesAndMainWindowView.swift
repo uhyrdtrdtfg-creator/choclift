@@ -43,10 +43,10 @@ public struct MacPairingPopoverView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.tr("配对伴侣设备", "Pair a Companion Device", language: lang))
-                        .font(.system(.headline, design: .rounded, weight: .bold))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(server.macName)
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                         .lineLimit(1)
                 }
@@ -62,10 +62,10 @@ public struct MacPairingPopoverView: View {
                         .foregroundStyle(palette.statusFailure)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.tr("本地监听启动失败", "Listener Failed to Start", language: lang))
-                            .font(.caption.bold())
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.statusFailure)
                         Text(errorMessage)
-                            .font(.caption2)
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                     }
                     Spacer(minLength: 0)
@@ -82,7 +82,7 @@ public struct MacPairingPopoverView: View {
             VStack(spacing: 10) {
                 HStack {
                     Text(L10n.tr("一次性 6 位安全配对码", "One-Time 6-Digit Pairing PIN", language: lang))
-                        .font(.caption.weight(.semibold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                     Spacer()
                     HStack(spacing: 6) {
@@ -101,7 +101,7 @@ public struct MacPairingPopoverView: View {
                                     : L10n.tr("复制", "Copy", language: lang),
                                 systemImage: didCopyPIN ? "checkmark" : "doc.on.doc"
                             )
-                            .font(.caption2.weight(.semibold))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.primaryText)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
@@ -114,7 +114,7 @@ public struct MacPairingPopoverView: View {
                             server.regeneratePIN()
                         } label: {
                             Label(L10n.tr("刷新", "New PIN", language: lang), systemImage: "arrow.clockwise")
-                                .font(.caption2.weight(.semibold))
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.accent)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
@@ -130,7 +130,7 @@ public struct MacPairingPopoverView: View {
                 HStack(spacing: 6) {
                     ForEach(0..<min(digits.count, 6), id: \.self) { idx in
                         Text(String(digits[idx]))
-                            .font(.system(size: 24, weight: .black, design: .monospaced))
+                            .font(ChocType.title)
                             .foregroundStyle(palette.primaryText)
                             .frame(maxWidth: .infinity)
                             .frame(height: 44)
@@ -193,11 +193,11 @@ public struct MacPairingPopoverView: View {
                 if let btGuidance = server.bluetoothAvailability.detailGuidance(in: lang) {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption2)
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.statusFailure)
                             .padding(.top, 1)
                         Text(btGuidance)
-                            .font(.caption2)
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                     }
                     .padding(9)
@@ -211,10 +211,10 @@ public struct MacPairingPopoverView: View {
                         : server.localIPAddresses.map { "\($0):\(port)" }.joined(separator: "  ·  ")
                     HStack(spacing: 6) {
                         Image(systemName: "network")
-                            .font(.caption2)
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                         Text(ipText)
-                            .font(.caption2.monospaced())
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                             .textSelection(.enabled)
                             .lineLimit(1)
@@ -231,7 +231,7 @@ public struct MacPairingPopoverView: View {
                         L10n.tr("首次配对只需两步", "Pair in Two Quick Steps", language: lang),
                         systemImage: "sparkles"
                     )
-                    .font(.caption.weight(.bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
 
                     Text(
@@ -241,7 +241,7 @@ public struct MacPairingPopoverView: View {
                             language: lang
                         )
                     )
-                    .font(.caption2)
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .lineSpacing(2)
                 }
@@ -253,7 +253,7 @@ public struct MacPairingPopoverView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     HStack {
                         Text(L10n.tr("已配对伴侣 (\(sortedDevices.count))", "Paired Companions (\(sortedDevices.count))", language: lang))
-                            .font(.caption.weight(.semibold))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.secondaryText)
                         Spacer()
                         Button {
@@ -261,7 +261,7 @@ public struct MacPairingPopoverView: View {
                             coordinator.selectedSection = .devicesAndSettings
                         } label: {
                             Text(L10n.tr("管理设备", "Manage", language: lang))
-                                .font(.caption2.weight(.semibold))
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.accent)
                         }
                         .buttonStyle(.plain)
@@ -270,12 +270,12 @@ public struct MacPairingPopoverView: View {
                     ForEach(sortedDevices.prefix(4)) { device in
                         HStack(spacing: 8) {
                             Image(systemName: device.platform.sfSymbol)
-                                .font(.callout)
+                                .font(ChocType.body)
                                 .foregroundStyle(device.isCurrentlyConnected ? palette.statusConnected : palette.secondaryText)
                                 .frame(width: 20)
 
                             Text(device.deviceName)
-                                .font(.callout.weight(.medium))
+                                .font(ChocType.body)
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
 
@@ -285,11 +285,11 @@ public struct MacPairingPopoverView: View {
                                 ChocLinkBadge(link: link, language: lang, palette: palette)
                             } else if device.isCurrentlyConnected {
                                 Text(L10n.tr("在线", "Online", language: lang))
-                                    .font(.caption2.bold())
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.statusConnected)
                             } else {
                                 Text(L10n.tr("待机", "Standby", language: lang))
-                                    .font(.caption2.weight(.medium))
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.secondaryText)
                                     .padding(.horizontal, 7)
                                     .padding(.vertical, 2)
@@ -318,7 +318,7 @@ public struct MacPairingPopoverView: View {
     private var listenerStateBadge: some View {
         if server.lastErrorMessage != nil {
             Label(L10n.tr("异常", "Error", language: lang), systemImage: "exclamationmark.triangle.fill")
-                .font(.caption2.bold())
+                .font(ChocType.micro)
                 .foregroundStyle(palette.statusFailure)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -329,7 +329,7 @@ public struct MacPairingPopoverView: View {
                     .fill(palette.statusConnected)
                     .frame(width: 7, height: 7)
                 Text(L10n.tr("可被发现", "Discoverable", language: lang))
-                    .font(.caption2.weight(.semibold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.statusConnected)
             }
             .padding(.horizontal, 8)
@@ -341,7 +341,7 @@ public struct MacPairingPopoverView: View {
                     .controlSize(.mini)
                     .tint(palette.accent)
                 Text(L10n.tr("启动中", "Starting", language: lang))
-                    .font(.caption2.weight(.semibold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
             }
         }
@@ -350,9 +350,9 @@ public struct MacPairingPopoverView: View {
     private func transportStatusPill(symbol: String, title: String, tint: Color) -> some View {
         HStack(spacing: 5) {
             Image(systemName: symbol)
-                .font(.caption2.bold())
+                .font(ChocType.micro)
             Text(title)
-                .font(.caption2.weight(.semibold))
+                .font(ChocType.micro)
                 .lineLimit(1)
         }
         .foregroundStyle(tint)
@@ -430,21 +430,21 @@ public struct DevicesAndSettingsView: View {
                     .fill(coordinator.isAccessibilityGranted ? palette.statusConnected.opacity(0.15) : palette.tileFillBottom)
                     .frame(width: 42, height: 42)
                 Image(systemName: coordinator.isAccessibilityGranted ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
-                    .font(.title2)
+                    .font(ChocType.title)
                     .foregroundStyle(coordinator.isAccessibilityGranted ? palette.statusConnected : palette.secondaryText)
             }
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(L10n.tr("辅助功能权限", "Accessibility Permission", language: lang))
-                        .font(.headline)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(
                         coordinator.isAccessibilityGranted
                             ? L10n.tr("已就绪", "Active", language: lang)
                             : L10n.tr("待开启", "Action Needed", language: lang)
                     )
-                    .font(.caption2.bold())
+                    .font(ChocType.micro)
                     .foregroundStyle(coordinator.isAccessibilityGranted ? palette.statusConnected : palette.secondaryText)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 2)
@@ -458,7 +458,7 @@ public struct DevicesAndSettingsView: View {
                         ? L10n.tr("窗口贴靠/最大化手势、剪贴板快捷键与光标表情直输均已启用。", "Window gestures, clipboard shortcuts, and cursor emoji typing are ready.", language: lang)
                         : L10n.tr("开启后方可使用远程窗口管理、复制粘贴手势与光标处直接输入表情。", "Grant access in System Settings → Privacy & Security → Accessibility for window & emoji actions.", language: lang)
                 )
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
             }
 
@@ -488,7 +488,7 @@ public struct DevicesAndSettingsView: View {
                     L10n.tr("伴侣设备列表", "Companion Devices", language: lang),
                     systemImage: "iphone.and.arrow.forward"
                 )
-                .font(.headline)
+                .font(ChocType.title)
                 .foregroundStyle(palette.primaryText)
 
                 if !server.pairedDevices.isEmpty {
@@ -499,7 +499,7 @@ public struct DevicesAndSettingsView: View {
                             language: lang
                         )
                     )
-                    .font(.caption2.weight(.semibold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -510,7 +510,7 @@ public struct DevicesAndSettingsView: View {
 
                 if server.bluetoothAvailability.isProblemState {
                     Label(server.bluetoothAvailability.shortStatus(in: lang), systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption2.bold())
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.statusFailure)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -522,10 +522,10 @@ public struct DevicesAndSettingsView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "key.fill")
-                            .font(.caption2)
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.accent)
                         Text("PIN \(formattedSixDigitPIN(server.currentPIN))")
-                            .font(.system(.caption, design: .monospaced, weight: .bold))
+                            .font(ChocType.caption)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
@@ -542,7 +542,7 @@ public struct DevicesAndSettingsView: View {
                     L10n.tr("网络监听异常：\(errorMessage)", "Network listener issue: \(errorMessage)", language: lang),
                     systemImage: "exclamationmark.octagon.fill"
                 )
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.statusFailure)
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -551,7 +551,7 @@ public struct DevicesAndSettingsView: View {
 
             if let btGuidance = server.bluetoothAvailability.detailGuidance(in: lang) {
                 Label(btGuidance, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.statusFailure)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -581,7 +581,7 @@ public struct DevicesAndSettingsView: View {
             HStack(spacing: 14) {
                 ForEach([DevicePlatform.iPhone, .iPad, .appleWatch], id: \.rawValue) { platform in
                     Image(systemName: platform.sfSymbol)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                         .frame(width: 38, height: 38)
                         .background(palette.tileFillTop.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -590,7 +590,7 @@ public struct DevicesAndSettingsView: View {
 
             VStack(spacing: 4) {
                 Text(L10n.tr("尚未配对任何伴侣设备", "No Paired Companions Yet", language: lang))
-                    .font(.subheadline.weight(.bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
                 Text(
                     L10n.tr(
@@ -599,7 +599,7 @@ public struct DevicesAndSettingsView: View {
                         language: lang
                     )
                 )
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 440)
@@ -612,7 +612,7 @@ public struct DevicesAndSettingsView: View {
                     L10n.tr("查看配对码与直连地址", "View Pairing PIN & Direct IP", language: lang),
                     systemImage: "qrcode.viewfinder"
                 )
-                .font(.caption.weight(.semibold))
+                .font(ChocType.caption)
             }
             .buttonStyle(.borderedProminent)
             .tint(palette.accentEmphasis)
@@ -636,7 +636,7 @@ public struct DevicesAndSettingsView: View {
                     .fill(isOnline ? palette.statusConnected.opacity(0.15) : palette.tileFillTop)
                     .frame(width: 40, height: 40)
                 Image(systemName: device.platform.sfSymbol)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(ChocType.title)
                     .foregroundStyle(isOnline ? palette.statusConnected : palette.secondaryText)
                     .frame(width: 40, height: 40)
                 Circle()
@@ -649,7 +649,7 @@ public struct DevicesAndSettingsView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 7) {
                     Text(device.deviceName)
-                        .font(.body.weight(.semibold))
+                        .font(ChocType.body.weight(.semibold))
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
 
@@ -657,11 +657,11 @@ public struct DevicesAndSettingsView: View {
                         ChocLinkBadge(link: link, language: lang, palette: palette)
                     } else if isOnline {
                         Text(L10n.tr("在线", "Online", language: lang))
-                            .font(.caption2.bold())
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.statusConnected)
                     } else {
                         Text(L10n.tr("已保存令牌", "Paired", language: lang))
-                            .font(.caption2.weight(.semibold))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.secondaryText)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
@@ -674,7 +674,7 @@ public struct DevicesAndSettingsView: View {
                         ? "\(device.platform.rawValue) · \(L10n.tr("实时连接", "Connected Live", language: lang))\(device.activeLink.map { " · \($0.displayName(in: lang))" } ?? "")"
                         : "\(device.platform.rawValue) · \(L10n.tr("最近在线", "Last seen", language: lang)) \(device.lastSeenAt.formatted(.relative(presentation: .named)))"
                 )
-                .font(.caption2)
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
                 .lineLimit(1)
             }
@@ -685,7 +685,7 @@ public struct DevicesAndSettingsView: View {
                 server.removePairedDevice(deviceID: device.deviceID)
             } label: {
                 Label(L10n.tr("移除", "Forget", language: lang), systemImage: "trash")
-                    .font(.caption)
+                    .font(ChocType.caption)
             }
             .buttonStyle(.bordered)
             .tint(palette.statusFailure)
@@ -708,7 +708,7 @@ public struct DevicesAndSettingsView: View {
     private var appearanceAndPreferencesCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             Label(L10n.tr("外观主题与伴侣偏好", "Theme & Companion Preferences", language: lang), systemImage: "paintpalette.fill")
-                .font(.headline)
+                .font(ChocType.title)
                 .foregroundStyle(palette.primaryText)
 
             LabeledContent(L10n.tr("界面主题", "Palette Theme", language: lang)) {
@@ -801,7 +801,7 @@ public struct DevicesAndSettingsView: View {
                                 language: lang
                             )
                         )
-                        .font(.caption2)
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
 
                         Button(L10n.tr("打开登录项设置…", "Open Login Items…", language: lang)) {
@@ -818,7 +818,7 @@ public struct DevicesAndSettingsView: View {
                             language: lang
                         )
                     )
-                    .font(.caption2)
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                 }
             }
@@ -855,11 +855,11 @@ public struct DevicesAndSettingsView: View {
     private var backupAndResetCard: some View {
         VStack(alignment: .leading, spacing: 11) {
             Label(L10n.tr("配置备份与还原", "Layout Backup & Reset", language: lang), systemImage: "externaldrive.fill.badge.checkmark")
-                .font(.headline)
+                .font(ChocType.title)
                 .foregroundStyle(palette.primaryText)
 
             Text(L10n.tr("将全部 8 页巧克力槽位、表情滑页与手势映射导出为 JSON，随时迁移或恢复。", "Export or restore all 8 Chocolate Bar pages, Emoji slides, and gesture bindings as JSON.", language: lang))
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
 
             HStack(spacing: 8) {
@@ -900,12 +900,12 @@ public struct DevicesAndSettingsView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label(L10n.tr("实时指令日志", "Live Companion Activity", language: lang), systemImage: "waveform.path.ecg")
-                    .font(.headline)
+                    .font(ChocType.title)
                     .foregroundStyle(palette.primaryText)
                 Spacer()
                 if !coordinator.activityLog.isEmpty {
                     Text("\(coordinator.activityLog.count)")
-                        .font(.caption2.monospacedDigit().bold())
+                        .font(ChocType.micro.monospacedDigit())
                         .foregroundStyle(palette.secondaryText)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
@@ -916,13 +916,13 @@ public struct DevicesAndSettingsView: View {
             if coordinator.activityLog.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "hand.tap")
-                        .font(.title2)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("暂无远程指令记录", "No Activity Yet", language: lang))
-                        .font(.caption.weight(.bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("来自 iPhone、iPad 或 Watch 的点按、手势和表情输入将实时显示在此。", "Taps, gestures, and emoji insertions from iPhone, iPad, and Watch appear here live.", language: lang))
-                        .font(.caption2)
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                         .multilineTextAlignment(.center)
                 }
@@ -936,21 +936,21 @@ public struct DevicesAndSettingsView: View {
                         ForEach(coordinator.activityLog) { ev in
                             HStack(alignment: .top, spacing: 9) {
                                 Image(systemName: ev.isSuccess ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                                    .font(.caption)
+                                    .font(ChocType.caption)
                                     .foregroundStyle(ev.isSuccess ? palette.statusConnected : palette.statusFailure)
                                     .padding(.top, 1)
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(ev.summary)
-                                        .font(.caption.weight(.medium))
+                                        .font(ChocType.caption)
                                         .foregroundStyle(palette.primaryText)
                                         .lineLimit(2)
                                     HStack(spacing: 4) {
                                         Text(ev.deviceName)
-                                            .font(.caption2.weight(.semibold))
+                                            .font(ChocType.micro)
                                         Text("·")
                                         Text(ev.timestamp.formatted(date: .omitted, time: .standard))
-                                            .font(.caption2.monospacedDigit())
+                                            .font(ChocType.micro.monospacedDigit())
                                     }
                                     .foregroundStyle(palette.secondaryText)
                                 }
@@ -1050,10 +1050,10 @@ public struct MacMainWindowView: View {
                         let isAudioError = coordinator.lastAudioOutputError != nil
                         HStack(spacing: 8) {
                             Image(systemName: isAudioError ? "exclamationmark.triangle.fill" : "sparkles")
-                                .font(.caption.bold())
+                                .font(ChocType.caption)
                                 .foregroundStyle(isAudioError ? palette.statusFailure : palette.secondaryText)
                             Text(banner)
-                                .font(.callout.weight(.semibold))
+                                .font(ChocType.body.weight(.semibold))
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(2)
                         }
@@ -1115,7 +1115,7 @@ public struct MacMainWindowView: View {
             coordinator.selectedSection = section
         } label: {
             Label(title ?? section.title(in: lang), systemImage: section.sfSymbol)
-                .font(.system(size: 13, weight: coordinator.selectedSection == section ? .semibold : .regular))
+                .font(ChocType.caption)
                 .foregroundStyle(coordinator.selectedSection == section ? palette.accent : palette.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 10)
@@ -1134,10 +1134,10 @@ public struct MacMainWindowView: View {
                 ChocliftBrandIconView(size: 34)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("choclift")
-                        .font(.system(size: 17, weight: .black, design: .rounded))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("iPhone · iPad · Watch 触控栏工作台", "Companion Touch Bar Studio", language: lang))
-                        .font(.system(size: 10.5, weight: .medium))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                         .lineLimit(1)
                 }
@@ -1150,7 +1150,7 @@ public struct MacMainWindowView: View {
                     coordinator.requestAccessibilityPermission()
                 } label: {
                     Label(L10n.tr("开启辅助功能", "Accessibility", language: lang), systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption.bold())
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
@@ -1179,17 +1179,17 @@ public struct MacMainWindowView: View {
             HStack(spacing: 7) {
                 if server.lastErrorMessage != nil {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption.bold())
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.statusFailure)
                     Text(L10n.tr("监听异常", "Listener Issue", language: lang))
-                        .font(.caption.weight(.bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.statusFailure)
                 } else if !server.isListening {
                     ProgressView()
                         .controlSize(.mini)
                         .tint(palette.accent)
                     Text(L10n.tr("正在启动…", "Starting…", language: lang))
-                        .font(.caption.weight(.semibold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                 } else if server.connectedDeviceCount > 0 {
                     Circle()
@@ -1202,15 +1202,15 @@ public struct MacMainWindowView: View {
                             language: lang
                         )
                     )
-                    .font(.caption.weight(.bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
 
                     ForEach(activeLinks, id: \.rawValue) { link in
                         HStack(spacing: 3) {
                             Image(systemName: link.sfSymbol)
-                                .font(.system(size: 9.5, weight: .bold))
+                                .font(ChocType.micro)
                             Text(link.shortLabel(in: lang))
-                                .font(.system(size: 10, weight: .bold, design: .rounded))
+                                .font(ChocType.micro)
                         }
                         .foregroundStyle(link == .bluetooth ? palette.statusBluetooth : palette.statusConnected)
                         .padding(.horizontal, 6)
@@ -1228,11 +1228,11 @@ public struct MacMainWindowView: View {
                             language: lang
                         )
                     )
-                    .font(.system(.caption, design: .rounded, weight: .semibold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                 } else {
                     Image(systemName: "link.badge.plus")
-                        .font(.caption.bold())
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.accentEmphasis)
                     Text(
                         L10n.tr(
@@ -1241,7 +1241,7 @@ public struct MacMainWindowView: View {
                             language: lang
                         )
                     )
-                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                 }
             }
@@ -1287,14 +1287,14 @@ public struct MacMenuBarPopoverView: View {
                 ChocliftBrandIconView(size: 28)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("choclift")
-                        .font(.system(.headline, design: .rounded, weight: .black))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     let menuSummary = MacMenuBarStatusSummary(
                         connectedCompanionCount: coordinator.connectedCompanionCount,
                         isKeepAwakeOn: coordinator.isKeepMacAwakeEnabled
                     )
                     Text(menuSummary.menuBarTitle(in: lang))
-                        .font(.caption2.weight(.semibold))
+                        .font(ChocType.micro)
                         .foregroundStyle(server.lastErrorMessage != nil ? palette.statusFailure : palette.secondaryText)
                 }
                 Spacer()
@@ -1309,7 +1309,7 @@ public struct MacMenuBarPopoverView: View {
 
             if coordinator.profile.pages.indices.contains(coordinator.selectedPageIndex) {
                 Text(coordinator.profile.pages[coordinator.selectedPageIndex].title)
-                    .font(.headline).foregroundStyle(palette.primaryText)
+                    .font(ChocType.title).foregroundStyle(palette.primaryText)
             }
             ForEach([SystemQuickAction.mediaPrevious, .mediaPlayPause, .mediaNext, .volumeDown, .volumeUp]) { action in
                 Button {
@@ -1401,12 +1401,12 @@ public struct MacStudioAudioOutputMenu: View {
         } label: {
             HStack(spacing: 5) {
                 Text(currentLabel)
-                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
             }
             .padding(.horizontal, 10)
@@ -1448,7 +1448,7 @@ struct MacStudioSystemStatusRow: View {
             Label(state.macBattery?.displayText(in: coordinator.lang) ?? "—", systemImage: state.macBattery?.sfSymbol ?? "battery.100")
             Label(state.wifiDisplayLabel, systemImage: "wifi")
         }
-        .font(.caption)
+        .font(ChocType.caption)
         .foregroundStyle(palette.secondaryText)
         .lineLimit(1)
         .padding(14)
@@ -1487,16 +1487,16 @@ public struct MacStudioNowPlayingRow: View {
         VStack(spacing: 10) {
             HStack(spacing: 14) {
                 Text(String((activeMedia?.appName ?? "♪").prefix(1)).uppercased())
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
+                    .font(ChocType.title)
                     .foregroundStyle(palette.accent)
                     .frame(width: compact ? 48 : 72, height: compact ? 48 : 72)
                     .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 18))
                 VStack(alignment: .leading, spacing: 4) {
                     Text(primaryText ?? L10n.tr("未在播放", "Not Playing", language: lang))
-                        .font(.system(.headline, design: .rounded, weight: .bold))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText).lineLimit(1)
-                    if let artist = activeMedia?.artist { Text(artist).font(.callout).foregroundStyle(palette.secondaryText) }
-                    if let source = activeMedia?.appName { Text(source).font(.caption).foregroundStyle(palette.secondaryText) }
+                    if let artist = activeMedia?.artist { Text(artist).font(ChocType.caption).foregroundStyle(palette.secondaryText) }
+                    if let source = activeMedia?.appName { Text(source).font(ChocType.caption).foregroundStyle(palette.secondaryText) }
                 }
                 Spacer()
                 HStack(spacing: 4) {
@@ -1527,7 +1527,7 @@ public struct MacStudioNowPlayingRow: View {
                 })
                 .tint(palette.accent).accessibilityLabel(L10n.tr("播放进度", "Playback position", language: lang))
             }
-            if let progressText { Text(progressText).font(.caption.monospacedDigit()).foregroundStyle(isScrubbing ? palette.accent : palette.secondaryText) }
+            if let progressText { Text(progressText).font(ChocType.caption.monospacedDigit()).foregroundStyle(isScrubbing ? palette.accent : palette.secondaryText) }
         }
         .padding(compact ? 4 : 10)
         .background(palette.barSurface, in: RoundedRectangle(cornerRadius: compact ? 12 : 14, style: .continuous))
@@ -1548,7 +1548,7 @@ public struct MacStudioNowPlayingRow: View {
             _ = coordinator.performLocalQuickAction(action, triggeredBy: "Mac Studio")
         } label: {
             Image(systemName: symbol)
-                .font(.system(size: compact ? 10.5 : 11.5, weight: .bold))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.primaryText)
                 .frame(width: 48, height: 44)
                 .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -1606,13 +1606,13 @@ private struct MacSoftwareUpdatesCard: View {
                     MacUpdateConfiguration.softwareUpdatesSectionTitle(in: lang),
                     systemImage: "arrow.triangle.2.circlepath.circle.fill"
                 )
-                .font(.headline)
+                .font(ChocType.title)
                 .foregroundStyle(palette.primaryText)
 
                 Spacer(minLength: 4)
 
                 Text(updater.currentVersionBadgeText)
-                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .font(ChocType.micro.monospacedDigit())
                     .foregroundStyle(palette.secondaryText)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
@@ -1648,7 +1648,7 @@ private struct MacSoftwareUpdatesCard: View {
 
                 if let lastCheck = updater.lastUpdateCheckDate {
                     Text(lastCheck.formatted(.relative(presentation: .named)))
-                        .font(.caption2)
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                         .lineLimit(1)
                 }

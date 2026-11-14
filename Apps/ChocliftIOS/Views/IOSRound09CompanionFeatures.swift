@@ -45,11 +45,11 @@ public struct IOSLockScreenPillButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: isArmed ? "exclamationmark.triangle.fill" : "lock.fill")
-                    .font(.system(size: 11.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(isArmed ? palette.emphasisForeground : palette.statusFailure)
 
                 Text(displayTitle)
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(isArmed ? palette.emphasisForeground : palette.primaryText)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -113,11 +113,11 @@ public struct IOSHideOtherWindowsPillButton: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: "rectangle.on.rectangle.slash")
-                    .font(.system(size: 11.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.accent)
 
                 Text(title)
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -168,11 +168,11 @@ public struct IOSFrontmostAppStripBadge: View {
 
         HStack(spacing: 5) {
             Image(systemName: "macwindow")
-                .font(.system(size: 10.5, weight: .bold))
+                .font(ChocType.micro)
                 .foregroundStyle(hasActiveApp ? palette.accent : palette.secondaryText.opacity(0.75))
 
             Text(labelText)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(isConnected ? palette.primaryText : palette.secondaryText.opacity(0.8))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -267,10 +267,10 @@ public struct IOSPinClipboardButton: View {
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: iconName)
-                    .font(.system(size: compact ? 10.5 : 11, weight: .bold))
+                    .font(ChocType.micro)
                 if !compact || isPinned || (hasPreviewText && isCapReached) {
                     Text(buttonLabel)
-                        .font(.system(size: compact ? 10.5 : 11.5, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                         .lineLimit(1)
                 }
             }
@@ -329,10 +329,10 @@ public struct IOSPinnedClipboardCompactStrip: View {
                 HStack(spacing: 6) {
                     HStack(spacing: 3) {
                         Image(systemName: "pin.fill")
-                            .font(.system(size: 9.5, weight: .bold))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.accentEmphasis)
                         Text("\(pins.count)/\(PinnedClipboardItem.maxPinnedCount)")
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .font(ChocType.micro)
                             .monospacedDigit()
                             .foregroundStyle(palette.secondaryText)
                     }
@@ -349,7 +349,7 @@ public struct IOSPinnedClipboardCompactStrip: View {
                                 _ = client.insertPinnedClipboardItem(item)
                             } label: {
                                 Text(item.singleLinePreview)
-                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.primaryText)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
@@ -367,7 +367,7 @@ public struct IOSPinnedClipboardCompactStrip: View {
                                 _ = client.unpinClipboardItem(id: item.id)
                             } label: {
                                 Image(systemName: "xmark")
-                                    .font(.system(size: 9, weight: .bold))
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.secondaryText)
                                     .frame(width: 24, height: 28)
                                     .contentShape(Rectangle())
@@ -417,15 +417,15 @@ public struct IOSPinnedClipboardShelfView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "pin.fill")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.accentEmphasis)
 
                 Text(L10n.tr("已固定剪贴板", "Pinned Clipboard", language: lang))
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.primaryText)
 
                 Text("\(pins.count)/\(PinnedClipboardItem.maxPinnedCount)")
-                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 1.5)
@@ -442,7 +442,7 @@ public struct IOSPinnedClipboardShelfView: View {
                         language: lang
                     )
                 )
-                .font(.system(size: 11.5, weight: .regular, design: .rounded))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -475,11 +475,11 @@ public struct IOSPinnedClipboardShelfView: View {
             } label: {
                 HStack(spacing: 7) {
                     Image(systemName: "character.cursor.ibeam")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.accent)
 
                     Text(item.singleLinePreview)
-                        .font(.system(size: 12.5, weight: .medium, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
@@ -498,7 +498,7 @@ public struct IOSPinnedClipboardShelfView: View {
                 _ = client.unpinClipboardItem(id: item.id)
             } label: {
                 Image(systemName: "pin.slash")
-                    .font(.system(size: 11.5, weight: .bold))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .frame(width: 34, height: 34)
                     .background(palette.tileFillBottom, in: Circle())

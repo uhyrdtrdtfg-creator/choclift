@@ -52,7 +52,7 @@ public struct IOSPairingAndConnectionSheet: View {
                         case .disconnected:
                             disconnectedHeroOrIssueCard
                             Text(L10n.tr("蓝牙与 Wi-Fi 自动发现", "Bluetooth & Wi-Fi discovery", language: lang))
-                                .font(.caption).foregroundStyle(palette.secondaryText)
+                                .font(ChocType.caption).foregroundStyle(palette.secondaryText)
                             discoveredHostsCard
                             bluetoothHostsCard
                             DisclosureGroup(L10n.tr("其他连接方式", "Other connections", language: lang)) {
@@ -73,7 +73,7 @@ public struct IOSPairingAndConnectionSheet: View {
                     Button(L10n.tr("完成", "Done", language: lang)) {
                         dismiss()
                     }
-                    .font(.body.weight(.semibold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.accent)
                     .accessibilityIdentifier("ios-pairing-done")
                 }
@@ -102,8 +102,8 @@ public struct IOSPairingAndConnectionSheet: View {
         VStack(spacing: 16) {
             ChocliftBrandIconView(size: 48)
             Text(L10n.tr("输入 Mac 配对码", "Enter your Mac PIN", language: lang))
-                .font(.headline).foregroundStyle(palette.primaryText)
-            Text(macName).font(.caption).foregroundStyle(palette.secondaryText)
+                .font(ChocType.title).foregroundStyle(palette.primaryText)
+            Text(macName).font(ChocType.caption).foregroundStyle(palette.secondaryText)
             TextField("000000", text: $enteredPIN)
                 .textContentType(.oneTimeCode)
                 .keyboardType(.numberPad)
@@ -114,7 +114,7 @@ public struct IOSPairingAndConnectionSheet: View {
                     enteredPIN = String(value.filter(\.isNumber).prefix(6))
                 }
             if let errorMessage {
-                Text(errorMessage).font(.caption).foregroundStyle(palette.statusFailure)
+                Text(errorMessage).font(ChocType.caption).foregroundStyle(palette.statusFailure)
             }
             Button(L10n.tr("连接", "Connect", language: lang)) { client.submitPIN(enteredPIN) }
                 .frame(maxWidth: .infinity, minHeight: 48)
@@ -160,14 +160,14 @@ public struct IOSPairingAndConnectionSheet: View {
                         .fill(palette.statusConnected.opacity(0.16))
                         .frame(width: 46, height: 46)
                     Image(systemName: activeLink.sfSymbol)
-                        .font(.system(size: 20, weight: .bold))
+                        .font(ChocType.title)
                         .foregroundStyle(activeLink == .bluetooth ? palette.statusBluetooth : palette.statusConnected)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
                         Text(macName)
-                            .font(.system(.headline, design: .rounded, weight: .bold))
+                            .font(ChocType.title)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
 
@@ -181,7 +181,7 @@ public struct IOSPairingAndConnectionSheet: View {
                             language: lang
                         )
                     )
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                 }
 
@@ -200,7 +200,7 @@ public struct IOSPairingAndConnectionSheet: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("请在 Mac 端开启「辅助功能」权限，以启用窗口缩放手势和光标处表情输入。", "Grant Accessibility permission on your Mac to enable window gestures and cursor emoji typing.", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                 }
                 .padding(10)
@@ -224,7 +224,7 @@ public struct IOSPairingAndConnectionSheet: View {
 
             VStack(spacing: 4) {
                 Text(L10n.tr("正在连接「\(targetName)」…", "Connecting to \"\(targetName)\"…", language: lang))
-                    .font(.system(.headline, design: .rounded, weight: .bold))
+                    .font(ChocType.title)
                     .foregroundStyle(palette.primaryText)
 
                 if let link = client.activeLink {
@@ -236,7 +236,7 @@ public struct IOSPairingAndConnectionSheet: View {
                 client.disconnect()
             } label: {
                 Text(L10n.tr("取消连接", "Cancel", language: lang))
-                    .font(.caption.weight(.bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .padding(.horizontal, 18)
                     .frame(height: 38)
@@ -263,15 +263,15 @@ public struct IOSPairingAndConnectionSheet: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.title3)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.statusFailure)
 
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L10n.tr("未能连接到 Mac", "Connection Failed", language: lang))
-                            .font(.system(.subheadline, design: .rounded, weight: .bold))
+                            .font(ChocType.body.weight(.semibold))
                             .foregroundStyle(palette.primaryText)
                         Text(issue)
-                            .font(.caption)
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.secondaryText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -286,7 +286,7 @@ public struct IOSPairingAndConnectionSheet: View {
                             L10n.tr("重新连接 \(saved.macName)", "Retry \(saved.macName)", language: lang),
                             systemImage: "arrow.clockwise"
                         )
-                        .font(.caption.weight(.bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.accentForeground)
                         .padding(.horizontal, 14)
                         .frame(height: 38)
@@ -306,7 +306,7 @@ public struct IOSPairingAndConnectionSheet: View {
         } else if client.isAutoConnectSuppressedForCurrentLaunch {
             HStack(spacing: 10) {
                 Image(systemName: "pause.circle.fill")
-                    .font(.title3)
+                    .font(ChocType.title)
                     .foregroundStyle(palette.secondaryText)
                 Text(
                     L10n.tr(
@@ -315,7 +315,7 @@ public struct IOSPairingAndConnectionSheet: View {
                         language: lang
                     )
                 )
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 Spacer(minLength: 0)
             }
@@ -330,7 +330,7 @@ public struct IOSPairingAndConnectionSheet: View {
                 ChocliftBrandIconView(size: 42)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L10n.tr("首次配对你的 Mac", "Pair Your Mac", language: lang))
-                        .font(.system(.subheadline, design: .rounded, weight: .bold))
+                        .font(ChocType.body.weight(.semibold))
                         .foregroundStyle(palette.primaryText)
                     Text(
                         L10n.tr(
@@ -339,7 +339,7 @@ public struct IOSPairingAndConnectionSheet: View {
                             language: lang
                         )
                     )
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                 }
                 Spacer(minLength: 0)
@@ -359,19 +359,19 @@ public struct IOSPairingAndConnectionSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Label(L10n.tr("局域网发现 (Wi-Fi)", "Macs on Local Wi-Fi", language: lang), systemImage: "wifi")
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
                 Spacer()
                 if !client.discoveredMacs.isEmpty {
                     Text("\(client.discoveredMacs.count)")
-                        .font(.caption2.monospacedDigit().bold())
+                        .font(ChocType.micro.monospacedDigit())
                         .foregroundStyle(palette.statusConnected)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(palette.statusConnected.opacity(0.16), in: Capsule())
                 } else if !hasActiveFailure && !client.connectionState.isConnected {
                     Text(L10n.tr("自动发现", "Auto-Scan", language: lang))
-                        .font(.caption2.weight(.semibold))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -387,7 +387,7 @@ public struct IOSPairingAndConnectionSheet: View {
                         language: lang
                     )
                 )
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 .padding(.vertical, 4)
             } else {
@@ -399,18 +399,18 @@ public struct IOSPairingAndConnectionSheet: View {
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: "desktopcomputer")
-                                .font(.body.weight(.semibold))
+                                .font(ChocType.body.weight(.semibold))
                                 .foregroundStyle(palette.secondaryText)
                                 .frame(width: 28)
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(host.name)
-                                    .font(.system(.body, design: .rounded, weight: .semibold))
+                                    .font(ChocType.body.weight(.semibold))
                                     .foregroundStyle(palette.primaryText)
                                     .lineLimit(1)
                                 if isSaved {
                                     Text(L10n.tr("已保存配对令牌", "Paired", language: lang))
-                                        .font(.caption2.weight(.semibold))
+                                        .font(ChocType.micro)
                                         .foregroundStyle(palette.statusConnected)
                                 }
                             }
@@ -420,7 +420,7 @@ public struct IOSPairingAndConnectionSheet: View {
                             ChocLinkBadge(link: .wifi, language: lang, palette: palette)
 
                             Image(systemName: "chevron.right")
-                                .font(.caption.weight(.bold))
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.secondaryText)
                         }
                         .padding(.horizontal, 12)
@@ -448,20 +448,20 @@ public struct IOSPairingAndConnectionSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Label(L10n.tr("蓝牙发现 (BLE)", "Bluetooth LE", language: lang), systemImage: "antenna.radiowaves.left.and.right")
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                 Spacer(minLength: 4)
                 if client.bluetoothAvailability.isProblemState {
                     Label(client.bluetoothAvailability.shortStatus(in: lang), systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption2.bold())
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.statusFailure)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .background(palette.statusFailure.opacity(0.18), in: Capsule())
                 } else {
                     Text(client.bluetoothAvailability.shortStatus(in: lang))
-                        .font(.caption2.weight(.semibold))
+                        .font(ChocType.micro)
                         .foregroundStyle(client.isBluetoothPoweredOn ? palette.statusBluetooth : palette.secondaryText)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -474,7 +474,7 @@ public struct IOSPairingAndConnectionSheet: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(palette.statusFailure)
                     Text(guidance)
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                 }
                 .padding(10)
@@ -486,7 +486,7 @@ public struct IOSPairingAndConnectionSheet: View {
                         ? L10n.tr("离开同一 Wi-Fi 时可通过蓝牙 LE 直连附近的 Mac，共用同一 6 位配对码。", "Connects off Wi-Fi to nearby Macs over Bluetooth LE using the same 6-digit PIN.", language: lang)
                         : L10n.tr("在真机上开启蓝牙可在无同一 Wi-Fi 时连接；模拟器环境请使用 Wi-Fi 或下方 127.0.0.1 直连。", "Available on physical iPhone/iPad hardware off Wi-Fi (in Simulator, use 127.0.0.1 below).", language: lang)
                 )
-                .font(.caption)
+                .font(ChocType.caption)
                 .foregroundStyle(palette.secondaryText)
                 .padding(.vertical, 4)
             } else {
@@ -497,17 +497,17 @@ public struct IOSPairingAndConnectionSheet: View {
                     } label: {
                         HStack(spacing: 10) {
                             Image(systemName: "antenna.radiowaves.left.and.right")
-                                .font(.body.weight(.semibold))
+                                .font(ChocType.body.weight(.semibold))
                                 .foregroundStyle(palette.statusBluetooth)
                                 .frame(width: 28)
                             Text(host.name)
-                                .font(.system(.body, design: .rounded, weight: .semibold))
+                                .font(ChocType.body.weight(.semibold))
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
                             Spacer()
                             ChocLinkBadge(link: .bluetooth, language: lang, palette: palette)
                             Image(systemName: "chevron.right")
-                                .font(.caption.weight(.bold))
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.secondaryText)
                         }
                         .padding(.horizontal, 12)
@@ -535,7 +535,7 @@ public struct IOSPairingAndConnectionSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 Label(L10n.tr("IP 直连 / 模拟器快连", "Direct IP / Simulator", language: lang), systemImage: "bolt.horizontal.circle.fill")
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
 
                 Spacer()
@@ -545,7 +545,7 @@ public struct IOSPairingAndConnectionSheet: View {
                     client.connectToHost(host: "127.0.0.1", port: ChocliftDefaults.defaultTCPPort, targetName: "Local Mac")
                 } label: {
                     Text(L10n.tr("连接本机 127.0.0.1", "Connect 127.0.0.1", language: lang))
-                        .font(.caption.bold())
+                        .font(ChocType.caption)
                         .padding(.horizontal, 12)
                         .frame(height: 36)
                         .background(palette.accentEmphasis, in: Capsule())
@@ -582,7 +582,7 @@ public struct IOSPairingAndConnectionSheet: View {
                 }
                 .padding(.top, 8)
             }
-            .font(.caption)
+            .font(ChocType.caption)
             .foregroundStyle(palette.secondaryText)
         }
         .padding(16)
@@ -598,7 +598,7 @@ public struct IOSPairingAndConnectionSheet: View {
         if !client.savedMacs.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text(L10n.tr("已保存的信任 Mac", "Paired Macs", language: lang))
-                    .font(.system(.subheadline, design: .rounded, weight: .bold))
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
 
                 ForEach(client.savedMacs) { saved in
@@ -609,14 +609,14 @@ public struct IOSPairingAndConnectionSheet: View {
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(saved.macName)
-                                .font(.system(.callout, design: .rounded, weight: .semibold))
+                                .font(ChocType.body.weight(.semibold))
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
 
                             HStack(spacing: 6) {
                                 if let host = saved.lastDirectHost, let port = saved.lastDirectPort {
                                     Text("\(host):\(port)")
-                                        .font(.caption2.monospaced())
+                                        .font(ChocType.micro)
                                         .foregroundStyle(palette.secondaryText)
                                 }
                                 if saved.lastBluetoothPeripheralID != nil {

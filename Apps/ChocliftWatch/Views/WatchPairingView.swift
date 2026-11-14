@@ -83,8 +83,8 @@ public struct WatchPairingView: View {
         VStack(spacing: 16) {
             ChocliftBrandIconView(size: 32)
             Text(L10n.tr("输入 Mac 配对码", "Enter your Mac PIN", language: lang))
-                .font(.headline).foregroundStyle(palette.primaryText)
-            Text(macName).font(.caption).foregroundStyle(palette.secondaryText)
+                .font(ChocType.title).foregroundStyle(palette.primaryText)
+            Text(macName).font(ChocType.caption).foregroundStyle(palette.secondaryText)
             TextField("000000", text: $enteredPIN)
                 .textContentType(.oneTimeCode)
 
@@ -95,7 +95,7 @@ public struct WatchPairingView: View {
                     enteredPIN = String(value.filter(\.isNumber).prefix(6))
                 }
             if let errorMessage {
-                Text(errorMessage).font(.caption).foregroundStyle(palette.statusFailure)
+                Text(errorMessage).font(ChocType.caption).foregroundStyle(palette.statusFailure)
             }
             Button(L10n.tr("连接", "Connect", language: lang)) { client.submitPIN(enteredPIN) }
                 .frame(maxWidth: .infinity, minHeight: 48)
@@ -140,7 +140,7 @@ public struct WatchPairingView: View {
                     .fill(palette.statusConnected)
                     .frame(width: 8, height: 8)
                 Text(macName)
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -150,7 +150,7 @@ public struct WatchPairingView: View {
 
             if !client.isMacAccessibilityGranted {
                 Text(L10n.tr("请在 Mac 开启辅助功能权限以支持窗口与表情控制。", "Grant Accessibility on Mac for window & emoji actions.", language: lang))
-                    .font(.system(size: 11))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -159,7 +159,7 @@ public struct WatchPairingView: View {
                 client.disconnect()
             } label: {
                 Text(L10n.tr("断开连接", "Disconnect", language: lang))
-                    .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: 36)
             }
@@ -180,7 +180,7 @@ public struct WatchPairingView: View {
                 .tint(palette.accent)
 
             Text(L10n.tr("正在连接 \(targetName)…", "Connecting \(targetName)…", language: lang))
-                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.primaryText)
                 .multilineTextAlignment(.center)
 
@@ -192,7 +192,7 @@ public struct WatchPairingView: View {
                 client.disconnect()
             } label: {
                 Text(L10n.tr("取消", "Cancel", language: lang))
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                     .frame(maxWidth: .infinity)
                     .frame(height: 36)
@@ -218,15 +218,15 @@ public struct WatchPairingView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.statusFailure)
                     Text(L10n.tr("连接未成功", "Connection Failed", language: lang))
-                        .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                 }
 
                 Text(issue)
-                    .font(.system(size: 11.5))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -236,7 +236,7 @@ public struct WatchPairingView: View {
                         client.reconnectSavedMac(saved)
                     } label: {
                         Label(L10n.tr("重试连接", "Retry", language: lang), systemImage: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.accentForeground)
                             .frame(maxWidth: .infinity)
                             .frame(height: 38)
@@ -255,10 +255,10 @@ public struct WatchPairingView: View {
         } else if client.savedMacs.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 Text(L10n.tr("首次配对 Mac", "Pair Your Mac", language: lang))
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                 Text(L10n.tr("选择下方蓝牙或 Wi-Fi Mac，输入 Mac 上的 6 位配对码。", "Tap a Bluetooth or Wi-Fi Mac below and enter its 6-digit PIN.", language: lang))
-                    .font(.system(size: 11.5))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -278,10 +278,10 @@ public struct WatchPairingView: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "bolt.horizontal.circle.fill")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.accentForeground)
                 Text(L10n.tr("直连本机 127.0.0.1", "Connect 127.0.0.1", language: lang))
-                    .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.accentForeground)
                     .lineLimit(1)
             }
@@ -299,19 +299,19 @@ public struct WatchPairingView: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 5) {
                 Label(L10n.tr("蓝牙连接 (BLE)", "Bluetooth LE", language: lang), systemImage: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
                 Spacer(minLength: 2)
                 if client.bluetoothAvailability.isProblemState {
                     Text(client.bluetoothAvailability.shortStatus(in: lang))
-                        .font(.system(size: 10, weight: .bold))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.statusFailure)
                 }
             }
 
             if let guidance = client.bluetoothAvailability.detailGuidance(in: lang) {
                 Text(guidance)
-                    .font(.system(size: 11))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.statusFailure)
             } else if client.discoveredBluetoothMacs.isEmpty {
                 Text(
@@ -319,7 +319,7 @@ public struct WatchPairingView: View {
                         ? L10n.tr("正在搜索附近蓝牙广播中的 Mac…", "Scanning nearby Bluetooth LE Macs…", language: lang)
                         : L10n.tr("真机开启蓝牙可直接配对（模拟器请用 127.0.0.1）。", "Enable Bluetooth on Watch hardware (use 127.0.0.1 in Simulator).", language: lang)
                 )
-                .font(.system(size: 11.5))
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
             } else {
                 ForEach(client.discoveredBluetoothMacs) { host in
@@ -329,15 +329,15 @@ public struct WatchPairingView: View {
                     } label: {
                         HStack(spacing: 7) {
                             Image(systemName: "antenna.radiowaves.left.and.right")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.statusBluetooth)
                             Text(host.name)
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
                             Spacer()
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.secondaryText)
                         }
                         .padding(.horizontal, 10)
@@ -360,12 +360,12 @@ public struct WatchPairingView: View {
     private var discoveredMacsSection: some View {
         VStack(alignment: .leading, spacing: 7) {
             Label(L10n.tr("局域网 (Wi-Fi)", "Wi-Fi Macs", language: lang), systemImage: "wifi")
-                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.primaryText)
 
             if client.discoveredMacs.isEmpty {
                 Text(L10n.tr("暂未在同一 Wi-Fi 发现 Mac；也可展开下方输入局域网 IP。", "No Wi-Fi Macs detected yet; you can also enter your Mac's LAN IP below.", language: lang))
-                    .font(.system(size: 11.5))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
             } else {
                 ForEach(client.discoveredMacs) { host in
@@ -375,15 +375,15 @@ public struct WatchPairingView: View {
                     } label: {
                         HStack(spacing: 7) {
                             Image(systemName: "desktopcomputer")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.secondaryText)
                             Text(host.name)
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
                             Spacer()
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.secondaryText)
                         }
                         .padding(.horizontal, 10)
@@ -410,17 +410,17 @@ public struct WatchPairingView: View {
         if !client.savedMacs.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 Text(L10n.tr("已配对的 Mac", "Paired Macs", language: lang))
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
 
                 ForEach(client.savedMacs) { saved in
                     VStack(alignment: .leading, spacing: 7) {
                         HStack(spacing: 6) {
                             Image(systemName: "laptopcomputer")
-                                .font(.caption.bold())
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.secondaryText)
                             Text(saved.macName)
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.primaryText)
                                 .lineLimit(1)
                             Spacer(minLength: 0)
@@ -433,7 +433,7 @@ public struct WatchPairingView: View {
                                     client.reconnectSavedMac(saved)
                                 } label: {
                                     Label(L10n.tr("重连", "Reconnect", language: lang), systemImage: "arrow.clockwise")
-                                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                                        .font(ChocType.micro)
                                         .foregroundStyle(palette.emphasisForeground)
                                         .frame(maxWidth: .infinity)
                                         .frame(height: 36)
@@ -447,7 +447,7 @@ public struct WatchPairingView: View {
                                 client.forgetSavedMac(macID: saved.macID)
                             } label: {
                                 Image(systemName: "trash")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(ChocType.caption)
                                     .foregroundStyle(palette.statusFailure)
                                     .frame(width: 38, height: 36)
                                     .background(palette.statusFailure.opacity(0.16), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -480,11 +480,11 @@ public struct WatchPairingView: View {
             } label: {
                 HStack {
                     Label(L10n.tr("手动 IP 连接", "Manual IP & Port", language: lang), systemImage: "network")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
                     Spacer()
                     Image(systemName: showManualIPFields ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(ChocType.micro)
                         .foregroundStyle(palette.secondaryText)
                 }
                 .frame(minHeight: 34)
@@ -505,7 +505,7 @@ public struct WatchPairingView: View {
                     client.connectToHost(host: manualHost, port: port)
                 } label: {
                     Text(L10n.tr("连接此地址", "Connect IP", language: lang))
-                        .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                        .font(ChocType.caption)
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 38)
                 }

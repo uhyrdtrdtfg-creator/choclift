@@ -169,7 +169,7 @@ public struct IOSSlotEditorSheet: View {
                 NavigationStack {
                     Form {
                         Section(L10n.tr("确认动作", "Review Action", language: lang)) {
-                            Text(item.displayTitle(in: lang)).font(.headline)
+                            Text(item.displayTitle(in: lang)).font(ChocType.title)
                             TextField(L10n.tr("名称", "Name", language: lang), text: $reviewName)
                                 .disabled({ if case .shortcut = item.kind { return true }; if case .slotReference = item.kind { return true }; return false }())
                             TextField(L10n.tr("图标", "Icon", language: lang), text: $reviewIcon)
@@ -243,9 +243,9 @@ public struct IOSSlotEditorSheet: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: candidate.sfSymbol)
-                                .font(.system(size: 11.5, weight: .bold))
+                                .font(ChocType.micro)
                             Text(candidate.title(in: lang))
-                                .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                                .font(ChocType.caption)
                         }
                         .padding(.horizontal, 12)
                         .frame(height: 36)
@@ -272,7 +272,7 @@ public struct IOSSlotEditorSheet: View {
         case .resolved(_, let origPageIdx, let origPageTitle, let origPageEmoji, let origSlotIdx, let targetItem):
             HStack(spacing: 10) {
                 Image(systemName: "arrow.turn.up.right")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.accent)
                     .frame(width: 32, height: 32)
                     .background(palette.accent.opacity(0.14), in: Circle())
@@ -285,7 +285,7 @@ public struct IOSSlotEditorSheet: View {
                             language: lang
                         )
                     )
-                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.primaryText)
 
                     Text(
@@ -295,7 +295,7 @@ public struct IOSSlotEditorSheet: View {
                             language: lang
                         )
                     )
-                    .font(.caption2)
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                     .lineLimit(1)
                 }
@@ -308,7 +308,7 @@ public struct IOSSlotEditorSheet: View {
                         onEditOriginalSlot(origPageIdx, origSlotIdx)
                     } label: {
                         Text(L10n.tr("编辑原槽位", "Edit Original", language: lang))
-                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.accentForeground)
                             .padding(.horizontal, 11)
                             .frame(height: 32)
@@ -329,14 +329,14 @@ public struct IOSSlotEditorSheet: View {
         case .missing:
             HStack(spacing: 10) {
                 Image(systemName: "link.badge.plus")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .frame(width: 30, height: 30)
                     .background(palette.tileFillBottom, in: Circle())
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(L10n.tr("原槽位已被移除", "Original Slot Was Deleted", language: lang))
-                        .font(.system(.caption, design: .rounded, weight: .bold))
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.primaryText)
 
                     Text(
@@ -346,7 +346,7 @@ public struct IOSSlotEditorSheet: View {
                             language: lang
                         )
                     )
-                    .font(.caption2)
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.secondaryText)
                 }
 
@@ -401,10 +401,10 @@ public struct IOSSlotEditorSheet: View {
                 Spacer()
                 VStack(spacing: 10) {
                     Image(systemName: "speaker.wave.2.bubble.left")
-                        .font(.system(size: 32))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("暂无本机音效", "No Soundboard Clips Yet", language: lang))
-                        .font(.headline)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(
                         L10n.tr(
@@ -413,7 +413,7 @@ public struct IOSSlotEditorSheet: View {
                             language: lang
                         )
                     )
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 28)
@@ -423,7 +423,7 @@ public struct IOSSlotEditorSheet: View {
                 Spacer()
                 VStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .font(.title2)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                     Text(
                         L10n.tr(
@@ -432,7 +432,7 @@ public struct IOSSlotEditorSheet: View {
                             language: lang
                         )
                     )
-                    .font(.subheadline.bold())
+                    .font(ChocType.body.weight(.semibold))
                     .foregroundStyle(palette.primaryText)
                     Button(L10n.tr("清空搜索", "Clear Search", language: lang)) {
                         soundSearchQuery = ""
@@ -449,7 +449,7 @@ public struct IOSSlotEditorSheet: View {
                     } label: {
                         HStack(spacing: 12) {
                             Text(clip.emoji)
-                                .font(.system(size: 20))
+                                .font(ChocType.title)
                                 .frame(width: 36, height: 36)
                                 .background(
                                     ChocSwatch.resolvedTileColor(hex: clip.backgroundHex, fallbackHex: "#ECFAEE"),
@@ -458,10 +458,10 @@ public struct IOSSlotEditorSheet: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(clip.name)
-                                    .font(.body.weight(.semibold))
+                                    .font(ChocType.body.weight(.semibold))
                                     .foregroundStyle(palette.primaryText)
                                 Text(L10n.tr("Mac 扬声器播放 · \(clip.formattedDuration)", "Mac speakers · \(clip.formattedDuration)", language: lang))
-                                    .font(.caption2)
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.secondaryText)
                             }
 
@@ -492,10 +492,10 @@ public struct IOSSlotEditorSheet: View {
                 VStack(spacing: 10) {
                     Spacer()
                     Image(systemName: "arrow.turn.up.right")
-                        .font(.system(size: 32))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("暂无可引用的其他槽位", "No Other Occupied Slots Yet", language: lang))
-                        .font(.headline)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(
                         L10n.tr(
@@ -504,7 +504,7 @@ public struct IOSSlotEditorSheet: View {
                             language: lang
                         )
                     )
-                    .font(.caption)
+                    .font(ChocType.caption)
                     .foregroundStyle(palette.secondaryText)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 28)
@@ -532,17 +532,17 @@ public struct IOSSlotEditorSheet: View {
                             } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: "arrow.turn.up.right")
-                                        .font(.system(size: 13, weight: .bold))
+                                        .font(ChocType.caption)
                                         .foregroundStyle(palette.accent)
                                         .frame(width: 32, height: 32)
                                         .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(targetTitle)
-                                            .font(.body.weight(.semibold))
+                                            .font(ChocType.body.weight(.semibold))
                                             .foregroundStyle(palette.primaryText)
                                         Text("\(candidate.page.iconEmoji) \(candidate.page.title) · #\(candidate.slotIndex + 1)")
-                                            .font(.caption2)
+                                            .font(ChocType.micro)
                                             .foregroundStyle(palette.secondaryText)
                                     }
 
@@ -551,7 +551,7 @@ public struct IOSSlotEditorSheet: View {
                                     if case .systemAction(let act, _, _) = candidate.item.kind,
                                        let shortcut = act.sentKeyboardShortcut {
                                         Text(shortcut)
-                                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                            .font(ChocType.micro)
                                             .foregroundStyle(palette.secondaryText)
                                             .padding(.horizontal, 7)
                                             .padding(.vertical, 3)
@@ -604,13 +604,13 @@ public struct IOSSlotEditorSheet: View {
                 Spacer()
                 VStack(spacing: 10) {
                     Image(systemName: "laptopcomputer.slash")
-                        .font(.system(size: 32))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang))
-                        .font(.headline)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Text(L10n.tr("连接 Mac 后可浏览全部本机应用；离线时仍可切换到上方「音效」「引用」「快捷指令」「网页」或「动作」先行配置。", "Connect to your Mac to browse installed apps, or switch to Sounds, Reference, Shortcuts, Web, or Actions above while offline.", language: lang))
-                        .font(.caption)
+                        .font(ChocType.caption)
                         .foregroundStyle(palette.secondaryText)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 28)
@@ -626,10 +626,10 @@ public struct IOSSlotEditorSheet: View {
                 Spacer()
                 VStack(spacing: 10) {
                     Image(systemName: "app.dashed")
-                        .font(.system(size: 32))
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("暂未收到应用目录", "Catalog Not Loaded Yet", language: lang))
-                        .font(.headline)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.primaryText)
                     Button(L10n.tr("重新请求目录", "Reload Catalog", language: lang)) {
                         requestCatalogWithTimeout()
@@ -643,10 +643,10 @@ public struct IOSSlotEditorSheet: View {
                 Spacer()
                 VStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .font(.title2)
+                        .font(ChocType.title)
                         .foregroundStyle(palette.secondaryText)
                     Text(L10n.tr("没有匹配「\(query)」的应用", "No Apps Matching \"\(query)\"", language: lang))
-                        .font(.subheadline.bold())
+                        .font(ChocType.body.weight(.semibold))
                         .foregroundStyle(palette.primaryText)
                     Button(L10n.tr("清空搜索", "Clear Search", language: lang)) {
                         searchQuery = ""
@@ -674,10 +674,10 @@ public struct IOSSlotEditorSheet: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(app.appName)
-                                    .font(.body.weight(.semibold))
+                                    .font(ChocType.body.weight(.semibold))
                                     .foregroundStyle(palette.primaryText)
                                 Text(app.bundleIdentifier)
-                                    .font(.caption2)
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.secondaryText)
                                     .lineLimit(1)
                             }
@@ -707,7 +707,7 @@ public struct IOSSlotEditorSheet: View {
                         backgroundHex: shortcutHex
                     )))
                 }
-                .font(.body.weight(.semibold))
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.accentEmphasis)
                 .disabled(shortcutName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
@@ -766,7 +766,7 @@ public struct IOSSlotEditorSheet: View {
                         switchExistingTab: webSwitchTab
                     )))
                 }
-                .font(.body.weight(.semibold))
+                .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.accentEmphasis)
                 .disabled(webURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || webURL == "https://")
             }
@@ -809,14 +809,14 @@ public struct IOSSlotEditorSheet: View {
                                     .background(ChocSwatch.resolvedTileColor(hex: act.accentHex), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                                 Text(act.title(in: lang))
-                                    .font(.body.weight(.medium))
+                                    .font(ChocType.body)
                                     .foregroundStyle(palette.primaryText)
 
                                 Spacer()
 
                                 if let shortcut = act.sentKeyboardShortcut {
                                     Text(shortcut)
-                                        .font(.system(size: 11.5, weight: .bold, design: .monospaced))
+                                        .font(ChocType.micro)
                                         .foregroundStyle(palette.secondaryText)
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 3)
@@ -855,7 +855,7 @@ public struct IOSSlotEditorSheet: View {
                                 )
                             if isSel {
                                 Image(systemName: "checkmark")
-                                    .font(.system(size: 11, weight: .black))
+                                    .font(ChocType.micro)
                                     .foregroundStyle(palette.primaryText)
                             }
                         }
@@ -932,7 +932,7 @@ public struct IOSSlotEditorSheet: View {
 
         HStack(spacing: 10) {
             Image(systemName: isPinned ? "pin.fill" : "pin")
-                .font(.system(size: 13, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(isPinned ? palette.accent : palette.secondaryText)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -945,7 +945,7 @@ public struct IOSSlotEditorSheet: View {
                             language: lang
                         )
                 )
-                .font(.caption.weight(.bold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.primaryText)
                 .lineLimit(1)
 
@@ -956,7 +956,7 @@ public struct IOSSlotEditorSheet: View {
                             ? L10n.tr("固定后翻页仍保持可见（最多 4 个）。", "Keep this tile visible while changing pages (up to 4).", language: lang)
                             : L10n.tr("常驻栏已满 4 个固定方块，请先取消固定其他方块。", "4 tiles already pinned. Unpin another slot first.", language: lang))
                 )
-                .font(.caption2)
+                .font(ChocType.micro)
                 .foregroundStyle(palette.secondaryText)
                 .lineLimit(2)
             }
@@ -970,9 +970,9 @@ public struct IOSSlotEditorSheet: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "pin.slash.fill")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(ChocType.micro)
                         Text(L10n.tr("取消固定", "Unpin", language: lang))
-                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                            .font(ChocType.micro)
                     }
                     .foregroundStyle(palette.emphasisForeground)
                     .padding(.horizontal, 11)
@@ -990,13 +990,13 @@ public struct IOSSlotEditorSheet: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "pin.fill")
-                            .font(.system(size: 11, weight: .bold))
+                            .font(ChocType.micro)
                         Text(
                             canPin
                                 ? L10n.tr("固定", "Pin", language: lang)
                                 : L10n.tr("已满 4/4", "Full 4/4", language: lang)
                         )
-                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                        .font(ChocType.micro)
                     }
                     .foregroundStyle(canPin ? palette.accentForeground : palette.secondaryText)
                     .padding(.horizontal, 11)

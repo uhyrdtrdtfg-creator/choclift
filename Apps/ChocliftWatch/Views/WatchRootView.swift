@@ -102,11 +102,11 @@ public struct WatchRootView: View {
                     HStack(spacing: 5) {
                         if hud.isFailure {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 10.5, weight: .bold))
+                                .font(ChocType.micro)
                                 .foregroundStyle(palette.statusFailure)
                         }
                         Text(hud.text)
-                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                            .font(ChocType.micro)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(hud.isFailure ? 2 : 1)
                     }
@@ -244,12 +244,12 @@ public struct WatchRootView: View {
                         .tint(tint)
                 } else {
                     Image(systemName: visualState.sfSymbol)
-                        .font(.system(size: 10.5, weight: .bold))
+                        .font(ChocType.micro)
                         .foregroundStyle(tint)
                 }
 
                 Text(visualState.watchToolbarLabel(in: lang))
-                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .font(ChocType.micro)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
@@ -275,7 +275,7 @@ public struct WatchRootView: View {
             showModePickerSheet = true
         } label: {
             Image(systemName: activeMode.sfSymbol)
-                .font(.system(size: 13.5, weight: .bold))
+                .font(ChocType.caption)
                 .foregroundStyle(palette.accent)
                 .frame(width: 34, height: 34)
                 .background(palette.tileFillBottom.opacity(0.95), in: Circle())
@@ -297,13 +297,13 @@ public struct WatchRootView: View {
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: mode.sfSymbol)
-                            .font(.system(size: 14, weight: .bold))
+                            .font(ChocType.caption)
                             .foregroundStyle(isSelected ? palette.accentForeground : palette.secondaryText)
                             .frame(width: 28, height: 28)
                             .background(isSelected ? palette.accent : palette.tileFillTop, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
 
                         Text(mode.shortLabel(in: lang))
-                            .font(.system(size: 14, weight: isSelected ? .bold : .medium, design: .rounded))
+                            .font(ChocType.caption)
                             .foregroundStyle(palette.primaryText)
                             .lineLimit(1)
 
@@ -311,7 +311,7 @@ public struct WatchRootView: View {
 
                         if isSelected {
                             Image(systemName: "checkmark")
-                                .font(.caption.bold())
+                                .font(ChocType.caption)
                                 .foregroundStyle(palette.accent)
                         }
                     }
