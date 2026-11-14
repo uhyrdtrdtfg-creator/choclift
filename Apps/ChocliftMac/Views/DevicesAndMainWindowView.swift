@@ -1270,9 +1270,9 @@ public struct MacMainWindowView: View {
 // MARK: - Menu Bar Extra Popover
 
 public struct MacMenuBarPopoverView: View {
-    @State private var suppressRelease: SystemQuickAction?
     @ObservedObject var coordinator: MacAppCoordinator
     @ObservedObject var server: MacServerEngine
+    @ObservedObject var updater: MacSparkleUpdaterService
 
     private var lang: AppLanguage { coordinator.lang }
     private var palette: ChocPalette { coordinator.palette }
@@ -1280,64 +1280,41 @@ public struct MacMenuBarPopoverView: View {
     public init(coordinator: MacAppCoordinator) {
         self.coordinator = coordinator
         self.server = coordinator.server
+        self.updater = coordinator.updaterService
+    }
+
+    private var canToggleKeepAwake: Bool {
+        coordinator.connectedCompanionCount > 0 || coordinator.isKeepMacAwakeEnabled
+    }
+
+    private var keepAwakeBinding: Binding<Bool> {
+        Binding(
+            get: { coordinator.isKeepMacAwakeEnabled },
+            set: { enabled in
+                let previous = coordinator.isKeepMacAwakeEnabled
+                _ = coordinator.keepAwakeService.setToggleEnabled(enabled)
+                if coordinator.isKeepMacAwakeEnabled == previous {
+                    coordinator.objectWillChange.send()
+                }
+            }
+        )
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack(spacing: 9) {
-                ChocliftBrandIconView(size: 28)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("choclift")
-                        .font(ChocType.title)
-                        .foregroundStyle(palette.primaryText)
-                    let menuSummary = MacMenuBarStatusSummary(
-                        connectedCompanionCount: coordinator.connectedCompanionCount,
-                        isKeepAwakeOn: coordinator.isKeepMacAwakeEnabled
-                    )
-                    Text(menuSummary.menuBarTitle(in: lang))
-                        .font(ChocType.micro)
-                        .foregroundStyle(server.lastErrorMessage != nil ? palette.statusFailure : palette.secondaryText)
-                }
-                Spacer()
-                Circle()
-                    .fill(
-                        server.lastErrorMessage != nil
-                            ? palette.statusFailure
-                            : (server.connectedDeviceCount > 0 ? palette.statusConnected : palette.secondaryText)
-                    )
-                    .frame(width: 8, height: 8)
+        VStack(alignment: .leading, spacing: 10) {
+            headerRow
+
+            if let activePIN = server.activePairingPIN {
+                livePairingPINRow(activePIN)
             }
 
-            if coordinator.profile.pages.indices.contains(coordinator.selectedPageIndex) {
-                Text(coordinator.profile.pages[coordinator.selectedPageIndex].title)
-                    .font(ChocType.title).foregroundStyle(palette.primaryText)
-            }
-            ForEach([SystemQuickAction.mediaPrevious, .mediaPlayPause, .mediaNext, .volumeDown, .volumeUp]) { action in
-                Button {
-                    if suppressRelease == action { suppressRelease = nil; return }
-                    _ = coordinator.performLocalQuickAction(action, triggeredBy: "Menu Bar")
-                } label: {
-                    Label(action.title(in: lang), systemImage: action.sfSymbol)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }
-                .buttonStyle(MacRemoteRepeatStyle(action: action, suppressRelease: $suppressRelease) {
-                    _ = coordinator.performLocalQuickAction(action, triggeredBy: "Menu Bar")
-                }).tint(palette.accent)
-            }
+            controlsCard
 
-            Button {
-                coordinator.openMainStudioWindow()
-            } label: {
-                Label(L10n.tr("打开 Choclift 工作台", "Open Choclift Studio", language: lang), systemImage: "macwindow")
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(palette.accent)
-            .foregroundStyle(palette.accentForeground)
-
+            actionButtons
         }
-        .padding(16)
-        .frame(width: 292)
+        .padding(14)
+        .frame(width: 288)
+        .fixedSize(horizontal: false, vertical: true)
         .background(
             LinearGradient(
                 colors: [palette.backgroundTop, palette.backgroundBottom],
@@ -1346,11 +1323,190 @@ public struct MacMenuBarPopoverView: View {
             )
         )
         .tint(palette.accent)
+        .preferredColorScheme(.light)
         .onAppear {
             coordinator.setMacSurfaceVisible(.menuBarPopover, isVisible: true)
+            coordinator.systemControlService.refreshNow()
         }
         .onDisappear {
             coordinator.setMacSurfaceVisible(.menuBarPopover, isVisible: false)
+        }
+    }
+
+    private var headerRow: some View {
+        HStack(spacing: 9) {
+            ChocliftBrandIconView(size: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("choclift")
+                    .font(ChocType.title)
+                    .foregroundStyle(palette.primaryText)
+                let menuSummary = MacMenuBarStatusSummary(
+                    connectedCompanionCount: coordinator.connectedCompanionCount,
+                    isKeepAwakeOn: coordinator.isKeepMacAwakeEnabled
+                )
+                Text(menuSummary.menuBarTitle(in: lang))
+                    .font(ChocType.micro)
+                    .foregroundStyle(server.lastErrorMessage != nil ? palette.statusFailure : palette.secondaryText)
+            }
+            Spacer(minLength: 8)
+            Circle()
+                .fill(
+                    server.lastErrorMessage != nil
+                        ? palette.statusFailure
+                        : (server.connectedDeviceCount > 0 ? palette.statusConnected : palette.secondaryText)
+                )
+                .frame(width: 8, height: 8)
+        }
+    }
+
+    private func livePairingPINRow(_ activePIN: String) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(L10n.tr("配对码", "Pairing PIN", language: lang))
+                    .font(ChocType.caption)
+                    .foregroundStyle(palette.primaryText)
+                Text(L10n.tr("在伴侣设备上输入", "Enter on companion", language: lang))
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.secondaryText)
+            }
+            Spacer(minLength: 8)
+            Text(formattedSixDigitPIN(activePIN))
+                .font(ChocType.title.monospacedDigit())
+                .foregroundStyle(palette.accent)
+                .accessibilityIdentifier("mac-menubar-live-pin-value")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(palette.accent.opacity(0.45), lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("mac-menubar-live-pin-row")
+    }
+
+    private var controlsCard: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 8) {
+                Label(
+                    L10n.tr("保持唤醒", "Keep Awake", language: lang),
+                    systemImage: coordinator.isKeepMacAwakeEnabled ? "cup.and.saucer.fill" : "cup.and.saucer"
+                )
+                .font(ChocType.caption)
+                .foregroundStyle(palette.primaryText)
+                .lineLimit(1)
+
+                Spacer(minLength: 8)
+
+                Toggle(
+                    L10n.tr("保持唤醒", "Keep Awake", language: lang),
+                    isOn: keepAwakeBinding
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .tint(palette.accent)
+                .disabled(!canToggleKeepAwake)
+                .accessibilityIdentifier("mac-menubar-keep-awake-toggle")
+            }
+            .help(
+                canToggleKeepAwake
+                    ? L10n.tr("连接伴侣设备期间防止 Mac 空闲睡眠", "Prevent idle system sleep while a companion is connected", language: lang)
+                    : L10n.tr("连接伴侣设备后可开启保持唤醒", "Connect a companion device to enable Keep Awake", language: lang)
+            )
+
+            Rectangle()
+                .fill(palette.subtleCardStroke)
+                .frame(height: 1)
+
+            HStack(spacing: 8) {
+                Label(
+                    L10n.tr("音频输出", "Audio Output", language: lang),
+                    systemImage: coordinator.controlStripState.currentAudioOutputDevice?.sfSymbol ?? "speaker.wave.2"
+                )
+                .font(ChocType.caption)
+                .foregroundStyle(palette.primaryText)
+                .lineLimit(1)
+                .layoutPriority(1)
+
+                Spacer(minLength: 6)
+
+                MacStudioAudioOutputMenu(
+                    coordinator: coordinator,
+                    triggeredBy: "Menu Bar"
+                )
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
+    }
+
+    private var actionButtons: some View {
+        VStack(spacing: 7) {
+            Button {
+                updater.checkForUpdates()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "arrow.down.circle")
+                        .font(ChocType.caption)
+                    Text(MacUpdateConfiguration.checkForUpdatesMenuTitle(in: lang))
+                        .font(ChocType.caption)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                }
+                .foregroundStyle(updater.canCheckForUpdates ? palette.primaryText : palette.secondaryText)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+                .background(
+                    palette.barSurface.opacity(updater.canCheckForUpdates ? 1.0 : 0.65),
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(PopoverButtonStyle())
+            .disabled(!updater.canCheckForUpdates)
+            .accessibilityIdentifier("mac-menubar-check-for-updates-button")
+
+            Button {
+                coordinator.openMainStudioWindow()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "macwindow")
+                        .font(ChocType.caption)
+                    Text(L10n.tr("打开 Choclift 工作台", "Open Choclift Studio", language: lang))
+                        .font(ChocType.caption)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                }
+                .foregroundStyle(palette.accentForeground)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                .background(
+                    palette.accent,
+                    in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(PopoverButtonStyle())
+            .accessibilityIdentifier("mac-menubar-open-studio-button")
+        }
+    }
+
+    private struct PopoverButtonStyle: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+                .opacity(configuration.isPressed ? 0.85 : 1.0)
         }
     }
 }

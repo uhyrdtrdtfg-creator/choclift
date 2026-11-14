@@ -32,6 +32,7 @@ public final class MacServerEngine: ObservableObject {
     @Published public private(set) var bluetoothAvailability: CompanionBluetoothAvailability = .unknown
     @Published public private(set) var listeningPort: UInt16?
     @Published public private(set) var currentPIN: String
+    @Published public private(set) var hasActivePairingSession: Bool = false
     @Published public private(set) var pairedDevices: [PairedDeviceRecord]
     @Published public private(set) var localIPAddresses: [String] = []
     @Published public private(set) var lastErrorMessage: String?
@@ -81,6 +82,7 @@ public final class MacServerEngine: ObservableObject {
         var deviceName: String?
         var platform: DevicePlatform = .iPhone
         var isAuthenticated = false
+        var isAwaitingPIN = false
         var supportsControlStrip = false
         var supportsCompanionDashboard = false
         var supportsFrontmostWindowList = false
@@ -129,8 +131,17 @@ public final class MacServerEngine: ObservableObject {
         sessions.values.filter(\.isAuthenticated).count
     }
 
+    public var activePairingPIN: String? {
+        hasActivePairingSession ? currentPIN : nil
+    }
+
     public func regeneratePIN() {
-        currentPIN = Self.generateSixDigitPIN()
+        let previous = currentPIN
+        var candidate = Self.generateSixDigitPIN()
+        while candidate == previous {
+            candidate = Self.generateSixDigitPIN()
+        }
+        currentPIN = candidate
     }
 
     public func removePairedDevice(deviceID: String) {
@@ -139,6 +150,7 @@ public final class MacServerEngine: ObservableObject {
             session.cancelTransport()
             sessions.removeValue(forKey: sessionID)
         }
+        syncPairingState()
         delegate?.serverDidUpdatePairedDevices(pairedDevices)
     }
 
@@ -260,6 +272,7 @@ public final class MacServerEngine: ObservableObject {
         }
         sessions.removeAll()
         syncConnectedFlags()
+        syncPairingState()
     }
 
     private func ensureHeartbeatMonitorRunning() {
@@ -289,6 +302,10 @@ public final class MacServerEngine: ObservableObject {
             } else if session.isHTTPSession {
                 let allowedIdle = session.isAuthenticated ? httpTimeout : max(httpTimeout, pairingBLETimeout)
                 if now.timeIntervalSince(session.lastActivityAt) > allowedIdle {
+                    staleIDs.append(id)
+                }
+            } else if !session.isAuthenticated && session.isAwaitingPIN {
+                if now.timeIntervalSince(session.lastActivityAt) > pairingBLETimeout {
                     staleIDs.append(id)
                 }
             }
@@ -437,6 +454,7 @@ public final class MacServerEngine: ObservableObject {
         }
         removed.cancelTransport()
         syncConnectedFlags()
+        syncPairingState()
     }
 
     private func receiveNextChunk(sessionID: UUID) {
@@ -455,6 +473,7 @@ public final class MacServerEngine: ObservableObject {
                             activeSession.stream = nil
                             activeSession.cancelTransport = {}
                             self.sessions.removeValue(forKey: sessionID)
+                            self.syncPairingState()
                             self.startHTTPConnectionLoop(connection, initialBuffer: data)
                             return
                         }
@@ -811,6 +830,8 @@ public final class MacServerEngine: ObservableObject {
                 pairedDevices[index].lastSeenAt = Date()
                 completeAuthentication(for: session, record: pairedDevices[index])
             } else {
+                session.isAwaitingPIN = true
+                syncPairingState()
                 send(.pairingRequired(macID: macID, macName: macName), to: session)
             }
 
@@ -844,6 +865,9 @@ public final class MacServerEngine: ObservableObject {
             }
 
             completeAuthentication(for: session, record: record)
+            if !hasActivePairingSession {
+                regeneratePIN()
+            }
 
         case .ping(let timestamp):
             send(.pong(timestamp: timestamp), to: session)
@@ -868,6 +892,8 @@ public final class MacServerEngine: ObservableObject {
             guard session.isAuthenticated,
                   let deviceID = session.deviceID,
                   let record = pairedDevices.first(where: { $0.deviceID == deviceID }) else {
+                session.isAwaitingPIN = true
+                syncPairingState()
                 send(.pairingRequired(macID: macID, macName: macName), to: session)
                 return
             }
@@ -926,7 +952,9 @@ public final class MacServerEngine: ObservableObject {
         }
 
         session.isAuthenticated = true
+        session.isAwaitingPIN = false
         syncConnectedFlags()
+        syncPairingState()
         delegate?.serverDidUpdatePairedDevices(pairedDevices)
 
         guard let delegate else { return }
@@ -1014,6 +1042,13 @@ public final class MacServerEngine: ObservableObject {
         }
         if changed {
             delegate?.serverDidUpdatePairedDevices(pairedDevices)
+        }
+    }
+
+    private func syncPairingState() {
+        let active = sessions.values.contains { !$0.isAuthenticated && $0.isAwaitingPIN }
+        if hasActivePairingSession != active {
+            hasActivePairingSession = active
         }
     }
 
