@@ -2225,17 +2225,49 @@ public struct IOSNowPlayingPage: View {
                             .accessibilityLabel(L10n.tr("音量", "Volume", language: lang))
                             .accessibilityIdentifier("ios-player-volume")
                         }
+                        let isBrightnessDisabled = CompanionBrightnessControlPolicy.isSliderDisabled(
+                            isConnected: client.connectionState.isConnected,
+                            isBrightnessAvailable: state.isBrightnessAvailable
+                        )
                         VStack(alignment: .leading, spacing: 4) {
                             Label(L10n.tr("亮度", "Brightness", language: lang), systemImage: "sun.max")
                                 .font(ChocType.caption)
-                            Slider(value: Binding(get: { brightnessPreview ?? state.brightness }, set: { brightnessPreview = $0 }), in: 0...1, onEditingChanged: { editing in
+                                .foregroundStyle(isBrightnessDisabled ? palette.secondaryText : palette.primaryText)
+                            Slider(value: Binding(
+                                get: { isBrightnessDisabled ? state.brightness : (brightnessPreview ?? state.brightness) },
+                                set: { newValue in
+                                    guard !isBrightnessDisabled else { return }
+                                    brightnessPreview = newValue
+                                }
+                            ), in: 0...1, onEditingChanged: { editing in
+                                guard !isBrightnessDisabled else {
+                                    brightnessPreview = nil
+                                    return
+                                }
                                 if !editing, let level = brightnessPreview {
                                     client.setControlLevel(kind: .brightness, level: level)
                                     brightnessPreview = nil
                                 }
                             })
+                            .disabled(isBrightnessDisabled)
                             .accessibilityLabel(L10n.tr("亮度", "Brightness", language: lang))
                             .accessibilityIdentifier("ios-player-brightness")
+                            if let unavailableCaption = CompanionBrightnessControlPolicy.unavailableCaption(
+                                isConnected: client.connectionState.isConnected,
+                                isBrightnessAvailable: state.isBrightnessAvailable,
+                                language: lang
+                            ) {
+                                Text(unavailableCaption)
+                                    .font(ChocType.caption)
+                                    .foregroundStyle(palette.secondaryText)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .accessibilityIdentifier("ios-player-brightness-unavailable-caption")
+                            }
+                        }
+                        .onChange(of: isBrightnessDisabled) { _, disabled in
+                            if disabled {
+                                brightnessPreview = nil
+                            }
                         }
                         Button { showAudioOutputs = true } label: {
                             HStack(spacing: 12) {
@@ -2534,44 +2566,79 @@ public struct IOSPersistentControlStripView: View {
     // MARK: - Brightness (Drag to Set Main Display Brightness)
 
     private var brightnessControlCluster: some View {
-        let available = state.isBrightnessAvailable || !client.connectionState.isConnected
-        let pct = ControlStripLevel.percentage(for: effectiveBrightness)
+        let isDisabled = CompanionBrightnessControlPolicy.isSliderDisabled(
+            isConnected: client.connectionState.isConnected,
+            isBrightnessAvailable: state.isBrightnessAvailable
+        )
+        let available = !isDisabled
+        let displayedBrightness = isDisabled ? ControlStripLevel.clamp(state.brightness) : effectiveBrightness
+        let pct = ControlStripLevel.percentage(for: displayedBrightness)
+        let unavailableCaption = CompanionBrightnessControlPolicy.unavailableCaption(
+            isConnected: client.connectionState.isConnected,
+            isBrightnessAvailable: state.isBrightnessAvailable,
+            language: lang
+        )
 
-        return HStack(spacing: 6) {
-            Image(systemName: effectiveBrightness < 0.45 ? "sun.min.fill" : "sun.max.fill")
-                .font(ChocType.caption)
-                .foregroundStyle(available ? palette.accentEmphasis : palette.secondaryText)
-                .frame(width: 22, height: 34)
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: displayedBrightness < 0.45 ? "sun.min.fill" : "sun.max.fill")
+                    .font(ChocType.caption)
+                    .foregroundStyle(available ? palette.accentEmphasis : palette.secondaryText)
+                    .frame(width: 22, height: 34)
 
-            ControlStripDragSlider(
-                level: effectiveBrightness,
-                fillColor: available ? palette.accentEmphasis : palette.secondaryText.opacity(0.4),
-                palette: palette,
-                accessibilityLabel: L10n.tr("主显示器亮度", "Main Display Brightness", language: lang),
-                accessibilityIdentifier: "ios-strip-brightness-slider",
-                onDragChanged: { newLevel in
-                    brightnessDragLevel = newLevel
-                    let now = ProcessInfo.processInfo.systemUptime
-                    _ = brightnessThrottle.updateDrag(to: newLevel, at: now)
-                },
-                onDragEnded: { finalLevel in
-                    let now = ProcessInfo.processInfo.systemUptime
-                    let committed = brightnessThrottle.endDrag(at: finalLevel, at: now)
-                    client.setControlLevel(kind: .brightness, level: committed)
-                    brightnessDragLevel = nil
-                },
-                onAccessibilityStep: { stepped in
-                    client.setControlLevel(kind: .brightness, level: stepped)
-                }
-            )
+                ControlStripDragSlider(
+                    level: displayedBrightness,
+                    fillColor: available ? palette.accentEmphasis : palette.secondaryText.opacity(0.4),
+                    palette: palette,
+                    accessibilityLabel: L10n.tr("主显示器亮度", "Main Display Brightness", language: lang),
+                    accessibilityIdentifier: "ios-strip-brightness-slider",
+                    disabledAccessibilityValue: unavailableCaption,
+                    onDragChanged: { newLevel in
+                        guard !isDisabled else { return }
+                        brightnessDragLevel = newLevel
+                        let now = ProcessInfo.processInfo.systemUptime
+                        _ = brightnessThrottle.updateDrag(to: newLevel, at: now)
+                    },
+                    onDragEnded: { finalLevel in
+                        guard !isDisabled else {
+                            brightnessDragLevel = nil
+                            brightnessThrottle.reset()
+                            return
+                        }
+                        let now = ProcessInfo.processInfo.systemUptime
+                        let committed = brightnessThrottle.endDrag(at: finalLevel, at: now)
+                        client.setControlLevel(kind: .brightness, level: committed)
+                        brightnessDragLevel = nil
+                    },
+                    onAccessibilityStep: { stepped in
+                        guard !isDisabled else { return }
+                        client.setControlLevel(kind: .brightness, level: stepped)
+                    }
+                )
+                .disabled(isDisabled)
 
-            Text("\(pct)%")
-                .font(ChocType.micro)
-                .monospacedDigit()
-                .foregroundStyle(palette.secondaryText)
-                .frame(minWidth: 30, alignment: .trailing)
+                Text(available ? "\(pct)%" : "—")
+                    .font(ChocType.micro)
+                    .monospacedDigit()
+                    .foregroundStyle(palette.secondaryText)
+                    .frame(minWidth: 30, alignment: .trailing)
+            }
+            .opacity(available ? 1.0 : 0.5)
+
+            if let unavailableCaption {
+                Text(unavailableCaption)
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("ios-strip-brightness-unavailable-caption")
+            }
         }
-        .opacity(available ? 1.0 : 0.6)
+        .onChange(of: isDisabled) { _, disabled in
+            if disabled {
+                brightnessDragLevel = nil
+                brightnessThrottle.reset()
+            }
+        }
     }
 
     // MARK: - Now Playing (Title or App Name, Scrubbable Progress for Spotify/Music, Play/Pause, Next)
@@ -2832,11 +2899,14 @@ public struct IOSPersistentControlStripView: View {
 // MARK: - Tactile Throttled Drag Slider
 
 private struct ControlStripDragSlider: View {
+    @Environment(\.isEnabled) private var isEnabled
+
     let level: Double
     let fillColor: Color
     let palette: ChocPalette
     let accessibilityLabel: String
     let accessibilityIdentifier: String
+    var disabledAccessibilityValue: String? = nil
     let onDragChanged: (Double) -> Void
     let onDragEnded: (Double) -> Void
     let onAccessibilityStep: (Double) -> Void
@@ -2877,8 +2947,8 @@ private struct ControlStripDragSlider: View {
                         Circle()
                             .strokeBorder(fillColor, lineWidth: 2)
                     )
-                    .shadow(color: palette.primaryText.opacity(0.12), radius: 2, x: 0, y: 1)
-                    .scaleEffect(isDragging ? 1.14 : 1.0)
+                    .shadow(color: palette.primaryText.opacity(isEnabled ? 0.12 : 0.0), radius: 2, x: 0, y: 1)
+                    .scaleEffect(isEnabled && isDragging ? 1.14 : 1.0)
                     .animation(.easeOut(duration: 0.12), value: isDragging)
                     .offset(x: thumbX)
             }
@@ -2887,23 +2957,37 @@ private struct ControlStripDragSlider: View {
             .highPriorityGesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .updating($isDragging) { _, state, _ in
+                        guard isEnabled else { return }
                         state = true
                     }
                     .onChanged { value in
+                        guard isEnabled else { return }
                         let normalized = ControlStripLevel.clamp(Double(value.location.x / width))
                         activeDraggedLevel = normalized
                         onDragChanged(normalized)
                     }
                     .onEnded { value in
+                        guard isEnabled else {
+                            activeDraggedLevel = nil
+                            return
+                        }
                         let normalized = ControlStripLevel.clamp(Double(value.location.x / width))
                         activeDraggedLevel = nil
                         onDragEnded(normalized)
-                    }
+                    },
+                including: isEnabled ? .all : .none
             )
             .onChange(of: isDragging) { _, dragging in
                 if !dragging, let pending = activeDraggedLevel {
                     activeDraggedLevel = nil
-                    onDragEnded(pending)
+                    if isEnabled {
+                        onDragEnded(pending)
+                    }
+                }
+            }
+            .onChange(of: isEnabled) { _, enabled in
+                if !enabled {
+                    activeDraggedLevel = nil
                 }
             }
         }
@@ -2911,8 +2995,13 @@ private struct ControlStripDragSlider: View {
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier(accessibilityIdentifier)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue("\(ControlStripLevel.percentage(for: level))%")
+        .accessibilityValue(
+            isEnabled
+                ? "\(ControlStripLevel.percentage(for: level))%"
+                : (disabledAccessibilityValue ?? "\(ControlStripLevel.percentage(for: level))%")
+        )
         .accessibilityAdjustableAction { direction in
+            guard isEnabled else { return }
             switch direction {
             case .increment:
                 onAccessibilityStep(ControlStripLevel.clamp(level + 0.05))

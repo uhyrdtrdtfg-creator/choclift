@@ -250,3 +250,33 @@ public struct WindowMoveUndoBuffer<WindowID: Hashable & Sendable>: Equatable, Se
         lastEntry = nil
     }
 }
+
+// MARK: - Companion Display Brightness Availability Policy
+
+public enum CompanionBrightnessControlPolicy {
+    /// Returns `true` when the companion is connected to a Mac whose active display cannot be dimmed
+    /// through macOS system brightness (`isBrightnessAvailable == false`).
+    public static func isSliderDisabled(
+        isConnected: Bool,
+        isBrightnessAvailable: Bool
+    ) -> Bool {
+        isConnected && !isBrightnessAvailable
+    }
+
+    /// Explanatory caption shown when connected to a display that does not support system brightness,
+    /// or `nil` when the brightness slider is enabled.
+    public static func unavailableCaption(
+        isConnected: Bool,
+        isBrightnessAvailable: Bool,
+        language: AppLanguage = .system
+    ) -> String? {
+        guard isSliderDisabled(isConnected: isConnected, isBrightnessAvailable: isBrightnessAvailable) else {
+            return nil
+        }
+        return L10n.tr(
+            "当前显示器不支持系统亮度",
+            "This display does not support system brightness",
+            language: language
+        )
+    }
+}
