@@ -280,7 +280,14 @@ public final class MacServerEngine: ObservableObject {
         heartbeatMonitorTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 let interval = max(0.02, self?.heartbeatSweepIntervalSeconds ?? 2.0)
-                try? await Task.sleep(for: .seconds(interval))
+                // Structured cancellation must not escape into XCTest.
+                do {
+                    try await Task.sleep(for: .seconds(interval))
+                } catch is CancellationError {
+                    break
+                } catch {
+                    break
+                }
                 guard let self, !Task.isCancelled else { break }
                 self.sweepExpiredBluetoothSessions()
             }
@@ -701,7 +708,11 @@ public final class MacServerEngine: ObservableObject {
                 self.sendHTTPResponse(status: status, body: payload, keepAlive: req.keepAlive, on: connection, connID: connID, completion: completion)
             }
             session.pendingHTTPPollTimeoutTask = Task { @MainActor [weak self, weak session] in
-                try? await Task.sleep(for: .seconds(holdSeconds))
+                do {
+                    try await Task.sleep(for: .seconds(holdSeconds))
+                } catch {
+                    return
+                }
                 guard let self, !Task.isCancelled, let session, self.sessions[session.id] != nil else { return }
                 guard let responder = session.pendingHTTPPollResponder else { return }
                 session.pendingHTTPPollResponder = nil

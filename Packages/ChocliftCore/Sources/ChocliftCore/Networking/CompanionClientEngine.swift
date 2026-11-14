@@ -4172,7 +4172,11 @@ public final class CompanionClientEngine: ObservableObject {
         let token = banner.token
         let duration = max(0.05, tileFeedbackDurationSeconds)
         tileFeedbackExpiryTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(duration))
+            do {
+                try await Task.sleep(for: .seconds(duration))
+            } catch {
+                return
+            }
             guard let self, !Task.isCancelled else { return }
             if self.tileFeedbackTracker.expireFeedback(matchingToken: token) {
                 self.activeTileFeedback = nil

@@ -38,4 +38,4 @@ jobs:
           restore-keys: spm-${{ runner.os }}-
 
       - name: Run ChocliftCore tests
-        run: swift test --disable-sandbox --package-path Packages/ChocliftCore
+        run: swift test --disable-sandbox --package-path Packages/ChocliftCore --parallel --num-workers 1
