@@ -203,7 +203,10 @@ public final class MacNotchPanelController {
                     } else {
                         pointInWindow = event.locationInWindow
                     }
-                    self.presentation.pressedSlotIndex = MacNotchPanelView.hitTestSlotIndex(at: pointInWindow)
+                    self.presentation.pressedSlotIndex = NotchPanelLayout.hitTestSlotIndex(
+                        at: pointInWindow,
+                        slotFrames: self.presentation.slotFramesInWindow
+                    )
                 }
                 return event
             }
@@ -441,7 +444,10 @@ public final class MacNotchPanelController {
         guard !isCompletingClickDismissal else { return }
 
         let localPoint = CGPoint(x: globalPointer.x - frame.origin.x, y: globalPointer.y - frame.origin.y)
-        let hitSlot = MacNotchPanelView.hitTestSlotIndex(at: localPoint)
+        let hitSlot = NotchPanelLayout.hitTestSlotIndex(
+            at: localPoint,
+            slotFrames: presentation.slotFramesInWindow
+        )
         if presentation.hoveredSlotIndex != hitSlot {
             presentation.hoveredSlotIndex = hitSlot
         }
@@ -472,8 +478,15 @@ public final class MacNotchPanelController {
             onTriggerSlot: { [weak self] slotIndex, item in
                 self?.handleSlotTriggered(slotIndex: slotIndex, item: item)
             },
+            onTriggerTransport: { [weak self] action in
+                self?.handleTransportTriggered(action)
+            },
             onSlotPressChanged: { [weak self] slotIndex, isPressed in
                 self?.handleSlotPressChanged(slotIndex: slotIndex, isPressed: isPressed)
+            },
+            onSlotFramesChanged: { [weak self] in
+                guard let self, self.isPanelVisible else { return }
+                self.updateHoveredSlotHighlight(globalPointer: NSEvent.mouseLocation)
             },
             onOpenStudio: { [weak self] in
                 self?.openStudioWindow()
@@ -518,6 +531,7 @@ public final class MacNotchPanelController {
 
         panel.alphaValue = 0
         panel.setFrame(targetFrame, display: true)
+        hostingView?.layoutSubtreeIfNeeded()
         panel.orderFrontRegardless()
 
         NSAnimationContext.runAnimationGroup({ ctx in
@@ -609,9 +623,30 @@ public final class MacNotchPanelController {
         }
     }
 
+    private func handleTransportTriggered(_ action: SystemQuickAction) {
+        guard let coordinator, !isCompletingClickDismissal else { return }
+        let sourceName = L10n.tr("Mac 悬浮栏", "Mac Notch Bar", language: coordinator.lang)
+        _ = coordinator.performLocalQuickAction(action, triggeredBy: sourceName)
+        if isPanelVisible {
+            evaluateCurrentPointer()
+        }
+    }
+
     private func handleSlotTriggered(slotIndex: Int, item: BarItem?) {
         guard let coordinator, !isCompletingClickDismissal else { return }
         let sourceName = L10n.tr("Mac 悬浮栏", "Mac Notch Bar", language: coordinator.lang)
+
+        if let item,
+           NotchPanelLayout.keepsPanelOpenAfterSlotTrigger(item: item, in: coordinator.profile) {
+            presentation.pressedSlotIndex = nil
+            Task { @MainActor [weak self, weak coordinator] in
+                guard let coordinator else { return }
+                _ = await coordinator.triggerBarItem(item, triggeredBy: sourceName)
+                guard let self, self.isPanelVisible else { return }
+                self.evaluateCurrentPointer()
+            }
+            return
+        }
 
         isCompletingClickDismissal = true
         presentation.pressedSlotIndex = slotIndex
@@ -619,7 +654,14 @@ public final class MacNotchPanelController {
 
         let shouldOrderOutImmediately: Bool = {
             guard let item else { return false }
-            if case .systemAction(let action, _, _) = item.kind {
+            let concreteItem: BarItem
+            switch coordinator.profile.resolveBarItem(item) {
+            case .resolved(_, _, _, _, _, let resolved):
+                concreteItem = resolved
+            case .missing:
+                return false
+            }
+            if case .systemAction(let action, _, _) = concreteItem.kind {
                 switch action {
                 case .screenshotInteractive, .missionControl, .showDesktop, .lockScreen, .toggleFullscreen:
                     return true
