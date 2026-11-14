@@ -2544,55 +2544,107 @@ public struct IOSPersistentControlStripView: View {
         .opacity(available ? 1.0 : 0.6)
     }
 
-    // MARK: - Now Playing (Title or App Name, Play/Pause, Next, Quiet Empty State)
+    // MARK: - Now Playing (Title or App Name, Scrubbable Progress for Spotify/Music, Play/Pause, Next)
 
     private var nowPlayingCluster: some View {
         let activeMedia = state.nowPlaying
-        let rowContent = NowPlayingProgressFormatter.rowDisplayContent(for: activeMedia)
+        let isSeekable = client.connectionState.isConnected && (activeMedia?.isSeekable == true)
+        let isScrubbing = isSeekable && client.nowPlayingScrub.isScrubbing
+        let overrideElapsed = client.nowPlayingScrub.effectiveElapsedSeconds(for: activeMedia)
+        let rowContent = NowPlayingProgressFormatter.rowDisplayContent(
+            for: activeMedia,
+            overrideElapsedSeconds: overrideElapsed
+        )
         let primaryText = rowContent?.title
         let progressText = rowContent?.progressText
+        let progressFraction = isSeekable ? client.nowPlayingScrub.effectiveProgressFraction(for: activeMedia) : nil
         let isPlaying = activeMedia?.isPlaying ?? false
 
         return HStack(spacing: 6) {
-            HStack(spacing: 5) {
-                Image(systemName: primaryText != nil ? "music.note" : "waveform")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(primaryText != nil ? palette.accent : palette.secondaryText.opacity(0.65))
-
-                if let primaryText {
-                    Text(primaryText)
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(palette.primaryText)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                } else {
-                    Text(L10n.tr("未在播放", "Not Playing", language: lang))
-                        .font(.system(size: 11.5, weight: .medium, design: .rounded))
-                        .foregroundStyle(palette.secondaryText.opacity(0.8))
-                        .lineLimit(1)
+            ChocNowPlayingScrubSurface(
+                isSeekable: isSeekable,
+                minimumHitHeight: 44,
+                horizontalInset: 8,
+                onScrubChanged: { fraction in
+                    _ = client.updateNowPlayingScrub(normalizedProgress: fraction)
+                },
+                onScrubEnded: { fraction in
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    _ = client.commitNowPlayingScrub(normalizedProgress: fraction)
+                },
+                onScrubCancelled: {
+                    client.cancelNowPlayingScrub()
                 }
+            ) {
+                VStack(alignment: .leading, spacing: progressFraction != nil ? 4 : 0) {
+                    HStack(spacing: 5) {
+                        Image(systemName: primaryText != nil ? "music.note" : "waveform")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(primaryText != nil ? palette.accent : palette.secondaryText.opacity(0.65))
 
-                Spacer(minLength: 4)
+                        if let primaryText {
+                            Text(primaryText)
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                                .foregroundStyle(palette.primaryText)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        } else {
+                            Text(L10n.tr("未在播放", "Not Playing", language: lang))
+                                .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                                .foregroundStyle(palette.secondaryText.opacity(0.8))
+                                .lineLimit(1)
+                        }
 
-                if primaryText != nil, let progressText {
-                    Text(progressText)
-                        .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(palette.secondaryText)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .accessibilityIdentifier("ios-strip-now-playing-progress")
+                        Spacer(minLength: 4)
+
+                        if primaryText != nil, let progressText {
+                            Text(progressText)
+                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(isScrubbing ? palette.accent : palette.secondaryText)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .accessibilityIdentifier("ios-strip-now-playing-progress")
+                        }
+                    }
+
+                    if let progressFraction {
+                        ChocNowPlayingProgressTrack(
+                            progressFraction: progressFraction,
+                            palette: palette,
+                            isScrubbing: isScrubbing,
+                            compact: false
+                        )
+                    }
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .background(
+                    palette.tileFillBottom.opacity(isScrubbing ? 0.96 : 0.75),
+                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(
+                            isScrubbing ? palette.accent : palette.subtleCardStroke,
+                            lineWidth: isScrubbing ? 1.5 : 1
+                        )
+                )
             }
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity, minHeight: 34)
-            .background(palette.tileFillBottom.opacity(0.75), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
-            )
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("ios-strip-now-playing-label")
+            .accessibilityAdjustableAction { direction in
+                guard isSeekable,
+                      let media = activeMedia,
+                      let duration = media.durationSeconds,
+                      duration > 0 else {
+                    return
+                }
+                let current = media.elapsedSeconds ?? 0.0
+                let delta = (direction == .increment) ? 5.0 : -5.0
+                _ = client.commitNowPlayingScrub(atPositionSeconds: current + delta)
+            }
 
             let isPlayPressed = (pressedKey == "playPause")
             Button {
@@ -2603,19 +2655,19 @@ public struct IOSPersistentControlStripView: View {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.primaryText)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 38, height: 44)
                     .background(
                         isPlayPressed ? palette.tileFillBottom : palette.tileFillTop,
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
                             .strokeBorder(
                                 isPlayPressed ? palette.accent : palette.subtleCardStroke,
                                 lineWidth: isPlayPressed ? 1.8 : 1
                             )
                     )
-                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                     .scaleEffect(isPlayPressed ? 0.92 : 1.0)
             }
             .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: "playPause"))
@@ -2635,19 +2687,19 @@ public struct IOSPersistentControlStripView: View {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 12.5, weight: .bold))
                     .foregroundStyle(palette.primaryText)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 38, height: 44)
                     .background(
                         isNextPressed ? palette.tileFillBottom : palette.tileFillTop,
-                        in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
                             .strokeBorder(
                                 isNextPressed ? palette.accent : palette.subtleCardStroke,
                                 lineWidth: isNextPressed ? 1.8 : 1
                             )
                     )
-                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
                     .scaleEffect(isNextPressed ? 0.92 : 1.0)
             }
             .buttonStyle(

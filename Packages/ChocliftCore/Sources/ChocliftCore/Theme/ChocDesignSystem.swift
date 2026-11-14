@@ -1359,3 +1359,191 @@ public struct MaxWidthPillTitleLayout: Layout {
         )
     }
 }
+
+// MARK: - Bright Palette Now-Playing Scrub Track & Local Gesture Surface
+
+/// Draggable bright-palette playback progress bar rendered ONLY when `NowPlayingStatus.isSeekable` is true.
+public struct ChocNowPlayingProgressTrack: View {
+    public let progressFraction: Double
+    public let palette: ChocPalette
+    public var isScrubbing: Bool
+    public var compact: Bool
+
+    public init(
+        progressFraction: Double,
+        palette: ChocPalette,
+        isScrubbing: Bool = false,
+        compact: Bool = false
+    ) {
+        self.progressFraction = ControlStripLevel.clamp(progressFraction)
+        self.palette = palette
+        self.isScrubbing = isScrubbing
+        self.compact = compact
+    }
+
+    public var body: some View {
+        let railHeight: CGFloat = compact ? (isScrubbing ? 5 : 3.5) : (isScrubbing ? 6 : 4)
+        let thumbDiameter: CGFloat = compact ? (isScrubbing ? 9.5 : 7) : (isScrubbing ? 11 : 8)
+
+        GeometryReader { geo in
+            let width = max(thumbDiameter, geo.size.width)
+            let clamped = ControlStripLevel.clamp(progressFraction)
+            let fillWidth = max(railHeight, width * CGFloat(clamped))
+            let thumbTravel = max(0, width - thumbDiameter)
+            let thumbX = thumbTravel * CGFloat(clamped)
+
+            ZStack(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(palette.tileBorderHighlight.opacity(0.72))
+                    .frame(height: railHeight)
+
+                Capsule(style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                palette.accent,
+                                palette.accentEmphasis.opacity(isScrubbing ? 0.95 : 0.78)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: min(width, fillWidth), height: railHeight)
+
+                Circle()
+                    .fill(palette.barSurface)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(isScrubbing ? palette.accentEmphasis : palette.accent, lineWidth: compact ? 1.6 : 2.0)
+                    )
+                    .frame(width: thumbDiameter, height: thumbDiameter)
+                    .offset(x: thumbX)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+        .frame(height: compact ? 10 : 12)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct ChocScrubWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 1
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(1, nextValue())
+    }
+}
+
+/// Local (non-fullscreen) touch/pointer scrub wrapper with at least a 44pt hit height by default,
+/// claiming horizontal one-finger drags locally via `.highPriorityGesture` so parent page-swipe gestures
+/// never steal progress scrubbing, and committing at most one seek when the finger lifts.
+public struct ChocNowPlayingScrubSurface<Content: View>: View {
+    public let isSeekable: Bool
+    public let minimumHitHeight: CGFloat
+    public let horizontalInset: CGFloat
+    public let onScrubChanged: (Double) -> Void
+    public let onScrubEnded: (Double) -> Void
+    public let onScrubCancelled: () -> Void
+    private let content: Content
+
+    @GestureState private var isFingerDown: Bool = false
+    @State private var measuredWidth: CGFloat = 180
+    @State private var activeDragFraction: Double?
+
+    public init(
+        isSeekable: Bool,
+        minimumHitHeight: CGFloat = 44,
+        horizontalInset: CGFloat = 10,
+        onScrubChanged: @escaping (Double) -> Void,
+        onScrubEnded: @escaping (Double) -> Void,
+        onScrubCancelled: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.isSeekable = isSeekable
+        self.minimumHitHeight = max(32, minimumHitHeight)
+        self.horizontalInset = max(0, horizontalInset)
+        self.onScrubChanged = onScrubChanged
+        self.onScrubEnded = onScrubEnded
+        self.onScrubCancelled = onScrubCancelled
+        self.content = content()
+    }
+
+    public var body: some View {
+        let base = content
+            .frame(minHeight: minimumHitHeight)
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: ChocScrubWidthPreferenceKey.self, value: max(1, proxy.size.width))
+                }
+            )
+            .onPreferenceChange(ChocScrubWidthPreferenceKey.self) { newWidth in
+                measuredWidth = max(1, newWidth)
+            }
+            .contentShape(Rectangle())
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .updating($isFingerDown) { _, state, _ in
+                        state = true
+                    }
+                    .onChanged { value in
+                        guard isSeekable else { return }
+                        let fraction = normalizedFraction(forLocalX: value.location.x)
+                        activeDragFraction = fraction
+                        onScrubChanged(fraction)
+                    }
+                    .onEnded { value in
+                        guard isSeekable else {
+                            activeDragFraction = nil
+                            return
+                        }
+                        guard activeDragFraction != nil else { return }
+                        let fraction = normalizedFraction(forLocalX: value.location.x)
+                        activeDragFraction = nil
+                        onScrubEnded(fraction)
+                    }
+            )
+            .onDisappear {
+                if activeDragFraction != nil {
+                    activeDragFraction = nil
+                    onScrubCancelled()
+                }
+            }
+
+        #if os(macOS)
+        base.onChange(of: isFingerDown) { fingerDown in
+            handleFingerDownChanged(fingerDown)
+        }
+        .onChange(of: isSeekable) { seekable in
+            if !seekable, activeDragFraction != nil {
+                activeDragFraction = nil
+                onScrubCancelled()
+            }
+        }
+        #else
+        base.onChange(of: isFingerDown) { _, fingerDown in
+            handleFingerDownChanged(fingerDown)
+        }
+        .onChange(of: isSeekable) { _, seekable in
+            if !seekable, activeDragFraction != nil {
+                activeDragFraction = nil
+                onScrubCancelled()
+            }
+        }
+        #endif
+    }
+
+    private func normalizedFraction(forLocalX x: CGFloat) -> Double {
+        let usableWidth = max(1, measuredWidth - horizontalInset * 2)
+        let shifted = x - horizontalInset
+        return ControlStripLevel.clamp(Double(shifted / usableWidth))
+    }
+
+    private func handleFingerDownChanged(_ fingerDown: Bool) {
+        guard !fingerDown else { return }
+        DispatchQueue.main.async {
+            if activeDragFraction != nil {
+                activeDragFraction = nil
+                onScrubCancelled()
+            }
+        }
+    }
+}

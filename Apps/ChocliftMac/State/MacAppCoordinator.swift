@@ -89,6 +89,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     @Published public private(set) var connectedDisplays: [MacDisplayInfo] = []
     @Published public private(set) var selectedTargetDisplayID: UInt32?
     @Published public private(set) var controlStripState: ControlStripState = ControlStripState()
+    @Published public private(set) var nowPlayingScrub = NowPlayingScrubController()
     @Published public private(set) var lastAudioOutputError: String?
     @Published public private(set) var clipboardPreview: ClipboardPreviewSnapshot = .empty
     @Published public private(set) var calendarSnapshot: NextCalendarEventSnapshot = .initial
@@ -246,6 +247,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         inputService.mediaTransportContextProvider = { [weak self] in
             self?.systemControlService.currentMediaTransportContext() ?? MacMediaTransportContext()
         }
+        inputService.mediaSeekContextProvider = { [weak self] in
+            self?.systemControlService.currentMediaSeekContext() ?? MacMediaSeekContext()
+        }
 
         keepAwakeService.onAssertionStateChanged = { [weak self] isHolding in
             guard let self else { return }
@@ -283,6 +287,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         systemControlService.onStateChanged = { [weak self] state in
             guard let self else { return }
             self.controlStripState = state
+            self.nowPlayingScrub.reconcile(with: state.nowPlaying)
             self.server.broadcastControlStripState(state)
         }
         systemControlService.start()
@@ -1121,6 +1126,79 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         }
     }
 
+    @discardableResult
+    public func performLocalQuickAction(
+        _ action: SystemQuickAction,
+        triggeredBy deviceName: String = "Mac Studio"
+    ) -> (success: Bool, message: String) {
+        let res = inputService.executeSystemAction(action, preferredPID: timeTravel.lastExternalAppPID)
+        scheduleControlStripRefreshIfRelevant(for: action)
+        recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
+        return res
+    }
+
+    // MARK: - Playback Scrubbing (Mac Studio + Companion Seek Handler)
+
+    @discardableResult
+    public func updateNowPlayingScrub(normalizedProgress: Double) -> Double? {
+        nowPlayingScrub.updateDrag(
+            normalizedProgress: normalizedProgress,
+            for: controlStripState.nowPlaying
+        )
+    }
+
+    public func cancelNowPlayingScrub() {
+        guard nowPlayingScrub.isScrubbing || nowPlayingScrub.previewPositionSeconds != nil else { return }
+        nowPlayingScrub.cancel()
+    }
+
+    @discardableResult
+    public func commitNowPlayingScrub(normalizedProgress: Double) -> Double? {
+        guard let targetSeconds = nowPlayingScrub.endDrag(
+            normalizedProgress: normalizedProgress,
+            for: controlStripState.nowPlaying
+        ) else {
+            return nil
+        }
+        let res = seekNowPlaying(to: targetSeconds, triggeredBy: "Mac Studio", originDeviceID: nil)
+        return res.appliedPositionSeconds
+    }
+
+    @discardableResult
+    public func commitNowPlayingScrub(atPositionSeconds rawSeconds: Double) -> Double? {
+        guard let targetSeconds = nowPlayingScrub.endDrag(
+            atPositionSeconds: rawSeconds,
+            for: controlStripState.nowPlaying
+        ) else {
+            return nil
+        }
+        let res = seekNowPlaying(to: targetSeconds, triggeredBy: "Mac Studio", originDeviceID: nil)
+        return res.appliedPositionSeconds
+    }
+
+    @discardableResult
+    public func seekNowPlaying(
+        to requestedPositionSeconds: Double,
+        triggeredBy deviceName: String = "Mac Studio",
+        originDeviceID: String? = nil
+    ) -> (success: Bool, appliedPositionSeconds: Double?, message: String) {
+        let res = inputService.seekNowPlaying(to: requestedPositionSeconds, language: lang)
+        if res.success, let applied = res.appliedPositionSeconds {
+            systemControlService.recordAppliedSeek(positionSeconds: applied)
+            controlStripState = systemControlService.currentState
+            nowPlayingScrub.reconcile(with: controlStripState.nowPlaying)
+            server.broadcastControlStripState(
+                systemControlService.currentState,
+                excludingDeviceID: originDeviceID
+            )
+        } else {
+            controlStripState = systemControlService.currentState
+            nowPlayingScrub.reconcile(with: controlStripState.nowPlaying)
+        }
+        recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
+        return res
+    }
+
     private func recordActivity(deviceName: String, summary: String, isSuccess: Bool) {
         let event = MacActivityEvent(deviceName: deviceName, summary: summary, isSuccess: isSuccess)
         activityLog.insert(event, at: 0)
@@ -1563,6 +1641,21 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             )
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: key.title(in: lang), detail: res.message))
+
+        case .seekNowPlaying(let positionSeconds):
+            let res = seekNowPlaying(
+                to: positionSeconds,
+                triggeredBy: device.deviceName,
+                originDeviceID: device.deviceID
+            )
+            reply(.controlStripStateUpdated(systemControlService.currentState))
+            if !res.success {
+                reply(.actionFeedback(
+                    success: false,
+                    title: L10n.tr("播放进度", "Playback Position", language: lang),
+                    detail: res.message
+                ))
+            }
 
         case .updateProfile(let updatedProfile):
             let safeProfile = sanitizeCompanionProfileUpdate(updatedProfile)

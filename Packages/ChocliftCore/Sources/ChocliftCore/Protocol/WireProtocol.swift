@@ -53,6 +53,7 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case ejectExternalDisks
     case lockMacScreen
     case hideOtherApplications
+    case seekNowPlaying(positionSeconds: Double)
     case unknownClientMessage
 }
 

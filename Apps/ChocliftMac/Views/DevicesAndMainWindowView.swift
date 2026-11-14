@@ -390,6 +390,7 @@ public struct DevicesAndSettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 MacStudioSystemStatusRow(coordinator: coordinator)
+                MacStudioNowPlayingRow(coordinator: coordinator, compact: false)
                 HStack(alignment: .top, spacing: 20) {
                     // Left Column: Permissions + Devices + Preferences
                     VStack(alignment: .leading, spacing: 16) {
@@ -1143,6 +1144,12 @@ public struct MacMainWindowView: View {
 
             Spacer(minLength: 8)
 
+            if coordinator.controlStripState.nowPlaying != nil,
+               coordinator.selectedSection != .devicesAndSettings {
+                MacStudioNowPlayingRow(coordinator: coordinator, compact: true)
+                    .frame(maxWidth: 360)
+            }
+
             if !coordinator.isAccessibilityGranted {
                 Button {
                     coordinator.requestAccessibilityPermission()
@@ -1311,6 +1318,10 @@ public struct MacMenuBarPopoverView: View {
             .toggleStyle(.switch)
             .controlSize(.small)
 
+            if coordinator.controlStripState.nowPlaying != nil {
+                MacStudioNowPlayingRow(coordinator: coordinator, compact: true)
+            }
+
             MacStudioAudioOutputMenu(
                 coordinator: coordinator,
                 triggeredBy: L10n.tr("菜单栏", "Menu Bar", language: lang)
@@ -1453,5 +1464,164 @@ private struct MacStudioSystemStatusRow: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+public struct MacStudioNowPlayingRow: View {
+    @ObservedObject var coordinator: MacAppCoordinator
+    let compact: Bool
+
+    private var lang: AppLanguage { coordinator.lang }
+    private var palette: ChocPalette { coordinator.palette }
+
+    public init(coordinator: MacAppCoordinator, compact: Bool = false) {
+        self.coordinator = coordinator
+        self.compact = compact
+    }
+
+    public var body: some View {
+        let activeMedia = coordinator.controlStripState.nowPlaying
+        let isSeekable = (activeMedia?.isSeekable == true)
+        let isScrubbing = isSeekable && coordinator.nowPlayingScrub.isScrubbing
+        let overrideElapsed = coordinator.nowPlayingScrub.effectiveElapsedSeconds(for: activeMedia)
+        let rowContent = NowPlayingProgressFormatter.rowDisplayContent(
+            for: activeMedia,
+            overrideElapsedSeconds: overrideElapsed
+        )
+        let primaryText = rowContent?.title
+        let progressText = rowContent?.progressText
+        let progressFraction = isSeekable ? coordinator.nowPlayingScrub.effectiveProgressFraction(for: activeMedia) : nil
+        let isPlaying = activeMedia?.isPlaying ?? false
+
+        HStack(spacing: compact ? 6 : 10) {
+            ChocNowPlayingScrubSurface(
+                isSeekable: isSeekable,
+                minimumHitHeight: compact ? 38 : 44,
+                horizontalInset: compact ? 8 : 10,
+                onScrubChanged: { fraction in
+                    _ = coordinator.updateNowPlayingScrub(normalizedProgress: fraction)
+                },
+                onScrubEnded: { fraction in
+                    _ = coordinator.commitNowPlayingScrub(normalizedProgress: fraction)
+                },
+                onScrubCancelled: {
+                    coordinator.cancelNowPlayingScrub()
+                }
+            ) {
+                VStack(alignment: .leading, spacing: progressFraction != nil ? 4 : 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: primaryText != nil ? "music.note" : "waveform")
+                            .font(.system(size: compact ? 10.5 : 12, weight: .bold))
+                            .foregroundStyle(primaryText != nil ? palette.accent : palette.secondaryText.opacity(0.7))
+
+                        if let primaryText {
+                            Text(primaryText)
+                                .font(.system(size: compact ? 11.5 : 12.5, weight: .bold, design: .rounded))
+                                .foregroundStyle(palette.primaryText)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            if !compact, let subtitle = activeMedia?.secondaryDisplayText {
+                                Text("· \(subtitle)")
+                                    .font(.system(size: 11.5, weight: .medium, design: .rounded))
+                                    .foregroundStyle(palette.secondaryText)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                        } else {
+                            Text(L10n.tr("未在播放", "Not Playing", language: lang))
+                                .font(.system(size: compact ? 11 : 12, weight: .medium, design: .rounded))
+                                .foregroundStyle(palette.secondaryText)
+                                .lineLimit(1)
+                        }
+
+                        Spacer(minLength: 4)
+
+                        if primaryText != nil, let progressText {
+                            Text(progressText)
+                                .font(.system(size: compact ? 10 : 11, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                                .foregroundStyle(isScrubbing ? palette.accent : palette.secondaryText)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .accessibilityIdentifier("mac-studio-now-playing-progress")
+                        }
+                    }
+
+                    if let progressFraction {
+                        ChocNowPlayingProgressTrack(
+                            progressFraction: progressFraction,
+                            palette: palette,
+                            isScrubbing: isScrubbing,
+                            compact: compact
+                        )
+                    }
+                }
+                .padding(.horizontal, compact ? 9 : 12)
+                .padding(.vertical, compact ? 5 : 6)
+                .frame(maxWidth: .infinity, minHeight: compact ? 38 : 44, alignment: .leading)
+                .background(
+                    palette.tileFillBottom.opacity(isScrubbing ? 0.96 : 0.78),
+                    in: RoundedRectangle(cornerRadius: compact ? 10 : 12, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: compact ? 10 : 12, style: .continuous)
+                        .strokeBorder(
+                            isScrubbing ? palette.accent : palette.subtleCardStroke,
+                            lineWidth: isScrubbing ? 1.5 : 1
+                        )
+                )
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("mac-studio-now-playing-label")
+
+            HStack(spacing: 4) {
+                macTransportButton(
+                    symbol: "backward.fill",
+                    label: L10n.tr("上一曲", "Previous Track", language: lang),
+                    action: .mediaPrevious
+                )
+                macTransportButton(
+                    symbol: isPlaying ? "pause.fill" : "play.fill",
+                    label: L10n.tr("播放或暂停", "Play or Pause", language: lang),
+                    action: .mediaPlayPause
+                )
+                macTransportButton(
+                    symbol: "forward.fill",
+                    label: L10n.tr("下一曲", "Next Track", language: lang),
+                    action: .mediaNext
+                )
+            }
+        }
+        .padding(compact ? 4 : 10)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: compact ? 12 : 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: compact ? 12 : 14, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
+        .accessibilityIdentifier("mac-studio-now-playing-row")
+    }
+
+    private func macTransportButton(
+        symbol: String,
+        label: String,
+        action: SystemQuickAction
+    ) -> some View {
+        Button {
+            _ = coordinator.performLocalQuickAction(action, triggeredBy: "Mac Studio")
+        } label: {
+            Image(systemName: symbol)
+                .font(.system(size: compact ? 10.5 : 11.5, weight: .bold))
+                .foregroundStyle(palette.primaryText)
+                .frame(width: compact ? 28 : 32, height: compact ? 28 : 32)
+                .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
     }
 }

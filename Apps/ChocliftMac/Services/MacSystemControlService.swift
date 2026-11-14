@@ -151,6 +151,18 @@ public final class MacSystemControlService {
         }
     }
 
+    private func schedulePostSeekRefresh() {
+        postActionRefreshTask?.cancel()
+        postActionRefreshTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(240))
+            guard let self, !Task.isCancelled else { return }
+            self.refreshNow()
+            try? await Task.sleep(for: .milliseconds(360))
+            guard !Task.isCancelled else { return }
+            self.refreshNow()
+        }
+    }
+
     @discardableResult
     private func applyRefreshedSnapshot() -> ControlStripState {
         let resolvedNowPlaying = resolveBestNowPlaying()
@@ -1705,7 +1717,8 @@ public final class MacSystemControlService {
                 appName: appName,
                 isPlaying: playing,
                 elapsedSeconds: elapsedSeconds,
-                durationSeconds: durationSeconds
+                durationSeconds: durationSeconds,
+                bundleIdentifier: bundleID
             )
             if status.hasActiveMedia {
                 distributedTracks[bundleID] = CachedDistributedTrack(
@@ -1739,6 +1752,20 @@ public final class MacSystemControlService {
         }
     }
 
+    private func resolvedDistributedStatus(_ entry: CachedDistributedTrack, now: Date = Date()) -> NowPlayingStatus {
+        guard entry.status.isPlaying,
+              let baseElapsed = entry.status.elapsedSeconds,
+              let duration = entry.status.durationSeconds,
+              duration > 0 else {
+            return entry.status
+        }
+        let delta = max(0.0, now.timeIntervalSince(entry.updatedAt))
+        let advanced = min(duration, max(0.0, baseElapsed + delta)).rounded(.down)
+        var copy = entry.status
+        copy.elapsedSeconds = advanced
+        return copy
+    }
+
     private func resolveBestNowPlaying() -> NowPlayingStatus? {
         pruneTerminatedNowPlayingSessions()
 
@@ -1750,18 +1777,19 @@ public final class MacSystemControlService {
         // 2. Actively playing Music / Spotify session from DistributedNotificationCenter
         let sortedDistributed = distributedTracks.values.sorted { $0.updatedAt > $1.updatedAt }
         if let playingDist = sortedDistributed.first(where: { $0.status.isPlaying && $0.status.hasActiveMedia }) {
-            return playingDist.status
+            return resolvedDistributedStatus(playingDist)
         }
 
         // 3. CoreAudio active audio-output process fallback (gives exact app name when MediaRemote metadata is restricted)
         let outDevice = Self.defaultAudioDevice(isInput: false)
         if Self.isDeviceRunningAudio(deviceID: outDevice),
-           let activeAudioAppName = Self.findActiveAudioOutputAppName() {
+           let activeAudioApp = Self.findActiveAudioOutputApp() {
             return NowPlayingStatus(
                 title: nil,
                 artist: nil,
-                appName: activeAudioAppName,
-                isPlaying: true
+                appName: activeAudioApp.name,
+                isPlaying: true,
+                bundleIdentifier: activeAudioApp.bundleID
             )
         }
 
@@ -1770,10 +1798,62 @@ public final class MacSystemControlService {
             return mr
         }
         if let pausedDist = sortedDistributed.first(where: { $0.status.hasActiveMedia }) {
-            return pausedDist.status
+            return resolvedDistributedStatus(pausedDist)
         }
 
         return nil
+    }
+
+    /// Computes live Now Playing session context for `MacMediaSeekRouter` when scrubbing playback position.
+    public func currentMediaSeekContext() -> MacMediaSeekContext {
+        let resolved = resolveBestNowPlaying() ?? currentState.nowPlaying
+        let spotifyRunning = NSRunningApplication.runningApplications(
+            withBundleIdentifier: MacMediaSeekRouter.spotifyBundleIdentifier
+        ).contains(where: { !$0.isTerminated })
+        let musicRunning = NSRunningApplication.runningApplications(
+            withBundleIdentifier: MacMediaSeekRouter.musicBundleIdentifier
+        ).contains(where: { !$0.isTerminated })
+
+        return MacMediaSeekContext(
+            nowPlayingBundleID: resolved?.bundleIdentifier,
+            durationSeconds: resolved?.durationSeconds,
+            isSpotifyRunning: spotifyRunning,
+            isMusicRunning: musicRunning
+        )
+    }
+
+    /// Immediately updates cached Now Playing elapsed time after a verified background seek and schedules
+    /// post-action refreshes so Mac Studio and all companions converge on the player's authoritative position.
+    public func recordAppliedSeek(positionSeconds: Double) {
+        let now = Date()
+        if var mr = latestMediaRemoteStatus, let duration = mr.durationSeconds, duration > 0 {
+            mr.elapsedSeconds = MacMediaSeekRouter.clampPosition(positionSeconds, durationSeconds: duration).rounded(.down)
+            latestMediaRemoteStatus = mr
+        }
+        if let activeBundle = (resolveBestNowPlaying() ?? currentState.nowPlaying)?.bundleIdentifier {
+            for (key, cached) in distributedTracks where key.caseInsensitiveCompare(activeBundle) == .orderedSame {
+                if let duration = cached.status.durationSeconds, duration > 0 {
+                    var updatedStatus = cached.status
+                    updatedStatus.elapsedSeconds = MacMediaSeekRouter.clampPosition(positionSeconds, durationSeconds: duration).rounded(.down)
+                    distributedTracks[key] = CachedDistributedTrack(
+                        bundleIdentifier: cached.bundleIdentifier,
+                        status: updatedStatus,
+                        updatedAt: now
+                    )
+                }
+            }
+        }
+        if var np = currentState.nowPlaying, let duration = np.durationSeconds, duration > 0 {
+            np.elapsedSeconds = MacMediaSeekRouter.clampPosition(positionSeconds, durationSeconds: duration).rounded(.down)
+            var next = currentState
+            next.nowPlaying = np
+            let changed = next.hasMeaningfulDifference(from: currentState)
+            currentState = next
+            if changed {
+                onStateChanged?(next)
+            }
+        }
+        schedulePostSeekRefresh()
     }
 
     /// Computes live playback & app context for `MacMediaTransportRouter` when the user triggers Play/Pause/Next/Previous.
@@ -1851,12 +1931,12 @@ public final class MacSystemControlService {
         "com.apple.accessibility.heard"
     ]
 
-    private static func findActiveAudioOutputAppName() -> String? {
+    private static func findActiveAudioOutputApp() -> ActiveAudioOutputApp? {
         let apps = findActiveAudioOutputApps()
         if let regular = apps.first(where: \.isRegularApp) {
-            return regular.name
+            return regular
         }
-        return apps.first?.name
+        return apps.first
     }
 
     private static func findActiveAudioOutputApps() -> [ActiveAudioOutputApp] {
@@ -2737,7 +2817,8 @@ private final class MediaRemoteBridge {
                             appName: appName,
                             isPlaying: isPlaying,
                             elapsedSeconds: timing.elapsedSeconds,
-                            durationSeconds: timing.durationSeconds
+                            durationSeconds: timing.durationSeconds,
+                            bundleIdentifier: bundleID
                         )
                         let activeStatus = status.hasActiveMedia ? status : nil
                         Task { @MainActor in

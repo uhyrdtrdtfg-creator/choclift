@@ -884,7 +884,8 @@ public final class MacServerEngine: ObservableObject {
                  .emptyMacTrash,
                  .ejectExternalDisks,
                  .lockMacScreen,
-                 .hideOtherApplications:
+                 .hideOtherApplications,
+                 .seekNowPlaying:
                 session.supportsControlStrip = true
             case .requestCompanionDashboard, .pasteMacClipboard, .captureMainDisplayScreenshot, .openCalendarApp:
                 session.supportsCompanionDashboard = true
