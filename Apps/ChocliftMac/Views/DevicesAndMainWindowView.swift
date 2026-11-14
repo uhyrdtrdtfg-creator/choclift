@@ -1654,6 +1654,8 @@ private struct MacSoftwareUpdatesCard: View {
                         .lineLimit(1)
                 }
             }
+
+            updateStatusBanner
         }
         .padding(16)
         .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -1661,5 +1663,79 @@ private struct MacSoftwareUpdatesCard: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
         )
+    }
+
+    @ViewBuilder
+    private var updateStatusBanner: some View {
+        switch updater.checkState {
+        case .idle:
+            EmptyView()
+        case .checking:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text(updater.checkState.checkingTitle(in: lang))
+                    .font(ChocType.caption)
+                    .foregroundStyle(palette.secondaryText)
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("mac-update-check-status")
+        case .completed(let result, let checkedAt):
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: result.sfSymbol)
+                    .font(ChocType.caption)
+                    .foregroundStyle(statusToneColor(for: result))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(result.title(in: lang))
+                            .font(ChocType.caption)
+                            .foregroundStyle(result.isFailure ? palette.statusFailure : palette.primaryText)
+
+                        Spacer(minLength: 4)
+
+                        Text(checkedAt.formatted(.dateTime.hour().minute()))
+                            .font(ChocType.micro.monospacedDigit())
+                            .foregroundStyle(palette.secondaryText)
+                    }
+
+                    if let detail = result.detailText(in: lang) {
+                        Text(detail)
+                            .font(ChocType.micro)
+                            .foregroundStyle(palette.secondaryText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(10)
+            .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(
+                        result.isFailure ? palette.statusFailure.opacity(0.35) : palette.subtleCardStroke,
+                        lineWidth: 1
+                    )
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("mac-update-check-status")
+        }
+    }
+
+    private func statusToneColor(for result: MacUpdateCheckResult) -> Color {
+        switch result {
+        case .updateFound:
+            return palette.accent
+        case .alreadyCurrent:
+            return palette.statusConnected
+        case .feedUnreachable, .signatureMismatch, .checkFailed:
+            return palette.statusFailure
+        }
     }
 }

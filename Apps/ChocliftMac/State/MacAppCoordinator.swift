@@ -246,6 +246,10 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             self?.timeTravel.frontmostAppName
         }
 
+        updaterService.languageProvider = { [weak self] in
+            self?.lang ?? .system
+        }
+
         inputService.onSelectionDispatchFeedback = { [weak self] success, message in
             self?.recordActivity(deviceName: "Mac", summary: message, isSuccess: success)
         }
