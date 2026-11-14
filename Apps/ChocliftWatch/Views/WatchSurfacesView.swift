@@ -259,7 +259,7 @@ public struct WatchChocolateBarView: View {
     @State private var confirmGate = DestructiveActionConfirmGate()
     @State private var crownVolume: Double = 0.5
     @State private var isCrownRotating: Bool = false
-    @State private var crownThrottle = ControlLevelDragThrottle()
+    @State private var crownThrottle = ControlLevelDragThrottle(minimumInterval: 0.4)
     @FocusState private var isVolumeCrownFocused: Bool
 
     private var lang: AppLanguage { client.profile.settings.language }
@@ -305,6 +305,9 @@ public struct WatchChocolateBarView: View {
                     WatchOrcaComplicationLine(client: client, status: orcaStatus)
                 }
 
+                if client.controlStripState.nowPlaying?.primaryDisplayText != nil {
+                    WatchNowPlayingProgressRow(client: client)
+                }
                 pageSwitcherBar
 
                 let columns = [
@@ -969,6 +972,8 @@ public struct WatchQuickActionsView: View {
     @ObservedObject var client: CompanionClientEngine
     let onRequestPairing: () -> Void
 
+    @State private var repeatPressedKey: String?
+    @State private var repeatReleaseKey: String?
     @State private var pressedAction: SystemQuickAction?
     @State private var confirmGate = DestructiveActionConfirmGate()
     @State private var showDisplayPickerSheet: Bool = false
@@ -1007,10 +1012,12 @@ public struct WatchQuickActionsView: View {
                     WatchNowPlayingProgressRow(client: client)
                 }
 
-                tripleMediaStrip([.mediaPrevious, .mediaPlayPause, .mediaNext])
                 tripleMediaStrip([.volumeDown, .volumeMute, .volumeUp])
                 watchAudioOutputButton
 
+                NavigationLink {
+                ScrollView {
+                VStack(spacing: 10) {
                 // Window Snap & Sizing
                 sectionHeader(L10n.tr("窗口布局", "Window Layout", language: lang), symbol: "macwindow")
 
@@ -1025,6 +1032,12 @@ public struct WatchQuickActionsView: View {
                 sectionHeader(L10n.tr("工作区与编辑", "Workspace & Edit", language: lang), symbol: "sparkles")
 
                 actionTwoColumnGrid(workspaceActions)
+                }
+                }
+                } label: {
+                    Label(L10n.tr("窗口与工作区", "Windows & Workspace", language: lang), systemImage: "macwindow")
+                        .frame(minHeight: 44)
+                }
             }
             .padding(.horizontal, 6)
             .padding(.bottom, 12)
@@ -1228,6 +1241,7 @@ public struct WatchQuickActionsView: View {
                 let tileTone = ChocSwatch.resolvedTileColor(hex: action.accentHex, fallbackHex: ChocPalette.coreTileBottomHex)
 
                 Button {
+                    if repeatReleaseKey == action.rawValue { repeatReleaseKey = nil; return }
                     trigger(action)
                 } label: {
                     Image(systemName: action.sfSymbol)
@@ -1256,19 +1270,14 @@ public struct WatchQuickActionsView: View {
                         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .scaleEffect(isPressed ? 0.94 : 1.0)
                 }
-                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedAction, key: action))
+                .buttonStyle(WatchRepeatableQuickActionButtonStyle(pressedKey: $repeatPressedKey, key: action.rawValue, action: action, suppressReleaseKey: $repeatReleaseKey) { trigger(action) })
                 .accessibilityLabel(action.compactTitle(in: lang))
             }
         }
     }
 
     private func actionTwoColumnGrid(_ actions: [SystemQuickAction]) -> some View {
-        let cols = [
-            GridItem(.flexible(), spacing: 7),
-            GridItem(.flexible(), spacing: 7)
-        ]
-
-        return LazyVGrid(columns: cols, spacing: 7) {
+        return VStack(spacing: 7) {
             ForEach(actions) { action in
                 let tileTone = ChocSwatch.resolvedTileColor(hex: action.accentHex, fallbackHex: ChocPalette.coreTileBottomHex)
                 let isPressed = (pressedAction == action)
@@ -1355,90 +1364,89 @@ public struct WatchQuickActionsView: View {
 
 public struct WatchNowPlayingProgressRow: View {
     @ObservedObject var client: CompanionClientEngine
-
-    private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
-
-    public init(client: CompanionClientEngine) {
-        self.client = client
-    }
-
+    public init(client: CompanionClientEngine) { self.client = client }
     public var body: some View {
-        let activeMedia = client.controlStripState.nowPlaying
-        let isSeekable = client.connectionState.isConnected && (activeMedia?.isSeekable == true)
-        let isScrubbing = isSeekable && client.nowPlayingScrub.isScrubbing
-        let overrideElapsed = client.nowPlayingScrub.effectiveElapsedSeconds(for: activeMedia)
-        let rowContent = NowPlayingProgressFormatter.rowDisplayContent(
-            for: activeMedia,
-            overrideElapsedSeconds: overrideElapsed
-        )
-        let progressFraction = isSeekable ? client.nowPlayingScrub.effectiveProgressFraction(for: activeMedia) : nil
-
-        if let rowContent {
-            ChocNowPlayingScrubSurface(
-                isSeekable: isSeekable,
-                minimumHitHeight: 46,
-                horizontalInset: 8,
-                onScrubChanged: { fraction in
-                    _ = client.updateNowPlayingScrub(normalizedProgress: fraction)
-                },
-                onScrubEnded: { fraction in
-                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
-                    _ = client.commitNowPlayingScrub(normalizedProgress: fraction)
-                },
-                onScrubCancelled: {
-                    client.cancelNowPlayingScrub()
-                }
-            ) {
-                VStack(alignment: .leading, spacing: progressFraction != nil ? 4 : 2) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 10.5, weight: .bold))
-                            .foregroundStyle(palette.accent)
-                        Text(rowContent.title)
-                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
-                            .foregroundStyle(palette.primaryText)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Spacer(minLength: 2)
-                    }
-
-                    if let progressText = rowContent.progressText {
-                        Text(progressText)
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(isScrubbing ? palette.accent : palette.secondaryText)
-                            .lineLimit(1)
-                            .accessibilityIdentifier("watch-now-playing-progress")
-                    }
-
-                    if let progressFraction {
-                        ChocNowPlayingProgressTrack(
-                            progressFraction: progressFraction,
-                            palette: palette,
-                            isScrubbing: isScrubbing,
-                            compact: true
-                        )
-                    }
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
-                .background(
-                    palette.barSurface,
-                    in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(
-                            isScrubbing ? palette.accent : palette.subtleCardStroke,
-                            lineWidth: isScrubbing ? 1.5 : 1
-                        )
-                )
+        if let media = client.controlStripState.nowPlaying, let title = media.primaryDisplayText {
+            NavigationLink {
+                WatchMediaPlayer(client: client)
+            } label: {
+                Label(title, systemImage: media.isPlaying ? "waveform" : "music.note")
+                    .font(.headline).lineLimit(2).frame(maxWidth: .infinity, minHeight: 44)
+                    .foregroundStyle(palette.primaryText)
             }
-            .accessibilityElement(children: .contain)
+            .listRowBackground(palette.barSurface)
             .accessibilityIdentifier("watch-now-playing-row")
         }
+    }
+}
+
+private struct WatchMediaPlayer: View {
+    @ObservedObject var client: CompanionClientEngine
+    @State private var pressedKey: String?
+    @State private var suppressReleaseKey: String?
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 10) {
+                if let media = client.controlStripState.nowPlaying {
+                    Text(media.primaryDisplayText ?? "").font(.headline).lineLimit(2)
+                    if let artist = media.artist { Text(artist).font(.caption) }
+                    HStack(spacing: 6) {
+                        transport(.mediaPrevious, symbol: "backward.fill")
+                        transport(.mediaPlayPause, symbol: media.isPlaying ? "pause.fill" : "play.fill")
+                        transport(.mediaNext, symbol: "forward.fill")
+                    }
+                    if media.isSeekable, let fraction = client.nowPlayingScrub.effectiveProgressFraction(for: media) {
+                        Slider(value: Binding(get: { fraction }, set: {
+                            _ = client.updateNowPlayingScrub(normalizedProgress: $0)
+                        }), in: 0...1, onEditingChanged: { editing in
+                            if !editing { _ = client.commitNowPlayingScrub(normalizedProgress: client.nowPlayingScrub.effectiveProgressFraction(for: client.controlStripState.nowPlaying) ?? fraction) }
+                        }).tint(palette.accent)
+                    }
+                    if let times = NowPlayingProgressFormatter.rowDisplayContent(for: media, overrideElapsedSeconds: client.nowPlayingScrub.effectiveElapsedSeconds(for: media))?.progressText {
+                        Text(times).font(.caption.monospacedDigit())
+                    }
+                }
+            }.padding(8)
+        }
+        .foregroundStyle(palette.primaryText).background(palette.backgroundTop)
+    }
+    private func transport(_ action: SystemQuickAction, symbol: String) -> some View {
+        Button {
+            if suppressReleaseKey == action.rawValue { suppressReleaseKey = nil; return }
+            client.performQuickAction(action)
+        } label: {
+            Image(systemName: symbol).frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(WatchRepeatableQuickActionButtonStyle(pressedKey: $pressedKey, key: action.rawValue, action: action, suppressReleaseKey: $suppressReleaseKey) {
+            client.performQuickAction(action)
+        })
+    }
+}
+
+private struct WatchRepeatableQuickActionButtonStyle: ButtonStyle {
+    @Binding var pressedKey: String?
+    let key: String
+    let action: SystemQuickAction
+    @Binding var suppressReleaseKey: String?
+    let onRepeat: () -> Void
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .opacity(configuration.isPressed ? 0.75 : 1)
+            .onChange(of: configuration.isPressed) { _, pressed in
+                if pressed { suppressReleaseKey = nil }
+            }
+            .task(id: configuration.isPressed) {
+                guard configuration.isPressed, action == .mediaNext || action == .volumeUp || action == .volumeDown else { return }
+                try? await Task.sleep(for: .milliseconds(400))
+                while !Task.isCancelled {
+                    suppressReleaseKey = key
+                    onRepeat()
+                    try? await Task.sleep(for: .milliseconds(400))
+                }
+            }
     }
 }
 

@@ -51,6 +51,7 @@ private struct IOSRepeatableQuickActionLabel: View {
         configuration.label
             .onChange(of: configuration.isPressed) { _, isPressed in
                 if isPressed {
+                    suppressReleaseKey = nil
                     ChocPressFeedback.beginPress(key: key, pressedKey: $pressedKey)
                 } else {
                     let keySnapshot = key
@@ -64,8 +65,8 @@ private struct IOSRepeatableQuickActionLabel: View {
             }
             .task(id: isHolding) {
                 guard isHolding else { return }
-                // Short stationary slop so quick taps still run via Button.action on release.
-                try? await Task.sleep(for: .milliseconds(70))
+                // Hold threshold so quick taps still run via Button.action on release.
+                try? await Task.sleep(for: .milliseconds(400))
                 guard !Task.isCancelled, configuration.isPressed else { return }
 
                 var repeatController = HoldToRepeatController()

@@ -83,8 +83,8 @@ private struct TileHoldToEditLabelView: View {
             .task(id: isHolding) {
                 guard isHolding else { return }
                 if let repeatableAction, HoldToRepeatPolicy.supportsHoldToRepeat(repeatableAction) {
-                    // Brief stationary slop so horizontal page swipes cancel cleanly and quick taps run once on release.
-                    try? await Task.sleep(for: .milliseconds(70))
+                    // Hold threshold so horizontal page swipes cancel cleanly and quick taps run once on release.
+                    try? await Task.sleep(for: .milliseconds(400))
                     guard !Task.isCancelled, configuration.isPressed, !isSuppressed else { return }
 
                     var repeatController = HoldToRepeatController()
@@ -679,7 +679,7 @@ public struct IOSTimeTravelSurfaceView: View {
                                 .font(.system(.caption, design: .rounded, weight: .bold))
                                 .foregroundStyle(palette.accentForeground)
                                 .padding(.horizontal, 16)
-                                .frame(height: 38)
+                                .frame(height: 44)
                                 .background(palette.accent, in: Capsule())
                                 .contentShape(Capsule())
                         }
@@ -1093,7 +1093,7 @@ public struct IOSEmojiBarSurfaceView: View {
                     }
                     .foregroundStyle(isSelected ? palette.accentForeground : palette.secondaryText)
                     .padding(.horizontal, 9)
-                    .frame(height: 30)
+                    .frame(height: 44)
                     .background(
                         isSelected ? palette.accent : Color.clear,
                         in: Capsule()
@@ -1187,7 +1187,7 @@ public struct IOSEmojiBarSurfaceView: View {
                 Label(L10n.tr("全部分类", "All Emojis", language: lang), systemImage: "magnifyingglass")
                     .font(.caption.bold())
                     .padding(.horizontal, 12)
-                    .frame(minHeight: 34)
+                    .frame(minHeight: 44)
                     .background(palette.tileFillTop, in: Capsule())
                     .foregroundStyle(palette.primaryText)
                     .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
@@ -1213,7 +1213,7 @@ public struct IOSEmojiBarSurfaceView: View {
                     .lineLimit(1)
                 }
                 .padding(.horizontal, 12)
-                .frame(minHeight: 34)
+                .frame(minHeight: 44)
                 .background(canAdd ? palette.accent : palette.tileFillBottom, in: Capsule())
                 .foregroundStyle(canAdd ? palette.accentForeground : palette.secondaryText)
                 .overlay(
@@ -1267,7 +1267,7 @@ public struct IOSEmojiBarSurfaceView: View {
                         .font(.system(.caption, design: .rounded, weight: .bold))
                         .foregroundStyle(palette.accentForeground)
                         .padding(.horizontal, 16)
-                        .frame(height: 38)
+                        .frame(height: 44)
                         .background(palette.accent, in: Capsule())
                         .contentShape(Capsule())
                 }
@@ -1355,7 +1355,7 @@ public struct IOSEmojiBarSurfaceView: View {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.secondaryText)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 44, height: 44)
                     .background(palette.tileFillBottom.opacity(0.75), in: Circle())
                     .contentShape(Circle())
             }
@@ -2144,7 +2144,7 @@ public struct IOSIPadChocolateBarDeckView: View {
                                             }
                                         }
                                         .padding(.horizontal, 10)
-                                        .frame(height: 30)
+                                        .frame(height: 44)
                                         .background(
                                             isSelected ? palette.accent : palette.barSurface.opacity(0.9),
                                             in: Capsule()
@@ -2171,7 +2171,7 @@ public struct IOSIPadChocolateBarDeckView: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 30)
+                    .frame(height: 44)
 
                     Button {
                         CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
@@ -2292,6 +2292,10 @@ public struct IOSPersistentControlStripView: View {
     @ObservedObject var client: CompanionClientEngine
     let preferSingleRow: Bool
     let embeddedInSurface: Bool
+    var secondaryOnly: Bool = false
+    var primarySurface: Bool = false
+    var onMore: (() -> Void)?
+    var onReconnect: (() -> Void)?
     var onPromptHUD: ((String) -> Void)?
     var onEditSlot: ((IOSEditSlotSelection) -> Void)?
 
@@ -2327,11 +2331,19 @@ public struct IOSPersistentControlStripView: View {
         client: CompanionClientEngine,
         preferSingleRow: Bool,
         embeddedInSurface: Bool = false,
+        primarySurface: Bool = false,
+        secondaryOnly: Bool = false,
+        onMore: (() -> Void)? = nil,
+        onReconnect: (() -> Void)? = nil,
         onPromptHUD: ((String) -> Void)? = nil,
         onEditSlot: ((IOSEditSlotSelection) -> Void)? = nil
     ) {
         self.client = client
         self.preferSingleRow = preferSingleRow
+        self.secondaryOnly = secondaryOnly
+        self.primarySurface = primarySurface
+        self.onMore = onMore
+        self.onReconnect = onReconnect
         self.embeddedInSurface = embeddedInSurface
         self.onPromptHUD = onPromptHUD
         self.onEditSlot = onEditSlot
@@ -2339,14 +2351,53 @@ public struct IOSPersistentControlStripView: View {
 
     public var body: some View {
         VStack(spacing: 8) {
-            if preferSingleRow {
+            if secondaryOnly {
+                VStack(spacing: 12) {
+                    IOSDisplayTargetPickerMenu(client: client, compact: false).frame(minHeight: 44)
+                    undoWindowMoveButton.frame(minHeight: 44)
+                    micMuteButton(compactLabel: false).frame(minHeight: 44)
+                }
+            } else if primarySurface {
+                if client.connectionState.isConnected {
+                    if state.nowPlaying?.primaryDisplayText != nil { nowPlayingCluster }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(L10n.tr("音量", "Volume", language: lang)).font(.caption.bold())
+                        volumeControlCluster
+                        Text(L10n.tr("亮度", "Brightness", language: lang)).font(.caption.bold())
+                        brightnessControlCluster
+                    }
+                    HStack(spacing: 12) {
+                        IOSAudioOutputPickerButton(client: client, compact: false)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                        Button(action: { onReconnect?() }) {
+                            Label(L10n.tr("重连", "Reconnect", language: lang), systemImage: "arrow.clockwise")
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                        }
+                        Button(action: { onMore?() }) {
+                            Label(L10n.tr("更多", "More", language: lang), systemImage: "ellipsis")
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                        }
+                    }
+                    .font(.caption.bold())
+                } else {
+                    VStack(spacing: 12) {
+                        Image(systemName: "laptopcomputer").font(.largeTitle)
+                        Text(ChocConnectionVisualState.resolve(from: client).bannerTitle(in: lang))
+                        Button(L10n.tr("配对或重试", "Pair or Retry", language: lang)) { onReconnect?() }
+                            .frame(minHeight: 48).buttonStyle(.borderedProminent)
+                    }
+                    .frame(maxWidth: .infinity).padding(20)
+                    .foregroundStyle(ChocConnectionVisualState.resolve(from: client).tintColor(in: palette))
+                }
+            } else if preferSingleRow {
                 singleRowContent
             } else {
                 twoRowContent
             }
 
-            IOSCompanionStripStatusRow(client: client)
+            if !primarySurface && !secondaryOnly { IOSCompanionStripStatusRow(client: client) }
         }
+        .tint(palette.accent)
         .padding(.horizontal, embeddedInSurface ? 14 : 12)
         .padding(.vertical, preferSingleRow ? 7 : 9)
         .background {
@@ -2461,9 +2512,7 @@ public struct IOSPersistentControlStripView: View {
                 onDragChanged: { newLevel in
                     volumeDragLevel = newLevel
                     let now = ProcessInfo.processInfo.systemUptime
-                    if let throttled = volumeThrottle.updateDrag(to: newLevel, at: now) {
-                        client.setControlLevel(kind: .volume, level: throttled)
-                    }
+                    _ = volumeThrottle.updateDrag(to: newLevel, at: now)
                 },
                 onDragEnded: { finalLevel in
                     let now = ProcessInfo.processInfo.systemUptime
@@ -2518,9 +2567,7 @@ public struct IOSPersistentControlStripView: View {
                 onDragChanged: { newLevel in
                     brightnessDragLevel = newLevel
                     let now = ProcessInfo.processInfo.systemUptime
-                    if let throttled = brightnessThrottle.updateDrag(to: newLevel, at: now) {
-                        client.setControlLevel(kind: .brightness, level: throttled)
-                    }
+                    _ = brightnessThrottle.updateDrag(to: newLevel, at: now)
                 },
                 onDragEnded: { finalLevel in
                     let now = ProcessInfo.processInfo.systemUptime
@@ -2533,13 +2580,11 @@ public struct IOSPersistentControlStripView: View {
                 }
             )
 
-            if preferSingleRow {
-                Text("\(pct)%")
-                    .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(palette.secondaryText)
-                    .frame(minWidth: 30, alignment: .trailing)
-            }
+            Text("\(pct)%")
+                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(palette.secondaryText)
+                .frame(minWidth: 30, alignment: .trailing)
         }
         .opacity(available ? 1.0 : 0.6)
     }
@@ -2560,92 +2605,45 @@ public struct IOSPersistentControlStripView: View {
         let progressFraction = isSeekable ? client.nowPlayingScrub.effectiveProgressFraction(for: activeMedia) : nil
         let isPlaying = activeMedia?.isPlaying ?? false
 
-        return HStack(spacing: 6) {
-            ChocNowPlayingScrubSurface(
-                isSeekable: isSeekable,
-                minimumHitHeight: 44,
-                horizontalInset: 8,
-                onScrubChanged: { fraction in
-                    _ = client.updateNowPlayingScrub(normalizedProgress: fraction)
-                },
-                onScrubEnded: { fraction in
-                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                    _ = client.commitNowPlayingScrub(normalizedProgress: fraction)
-                },
-                onScrubCancelled: {
-                    client.cancelNowPlayingScrub()
+        return VStack(spacing: 12) {
+            Text(String((activeMedia?.appName ?? "♪").prefix(1)).uppercased())
+                .font(.system(size: 48, weight: .bold, design: .rounded))
+                .foregroundStyle(palette.accent)
+                .frame(width: 112, height: 112)
+                .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 26))
+            VStack(spacing: 4) {
+                Text(primaryText ?? L10n.tr("未在播放", "Not Playing", language: lang))
+                    .font(.system(.title3, design: .rounded, weight: .bold))
+                    .foregroundStyle(palette.primaryText).lineLimit(2)
+                if let artist = activeMedia?.artist { Text(artist).foregroundStyle(palette.secondaryText) }
+                if let source = activeMedia?.appName {
+                    Text(source).font(.caption).foregroundStyle(palette.secondaryText)
                 }
-            ) {
-                VStack(alignment: .leading, spacing: progressFraction != nil ? 4 : 0) {
-                    HStack(spacing: 5) {
-                        Image(systemName: primaryText != nil ? "music.note" : "waveform")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(primaryText != nil ? palette.accent : palette.secondaryText.opacity(0.65))
-
-                        if let primaryText {
-                            Text(primaryText)
-                                .font(.system(size: 12, weight: .bold, design: .rounded))
-                                .foregroundStyle(palette.primaryText)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                        } else {
-                            Text(L10n.tr("未在播放", "Not Playing", language: lang))
-                                .font(.system(size: 11.5, weight: .medium, design: .rounded))
-                                .foregroundStyle(palette.secondaryText.opacity(0.8))
-                                .lineLimit(1)
-                        }
-
-                        Spacer(minLength: 4)
-
-                        if primaryText != nil, let progressText {
-                            Text(progressText)
-                                .font(.system(size: 10.5, weight: .semibold, design: .rounded))
-                                .monospacedDigit()
-                                .foregroundStyle(isScrubbing ? palette.accent : palette.secondaryText)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                                .accessibilityIdentifier("ios-strip-now-playing-progress")
-                        }
-                    }
-
-                    if let progressFraction {
-                        ChocNowPlayingProgressTrack(
-                            progressFraction: progressFraction,
-                            palette: palette,
-                            isScrubbing: isScrubbing,
-                            compact: false
-                        )
-                    }
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                .background(
-                    palette.tileFillBottom.opacity(isScrubbing ? 0.96 : 0.75),
-                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(
-                            isScrubbing ? palette.accent : palette.subtleCardStroke,
-                            lineWidth: isScrubbing ? 1.5 : 1
-                        )
-                )
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("ios-strip-now-playing-label")
-            .accessibilityAdjustableAction { direction in
-                guard isSeekable,
-                      let media = activeMedia,
-                      let duration = media.durationSeconds,
-                      duration > 0 else {
-                    return
-                }
-                let current = media.elapsedSeconds ?? 0.0
-                let delta = (direction == .increment) ? 5.0 : -5.0
-                _ = client.commitNowPlayingScrub(atPositionSeconds: current + delta)
+            if let progressFraction {
+                Slider(value: Binding(get: { progressFraction }, set: {
+                    _ = client.updateNowPlayingScrub(normalizedProgress: $0)
+                }), in: 0...1, onEditingChanged: { editing in
+                    if !editing {
+                        _ = client.commitNowPlayingScrub(normalizedProgress: client.nowPlayingScrub.effectiveProgressFraction(for: state.nowPlaying) ?? progressFraction)
+                    }
+                })
+                .tint(palette.accent)
+                .frame(minHeight: 44)
+                .accessibilityLabel(L10n.tr("播放进度", "Playback position", language: lang))
             }
-
+            if let progressText {
+                Text(progressText).font(.caption.monospacedDigit())
+                    .foregroundStyle(isScrubbing ? palette.accent : palette.secondaryText)
+            }
+            HStack(spacing: 24) {
+                Button {
+                    triggerStripQuickAction(.mediaPrevious)
+                } label: {
+                    Image(systemName: "backward.fill").frame(width: 52, height: 48)
+                }
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: "previousTrack"))
+                .accessibilityLabel(L10n.tr("上一曲", "Previous Track", language: lang))
             let isPlayPressed = (pressedKey == "playPause")
             Button {
                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
@@ -2655,7 +2653,7 @@ public struct IOSPersistentControlStripView: View {
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.primaryText)
-                    .frame(width: 38, height: 44)
+                    .frame(width: 52, height: 48)
                     .background(
                         isPlayPressed ? palette.tileFillBottom : palette.tileFillTop,
                         in: RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -2687,7 +2685,7 @@ public struct IOSPersistentControlStripView: View {
                 Image(systemName: "forward.fill")
                     .font(.system(size: 12.5, weight: .bold))
                     .foregroundStyle(palette.primaryText)
-                    .frame(width: 38, height: 44)
+                    .frame(width: 52, height: 48)
                     .background(
                         isNextPressed ? palette.tileFillBottom : palette.tileFillTop,
                         in: RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -2715,6 +2713,7 @@ public struct IOSPersistentControlStripView: View {
             )
             .accessibilityIdentifier("ios-strip-next-track")
             .accessibilityLabel(L10n.tr("下一曲", "Next Track", language: lang))
+            }
         }
     }
 
@@ -2795,7 +2794,7 @@ public struct IOSPersistentControlStripView: View {
             }
             .foregroundStyle(isMuted ? palette.emphasisForeground : palette.primaryText)
             .padding(.horizontal, 9)
-            .frame(height: 34)
+            .frame(height: 44)
             .background(
                 isMuted
                     ? palette.statusFailure.opacity(isMicPressed ? 0.84 : 1.0)
@@ -2926,7 +2925,7 @@ private struct ControlStripDragSlider: View {
                 }
             }
         }
-        .frame(height: 34)
+        .frame(height: 44)
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier(accessibilityIdentifier)
         .accessibilityLabel(accessibilityLabel)

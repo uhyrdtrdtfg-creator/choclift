@@ -179,9 +179,18 @@ public struct IOSRootTouchBarView: View {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showFlowsManagerSheet = true }
                             }
                         }
+                        .frame(minHeight: 44)
+                        .buttonStyle(.bordered)
                         IOSPageReorderControls(client: client, activePageIndex: currentPageIndex, compact: false) { moveActiveBarPage($0) }
-                        IOSCompanionBarRibbon(client: client, compact: false, onPromptHUD: { flashHUD($0) })
-                        IOSCompactKeyAndRecentsBar(client: client, showInlineRecentChips: true, onPromptHUD: { flashHUD($0) })
+                        GroupBox(L10n.tr("媒体与显示", "Media & Display", language: lang)) {
+                            IOSPersistentControlStripView(client: client, preferSingleRow: false, secondaryOnly: true, onPromptHUD: { flashHUD($0) })
+                        }
+                        GroupBox(L10n.tr("剪贴板、截屏与工作区", "Clipboard, Capture & Workspace", language: lang)) {
+                            IOSCompanionBarRibbon(client: client, compact: false, onPromptHUD: { flashHUD($0) })
+                        }
+                        GroupBox(L10n.tr("编辑与最近应用", "Editing & Recent Apps", language: lang)) {
+                            IOSCompactKeyAndRecentsBar(client: client, showInlineRecentChips: true, onPromptHUD: { flashHUD($0) })
+                        }
                         IOSPinnedStripTilesRow(client: client, onPromptHUD: { flashHUD($0) }, onEditSlot: { selection in
                             showToolsSheet = false
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { editingSlot = selection }
@@ -317,74 +326,7 @@ public struct IOSRootTouchBarView: View {
     // MARK: - iPhone Landscape Touch Bar (Signature Layout)
 
     private func iPhoneLandscapeTouchBar(totalWidth: CGFloat) -> some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 0) {
-                if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
-                    landscapePageDotsStepperBar
-                        .padding(.horizontal, 14)
-                        .padding(.top, 6)
-                }
-
-                activeMainContent(isLandscape: true)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                IOSPersistentControlStripView(
-                    client: client,
-                    preferSingleRow: (totalWidth - 60) >= 580,
-                    onPromptHUD: { flashHUD($0) },
-                    onEditSlot: { editingSlot = $0 }
-                )
-                .padding(.horizontal, 14)
-                .padding(.bottom, 8)
-            }
-
-            // Right-hand Vertical Control Rail — quiet link badge + generous mode targets
-            VStack(spacing: 5) {
-                railConnectionStatusButton
-
-                toolsButton
-
-                Spacer(minLength: 2)
-
-                VStack(spacing: 5) {
-                    ForEach(IOSActiveSurfaceMode.allCases) { mode in
-                        let selected = (activeMode == mode)
-                        Button {
-                            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                            modeBeforeAutoEmoji = nil
-                            withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
-                                activeMode = mode
-                            }
-                        } label: {
-                            Image(systemName: mode.sfSymbol)
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
-                                .frame(width: 44, height: 34)
-                                .background(
-                                    selected ? palette.accent : palette.tileFillBottom.opacity(0.88),
-                                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                        .strokeBorder(selected ? .clear : palette.subtleCardStroke, lineWidth: 1)
-                                )
-                                .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityIdentifier("ios-mode-\(mode.rawValue)")
-                        .accessibilityLabel(mode.shortTitle(in: lang))
-                    }
-                }
-            }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 8)
-            .background(palette.barSurface.opacity(0.92))
-            .overlay(alignment: .leading) {
-                Rectangle()
-                    .fill(palette.subtleCardStroke)
-                    .frame(width: 1)
-            }
-        }
+        portraitWorkspace(isWide: true)
     }
 
     // MARK: - iPhone Portrait Touch Bar
@@ -394,81 +336,83 @@ public struct IOSRootTouchBarView: View {
     }
 
     private func portraitWorkspace(isWide: Bool) -> some View {
-        VStack(spacing: 8) {
-            // Top Brand & Connection Status Header
-            HStack(spacing: 8) {
-                ChocliftBrandIconView(size: 30)
-                Text("choclift")
-                    .font(.system(.headline, design: .rounded, weight: .black))
-                    .foregroundStyle(palette.primaryText)
+        ScrollView {
+            VStack(spacing: 16) {
+                // Top Brand & Connection Status Header
+                HStack(spacing: 8) {
+                    ChocliftBrandIconView(size: 30)
+                    Text("choclift")
+                        .font(.system(.headline, design: .rounded, weight: .black))
+                        .foregroundStyle(palette.primaryText)
 
-                Spacer(minLength: 4)
+                    Spacer(minLength: 4)
 
-                toolsButton
-
-                workspaceQuickSearchButton
-
-                connectionStatusPillButton
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 10)
-
-
-            if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
-                portraitPageStepperBar
-                    .padding(.horizontal, 16)
-            }
-
-            activeMainContent(isLandscape: isWide)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            IOSPersistentControlStripView(
-                client: client,
-                preferSingleRow: isWide,
-                onPromptHUD: { flashHUD($0) },
-                onEditSlot: { editingSlot = $0 }
-            )
-            .padding(.horizontal, 16)
-
-            // Bottom Mode Switcher Dock (>= 44pt touch targets)
-            HStack(spacing: 8) {
-                ForEach(IOSActiveSurfaceMode.allCases) { mode in
-                    let selected = (activeMode == mode)
-                    Button {
-                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                        modeBeforeAutoEmoji = nil
-                        withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
-                            activeMode = mode
-                        }
-                    } label: {
-                        VStack(spacing: 3) {
-                            Image(systemName: mode.sfSymbol)
-                                .font(.system(size: 15, weight: .bold))
-                            Text(mode.shortTitle(in: lang))
-                                .font(.system(size: 10.5, weight: .bold, design: .rounded))
-                                .lineLimit(1)
-                        }
-                        .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 46)
-                        .background(
-                            selected ? palette.accent : palette.tileFillBottom.opacity(0.85),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("ios-mode-\(mode.rawValue)")
+                    connectionStatusPillButton
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+
+
+                IOSPersistentControlStripView(
+                    client: client,
+                    preferSingleRow: false,
+                    primarySurface: true,
+                    onMore: { showToolsSheet = true },
+                    onReconnect: { showPairingSheet = true },
+                    onPromptHUD: { flashHUD($0) },
+                    onEditSlot: { editingSlot = $0 }
+                )
+                .padding(.horizontal, 16)
+
+                VStack(spacing: 8) {
+                    if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
+                        portraitPageStepperBar
+                    }
+                    activeMainContent(isLandscape: isWide)
+                        .frame(minHeight: isWide ? 300 : 310)
+                }
+                .padding(.horizontal, 16)
+
+                // Bottom Mode Switcher Dock (>= 44pt touch targets)
+                HStack(spacing: 8) {
+                    ForEach(IOSActiveSurfaceMode.allCases) { mode in
+                        let selected = (activeMode == mode)
+                        Button {
+                            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                            modeBeforeAutoEmoji = nil
+                            withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
+                                activeMode = mode
+                            }
+                        } label: {
+                            VStack(spacing: 3) {
+                                Image(systemName: mode.sfSymbol)
+                                    .font(.system(size: 15, weight: .bold))
+                                Text(mode.shortTitle(in: lang))
+                                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(selected ? palette.accentForeground : palette.secondaryText)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 46)
+                            .background(
+                                selected ? palette.accent : palette.tileFillBottom.opacity(0.85),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            )
+                            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("ios-mode-\(mode.rawValue)")
+                    }
+                }
+                .padding(6)
+                .background(palette.barSurface.opacity(0.94), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                )
+                .padding(.horizontal, 16)
+                .padding(.bottom, 10)
             }
-            .padding(6)
-            .background(palette.barSurface.opacity(0.94), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
-            )
-            .padding(.horizontal, 16)
-            .padding(.bottom, 10)
         }
     }
 

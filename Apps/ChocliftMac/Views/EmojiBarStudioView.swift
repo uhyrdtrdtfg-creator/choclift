@@ -5,6 +5,7 @@ public struct EmojiBarStudioView: View {
     @ObservedObject var coordinator: MacAppCoordinator
     @State private var selectedEmojiSlot: Int = 0
     @State private var selectedCategoryID: String = EmojiCatalog.categories.first?.id ?? "popular"
+    @State private var emojiSearch = ""
     @State private var customEmojiInput: String = ""
 
     private var lang: AppLanguage { coordinator.lang }
@@ -40,7 +41,7 @@ public struct EmojiBarStudioView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(coordinator.isEditingTextOnMac ? palette.statusConnected.opacity(0.16) : palette.tileFillBottom)
-                    .frame(width: 38, height: 38)
+                    .frame(width: 44, height: 44)
                 Image(systemName: coordinator.isEditingTextOnMac ? "character.cursor.ibeam" : "face.smiling.inverse")
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(coordinator.isEditingTextOnMac ? palette.statusConnected : palette.secondaryText)
@@ -221,7 +222,10 @@ public struct EmojiBarStudioView: View {
         let activeCategory = EmojiCatalog.categories.first(where: { $0.id == selectedCategoryID })
             ?? EmojiCatalog.categories[0]
 
+        let matchingEmoji = emojiSearch.isEmpty ? activeCategory.emojis : EmojiCatalog.categories.filter { $0.title(in: lang).localizedCaseInsensitiveContains(emojiSearch) || $0.emojis.contains(where: { $0.contains(emojiSearch) }) }.flatMap(\.emojis)
         return VStack(alignment: .leading, spacing: 10) {
+            TextField(L10n.tr("搜索表情或分类", "Search emoji or category", language: lang), text: $emojiSearch)
+                .textFieldStyle(.roundedBorder).frame(minHeight: 44)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
                     ForEach(EmojiCatalog.categories) { cat in
@@ -251,18 +255,21 @@ public struct EmojiBarStudioView: View {
 
             ScrollView {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 8), spacing: 8) {
-                    ForEach(activeCategory.emojis, id: \.self) { emoji in
+                    ForEach(Array(Set(matchingEmoji)).sorted(), id: \.self) { emoji in
                         Button {
-                            assignEmojiToCurrentSlot(emoji)
+                            _ = coordinator.insertText(emoji)
                         } label: {
                             Text(emoji)
                                 .font(.system(size: 24))
-                                .frame(width: 38, height: 38)
+                                .frame(width: 44, height: 44)
                                 .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 0.8))
                                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.bordered)
+                        .contextMenu {
+                            Button(L10n.tr("填入槽位", "Assign to Slot", language: lang)) { assignEmojiToCurrentSlot(emoji) }
+                        }
                     }
                 }
                 .padding(6)

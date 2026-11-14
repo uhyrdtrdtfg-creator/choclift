@@ -58,7 +58,7 @@ public struct IOSEmptyTrashPillButton: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, compact ? 9 : 10)
-            .frame(minHeight: 34)
+            .frame(minHeight: 44)
             .background(
                 isArmed
                     ? palette.statusFailure
@@ -158,7 +158,7 @@ public struct IOSEjectExternalDisksPillButton: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, compact ? 9 : 10)
-            .frame(minHeight: 34)
+            .frame(minHeight: 44)
             .background(
                 isArmed
                     ? palette.statusFailure

@@ -7,6 +7,7 @@ public struct SoundboardStudioView: View {
     @ObservedObject var coordinator: MacAppCoordinator
     @ObservedObject var soundboardService: MacSoundboardService
 
+    @State private var volumePreview: Double?
     @State private var searchQuery: String = ""
     @State private var editingClip: SoundboardClip?
     @State private var isDropTargeted: Bool = false
@@ -151,14 +152,20 @@ public struct SoundboardStudioView: View {
 
                 Slider(
                     value: Binding(
-                        get: { coordinator.profile.soundboardVolume },
-                        set: { coordinator.setSoundboardVolume($0) }
+                        get: { volumePreview ?? coordinator.profile.soundboardVolume },
+                        set: { volumePreview = $0 }
                     ),
-                    in: 0.0...1.0
+                    in: 0.0...1.0,
+                    onEditingChanged: { editing in
+                        if !editing {
+                            coordinator.setSoundboardVolume(volumePreview ?? coordinator.profile.soundboardVolume)
+                            volumePreview = nil
+                        }
+                    }
                 )
                 .frame(width: 170)
 
-                Text("\(ControlStripLevel.percentage(for: coordinator.profile.soundboardVolume))%")
+                Text("\(ControlStripLevel.percentage(for: volumePreview ?? coordinator.profile.soundboardVolume))%")
                     .font(.caption.monospacedDigit().weight(.bold))
                     .foregroundStyle(palette.secondaryText)
                     .frame(width: 38, alignment: .trailing)
@@ -313,7 +320,7 @@ public struct SoundboardStudioView: View {
                     }
                     .foregroundStyle(palette.accentForeground)
                     .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
+                    .frame(minHeight: 44)
                     .background(palette.accent, in: Capsule())
                 }
                 .buttonStyle(.plain)

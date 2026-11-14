@@ -47,6 +47,11 @@ public struct IOSSlotEditorSheet: View {
     var onEditOriginalSlot: ((Int, Int) -> Void)?
     @Environment(\.dismiss) private var dismiss
 
+    @State private var pendingItem: BarItem?
+    @State private var pendingFlow: ActionFlow?
+    @State private var reviewName = ""
+    @State private var reviewIcon = ""
+    @State private var removeArmedUntil: Date?
     @State private var tab: EditorTab = .apps
     @State private var searchQuery: String = ""
     @State private var soundSearchQuery: String = ""
@@ -160,6 +165,29 @@ public struct IOSSlotEditorSheet: View {
             .navigationTitle(L10n.tr("编辑槽位 #\(slotIndex + 1)", "Edit Slot #\(slotIndex + 1)", language: lang))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarColorScheme(.light, for: .navigationBar)
+            .sheet(item: $pendingItem) { item in
+                NavigationStack {
+                    Form {
+                        Section(L10n.tr("确认动作", "Review Action", language: lang)) {
+                            Text(item.displayTitle(in: lang)).font(.headline)
+                            TextField(L10n.tr("名称", "Name", language: lang), text: $reviewName)
+                                .disabled({ if case .shortcut = item.kind { return true }; if case .slotReference = item.kind { return true }; return false }())
+                            TextField(L10n.tr("图标", "Icon", language: lang), text: $reviewIcon)
+                                .disabled({ if case .systemAction = item.kind { return true }; if case .slotReference = item.kind { return true }; return false }())
+                        }
+                        Button(L10n.tr("确认添加", "Confirm", language: lang)) { commitReviewedItem(item) }
+                            .frame(minHeight: 44)
+                    }
+                    .scrollContentBackground(.hidden).background(palette.backgroundTop)
+                    .navigationTitle(L10n.tr("名称与图标", "Name & Icon", language: lang))
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button(L10n.tr("返回", "Back", language: lang)) { pendingItem = nil; pendingFlow = nil }
+                        }
+                    }
+                    .tint(palette.accent)
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.tr("取消", "Cancel", language: lang)) { dismiss() }
@@ -168,8 +196,16 @@ public struct IOSSlotEditorSheet: View {
                 }
                 if existingItem != nil {
                     ToolbarItem(placement: .destructiveAction) {
-                        Button(L10n.tr("清空", "Clear", language: lang), role: .destructive) {
-                            assignItem(nil)
+                        Button(removeArmedUntil != nil ? L10n.tr("再点确认", "Tap to confirm", language: lang) : L10n.tr("清空", "Clear", language: lang), role: .destructive) {
+                            if let until = removeArmedUntil, until > Date() {
+                                assignItem(nil)
+                            } else {
+                                removeArmedUntil = Date().addingTimeInterval(3)
+                                Task { @MainActor in
+                                    try? await Task.sleep(for: .seconds(3))
+                                    removeArmedUntil = nil
+                                }
+                            }
                         }
                         .foregroundStyle(palette.statusFailure)
                         .accessibilityIdentifier("ios-slot-editor-clear")
@@ -833,22 +869,57 @@ public struct IOSSlotEditorSheet: View {
     }
 
     private func assignFlow(_ flow: ActionFlow) {
-        var updated = client.profile
-        guard updated.pages.indices.contains(pageIndex),
-              updated.pages[pageIndex].slots.indices.contains(slotIndex) else { return }
-        var normalized = flow
-        normalized.updatedAt = Date()
-        updated.upsertFlow(normalized)
-        let existingID = updated.pages[pageIndex].slots[slotIndex]?.id ?? UUID()
-        updated.pages[pageIndex].slots[slotIndex] = updated.makeBarItem(for: normalized, id: existingID)
-        client.pushUpdatedProfile(updated)
-        dismiss()
+        pendingFlow = flow
+        stageItem(client.profile.makeBarItem(for: flow, id: existingItem?.id ?? UUID()))
     }
 
     private func assignItem(_ item: BarItem?) {
+        guard let item else {
+            var updated = client.profile
+            guard updated.setSlotItem(nil, pageIndex: pageIndex, slotIndex: slotIndex) else { return }
+            client.pushUpdatedProfile(updated)
+            dismiss()
+            return
+        }
+        pendingFlow = nil
+        stageItem(item)
+    }
+
+    private func stageItem(_ item: BarItem) {
+        reviewName = item.displayTitle(in: lang)
+        switch item.kind {
+        case .shortcut(_, let emoji, _), .website(_, _, let emoji, _, _), .flow(_, _, let emoji, _, _), .soundboard(_, _, let emoji, _): reviewIcon = emoji
+        case .folder(let folder): reviewIcon = folder.emoji
+        case .macApp(_, _, _, let symbol): reviewIcon = symbol
+        case .systemAction(let action, _, _): reviewIcon = action.sfSymbol
+        default: reviewIcon = "arrow.turn.up.right"
+        }
+        pendingItem = item
+    }
+
+    private func commitReviewedItem(_ item: BarItem) {
+        var item = item
+        let title = reviewName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = title.isEmpty ? item.displayTitle(in: lang) : title
+        switch item.kind {
+        case .macApp(let bundle, _, let path, let symbol): item.kind = .macApp(bundleIdentifier: bundle, appName: name, appPath: path, fallbackSymbol: reviewIcon.isEmpty ? symbol : reviewIcon)
+        case .website(let url, _, let emoji, let hex, let switchTab): item.kind = .website(url: url, title: name, emoji: reviewIcon.isEmpty ? emoji : reviewIcon, backgroundHex: hex, switchExistingTab: switchTab)
+        case .shortcut(let target, let emoji, let hex): item.kind = .shortcut(shortcutName: target, emoji: reviewIcon.isEmpty ? emoji : reviewIcon, backgroundHex: hex)
+        case .systemAction(let action, _, let hex): item.kind = .systemAction(action: action, customTitle: name, backgroundHex: hex)
+        case .flow(let id, _, let emoji, let hex, let count): item.kind = .flow(flowID: id, titleSnapshot: name, emoji: reviewIcon.isEmpty ? emoji : reviewIcon, backgroundHex: hex, stepCountSnapshot: count)
+        case .soundboard(let id, _, let emoji, let hex): item.kind = .soundboard(soundID: id, titleSnapshot: name, emoji: reviewIcon.isEmpty ? emoji : reviewIcon, backgroundHex: hex)
+        case .folder(var folder): folder.title = name; if !reviewIcon.isEmpty { folder.emoji = reviewIcon }; item.kind = .folder(folder)
+        case .slotReference: break
+        }
         var updated = client.profile
+        if var flow = pendingFlow {
+            flow.name = name
+            if !reviewIcon.isEmpty { flow.emoji = reviewIcon }
+            updated.upsertFlow(flow)
+        }
         guard updated.setSlotItem(item, pageIndex: pageIndex, slotIndex: slotIndex) else { return }
         client.pushUpdatedProfile(updated)
+        pendingItem = nil
         dismiss()
     }
 

@@ -55,7 +55,7 @@ public struct IOSLockScreenPillButton: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, compact ? 9 : 10)
-            .frame(minHeight: 34)
+            .frame(minHeight: 44)
             .background(
                 isArmed
                     ? palette.statusFailure
@@ -123,7 +123,7 @@ public struct IOSHideOtherWindowsPillButton: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, compact ? 9 : 10)
-            .frame(minHeight: 34)
+            .frame(minHeight: 44)
             .background(
                 isPressed ? palette.tileFillBottom : palette.tileFillTop.opacity(0.94),
                 in: RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -487,7 +487,7 @@ public struct IOSPinnedClipboardShelfView: View {
                 }
                 .padding(.leading, 10)
                 .padding(.vertical, 7)
-                .frame(minHeight: 36)
+                .frame(minHeight: 44)
                 .contentShape(Rectangle())
             }
             .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: rowKey))

@@ -48,7 +48,7 @@ public struct IOSShowDesktopPillButton: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, 10)
-            .frame(minHeight: 34)
+            .frame(minHeight: 44)
             .background(
                 isPressed ? palette.tileFillBottom : palette.tileFillTop.opacity(0.94),
                 in: RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -123,7 +123,7 @@ public struct IOSFinderDesktopIconsPillButton: View {
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 3)
-            .frame(minHeight: 34)
+            .frame(minHeight: 44)
             .background(
                 isPressed
                     ? palette.tileFillBottom

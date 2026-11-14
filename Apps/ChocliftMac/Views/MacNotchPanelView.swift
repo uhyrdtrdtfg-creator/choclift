@@ -31,7 +31,7 @@ public struct MacNotchPanelView: View {
     public static let tileSide: CGFloat = 76
     public static let gridSpacing: CGFloat = 10
     public static let cardWidth: CGFloat = (tileSide * 4) + (gridSpacing * 3) + 28 // 362
-    public static let cardHeight: CGFloat = 232
+    public static let cardHeight: CGFloat = 252
     public static let shadowHorizontalPadding: CGFloat = 16
     public static let shadowBottomPadding: CGFloat = 18
     public static let shadowTopPadding: CGFloat = 2
@@ -96,7 +96,10 @@ public struct MacNotchPanelView: View {
     public var body: some View {
         VStack(spacing: 10) {
             headerBar
-
+            if let title = coordinator.controlStripState.nowPlaying?.primaryDisplayText {
+                Text(title).font(.caption).foregroundStyle(palette.secondaryText)
+                    .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+            }
             tileGrid
         }
         .padding(.horizontal, 14)

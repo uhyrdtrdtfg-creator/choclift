@@ -80,134 +80,36 @@ public struct WatchPairingView: View {
     // MARK: - 6-Digit Watch PIN Keypad (Readable & Tap-Friendly)
 
     private func watchPINEntryCard(macName: String, errorMessage: String?) -> some View {
-        let isVerifying = (enteredPIN.count == 6 && errorMessage == nil)
+        VStack(spacing: 16) {
+            ChocliftBrandIconView(size: 32)
+            Text(L10n.tr("输入 Mac 配对码", "Enter your Mac PIN", language: lang))
+                .font(.headline).foregroundStyle(palette.primaryText)
+            Text(macName).font(.caption).foregroundStyle(palette.secondaryText)
+            TextField("000000", text: $enteredPIN)
+                .textContentType(.oneTimeCode)
 
-        return VStack(spacing: 8) {
-            VStack(spacing: 4) {
-                Text(L10n.tr("输入 \(macName) 配对码", "PIN on \(macName)", language: lang))
-                    .font(.system(size: 13, weight: .bold, design: .rounded))
-                    .foregroundStyle(palette.primaryText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-
-                if let link = client.activeLink {
-                    ChocLinkBadge(link: link, language: lang, palette: palette)
+                .multilineTextAlignment(.center)
+                .frame(minHeight: 48)
+                .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 12))
+                .onChange(of: enteredPIN) { _, value in
+                    enteredPIN = String(value.filter(\.isNumber).prefix(6))
                 }
-            }
-
-            HStack(spacing: 4) {
-                ForEach(0..<6, id: \.self) { idx in
-                    let digit: String = {
-                        guard idx < enteredPIN.count else { return "•" }
-                        let strIdx = enteredPIN.index(enteredPIN.startIndex, offsetBy: idx)
-                        return String(enteredPIN[strIdx])
-                    }()
-                    let isFilled = idx < enteredPIN.count
-                    let isCurrent = (idx == enteredPIN.count && errorMessage == nil)
-
-                    Text(digit)
-                        .font(.system(size: 15, weight: .black, design: .monospaced))
-                        .foregroundStyle(isFilled ? palette.primaryText : palette.secondaryText.opacity(0.45))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 30)
-                        .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(
-                                    errorMessage != nil
-                                        ? palette.statusFailure
-                                        : (isCurrent ? palette.accent : palette.subtleCardStroke),
-                                    lineWidth: (isCurrent || errorMessage != nil) ? 1.5 : 0.8
-                                )
-                        )
-                }
-            }
-
             if let errorMessage {
-                HStack(spacing: 5) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(palette.statusFailure)
-                    Text(errorMessage)
-                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-                        .foregroundStyle(palette.primaryText)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(palette.statusFailure.opacity(0.20), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .strokeBorder(palette.statusFailure.opacity(0.65), lineWidth: 1)
-                )
-            } else if isVerifying {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                        .frame(width: 14, height: 14)
-                        .tint(palette.accent)
-                    Text(L10n.tr("正在验证…", "Verifying PIN…", language: lang))
-                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-                        .foregroundStyle(palette.secondaryText)
-                        .lineLimit(1)
-                }
-                .padding(.vertical, 2)
+                Text(errorMessage).font(.caption).foregroundStyle(palette.statusFailure)
             }
-
-            let keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "CLR", "0", "⌫"]
-            let cols = Array(repeating: GridItem(.flexible(), spacing: 6), count: 3)
-
-            LazyVGrid(columns: cols, spacing: 6) {
-                ForEach(keys, id: \.self) { key in
-                    Button {
-                        handlePINKey(key)
-                    } label: {
-                        Group {
-                            if key == "⌫" {
-                                Image(systemName: "delete.left.fill")
-                                    .font(.system(size: 14, weight: .bold))
-                            } else {
-                                Text(key)
-                                    .font(.system(size: key == "CLR" ? 11.5 : 16, weight: .bold, design: .rounded))
-                            }
-                        }
-                        .foregroundStyle(key == "CLR" ? palette.secondaryText : palette.primaryText)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 38)
-                        .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .strokeBorder(palette.subtleCardStroke, lineWidth: 0.8)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isVerifying)
-                    .opacity(isVerifying ? 0.55 : 1.0)
-                }
-            }
-
-            Button {
+            Button(L10n.tr("连接", "Connect", language: lang)) { client.submitPIN(enteredPIN) }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .buttonStyle(.borderedProminent)
+                .disabled(enteredPIN.count != 6)
+            if let link = client.activeLink { ChocLinkBadge(link: link, language: lang, palette: palette) }
+            Button(L10n.tr("选择其他 Mac", "Choose another Mac", language: lang)) {
                 enteredPIN = ""
                 client.disconnect()
-            } label: {
-                Text(L10n.tr("取消配对", "Cancel", language: lang))
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(palette.secondaryText)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 36)
-                    .background(palette.tileFillTop.opacity(0.45), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .frame(minHeight: 44)
         }
-        .padding(9)
-        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
-        )
+        .padding(20)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 20))
     }
 
     private func handlePINKey(_ key: String) {
