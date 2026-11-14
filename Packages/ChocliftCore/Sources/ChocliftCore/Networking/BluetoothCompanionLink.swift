@@ -22,8 +22,9 @@ public enum ChocliftBluetooth {
     public static let minATTChunkSize = 20
     /// Conservative upper cap per GATT notification/write PDU across macOS, iOS, and watchOS.
     public static let defaultChunkSize = 180
-    /// Per-chunk acknowledgment timeout for `.withResponse` GATT writes so a locally dropped write never locks TX forever.
-    public static let defaultWriteAckTimeoutSeconds: TimeInterval = 5.0
+    /// BLE can remain connected through radio scheduling gaps. Allow 30 seconds per attempt;
+    /// one retry bounds a stalled chunk to the client's 60-second authenticated silence budget.
+    public static let defaultWriteAckTimeoutSeconds: TimeInterval = 30.0
     /// Legacy BLE 4.x connectable undirected advertising (`ADV_IND`) payload limit in bytes.
     public static let maxLegacyConnectableAdvertisingBytes = 31
     public static let macIDKey = "macID"
@@ -541,10 +542,12 @@ public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBP
 
     public func stop() {
         wantsAdvertising = false
-        manager?.stopAdvertising()
-        manager?.removeAllServices()
+        if subscribers.isEmpty && subscribedCentralIDs.isEmpty,
+           frameCharacteristic?.subscribedCentrals?.isEmpty != false {
+            manager?.stopAdvertising()
+            manager?.removeAllServices()
+        }
         updateAdvertisingState(false, availability: availability, error: nil)
-        subscribedCentralIDs.removeAll()
         let activeLinks = Array(subscribers.values)
         subscribers.removeAll()
         activeLinks.forEach { $0.cancel() }
@@ -552,7 +555,8 @@ public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBP
 
     private func beginAdvertising() {
         guard wantsAdvertising, let manager, manager.state == .poweredOn else { return }
-        subscribedCentralIDs.removeAll()
+        guard subscribers.isEmpty, subscribedCentralIDs.isEmpty,
+              frameCharacteristic?.subscribedCentrals?.isEmpty != false else { return }
         let service = CBMutableService(type: ChocliftBluetooth.serviceUUID, primary: true)
         let frame = CBMutableCharacteristic(
             type: ChocliftBluetooth.frameUUID,
@@ -718,6 +722,11 @@ public final class BluetoothCompanionAdvertiser: NSObject, ObservableObject, CBP
             guard characteristic.uuid == ChocliftBluetooth.frameUUID else { return }
             self.subscribedCentralIDs.remove(central.identifier)
             self.removeLink(for: central.identifier)
+            if !self.wantsAdvertising, self.subscribedCentralIDs.isEmpty, self.subscribers.isEmpty,
+               self.frameCharacteristic?.subscribedCentrals?.isEmpty != false {
+                peripheral.stopAdvertising()
+                peripheral.removeAllServices()
+            }
         }
     }
 
@@ -1002,7 +1011,7 @@ public final class BluetoothCompanionBrowser: NSObject, ObservableObject, CBCent
         switch manager.state {
         case .poweredOn:
             link.isAwaitingPowerOnConnect = false
-            manager.connect(peripheral, options: nil)
+            manager.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
         case .unknown, .resetting:
             link.isAwaitingPowerOnConnect = true
         default:
@@ -1072,7 +1081,7 @@ public final class BluetoothCompanionBrowser: NSObject, ObservableObject, CBCent
             if central.state == .poweredOn {
                 if let link = self.activeLink, link.isAwaitingPowerOnConnect, let peripheral = link.peripheral {
                     link.isAwaitingPowerOnConnect = false
-                    central.connect(peripheral, options: nil)
+                    central.connect(peripheral, options: [CBConnectPeripheralOptionNotifyOnDisconnectionKey: true])
                 }
                 if self.wantsScanning {
                     self.beginScanning()
@@ -1397,6 +1406,8 @@ final class BluetoothClientLink: BluetoothMetadataAwareTransport, BluetoothError
     private var didActivate = false
     private var writeInFlight = false
     private var writeSequence: UInt64 = 0
+    private var inFlightChunk: Data?
+    private var didRetryInFlightChunk = false
     private var writeAckWatchdogTask: Task<Void, Never>?
     private var isFlushingWrites = false
     private var isClosed = false
@@ -1544,6 +1555,8 @@ final class BluetoothClientLink: BluetoothMetadataAwareTransport, BluetoothError
         }
         cancelWriteAckWatchdog()
         writeInFlight = false
+        inFlightChunk = nil
+        didRetryInFlightChunk = false
         flushNextWrite()
     }
 
@@ -1560,6 +1573,7 @@ final class BluetoothClientLink: BluetoothMetadataAwareTransport, BluetoothError
         isClosed = true
         cancelWriteAckWatchdog()
         writeInFlight = false
+        inFlightChunk = nil
         outbound.clear()
         codec.reset()
         onInvalidated?()
@@ -1573,6 +1587,7 @@ final class BluetoothClientLink: BluetoothMetadataAwareTransport, BluetoothError
         isClosed = true
         cancelWriteAckWatchdog()
         writeInFlight = false
+        inFlightChunk = nil
         outbound.clear()
         codec.reset()
         onInvalidated?()
@@ -1585,6 +1600,7 @@ final class BluetoothClientLink: BluetoothMetadataAwareTransport, BluetoothError
         isClosed = true
         cancelWriteAckWatchdog()
         writeInFlight = false
+        inFlightChunk = nil
         outbound.clear()
         codec.reset()
         onInvalidated?()
@@ -1596,6 +1612,7 @@ final class BluetoothClientLink: BluetoothMetadataAwareTransport, BluetoothError
         isClosed = true
         cancelWriteAckWatchdog()
         writeInFlight = false
+        inFlightChunk = nil
         outbound.clear()
         codec.reset()
         onInvalidated?()
@@ -1618,6 +1635,13 @@ final class BluetoothClientLink: BluetoothMetadataAwareTransport, BluetoothError
                   !self.isClosed,
                   self.writeInFlight,
                   self.writeSequence == sequence else {
+                return
+            }
+            if let driver = self.writeDriver, driver.isConnected(),
+               !self.didRetryInFlightChunk, let chunk = self.inFlightChunk {
+                self.didRetryInFlightChunk = true
+                self.armWriteAckWatchdog(sequence: sequence)
+                driver.writeValue(chunk, Self.frameWriteType)
                 return
             }
             self.failWrite(
@@ -1667,6 +1691,8 @@ final class BluetoothClientLink: BluetoothMetadataAwareTransport, BluetoothError
                 return
             }
             writeInFlight = true
+            inFlightChunk = chunk
+            didRetryInFlightChunk = false
             writeSequence &+= 1
             let sequence = writeSequence
             armWriteAckWatchdog(sequence: sequence)

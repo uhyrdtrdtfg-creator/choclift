@@ -212,6 +212,72 @@ final class BluetoothWatchConnectionTests: XCTestCase {
     }
 
     #if os(macOS)
+    func testOneSlowATTAcknowledgmentRetriesChunkOnceWithoutCancelling() async throws {
+        final class ServerPipe: CompanionFrameTransport {
+            var onReady: (() -> Void)?
+            var onPayload: ((Data) -> Void)?
+            var onClosed: (() -> Void)?
+            weak var clientLink: BluetoothClientLink?
+            func start() { onReady?() }
+            func send(_ data: Data) {
+                Task { @MainActor [weak self] in try? self?.clientLink?.accept(data) }
+            }
+            func cancel() { onClosed?() }
+        }
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let server = MacServerEngine(macID: "slow-ack", macName: "Mac")
+        let delegate = WatchTestServerDelegate()
+        server.delegate = delegate
+        defer { server.stop() }
+        let pipe = ServerPipe()
+        server.acceptCompanionTransport(pipe, link: .bluetooth)
+        let codec = BluetoothFrameCodec()
+        var slow = false
+        var writes: [Data] = []
+        var cancelled = 0
+        var link: BluetoothClientLink!
+        let driver = BluetoothClientWriteDriver(
+            isConnected: { true }, supportsWriteWithResponse: { true },
+            maximumWriteValueLength: { _ in 180 },
+            writeValue: { data, _ in
+                if slow {
+                    writes.append(data)
+                    if writes.count == 1 { return } // Locally delayed chunk: no ATT callback yet.
+                }
+                if let frames = try? codec.append(data) {
+                    for frame in frames { pipe.onPayload?(frame) }
+                }
+                link.didCompleteInFlightWrite()
+            }, cancelConnection: { cancelled += 1; pipe.cancel() })
+        link = BluetoothClientLink(host: DiscoveredBluetoothMac(id: UUID(), name: "Mac", macID: server.macID),
+                                   writeDriver: driver, writeAckTimeoutSeconds: 0.05)
+        pipe.clientLink = link
+        let client = CompanionClientEngine(deviceID: "slow-watch", deviceName: "Watch", platform: .appleWatch,
+                                           userDefaults: defaults, storageKeyPrefix: "slow")
+        defer { client.disconnect() }
+        client.connectInMemoryBluetooth(to: link, targetName: server.macName, peripheralID: UUID())
+        try await waitUntil("slow ACK client awaiting PIN") {
+            if case .awaitingPIN = client.connectionState { return true }; return false
+        }
+        client.submitPIN(server.currentPIN)
+        try await waitUntil("slow ACK client authenticated") { client.connectionState.isConnected }
+        let state = client.connectionState
+        slow = true
+        client.performQuickAction(.lockScreen)
+        for _ in 0..<7 {
+            try await Task.sleep(for: .milliseconds(20))
+            XCTAssertEqual(client.connectionState, state)
+        }
+        XCTAssertEqual(writes.count, 2)
+        XCTAssertEqual(writes.first, writes.last)
+        XCTAssertEqual(delegate.receivedQuickActions, [.lockScreen])
+        XCTAssertFalse(link.isLinkClosed)
+        XCTAssertFalse(link.isWriteInFlight)
+        XCTAssertEqual(cancelled, 0)
+    }
+
     func testAppleWatchBLEConnectPostConnectionMetadataReconnectAndUnpairedProbeSkip() async throws {
         let suiteName = "com.choclift.tests.watchble.\(UUID().uuidString)"
         let isolatedDefaults = UserDefaults(suiteName: suiteName)!
@@ -691,6 +757,7 @@ final class BluetoothWatchConnectionTests: XCTestCase {
 
             var allowWritesUntilAwaitingPIN = true
             var cancelConnectionCount = 0
+            var rejectedWriteCount = 0
             var activeClientLink: BluetoothClientLink?
             let host = DiscoveredBluetoothMac(id: UUID(), name: "Mac", macID: nil)
 
@@ -724,6 +791,7 @@ final class BluetoothWatchConnectionTests: XCTestCase {
                             return
                         }
 
+                        rejectedWriteCount += 1
                         switch mode {
                         case .attCallbackError:
                             Task { @MainActor in
@@ -784,6 +852,9 @@ final class BluetoothWatchConnectionTests: XCTestCase {
                 watch.lastConnectionIssue != nil
             }
 
+            if mode == .silentLocalDropWithoutCallback {
+                XCTAssertEqual(rejectedWriteCount, 2, "Timeout must retry exactly once before failing the link")
+            }
             XCTAssertGreaterThanOrEqual(cancelConnectionCount, 1, "Peripheral connection must be cancelled on write failure (\(mode))")
             XCTAssertFalse(watch.lastConnectionIssue?.isEmpty ?? true)
         }

@@ -560,6 +560,124 @@ final class CompanionLoopbackIntegrationTests: XCTestCase {
         }
     }
 
+    func testAuthenticatedBLESurvivesGapBeyondOldBudgetsWithoutHelloOrUIReset() async throws {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let server = MacServerEngine(macID: "gap-mac", macName: "Gap Mac")
+        let delegate = MockMacServerDelegate()
+        server.delegate = delegate
+        // Scale production 15/16-second budgets to 150/160ms; gap is 300ms.
+        server.bluetoothSessionTimeoutSeconds = 0.75
+        server.heartbeatSweepIntervalSeconds = 0.02
+        server.start(preferredPort: 0, advertiseBonjour: false, advertiseBluetooth: false)
+        defer { server.stop() }
+        let client = CompanionClientEngine(deviceID: "gap-watch", deviceName: "Watch", platform: .appleWatch,
+                                           userDefaults: defaults, storageKeyPrefix: "gap")
+        client.heartbeatIntervalSeconds = 0.05
+        client.heartbeatTimeoutSeconds = 0.15
+        client.bluetoothHeartbeatTimeoutSeconds = 0.6
+        defer { client.disconnect() }
+        let (serverPipe, clientPipe) = SimulatedBLECompanionPipe.pair()
+        server.acceptCompanionTransport(serverPipe, link: .bluetooth)
+        let receive = serverPipe.onPayload
+        var hellos = 0
+        serverPipe.onPayload = { data in
+            var accumulator = WireStreamAccumulator()
+            if let frames = try? accumulator.appendAndExtractPayloads(data) {
+                for frame in frames {
+                    if case .hello = try? WireFrameCodec.decodePayload(ClientMessage.self, from: frame) { hellos += 1 }
+                }
+            }
+            receive?(data)
+        }
+        client.connectInMemoryBluetooth(to: clientPipe, targetName: server.macName, peripheralID: UUID())
+        try await waitUntil("gap client awaiting PIN") {
+            if case .awaitingPIN = client.connectionState { return true }; return false
+        }
+        client.submitPIN(server.currentPIN)
+        try await waitUntil("gap client authenticated") { client.connectionState.isConnected }
+        let state = client.connectionState
+        clientPipe.maxChunksPerFlush = 0
+        serverPipe.maxChunksPerFlush = 0
+        // Multiple ping opportunities pass with neither writes nor notifications delivered.
+        for _ in 0..<15 {
+            try await Task.sleep(for: .milliseconds(20))
+            XCTAssertEqual(client.connectionState, state)
+            XCTAssertEqual(server.connectedDeviceCount, 1)
+        }
+        client.simulatedBluetoothConnector = { _ in XCTFail("Connected foreground must not reconnect"); return nil }
+        client.handleAppDidBecomeActive()
+        clientPipe.maxChunksPerFlush = nil
+        serverPipe.maxChunksPerFlush = nil
+        clientPipe.pumpReadyToUpdateSubscribers()
+        serverPipe.pumpReadyToUpdateSubscribers()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(client.connectionState, state)
+        XCTAssertEqual(client.activeLink, .bluetooth)
+        XCTAssertEqual(hellos, 1, "Radio gap and wrist raise must not send another hello")
+    }
+
+    func testSavedBLEDisconnectRetrievesKnownIDBeyondRetryBudgetAndUserDisconnectStopsRecovery() async throws {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let server = MacServerEngine(macID: "known-mac", macName: "Known Mac")
+        let delegate = MockMacServerDelegate()
+        server.delegate = delegate
+        defer { server.stop() }
+        let client = CompanionClientEngine(deviceID: "known-watch", deviceName: "Watch", platform: .appleWatch,
+                                           userDefaults: defaults, storageKeyPrefix: "known")
+        client.reconnectDelaySeconds = 0.01
+        client.maxAutoReconnectAttempts = 1
+        defer { client.disconnect() }
+        let id = UUID()
+        let (serverPipe, clientPipe) = SimulatedBLECompanionPipe.pair()
+        server.acceptCompanionTransport(serverPipe, link: .bluetooth)
+        client.connectInMemoryBluetooth(to: clientPipe, targetName: server.macName, peripheralID: id)
+        try await waitUntil("known client awaiting PIN") {
+            if case .awaitingPIN = client.connectionState { return true }; return false
+        }
+        client.submitPIN(server.currentPIN)
+        try await waitUntil("known client authenticated") { client.connectionState.isConnected }
+        var attempts: [UUID] = []
+        var currentServerPipe: SimulatedBLECompanionPipe?
+        client.simulatedKnownBluetoothConnector = { peripheralID in
+            attempts.append(peripheralID)
+            guard attempts.count > 3 else { return nil }
+            let (nextServer, nextClient) = SimulatedBLECompanionPipe.pair()
+            currentServerPipe = nextServer
+            server.acceptCompanionTransport(nextServer, link: .bluetooth)
+            return nextClient
+        }
+        XCTAssertTrue(client.discoveredMacs.isEmpty)
+        XCTAssertTrue(client.discoveredBluetoothMacs.isEmpty)
+        serverPipe.cancel()
+        try await waitUntil("saved peripheral retrieved repeatedly without advertisements") {
+            attempts.count >= 4 && client.connectionState.isConnected
+        }
+        XCTAssertEqual(Set(attempts), [id])
+        XCTAssertEqual(client.activeLink, .bluetooth)
+        // A Bonjour record appearing during BLE recovery must not take priority over successful retrieval.
+        client.simulateDiscoveredWiFiMacs([
+            DiscoveredMacHost(id: "stale-record", name: server.macName, macID: server.macID,
+                              endpoint: .hostPort(host: "127.0.0.1", port: 9))
+        ])
+        currentServerPipe?.cancel()
+        try await waitUntil("BLE retrieval wins over stale Bonjour record") {
+            attempts.count >= 5 && client.connectionState.isConnected
+        }
+        XCTAssertEqual(client.activeLink, .bluetooth)
+        client.disconnect()
+        let count = attempts.count
+        client.simulatedBluetoothConnector = { _ in XCTFail("User disconnect must suppress reconnect"); return nil }
+        client.handleAppDidBecomeActive()
+        try await Task.sleep(for: .milliseconds(180))
+        XCTAssertEqual(attempts.count, count)
+        XCTAssertEqual(client.connectionState, .disconnected)
+        XCTAssertTrue(client.isAutoConnectSuppressedForCurrentLaunch)
+    }
+
     func testMacServerHeartbeatEvictsSilentBluetoothSessionWhileKeepingActiveHeartbeatAlive() async throws {
         let suiteName = "com.choclift.tests.hb.\(UUID().uuidString)"
         let isolatedDefaults = UserDefaults(suiteName: suiteName)!
