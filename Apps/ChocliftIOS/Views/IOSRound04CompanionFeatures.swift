@@ -115,33 +115,33 @@ public struct IOSAudioOutputPickerButton: View {
             }
             showPickerSheet = true
         } label: {
-            HStack(spacing: 4) {
+            HStack(spacing: 5) {
                 Image(systemName: iconName)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 13.5, weight: .bold))
                     .foregroundStyle(currentDevice != nil ? palette.accent : palette.secondaryText)
 
                 if !compact, let currentDevice {
                     Text(currentDevice.name)
-                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
-                        .frame(maxWidth: 96)
+                        .frame(maxWidth: 108)
                 }
             }
-            .padding(.horizontal, 8)
-            .frame(minWidth: 34, minHeight: 34)
+            .padding(.horizontal, 10)
+            .frame(minWidth: 44, minHeight: 44)
             .background(
                 isPressed ? palette.accent.opacity(0.16) : palette.tileFillBottom,
-                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .strokeBorder(
                         isPressed ? palette.accent : palette.subtleCardStroke,
                         lineWidth: isPressed ? 1.6 : 1
                     )
             )
-            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .scaleEffect(isPressed ? 0.94 : 1.0)
         }
         .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: key))
@@ -157,6 +157,9 @@ public struct IOSAudioOutputPickerButton: View {
 public struct IOSAudioOutputPickerSheet: View {
     @ObservedObject var client: CompanionClientEngine
     @Environment(\.dismiss) private var dismiss
+
+    @State private var awaitingSwitchFeedback: Bool = false
+    @State private var sheetFeedback: CompanionFeedbackToast?
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -180,6 +183,10 @@ public struct IOSAudioOutputPickerSheet: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         currentOutputSummaryCard
+
+                        if let feedback = sheetFeedback {
+                            switchFeedbackBanner(feedback)
+                        }
 
                         if isConnected && !state.canSwitchAudioOutput {
                             readOnlyBanner
@@ -218,8 +225,49 @@ public struct IOSAudioOutputPickerSheet: View {
                     }
                 }
             }
+            .onReceive(client.$lastFeedback) { newFeedback in
+                guard awaitingSwitchFeedback, let newFeedback else { return }
+                awaitingSwitchFeedback = false
+                sheetFeedback = newFeedback
+                CompanionHaptics.notify(
+                    enabled: client.profile.settings.hapticFeedbackEnabled,
+                    type: newFeedback.success ? .success : .error
+                )
+            }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private func switchFeedbackBanner(_ feedback: CompanionFeedbackToast) -> some View {
+        let tint = feedback.success ? palette.statusConnected : palette.statusFailure
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: feedback.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.subheadline.bold())
+                .foregroundStyle(tint)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(feedback.title)
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+
+                if let detail = feedback.detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(feedback.success ? palette.secondaryText : palette.statusFailure)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(tint.opacity(0.55), lineWidth: 1)
+        )
+        .accessibilityIdentifier("ios-audio-output-feedback-banner")
     }
 
     private var currentOutputSummaryCard: some View {
@@ -274,8 +322,8 @@ public struct IOSAudioOutputPickerSheet: View {
 
             Text(
                 L10n.tr(
-                    "当前音频输出为只读：macOS 13 报告无法通过公开 CoreAudio 接口切换默认输出设备，因此仅展示当前设备。",
-                    "Read-only: macOS 13 reported that switching the default output device is unavailable via public CoreAudio API, so the current device is shown without faking a switch.",
+                    "当前音频输出为只读：macOS 报告默认音频输出属性不支持写入，因此仅展示当前设备，不会伪造切换结果。",
+                    "Read-only: macOS reported that the default output property is not settable via public CoreAudio API, so the current device is shown without faking a switch.",
                     language: lang
                 )
             )
@@ -334,6 +382,8 @@ public struct IOSAudioOutputPickerSheet: View {
                 Button {
                     guard state.canSwitchAudioOutput else { return }
                     CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                    sheetFeedback = nil
+                    awaitingSwitchFeedback = true
                     client.selectAudioOutputDevice(id: device.id)
                 } label: {
                     HStack(spacing: 12) {

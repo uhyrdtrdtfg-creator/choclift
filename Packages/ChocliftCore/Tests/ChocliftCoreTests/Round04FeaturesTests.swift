@@ -171,6 +171,261 @@ final class Round04FeaturesTests: XCTestCase {
         XCTAssertEqual(decoded, state)
         XCTAssertEqual(decoded.currentAudioOutputDevice, builtIn)
         XCTAssertFalse(decoded.canSwitchAudioOutput)
+
+        // Read-only state with nil or unmatched selectedAudioOutputDeviceID must NEVER encode or expose a fake selected ID
+        let unknownDefaultReadOnly = ControlStripState(
+            audioOutputDevices: [builtIn, headphones],
+            selectedAudioOutputDeviceID: nil,
+            canSwitchAudioOutput: false
+        )
+        XCTAssertNil(unknownDefaultReadOnly.selectedAudioOutputDeviceID)
+        XCTAssertNil(unknownDefaultReadOnly.currentAudioOutputDevice)
+        let unknownJSON = String(decoding: try JSONEncoder().encode(unknownDefaultReadOnly), as: UTF8.self)
+        XCTAssertFalse(unknownJSON.contains("selectedAudioOutputDeviceID"))
+
+        let staleSelectedReadOnly = ControlStripState(
+            audioOutputDevices: [builtIn, headphones],
+            selectedAudioOutputDeviceID: "non-existent-uid",
+            canSwitchAudioOutput: false
+        )
+        XCTAssertNil(staleSelectedReadOnly.selectedAudioOutputDeviceID)
+        XCTAssertNil(staleSelectedReadOnly.currentAudioOutputDevice)
+        let staleJSON = String(decoding: try JSONEncoder().encode(staleSelectedReadOnly), as: UTF8.self)
+        XCTAssertFalse(staleJSON.contains("selectedAudioOutputDeviceID"))
+    }
+
+    func testAudioOutputUIDResolutionTransportFallbackAndHiddenCurrentDefaultSelected() {
+        let speakers = MacAudioRawDeviceRecord(
+            audioObjectID: 48,
+            uid: "BuiltInSpeakerDevice",
+            name: "MacBook Pro Speakers",
+            transportKind: .builtIn,
+            outputChannelCount: 2,
+            isHidden: false
+        )
+        let uidLessUSB = MacAudioRawDeviceRecord(
+            audioObjectID: 64,
+            uid: nil,
+            name: "Studio Monitor DAC",
+            transportKind: .usb,
+            outputChannelCount: 2,
+            isHidden: false
+        )
+        let hiddenAggregate = MacAudioRawDeviceRecord(
+            audioObjectID: 95,
+            uid: "com.apple.audio.HiddenSystemOutput",
+            name: "Hidden Aggregate Output",
+            transportKind: .virtualOrOther,
+            outputChannelCount: 2,
+            isHidden: true
+        )
+
+        // When hiddenAggregate is NOT the default, it stays hidden
+        let normalSnap = MacAudioOutputSwitchEngine.enumerateSnapshot(
+            records: [speakers, uidLessUSB, hiddenAggregate],
+            defaultOutputObjectID: 48,
+            isDefaultOutputSettable: true
+        )
+        XCTAssertEqual(normalSnap.devices.map(\.id), ["BuiltInSpeakerDevice", "fallback:usb:studio monitor dac"])
+        XCTAssertEqual(normalSnap.selectedID, "BuiltInSpeakerDevice")
+
+        // When hiddenAggregate IS the live default, it is included and selected so the checkmark matches reality
+        let hiddenDefaultSnap = MacAudioOutputSwitchEngine.enumerateSnapshot(
+            records: [speakers, uidLessUSB, hiddenAggregate],
+            defaultOutputObjectID: 95,
+            isDefaultOutputSettable: true
+        )
+        XCTAssertEqual(
+            hiddenDefaultSnap.devices.map(\.id),
+            ["BuiltInSpeakerDevice", "fallback:usb:studio monitor dac", "com.apple.audio.HiddenSystemOutput"]
+        )
+        XCTAssertEqual(hiddenDefaultSnap.selectedID, "com.apple.audio.HiddenSystemOutput")
+
+        // UID resolves first; fallback ID resolves ONLY for UID-less device and survives objectID change (64 -> 180)
+        let restartedUIDLessUSB = MacAudioRawDeviceRecord(
+            audioObjectID: 180,
+            uid: nil,
+            name: "Studio Monitor DAC",
+            transportKind: .usb,
+            outputChannelCount: 2,
+            isHidden: false
+        )
+        let resolvedFallback = MacAudioOutputSwitchEngine.resolveTarget(
+            requestedID: "fallback:usb:studio monitor dac",
+            in: [speakers, restartedUIDLessUSB],
+            defaultOutputObjectID: 48
+        )
+        XCTAssertEqual(resolvedFallback?.record.audioObjectID, 180)
+
+        // Fallback ID must NOT match a device that actually has a non-empty UID
+        let fallbackAgainstUIDDevice = MacAudioOutputSwitchEngine.resolveTarget(
+            requestedID: MacAudioOutputDevice.fallbackID(transportKind: .builtIn, name: "MacBook Pro Speakers"),
+            in: [speakers, restartedUIDLessUSB],
+            defaultOutputObjectID: 48
+        )
+        XCTAssertNil(fallbackAgainstUIDDevice)
+    }
+
+    func testAudioOutputStaleObjectIDNeverSelectsWrongDeviceAfterCoreAudioRestart() {
+        let driver = MockAudioOutputHardwareDriver(
+            records: [
+                MacAudioRawDeviceRecord(
+                    audioObjectID: 48,
+                    uid: "BuiltInSpeakerDevice",
+                    name: "MacBook Pro Speakers",
+                    transportKind: .builtIn,
+                    outputChannelCount: 2
+                ),
+                // Object ID 77 used to be USB DAC before coreaudiod restart, now belongs to AirPods!
+                MacAudioRawDeviceRecord(
+                    audioObjectID: 77,
+                    uid: "AA-BB-AirPods",
+                    name: "AirPods Pro",
+                    transportKind: .bluetooth,
+                    outputChannelCount: 2
+                ),
+                // USB DAC moved to object ID 142 after coreaudiod restart
+                MacAudioRawDeviceRecord(
+                    audioObjectID: 142,
+                    uid: "USB-DAC-UID",
+                    name: "USB Studio DAC",
+                    transportKind: .usb,
+                    outputChannelCount: 2
+                )
+            ],
+            defaultOutputObjectID: 48,
+            defaultSystemOutputObjectID: 48
+        )
+
+        for staleID in ["77", "audio-77", "audio-obj-77"] {
+            let staleResult = MacAudioOutputSwitchEngine.performSwitch(
+                requestedID: staleID,
+                language: .english,
+                using: driver
+            )
+            XCTAssertFalse(staleResult.success)
+            XCTAssertEqual(driver.defaultOutputObjectID, 48, "Stale object ID \(staleID) must not touch AirPods (77)")
+            XCTAssertEqual(staleResult.snapshot.selectedID, "BuiltInSpeakerDevice")
+        }
+
+        // Simulate UID translation returning an even newer live AudioObjectID (205) right before set
+        driver.translatedUIDOverrides["USB-DAC-UID"] = 205
+        driver.records[2].audioObjectID = 205
+
+        let liveResult = MacAudioOutputSwitchEngine.performSwitch(
+            requestedID: "USB-DAC-UID",
+            language: .english,
+            using: driver
+        )
+        XCTAssertTrue(liveResult.success)
+        XCTAssertEqual(driver.defaultOutputObjectID, 205)
+        XCTAssertEqual(driver.defaultSystemOutputObjectID, 205)
+        XCTAssertEqual(liveResult.snapshot.selectedID, "USB-DAC-UID")
+    }
+
+    func testAudioOutputSelectorListSetErrorOSStatusAndActiveProcessMigration() {
+        // 1. Selector helper includes DefaultSystemOutputDevice when available & settable, skips otherwise
+        XCTAssertEqual(
+            MacAudioDefaultSelector.selectorsToApply(hasDefaultSystemOutput: true, isDefaultSystemOutputSettable: true),
+            [.defaultOutput, .defaultSystemOutput]
+        )
+        XCTAssertEqual(
+            MacAudioDefaultSelector.selectorsToApply(hasDefaultSystemOutput: false, isDefaultSystemOutputSettable: true),
+            [.defaultOutput]
+        )
+        XCTAssertEqual(
+            MacAudioDefaultSelector.selectorsToApply(hasDefaultSystemOutput: true, isDefaultSystemOutputSettable: false),
+            [.defaultOutput]
+        )
+
+        let baseRecords = [
+            MacAudioRawDeviceRecord(
+                audioObjectID: 48,
+                uid: "BuiltInSpeakerDevice",
+                name: "MacBook Pro Speakers",
+                transportKind: .builtIn,
+                outputChannelCount: 2
+            ),
+            MacAudioRawDeviceRecord(
+                audioObjectID: 92,
+                uid: "USB-DAC-UID",
+                name: "USB Studio DAC",
+                transportKind: .usb,
+                outputChannelCount: 2
+            )
+        ]
+
+        // 2. Read-only property rejects without mutating defaults or faking selection
+        let readOnlyDriver = MockAudioOutputHardwareDriver(
+            records: baseRecords,
+            defaultOutputObjectID: 48,
+            defaultSystemOutputObjectID: 48,
+            isDefaultOutputSettable: false
+        )
+        let readOnlyRes = MacAudioOutputSwitchEngine.performSwitch(
+            requestedID: "USB-DAC-UID",
+            language: .english,
+            using: readOnlyDriver
+        )
+        XCTAssertFalse(readOnlyRes.success)
+        XCTAssertTrue(readOnlyRes.title.localizedCaseInsensitiveContains("Read-Only"))
+        XCTAssertEqual(readOnlyDriver.defaultOutputObjectID, 48)
+        XCTAssertEqual(readOnlyRes.snapshot.selectedID, "BuiltInSpeakerDevice")
+
+        // 3. Set failure includes OSStatus, keeps previous selection marked, and does NOT claim "read-only"
+        let failingDriver = MockAudioOutputHardwareDriver(
+            records: baseRecords,
+            defaultOutputObjectID: 48,
+            defaultSystemOutputObjectID: 48,
+            forcedDefaultOutputWriteStatus: 560227702 // 'what' (kAudioHardwareUnspecifiedError)
+        )
+        let failedRes = MacAudioOutputSwitchEngine.performSwitch(
+            requestedID: "USB-DAC-UID",
+            language: .english,
+            using: failingDriver
+        )
+        XCTAssertFalse(failedRes.success)
+        XCTAssertTrue(failedRes.detail.contains("560227702"))
+        XCTAssertFalse(failedRes.title.localizedCaseInsensitiveContains("read-only"))
+        XCTAssertFalse(failedRes.detail.localizedCaseInsensitiveContains("read-only"))
+        XCTAssertEqual(failedRes.snapshot.selectedID, "BuiltInSpeakerDevice")
+
+        // 4. Active output process migration: settable process moves; read-only process reports honestly while defaults switch
+        let processDriver = MockAudioOutputHardwareDriver(
+            records: baseRecords,
+            defaultOutputObjectID: 48,
+            defaultSystemOutputObjectID: 48,
+            runningProcesses: [
+                MacAudioRunningProcessRecord(
+                    processObjectID: 301,
+                    pid: 4100,
+                    appName: "Music",
+                    outputDeviceObjectIDs: [48],
+                    isOutputDeviceSettable: true
+                ),
+                MacAudioRunningProcessRecord(
+                    processObjectID: 302,
+                    pid: 4200,
+                    appName: "Zoom",
+                    outputDeviceObjectIDs: [48],
+                    isOutputDeviceSettable: false
+                )
+            ]
+        )
+        let migratedRes = MacAudioOutputSwitchEngine.performSwitch(
+            requestedID: "USB-DAC-UID",
+            language: .english,
+            using: processDriver
+        )
+        XCTAssertTrue(migratedRes.success)
+        XCTAssertEqual(migratedRes.appliedSelectors, [.defaultOutput, .defaultSystemOutput])
+        XCTAssertEqual(migratedRes.readBackDefaultOutputObjectID, 92)
+        XCTAssertEqual(migratedRes.readBackSystemOutputObjectID, 92)
+        XCTAssertEqual(migratedRes.movedProcessCount, 1)
+        XCTAssertEqual(processDriver.movedProcesses[301], 92)
+        XCTAssertEqual(migratedRes.unmovedAppNames, ["Zoom"])
+        XCTAssertTrue(migratedRes.detail.contains("Zoom"))
+        XCTAssertEqual(migratedRes.snapshot.selectedID, "USB-DAC-UID")
     }
 
     // MARK: - 4. Tile Action Feedback Tracker & Auto-Expiry Without Second Toast
@@ -528,3 +783,111 @@ private final class Round04WireTestDelegate: MacServerEngineDelegate {
     }
 }
 #endif
+
+private final class MockAudioOutputHardwareDriver: MacAudioOutputHardwareDriver {
+    var records: [MacAudioRawDeviceRecord]
+    var defaultOutputObjectID: UInt32
+    var defaultSystemOutputObjectID: UInt32
+    var hasDefaultSystemOutput: Bool
+    var isDefaultOutputSettable: Bool
+    var isDefaultSystemOutputSettable: Bool
+    var forcedDefaultOutputWriteStatus: Int32?
+    var forcedSystemOutputWriteStatus: Int32?
+    var translatedUIDOverrides: [String: UInt32] = [:]
+    var runningProcesses: [MacAudioRunningProcessRecord]?
+    var movedProcesses: [UInt32: UInt32] = [:]
+    var runningDeviceIDs: Set<UInt32> = []
+
+    init(
+        records: [MacAudioRawDeviceRecord],
+        defaultOutputObjectID: UInt32,
+        defaultSystemOutputObjectID: UInt32,
+        hasDefaultSystemOutput: Bool = true,
+        isDefaultOutputSettable: Bool = true,
+        isDefaultSystemOutputSettable: Bool = true,
+        forcedDefaultOutputWriteStatus: Int32? = nil,
+        forcedSystemOutputWriteStatus: Int32? = nil,
+        runningProcesses: [MacAudioRunningProcessRecord]? = []
+    ) {
+        self.records = records
+        self.defaultOutputObjectID = defaultOutputObjectID
+        self.defaultSystemOutputObjectID = defaultSystemOutputObjectID
+        self.hasDefaultSystemOutput = hasDefaultSystemOutput
+        self.isDefaultOutputSettable = isDefaultOutputSettable
+        self.isDefaultSystemOutputSettable = isDefaultSystemOutputSettable
+        self.forcedDefaultOutputWriteStatus = forcedDefaultOutputWriteStatus
+        self.forcedSystemOutputWriteStatus = forcedSystemOutputWriteStatus
+        self.runningProcesses = runningProcesses
+    }
+
+    func isSelectorAvailable(_ selector: MacAudioDefaultSelector) -> Bool {
+        switch selector {
+        case .defaultOutput:
+            return true
+        case .defaultSystemOutput:
+            return hasDefaultSystemOutput
+        }
+    }
+
+    func isSelectorSettable(_ selector: MacAudioDefaultSelector) -> (isSettable: Bool, status: Int32) {
+        switch selector {
+        case .defaultOutput:
+            return (isDefaultOutputSettable, 0)
+        case .defaultSystemOutput:
+            guard hasDefaultSystemOutput else { return (false, -1) }
+            return (isDefaultSystemOutputSettable, 0)
+        }
+    }
+
+    func readDefaultDevice(for selector: MacAudioDefaultSelector) -> (objectID: UInt32, status: Int32) {
+        switch selector {
+        case .defaultOutput:
+            return (defaultOutputObjectID, 0)
+        case .defaultSystemOutput:
+            guard hasDefaultSystemOutput else { return (0, -1) }
+            return (defaultSystemOutputObjectID, 0)
+        }
+    }
+
+    func writeDefaultDevice(_ objectID: UInt32, for selector: MacAudioDefaultSelector) -> Int32 {
+        switch selector {
+        case .defaultOutput:
+            if let forced = forcedDefaultOutputWriteStatus {
+                return forced
+            }
+            defaultOutputObjectID = objectID
+            return 0
+        case .defaultSystemOutput:
+            guard hasDefaultSystemOutput else { return -1 }
+            if let forced = forcedSystemOutputWriteStatus {
+                return forced
+            }
+            defaultSystemOutputObjectID = objectID
+            return 0
+        }
+    }
+
+    func readLiveDeviceRecords() -> [MacAudioRawDeviceRecord] {
+        records
+    }
+
+    func translateUIDToLiveObjectID(_ uid: String) -> UInt32? {
+        if let override = translatedUIDOverrides[uid] {
+            return override
+        }
+        return records.first(where: { $0.uid == uid })?.audioObjectID
+    }
+
+    func readRunningOutputProcesses(excludingCurrentProcess: Bool) -> [MacAudioRunningProcessRecord]? {
+        runningProcesses
+    }
+
+    func writeProcessOutputDevice(processObjectID: UInt32, targetDeviceObjectID: UInt32) -> Int32 {
+        movedProcesses[processObjectID] = targetDeviceObjectID
+        return 0
+    }
+
+    func isDeviceRunningOutputAudio(_ objectID: UInt32) -> Bool {
+        runningDeviceIDs.contains(objectID)
+    }
+}

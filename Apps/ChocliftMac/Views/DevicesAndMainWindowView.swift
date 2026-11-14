@@ -743,6 +743,13 @@ public struct DevicesAndSettingsView: View {
                 .frame(width: 196)
             }
 
+            LabeledContent(L10n.tr("Mac 音频输出", "Mac Audio Output", language: lang)) {
+                MacStudioAudioOutputMenu(
+                    coordinator: coordinator,
+                    triggeredBy: L10n.tr("Mac 工作台", "Mac Studio", language: lang)
+                )
+            }
+
             Divider()
 
             Toggle(
@@ -1004,6 +1011,10 @@ public struct MacMainWindowView: View {
 
             Divider()
 
+            studioAudioStatusRow
+
+            Divider()
+
             ZStack(alignment: .bottom) {
                 Group {
                     switch coordinator.selectedSection {
@@ -1026,18 +1037,26 @@ public struct MacMainWindowView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 if let banner = coordinator.statusBannerMessage {
+                    let isAudioError = coordinator.lastAudioOutputError != nil
                     HStack(spacing: 8) {
-                        Image(systemName: "sparkles")
+                        Image(systemName: isAudioError ? "exclamationmark.triangle.fill" : "sparkles")
                             .font(.caption.bold())
-                            .foregroundStyle(palette.secondaryText)
+                            .foregroundStyle(isAudioError ? palette.statusFailure : palette.secondaryText)
                         Text(banner)
                             .font(.callout.weight(.semibold))
                             .foregroundStyle(palette.primaryText)
+                            .lineLimit(2)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 9)
                     .background(palette.barSurface.opacity(0.96), in: Capsule())
-                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(
+                                isAudioError ? palette.statusFailure.opacity(0.6) : palette.subtleCardStroke,
+                                lineWidth: 1
+                            )
+                    )
                     .shadow(color: palette.primaryText.opacity(0.08), radius: 10, x: 0, y: 4)
                     .padding(.bottom, 16)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -1241,6 +1260,63 @@ public struct MacMainWindowView: View {
             MacPairingPopoverView(coordinator: coordinator)
         }
     }
+
+    private var studioAudioStatusRow: some View {
+        let state = coordinator.controlStripState
+
+        return HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: state.currentAudioOutputDevice?.transportKind.sfSymbol ?? "hifispeaker.2.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(palette.accent)
+
+                Text(L10n.tr("音频输出", "Audio Output", language: lang))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(palette.secondaryText)
+            }
+
+            MacStudioAudioOutputMenu(
+                coordinator: coordinator,
+                triggeredBy: L10n.tr("Mac 工作台", "Mac Studio", language: lang)
+            )
+
+            if !state.canSwitchAudioOutput {
+                Label(L10n.tr("只读", "Read-Only", language: lang), systemImage: "lock.fill")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(palette.secondaryText)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(palette.tileFillBottom, in: Capsule())
+            }
+
+            if let audioError = coordinator.lastAudioOutputError {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2.bold())
+                        .foregroundStyle(palette.statusFailure)
+                    Text(audioError)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(palette.statusFailure)
+                        .lineLimit(1)
+                }
+                .accessibilityIdentifier("mac-studio-audio-output-error")
+            }
+
+            Spacer(minLength: 8)
+
+            if let awakeReason = state.awakeReasonLine(in: lang) {
+                Text(awakeReason)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(palette.accentEmphasis)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 6)
+        .background(palette.barSurface.opacity(0.62))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("mac-studio-audio-status-row")
+    }
 }
 
 // MARK: - Menu Bar Extra Popover
@@ -1337,6 +1413,28 @@ public struct MacMenuBarPopoverView: View {
             .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
+            HStack(spacing: 8) {
+                Text(L10n.tr("音频输出", "Audio Output", language: lang))
+                    .font(.caption)
+                    .foregroundStyle(palette.secondaryText)
+                Spacer(minLength: 4)
+                MacStudioAudioOutputMenu(
+                    coordinator: coordinator,
+                    triggeredBy: L10n.tr("菜单栏", "Menu Bar", language: lang)
+                )
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+
+            if let audioError = coordinator.lastAudioOutputError {
+                Label(audioError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(palette.statusFailure)
+                    .lineLimit(2)
+            }
+
             Divider()
 
             Button {
@@ -1406,5 +1504,67 @@ public struct MacMenuBarPopoverView: View {
         .onDisappear {
             coordinator.setMacSurfaceVisible(.menuBarPopover, isVisible: false)
         }
+    }
+}
+
+// MARK: - Mac Studio Audio Output Menu
+
+public struct MacStudioAudioOutputMenu: View {
+    @ObservedObject var coordinator: MacAppCoordinator
+    let triggeredBy: String
+
+    private var lang: AppLanguage { coordinator.lang }
+    private var palette: ChocPalette { coordinator.palette }
+    private var state: ControlStripState { coordinator.controlStripState }
+
+    public init(coordinator: MacAppCoordinator, triggeredBy: String = "Mac Studio") {
+        self.coordinator = coordinator
+        self.triggeredBy = triggeredBy
+    }
+
+    public var body: some View {
+        let selectedID = state.currentAudioOutputDevice?.id
+        let currentLabel = state.currentAudioOutputLabel(in: lang)
+
+        Menu {
+            if state.audioOutputDevices.isEmpty {
+                Text(L10n.tr("当前无可用音频输出设备", "No audio output devices available", language: lang))
+            } else {
+                ForEach(state.audioOutputDevices) { device in
+                    let isSelected = (selectedID == device.id)
+                    Button {
+                        coordinator.selectAudioOutputDevice(id: device.id, triggeredBy: triggeredBy)
+                    } label: {
+                        HStack {
+                            Text(device.name)
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                    .disabled(!state.canSwitchAudioOutput)
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(currentLabel)
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(palette.secondaryText)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(palette.tileFillBottom, in: Capsule())
+            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier("mac-studio-audio-output-menu")
     }
 }

@@ -105,15 +105,6 @@ public struct IOSRootTouchBarView: View {
                     iPhonePortraitTouchBar
                 }
 
-                // Pass-through 2-finger & 3-finger Multi-Touch Recognizer:
-                // yields nil in hitTest for 0/1-finger touches so buttons underneath receive taps directly.
-                MultiTouchGestureCaptureView(
-                    isEnabled: client.profile.gestureConfig.isGlobalOverlayEnabled
-                ) { gesture in
-                    triggerCompanionGesture(gesture)
-                }
-                .ignoresSafeArea()
-
                 // Non-interactive HUD Toast
                 if let hud = hudToast {
                     let cornerRadius: CGFloat = hud.secondaryText == nil ? 20 : 14

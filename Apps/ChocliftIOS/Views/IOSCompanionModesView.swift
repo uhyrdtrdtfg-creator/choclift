@@ -1979,7 +1979,14 @@ public struct IOSGesturePadSurfaceView: View {
                     .multilineTextAlignment(.center)
                 }
                 .padding(12)
+                .allowsHitTesting(false)
+
+                MultiTouchGestureCaptureView(
+                    isEnabled: client.profile.gestureConfig.isGlobalOverlayEnabled,
+                    onGestureTriggered: onTriggerGesture
+                )
             }
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // Tactile Quick Trigger Grid (>= 46pt height for crisp 1-finger taps)
@@ -2381,7 +2388,7 @@ public struct IOSPersistentControlStripView: View {
 
             stripDivider
 
-            IOSAudioOutputPickerButton(client: client, compact: true)
+            IOSAudioOutputPickerButton(client: client, compact: false)
 
             IOSDisplayTargetPickerMenu(client: client, compact: true)
 
