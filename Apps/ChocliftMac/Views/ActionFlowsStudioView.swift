@@ -35,24 +35,37 @@ public struct ActionFlowsStudioView: View {
 
             Divider()
 
-            Group {
-                if let flow = selectedFlow {
-                    MacFlowDetailWorkspaceView(
-                        coordinator: coordinator,
-                        flow: flow,
-                        assignPageIndex: $assignPageIndex,
-                        assignSlotIndex: $assignSlotIndex,
-                        onOpenFullEditor: { target in
-                            editorSheetDraft = FlowSheetSession(flow: target, isNew: false)
-                        },
-                        onDeleted: {
-                            selectedFlowID = coordinator.profile.flows.first?.id
-                        }
-                    )
-                    .id(flow.id)
-                } else {
-                    emptyStudioPlaceholder
+            VStack(spacing: 0) {
+                MacSentenceFlowComposerCard(
+                    coordinator: coordinator,
+                    sentenceFlow: coordinator.sentenceFlow,
+                    onConfirmedFlow: { confirmedFlowID in
+                        selectedFlowID = confirmedFlowID
+                    }
+                )
+
+                Divider()
+
+                Group {
+                    if let flow = selectedFlow {
+                        MacFlowDetailWorkspaceView(
+                            coordinator: coordinator,
+                            flow: flow,
+                            assignPageIndex: $assignPageIndex,
+                            assignSlotIndex: $assignSlotIndex,
+                            onOpenFullEditor: { target in
+                                editorSheetDraft = FlowSheetSession(flow: target, isNew: false)
+                            },
+                            onDeleted: {
+                                selectedFlowID = coordinator.profile.flows.first?.id
+                            }
+                        )
+                        .id(flow.id)
+                    } else {
+                        emptyStudioPlaceholder
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -332,6 +345,260 @@ private struct FlowSheetSession: Identifiable {
     let id = UUID()
     let flow: ActionFlow
     let isNew: Bool
+}
+
+// MARK: - Sentence -> Proposed Action Flow Composer & Mac Confirmation Card
+
+private struct MacSentenceFlowComposerCard: View {
+    @ObservedObject var coordinator: MacAppCoordinator
+    @ObservedObject var sentenceFlow: MacSentenceFlowController
+    let onConfirmedFlow: (UUID) -> Void
+
+    @State private var isConfirmingAndRunning: Bool = false
+
+    private var lang: AppLanguage { coordinator.lang }
+    private var palette: ChocPalette { coordinator.palette }
+
+    private var trimmedSentence: String {
+        sentenceFlow.sentenceText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(ChocType.body.weight(.semibold))
+                    .foregroundStyle(palette.accent)
+
+                TextField(
+                    L10n.tr(
+                        "用一句话生成动作流（例如：打开 Safari，等待 1 秒，窗口贴靠左半屏）",
+                        "Describe an Action Flow in one sentence (e.g. Open Safari, wait 1s, snap window left)",
+                        language: lang
+                    ),
+                    text: $sentenceFlow.sentenceText
+                )
+                .textFieldStyle(.roundedBorder)
+                .disabled(sentenceFlow.isProposing || isConfirmingAndRunning)
+                .accessibilityIdentifier("mac-flows-sentence-field")
+                .onSubmit {
+                    if !sentenceFlow.isProposing && (!trimmedSentence.isEmpty || !sentenceFlow.isAPIKeyConfigured) {
+                        triggerPropose()
+                    }
+                }
+
+                Button {
+                    triggerPropose()
+                } label: {
+                    if sentenceFlow.isProposing {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text(L10n.tr("生成中…", "Proposing…", language: lang))
+                        }
+                    } else {
+                        Label(
+                            L10n.tr("生成建议", "Propose", language: lang),
+                            systemImage: "wand.and.stars"
+                        )
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(palette.accent)
+                .foregroundStyle(palette.accentForeground)
+                .disabled(
+                    sentenceFlow.isProposing ||
+                    isConfirmingAndRunning ||
+                    (sentenceFlow.isAPIKeyConfigured && trimmedSentence.isEmpty)
+                )
+                .accessibilityIdentifier("mac-flows-propose-button")
+            }
+
+            if !sentenceFlow.isAPIKeyConfigured && sentenceFlow.errorMessage == nil {
+                HStack(spacing: 6) {
+                    Image(systemName: "key.slash")
+                        .font(ChocType.micro)
+                        .foregroundStyle(palette.secondaryText)
+                    Text(
+                        L10n.tr(
+                            "未检测到 XAI_API_KEY。请在 Mac 环境变量或本地 git 忽略文件（.env / .xai_api_key）中配置后再生成建议。",
+                            "XAI_API_KEY is not configured. Set XAI_API_KEY in the Mac environment or a git-ignored local .env / .xai_api_key file to propose flows.",
+                            language: lang
+                        )
+                    )
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.secondaryText)
+                }
+            }
+
+            if let errorMessage = sentenceFlow.errorMessage {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(ChocType.body.weight(.semibold))
+                        .foregroundStyle(palette.statusFailure)
+                        .padding(.top, 1)
+
+                    Text(errorMessage)
+                        .font(ChocType.caption)
+                        .foregroundStyle(palette.primaryText)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Button {
+                        sentenceFlow.clearError()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(ChocType.micro)
+                            .foregroundStyle(palette.secondaryText)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(10)
+                .background(palette.statusFailure.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(palette.statusFailure.opacity(0.45), lineWidth: 1)
+                )
+                .accessibilityIdentifier("mac-flows-proposal-error")
+            }
+
+            if let draft = sentenceFlow.pendingDraft {
+                draftConfirmationCard(draft)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(palette.barSurface.opacity(0.85))
+    }
+
+    private func draftConfirmationCard(_ draft: ActionFlowDraft) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                Text(draft.flow.emoji.isEmpty ? "⚡️" : draft.flow.emoji)
+                    .font(ChocType.title)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 8) {
+                        Text(draft.flow.name)
+                            .font(ChocType.body.weight(.semibold))
+                            .foregroundStyle(palette.primaryText)
+
+                        Text(
+                            L10n.tr(
+                                "来自 \(draft.originDeviceName) · 待确认草稿",
+                                "From \(draft.originDeviceName) · Unconfirmed Draft",
+                                language: lang
+                            )
+                        )
+                        .font(ChocType.micro)
+                        .foregroundStyle(palette.accent)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(palette.accent.opacity(0.14), in: Capsule())
+                    }
+
+                    Text("“\(draft.sourceSentence)”")
+                        .font(ChocType.caption)
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                Button {
+                    coordinator.cancelProposedFlow()
+                } label: {
+                    Text(L10n.tr("取消", "Cancel", language: lang))
+                }
+                .buttonStyle(.bordered)
+                .disabled(isConfirmingAndRunning)
+                .accessibilityIdentifier("mac-flows-cancel-draft-button")
+
+                Button {
+                    let draftID = draft.id
+                    let flowID = draft.flow.id
+                    isConfirmingAndRunning = true
+                    Task { @MainActor in
+                        defer { isConfirmingAndRunning = false }
+                        _ = await coordinator.confirmProposedFlow(expectedDraftID: draftID)
+                        onConfirmedFlow(flowID)
+                    }
+                } label: {
+                    Label(
+                        L10n.tr("确认", "Confirm", language: lang),
+                        systemImage: "checkmark.circle.fill"
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(palette.statusConnected)
+                .foregroundStyle(.white)
+                .disabled(isConfirmingAndRunning)
+                .accessibilityIdentifier("mac-flows-confirm-draft-button")
+            }
+
+            Text(
+                L10n.tr(
+                    "在您于此 Mac 点击「确认」前不会执行任何操作。点击「确认」将保存该动作流并立即按顺序运行：",
+                    "Nothing runs until you click Confirm on this Mac. Confirm saves the flow and runs these steps in order:",
+                    language: lang
+                )
+            )
+            .font(ChocType.micro)
+            .foregroundStyle(palette.secondaryText)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(draft.flow.steps.enumerated()), id: \.element.id) { idx, step in
+                        HStack(spacing: 10) {
+                            Text("\(idx + 1)")
+                                .font(ChocType.micro)
+                                .foregroundStyle(.white)
+                                .frame(width: 20, height: 20)
+                                .background(Color(hex: step.accentHex), in: Circle())
+
+                            Image(systemName: step.sfSymbol)
+                                .font(ChocType.caption.weight(.semibold))
+                                .foregroundStyle(Color(hex: step.accentHex))
+                                .frame(width: 20)
+
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(step.displayTitle(in: lang))
+                                    .font(ChocType.caption.weight(.semibold))
+                                    .foregroundStyle(palette.primaryText)
+                                Text(step.subtitle(in: lang))
+                                    .font(ChocType.micro)
+                                    .foregroundStyle(palette.secondaryText)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer()
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                        )
+                    }
+                }
+            }
+            .frame(maxHeight: 210)
+        }
+        .padding(12)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(palette.accent.opacity(0.6), lineWidth: 1.5)
+        )
+        .accessibilityIdentifier("mac-flows-draft-card")
+    }
+
+    private func triggerPropose() {
+        Task { @MainActor in
+            _ = await coordinator.proposeFlowFromSentence()
+        }
+    }
 }
 
 // MARK: - Right Detail Workspace for a Selected Flow

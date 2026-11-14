@@ -14,3 +14,6 @@ xcuserdata/
 .swiftpm/
 Package.resolved
 .orca/
+.env
+.env.*
+.xai_api_key

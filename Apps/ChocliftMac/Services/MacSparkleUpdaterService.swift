@@ -2,17 +2,19 @@ import AppKit
 import ChocliftCore
 import Combine
 import Foundation
+import Security
 import Sparkle
 import SwiftUI
 
 @MainActor
 public final class MacSparkleUpdaterService: NSObject, ObservableObject {
     public let feedURL: URL = MacUpdateConfiguration.feedURL
+    public let hostDescriptor: MacUpdateHostDescriptor
 
-    @Published public private(set) var canCheckForUpdates: Bool = false
-    @Published public private(set) var automaticallyChecksForUpdates: Bool = MacUpdateConfiguration.enableAutomaticChecks
+    @Published public private(set) var canCheckForUpdates: Bool
+    @Published public private(set) var automaticallyChecksForUpdates: Bool
     @Published public private(set) var lastUpdateCheckDate: Date?
-    @Published public private(set) var checkState: MacUpdateCheckState = .idle
+    @Published public private(set) var checkState: MacUpdateCheckState
 
     public var languageProvider: () -> AppLanguage = { .system }
 
@@ -20,15 +22,26 @@ public final class MacSparkleUpdaterService: NSObject, ObservableObject {
         checkState.result
     }
 
+    public var canStartUpdater: Bool {
+        hostDescriptor.canStartSparkleUpdater && updaterStarted
+    }
+
+    private let hostBundle: Bundle
     private let updater: SPUUpdater
     private let userDriver: MacSparkleUserDriver
     private let delegateProxy: MacSparkleUpdaterDelegateProxy
-    private var stateMachine = MacUpdateCheckStateMachine()
+    private var stateMachine: MacUpdateCheckStateMachine
     private var updaterStarted: Bool = false
+    private var pendingUserInitiatedCheck: Bool = false
     private var cancellables = Set<AnyCancellable>()
 
-    public override init() {
-        let hostBundle = Bundle.main
+    public convenience override init() {
+        self.init(hostBundle: .main, hostDescriptor: nil)
+    }
+
+    public init(hostBundle: Bundle, hostDescriptor: MacUpdateHostDescriptor? = nil) {
+        let resolvedDescriptor = hostDescriptor ?? Self.inspectHostBundle(hostBundle)
+        let initialMachine = MacUpdateConfiguration.initialStateMachine(for: resolvedDescriptor)
         let driver = MacSparkleUserDriver(hostBundle: hostBundle, delegate: nil)
         let proxy = MacSparkleUpdaterDelegateProxy()
         let sparkleUpdater = SPUUpdater(
@@ -38,6 +51,14 @@ public final class MacSparkleUpdaterService: NSObject, ObservableObject {
             delegate: proxy
         )
 
+        self.hostBundle = hostBundle
+        self.hostDescriptor = resolvedDescriptor
+        self.stateMachine = initialMachine
+        self.canCheckForUpdates = resolvedDescriptor.canCheckForUpdates
+        self.automaticallyChecksForUpdates = resolvedDescriptor.canStartSparkleUpdater
+            ? MacUpdateConfiguration.enableAutomaticChecks
+            : false
+        self.checkState = initialMachine.state
         self.userDriver = driver
         self.delegateProxy = proxy
         self.updater = sparkleUpdater
@@ -46,13 +67,15 @@ public final class MacSparkleUpdaterService: NSObject, ObservableObject {
         driver.owner = self
         proxy.owner = self
 
-        let shouldStartUpdater = hostBundle.bundleURL.pathExtension.lowercased() == "app"
-        if shouldStartUpdater {
+        if resolvedDescriptor.canStartSparkleUpdater {
             do {
                 try sparkleUpdater.start()
                 self.updaterStarted = true
+                self.automaticallyChecksForUpdates = sparkleUpdater.automaticallyChecksForUpdates
+                self.lastUpdateCheckDate = sparkleUpdater.lastUpdateCheckDate
             } catch {
                 self.updaterStarted = false
+                self.automaticallyChecksForUpdates = false
                 let nsError = error as NSError
                 transition { machine in
                     _ = machine.recordError(
@@ -61,43 +84,113 @@ public final class MacSparkleUpdaterService: NSObject, ObservableObject {
                         fallbackHostBuildVersion: self.hostBuildVersion
                     )
                 }
-                self.canCheckForUpdates = true
             }
+
+            sparkleUpdater
+                .publisher(for: \.automaticallyChecksForUpdates)
+                .receive(on: RunLoop.main)
+                .sink { [weak self] enabled in
+                    guard let self, self.updaterStarted else { return }
+                    self.automaticallyChecksForUpdates = enabled
+                }
+                .store(in: &cancellables)
+
+            sparkleUpdater
+                .publisher(for: \.lastUpdateCheckDate)
+                .receive(on: RunLoop.main)
+                .sink { [weak self] date in
+                    self?.lastUpdateCheckDate = date
+                }
+                .store(in: &cancellables)
+
+            sparkleUpdater
+                .publisher(for: \.sessionInProgress)
+                .receive(on: RunLoop.main)
+                .sink { [weak self] inProgress in
+                    guard let self, !inProgress, self.pendingUserInitiatedCheck else { return }
+                    self.pendingUserInitiatedCheck = false
+                    self.checkForUpdates()
+                }
+                .store(in: &cancellables)
+        }
+    }
+
+    public static func inspectHostBundle(_ bundle: Bundle) -> MacUpdateHostDescriptor {
+        let bundleURL = bundle.bundleURL
+        let pathExtension = bundleURL.pathExtension
+        let shortVersion = bundle.infoDictionary?["CFBundleShortVersionString"] as? String
+        let buildVersion = bundle.infoDictionary?["CFBundleVersion"] as? String
+
+        guard pathExtension.lowercased() == "app" else {
+            return MacUpdateHostDescriptor(
+                bundlePathExtension: pathExtension,
+                isCodeSignatureValid: false,
+                isAdhocSigned: false,
+                teamIdentifier: nil,
+                shortVersion: shortVersion,
+                buildVersion: buildVersion
+            )
         }
 
-        sparkleUpdater
-            .publisher(for: \.canCheckForUpdates)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] canCheck in
-                guard let self else { return }
-                self.canCheckForUpdates = self.updaterStarted ? canCheck : true
-            }
-            .store(in: &cancellables)
+        var staticCode: SecStaticCode?
+        let createStatus = SecStaticCodeCreateWithPath(bundleURL as CFURL, SecCSFlags(), &staticCode)
+        guard createStatus == errSecSuccess, let code = staticCode else {
+            return MacUpdateHostDescriptor(
+                bundlePathExtension: pathExtension,
+                isCodeSignatureValid: false,
+                isAdhocSigned: false,
+                teamIdentifier: nil,
+                shortVersion: shortVersion,
+                buildVersion: buildVersion
+            )
+        }
 
-        sparkleUpdater
-            .publisher(for: \.automaticallyChecksForUpdates)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] enabled in
-                self?.automaticallyChecksForUpdates = enabled
-            }
-            .store(in: &cancellables)
+        let isValid = SecStaticCodeCheckValidityWithErrors(code, SecCSFlags(), nil, nil) == errSecSuccess
 
-        sparkleUpdater
-            .publisher(for: \.lastUpdateCheckDate)
-            .receive(on: RunLoop.main)
-            .sink { [weak self] date in
-                self?.lastUpdateCheckDate = date
-            }
-            .store(in: &cancellables)
+        var cfSigningInfo: CFDictionary?
+        let infoStatus = SecCodeCopySigningInformation(
+            code,
+            SecCSFlags(rawValue: kSecCSSigningInformation),
+            &cfSigningInfo
+        )
+        let signingInfo = (infoStatus == errSecSuccess) ? (cfSigningInfo as? [String: Any]) : nil
+        let rawFlags = (signingInfo?[kSecCodeInfoFlags as String] as? NSNumber)?.uint32Value ?? 0
+        let isAdhoc = SecCodeSignatureFlags(rawValue: rawFlags).contains(.adhoc)
+        let teamIdentifier = signingInfo?[kSecCodeInfoTeamIdentifier as String] as? String
+
+        return MacUpdateHostDescriptor(
+            bundlePathExtension: pathExtension,
+            isCodeSignatureValid: isValid,
+            isAdhocSigned: isAdhoc,
+            teamIdentifier: teamIdentifier,
+            shortVersion: shortVersion,
+            buildVersion: buildVersion
+        )
     }
 
     public func checkForUpdates() {
         NSApp?.activate(ignoringOtherApps: true)
 
+        if let unavailableReason = hostDescriptor.unavailableReason {
+            var result = MacUpdateCheckResult.hostCannotUpdate(reason: unavailableReason)
+            transition { machine in
+                result = machine.recordHostUnavailable(unavailableReason)
+            }
+            let baseError = NSError(
+                domain: MacUpdateConfiguration.sparkleErrorDomain,
+                code: MacUpdateConfiguration.SparkleErrorCode.insufficientSigning,
+                userInfo: nil
+            )
+            userDriver.presentImmediateErrorAlert(enrichedAlertError(from: baseError, for: result))
+            return
+        }
+
         if !updaterStarted {
             do {
                 try updater.start()
                 updaterStarted = true
+                automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
+                lastUpdateCheckDate = updater.lastUpdateCheckDate
             } catch {
                 let nsError = error as NSError
                 let enriched = prepareUpdaterErrorForPresentation(nsError)
@@ -106,6 +199,15 @@ public final class MacSparkleUpdaterService: NSObject, ObservableObject {
             }
         }
 
+        if updater.sessionInProgress && !updater.canCheckForUpdates {
+            pendingUserInitiatedCheck = true
+            transition { machine in
+                machine.beginCheck()
+            }
+            return
+        }
+
+        pendingUserInitiatedCheck = false
         if !updater.sessionInProgress {
             transition { machine in
                 machine.beginCheck()
@@ -115,12 +217,24 @@ public final class MacSparkleUpdaterService: NSObject, ObservableObject {
     }
 
     public func setAutomaticallyChecksForUpdates(_ enabled: Bool) {
+        guard updaterStarted else {
+            automaticallyChecksForUpdates = false
+            return
+        }
         updater.automaticallyChecksForUpdates = enabled
         automaticallyChecksForUpdates = updater.automaticallyChecksForUpdates
     }
 
     public func menuStatusSubtitle(in language: AppLanguage) -> String? {
-        checkState.menuStatusLine(in: language)
+        statusPresentation(in: language).menuStatusText
+    }
+
+    public func statusPresentation(in language: AppLanguage) -> MacUpdateStatusPresentation {
+        MacUpdateConfiguration.statusPresentation(
+            host: hostDescriptor,
+            state: checkState,
+            language: language
+        )
     }
 
     public var currentVersionBadgeText: String {
@@ -133,11 +247,11 @@ public final class MacSparkleUpdaterService: NSObject, ObservableObject {
     // MARK: - Internal Sparkle Lifecycle Hooks
 
     fileprivate var hostShortVersion: String? {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        hostDescriptor.shortVersion ?? (hostBundle.infoDictionary?["CFBundleShortVersionString"] as? String)
     }
 
     fileprivate var hostBuildVersion: String? {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+        hostDescriptor.buildVersion ?? (hostBundle.infoDictionary?["CFBundleVersion"] as? String)
     }
 
     fileprivate static func makeSnapshot(from item: SUAppcastItem) -> SparkleAppcastItemSnapshot {
@@ -271,9 +385,9 @@ private final class MacSparkleUserDriver: SPUStandardUserDriver {
         switch result {
         case .alreadyCurrent, .updateFound:
             super.showUpdateNotFoundWithError(error, acknowledgement: acknowledgement)
-        case .feedUnreachable, .signatureMismatch:
+        case .hostCannotUpdate, .feedUnreachable, .signatureMismatch:
             // Prevent Sparkle from presenting "You're up to date!" when the XML feed had zero valid items
-            // or when enclosure signature validation failed.
+            // or when enclosure signature / host signing validation failed.
             let enriched = owner.enrichedAlertError(from: nsError, for: result)
             super.showUpdaterError(enriched, acknowledgement: acknowledgement)
         case .checkFailed:

@@ -1605,6 +1605,10 @@ private struct WatchMediaPlayer: View {
     @State private var isCrownRotating: Bool = false
     @State private var crownThrottle = ControlLevelDragThrottle(minimumInterval: 0.4)
     @FocusState private var isVolumeCrownFocused: Bool
+    @FocusState private var isSeekCrownFocused: Bool
+    @State private var crownMode: WatchPlayerCrownMode = .volume
+    @State private var crownProgress: Double = 0
+    @State private var isSeekCrownRotating = false
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -1622,21 +1626,7 @@ private struct WatchMediaPlayer: View {
                 playerCrownVolumeBar
                 if let media = client.controlStripState.nowPlaying {
                     if let artist = media.artist { Text(artist).font(ChocType.caption) }
-                    if media.isSeekable, let fraction = client.nowPlayingScrub.effectiveProgressFraction(for: media) {
-                        Slider(value: Binding(get: { fraction }, set: {
-                            _ = client.updateNowPlayingScrub(normalizedProgress: $0)
-                        }), in: 0...1, onEditingChanged: { editing in
-                            if !editing {
-                                _ = client.commitNowPlayingScrub(normalizedProgress: client.nowPlayingScrub.effectiveProgressFraction(for: client.controlStripState.nowPlaying) ?? fraction)
-                                if isPlayerVisible {
-                                    isVolumeCrownFocused = true
-                                }
-                            }
-                        }).tint(palette.accent)
-                    }
-                    if let times = NowPlayingProgressFormatter.rowDisplayContent(for: media, overrideElapsedSeconds: client.nowPlayingScrub.effectiveElapsedSeconds(for: media))?.progressText {
-                        Text(times).font(ChocType.caption.monospacedDigit())
-                    }
+                    playerProgressRow(media)
                 }
             }.padding(8)
         }
@@ -1645,14 +1635,23 @@ private struct WatchMediaPlayer: View {
         .onAppear {
             isPlayerVisible = true
             crownVolume = ControlStripLevel.clamp(client.controlStripState.volume)
-            isVolumeCrownFocused = true
+            selectCrownMode(.volume)
         }
         .onDisappear {
             finishCrownRotationIfNeeded()
+            client.cancelNowPlayingScrub()
+            isSeekCrownRotating = false
+            isSeekCrownFocused = false
             isPlayerVisible = false
             isVolumeCrownFocused = false
         }
         .onReceive(client.$controlStripState) { updated in
+            if updated.nowPlaying?.isSeekable != true, crownMode == .seek {
+                selectCrownMode(.volume)
+            }
+            if !isSeekCrownRotating {
+                crownProgress = client.nowPlayingScrub.effectiveProgressFraction(for: updated.nowPlaying) ?? 0
+            }
             guard !isCrownRotating else { return }
             let clamped = ControlStripLevel.clamp(updated.volume)
             if abs(crownVolume - clamped) > 0.004 {
@@ -1662,12 +1661,73 @@ private struct WatchMediaPlayer: View {
         .task(id: isPlayerVisible) {
             if isPlayerVisible {
                 try? await Task.sleep(for: .milliseconds(60))
-                guard !Task.isCancelled, isPlayerVisible else { return }
+                guard !Task.isCancelled, isPlayerVisible, crownMode == .volume else { return }
                 isVolumeCrownFocused = true
             } else {
                 isVolumeCrownFocused = false
             }
         }
+    }
+
+    private func selectCrownMode(_ requested: WatchPlayerCrownMode) {
+        let mode = WatchPlayerCrownMode.focus(afterTapping: requested, isSeekable: client.controlStripState.nowPlaying?.isSeekable == true)
+        if crownMode != mode {
+            finishCrownRotationIfNeeded()
+            client.cancelNowPlayingScrub()
+            isSeekCrownRotating = false
+        }
+        crownMode = mode
+        crownProgress = client.nowPlayingScrub.effectiveProgressFraction(for: client.controlStripState.nowPlaying) ?? 0
+        isVolumeCrownFocused = isPlayerVisible && mode == .volume
+        isSeekCrownFocused = isPlayerVisible && mode == .seek
+    }
+
+    private func playerProgressRow(_ media: NowPlayingStatus) -> some View {
+        VStack(spacing: 4) {
+            if media.isSeekable, let fraction = client.nowPlayingScrub.effectiveProgressFraction(for: media) {
+                Slider(value: Binding(get: { fraction }, set: {
+                    _ = client.updateNowPlayingScrub(normalizedProgress: $0)
+                }), in: 0...1, onEditingChanged: { editing in
+                    if editing {
+                        selectCrownMode(.seek)
+                    } else {
+                        _ = client.commitNowPlayingScrub(normalizedProgress: client.nowPlayingScrub.effectiveProgressFraction(for: client.controlStripState.nowPlaying) ?? fraction)
+                        selectCrownMode(.seek)
+                    }
+                }).tint(palette.accent)
+            }
+            if let times = NowPlayingProgressFormatter.rowDisplayContent(for: media, overrideElapsedSeconds: client.nowPlayingScrub.effectiveElapsedSeconds(for: media))?.progressText {
+                Text(times).font(ChocType.caption.monospacedDigit())
+            }
+        }
+        .padding(6)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard media.isSeekable else { return }
+            selectCrownMode(.seek)
+        }
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(
+            isSeekCrownFocused ? palette.accent : palette.subtleCardStroke,
+            lineWidth: isSeekCrownFocused ? 1.5 : 1
+        ))
+        .focusable(isPlayerVisible && media.isSeekable && crownMode == .seek)
+        .focused($isSeekCrownFocused)
+        .focusEffectDisabled()
+        .digitalCrownRotation(
+            detent: $crownProgress, from: 0, through: 1, by: 0.01,
+            sensitivity: .medium, isContinuous: false, isHapticFeedbackEnabled: true,
+            onChange: { _ in
+                guard isPlayerVisible, crownMode == .seek, client.controlStripState.nowPlaying?.isSeekable == true else { return }
+                isSeekCrownRotating = true
+                _ = client.updateNowPlayingScrub(normalizedProgress: crownProgress)
+            },
+            onIdle: {
+                guard isSeekCrownRotating else { return }
+                isSeekCrownRotating = false
+                _ = client.commitNowPlayingScrub(normalizedProgress: crownProgress)
+            }
+        )
+        .accessibilityIdentifier("watch-player-crown-seek")
     }
 
     private func finishCrownRotationIfNeeded() {
@@ -1697,9 +1757,7 @@ private struct WatchMediaPlayer: View {
                         detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
                     )
                 }
-                if isPlayerVisible {
-                    isVolumeCrownFocused = true
-                }
+                selectCrownMode(.volume)
             } label: {
                 Image(systemName: (isMuted || displayedLevel <= 0.001) ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .font(ChocType.caption)
@@ -1729,9 +1787,7 @@ private struct WatchMediaPlayer: View {
             )
 
             Button {
-                if isPlayerVisible {
-                    isVolumeCrownFocused = true
-                }
+                selectCrownMode(.volume)
             } label: {
                 HStack(spacing: 6) {
                     GeometryReader { geo in
@@ -1778,7 +1834,7 @@ private struct WatchMediaPlayer: View {
                     lineWidth: (isVolumeCrownFocused || isCrownRotating) ? 1.5 : 1
                 )
         )
-        .focusable(isFocusable)
+        .focusable(isFocusable && crownMode == .volume)
         .focused($isVolumeCrownFocused)
         .focusEffectDisabled()
         .digitalCrownRotation(
@@ -1790,7 +1846,7 @@ private struct WatchMediaPlayer: View {
             isContinuous: false,
             isHapticFeedbackEnabled: true,
             onChange: { _ in
-                guard isFocusable else { return }
+                guard isFocusable, crownMode == .volume else { return }
                 isCrownRotating = true
                 let clamped = ControlStripLevel.clamp(crownVolume)
                 let now = ProcessInfo.processInfo.systemUptime

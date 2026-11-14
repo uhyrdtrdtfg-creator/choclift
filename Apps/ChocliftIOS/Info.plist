@@ -32,6 +32,10 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>choclift 通过同一局域网 Wi-Fi 与你的 Mac 实时同步触控栏操作。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>choclift 在本机使用麦克风将你口述的动作流描述转为文字，仅将转换后的纯文本发送到 Mac。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>choclift 使用系统语音识别将你口述的一句话转为文字，再发送到 Mac 生成待确认的动作流草稿。</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiresFullScreen</key>

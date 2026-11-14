@@ -9,6 +9,14 @@ final class NowPlayingScrubTests: XCTestCase {
         var errorDescription: String? { "Timed out waiting for: \(label)" }
     }
 
+    func testWatchPlayerCrownFocusRule() {
+        XCTAssertEqual(WatchPlayerCrownMode.focus(afterTapping: .seek, isSeekable: true), .seek)
+        XCTAssertEqual(WatchPlayerCrownMode.focus(afterTapping: .volume, isSeekable: true), .volume)
+        let missingDuration = NowPlayingStatus(title: "Live", appName: "Music", isPlaying: true, durationSeconds: nil, bundleIdentifier: "com.apple.Music")
+        XCTAssertEqual(WatchPlayerCrownMode.focus(afterTapping: .seek, isSeekable: missingDuration.isSeekable), .volume)
+        XCTAssertEqual(WatchPlayerCrownMode.focus(afterTapping: .volume, isSeekable: false), .volume)
+    }
+
     // MARK: - 1. Seek Router: Spotify, Music, Unknown Bundle, Missing Duration
 
     func testSeekRouterSpotifyMusicUnknownBundleAndMissingDuration() {

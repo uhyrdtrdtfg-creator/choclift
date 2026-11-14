@@ -1596,3 +1596,13 @@ public enum MacMediaPlaybackModeRouter {
         return .script(target: target, source: source)
     }
 }
+
+/// Crown focus selection for the watch player. Unseekable media always uses volume.
+public enum WatchPlayerCrownMode: Equatable, Sendable {
+    case volume
+    case seek
+
+    public static func focus(afterTapping row: Self, isSeekable: Bool) -> Self {
+        isSeekable ? row : .volume
+    }
+}

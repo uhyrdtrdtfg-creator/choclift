@@ -1,4 +1,6 @@
+import AVFAudio
 import ChocliftCore
+import Speech
 import SwiftUI
 
 // MARK: - Standalone Flows Manager Sheet (iPhone & iPad)
@@ -24,6 +26,11 @@ public struct IOSFlowsManagerSheet: View {
     public var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                IOSSentenceFlowProposalCard(client: client)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+
                 if client.controlStripState.shouldShowDisplayPicker {
                     HStack(spacing: 8) {
                         Text(L10n.tr("贴靠与分屏目标屏幕", "Target Display for Snap & Split", language: lang))
@@ -261,6 +268,11 @@ public struct IOSFlowsSlotTabView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
+            IOSSentenceFlowProposalCard(client: client)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+
             HStack {
                 Text(L10n.tr("轻点动作流即可放入当前槽位", "Tap a flow to place it in Slot #\(slotIndex + 1)", language: lang))
                     .font(ChocType.caption)
@@ -1761,6 +1773,335 @@ public struct IOSFlowStepEditorSheet: View {
                 ),
                 isEnabled: stepEnabled
             )
+        }
+    }
+}
+
+// MARK: - Sentence-to-Flow Proposal Card (Phone Sends Plain Sentence Only; Mac Confirms)
+
+struct IOSSentenceFlowProposalCard: View {
+    @ObservedObject var client: CompanionClientEngine
+    @StateObject private var speech = IOSSentenceSpeechTranscriber()
+
+    @State private var sentenceText: String = ""
+    @State private var statusBanner: (message: String, isError: Bool)?
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
+    private var trimmedSentence: String {
+        sentenceText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(ChocType.caption.weight(.semibold))
+                    .foregroundStyle(palette.accent)
+                Text(L10n.tr("一句话生成动作流（Mac 确认执行）", "Sentence to Flow (Confirm on Mac)", language: lang))
+                    .font(ChocType.caption.weight(.semibold))
+                    .foregroundStyle(palette.primaryText)
+                Spacer()
+                if speech.isRecording {
+                    Text(L10n.tr("正在听写…", "Listening…", language: lang))
+                        .font(ChocType.micro.weight(.semibold))
+                        .foregroundStyle(palette.accentEmphasis)
+                }
+            }
+
+            HStack(spacing: 8) {
+                TextField(
+                    L10n.tr(
+                        "输入或说出要让 Mac 提议的一句话…",
+                        "Type or speak a sentence for your Mac…",
+                        language: lang
+                    ),
+                    text: $sentenceText
+                )
+                .font(ChocType.body)
+                .textFieldStyle(.plain)
+                .submitLabel(.send)
+                .onSubmit {
+                    submitSentence()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(palette.tileFillBottom)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                )
+
+                Button {
+                    statusBanner = nil
+                    speech.toggleRecording(language: lang, initialPrefix: sentenceText) { updatedText in
+                        sentenceText = updatedText
+                    }
+                } label: {
+                    Image(systemName: speech.isRecording ? "stop.circle.fill" : "mic.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(speech.isRecording ? palette.emphasisForeground : palette.accent)
+                        .frame(width: 36, height: 36)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(speech.isRecording ? palette.accentEmphasis : palette.tileFillBottom)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    speech.isRecording
+                        ? L10n.tr("停止语音输入", "Stop Dictation", language: lang)
+                        : L10n.tr("语音输入一句话", "Speak Sentence", language: lang)
+                )
+
+                Button {
+                    submitSentence()
+                } label: {
+                    Text(L10n.tr("提议", "Propose", language: lang))
+                        .font(ChocType.caption.weight(.semibold))
+                        .foregroundStyle(palette.accentForeground)
+                        .padding(.horizontal, 12)
+                        .frame(height: 36)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(trimmedSentence.isEmpty ? palette.secondaryText.opacity(0.35) : palette.accent)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(trimmedSentence.isEmpty)
+            }
+
+            if let speechErr = speech.errorMessage, !speechErr.isEmpty {
+                Text(speechErr)
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.statusFailure)
+            } else if let banner = statusBanner {
+                Text(banner.message)
+                    .font(ChocType.micro)
+                    .foregroundStyle(banner.isError ? palette.statusFailure : palette.statusConnected)
+            }
+
+            Text(
+                L10n.tr(
+                    "手机仅发送纯文本语句；API 密钥保留在 Mac，草稿须在 Mac 上点击「确认」后才会保存并执行。",
+                    "Sends plain sentence text only — API key stays on Mac and Mac confirmation is required before anything runs.",
+                    language: lang
+                )
+            )
+            .font(ChocType.micro)
+            .foregroundStyle(palette.secondaryText)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(palette.barSurface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
+        .onDisappear {
+            speech.stopRecording()
+        }
+    }
+
+    private func submitSentence() {
+        speech.stopRecording()
+        let clean = trimmedSentence
+        guard !clean.isEmpty else { return }
+
+        if client.proposeFlow(sentence: clean) {
+            sentenceText = ""
+            statusBanner = (
+                message: L10n.tr(
+                    "已发送至 Mac — 请在 Mac 动作流工作台核对步骤并点击「确认」。",
+                    "Sent to Mac — review the proposed steps and tap Confirm on your Mac.",
+                    language: lang
+                ),
+                isError: false
+            )
+        } else {
+            statusBanner = (
+                message: L10n.tr(
+                    "当前未连接 Mac，无法发送语句。",
+                    "Connect to your Mac first before proposing a flow.",
+                    language: lang
+                ),
+                isError: true
+            )
+        }
+    }
+}
+
+@MainActor
+private final class IOSSentenceSpeechTranscriber: ObservableObject {
+    @Published private(set) var isRecording: Bool = false
+    @Published private(set) var errorMessage: String?
+
+    private var audioEngine: AVAudioEngine?
+    private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var recognitionTask: SFSpeechRecognitionTask?
+    private var sessionGeneration: UInt64 = 0
+
+    func toggleRecording(
+        language: AppLanguage,
+        initialPrefix: String,
+        onTranscript: @escaping @MainActor (String) -> Void
+    ) {
+        if isRecording {
+            stopRecording()
+            return
+        }
+
+        errorMessage = nil
+        sessionGeneration &+= 1
+        let generation = sessionGeneration
+        let basePrefix = initialPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        Task { @MainActor [weak self] in
+            guard let self, self.sessionGeneration == generation else { return }
+            await self.beginRecording(
+                generation: generation,
+                language: language,
+                basePrefix: basePrefix,
+                onTranscript: onTranscript
+            )
+        }
+    }
+
+    func stopRecording() {
+        sessionGeneration &+= 1
+        if let engine = audioEngine {
+            if engine.isRunning {
+                engine.stop()
+            }
+            engine.inputNode.removeTap(onBus: 0)
+        }
+        recognitionRequest?.endAudio()
+        recognitionTask?.cancel()
+        recognitionRequest = nil
+        recognitionTask = nil
+        audioEngine = nil
+        if isRecording {
+            isRecording = false
+        }
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
+    private func beginRecording(
+        generation: UInt64,
+        language: AppLanguage,
+        basePrefix: String,
+        onTranscript: @escaping @MainActor (String) -> Void
+    ) async {
+        let speechStatus = await Self.requestSpeechAuthorization()
+        guard sessionGeneration == generation else { return }
+        guard speechStatus == .authorized else {
+            errorMessage = L10n.tr(
+                "未获得语音识别权限，请在系统设置中开启语音识别或直接使用键盘输入。",
+                "Speech recognition permission was denied. Enable it in Settings or type your sentence.",
+                language: language
+            )
+            return
+        }
+
+        let micAllowed = await AVAudioApplication.requestRecordPermission()
+        guard sessionGeneration == generation else { return }
+        guard micAllowed else {
+            errorMessage = L10n.tr(
+                "未获得麦克风权限，请在系统设置中开启麦克风权限或直接使用键盘输入。",
+                "Microphone permission was denied. Enable it in Settings or type your sentence.",
+                language: language
+            )
+            return
+        }
+
+        let preferredLocale: Locale = {
+            switch language {
+            case .chinese:
+                return Locale(identifier: "zh-CN")
+            case .english:
+                return Locale(identifier: "en-US")
+            case .system:
+                return Locale.current
+            }
+        }()
+
+        guard let recognizer = SFSpeechRecognizer(locale: preferredLocale) ?? SFSpeechRecognizer(),
+              recognizer.isAvailable else {
+            errorMessage = L10n.tr(
+                "当前设备暂不支持语音识别，请直接输入文字。",
+                "Speech recognition is currently unavailable on this device — please type instead.",
+                language: language
+            )
+            return
+        }
+
+        do {
+            let audioSession = AVAudioSession.sharedInstance()
+            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+
+            let engine = AVAudioEngine()
+            let request = SFSpeechAudioBufferRecognitionRequest()
+            request.shouldReportPartialResults = true
+
+            let inputNode = engine.inputNode
+            let recordingFormat = inputNode.outputFormat(forBus: 0)
+            inputNode.removeTap(onBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
+                request.append(buffer)
+            }
+
+            engine.prepare()
+            try engine.start()
+
+            audioEngine = engine
+            recognitionRequest = request
+            isRecording = true
+
+            recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+                let spokenText = result?.bestTranscription.formattedString
+                let isFinal = result?.isFinal ?? false
+                let hadError = (error != nil)
+                Task { @MainActor [weak self] in
+                    guard let self, self.sessionGeneration == generation else { return }
+                    if let spokenText, !spokenText.isEmpty {
+                        let combined = basePrefix.isEmpty ? spokenText : "\(basePrefix) \(spokenText)"
+                        onTranscript(String(combined.prefix(CompanionClientEngine.maxProposedFlowSentenceCharacters)))
+                    }
+                    if isFinal || hadError {
+                        self.stopRecording()
+                    }
+                }
+            }
+        } catch {
+            stopRecording()
+            errorMessage = L10n.tr(
+                "无法启动麦克风录音，请直接输入文字。",
+                "Could not start microphone dictation — please type instead.",
+                language: language
+            )
+        }
+    }
+
+    private static func requestSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
+        let current = SFSpeechRecognizer.authorizationStatus()
+        if current != .notDetermined {
+            return current
+        }
+        return await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status)
+            }
         }
     }
 }
