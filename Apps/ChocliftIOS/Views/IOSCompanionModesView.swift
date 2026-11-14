@@ -1979,7 +1979,14 @@ public struct IOSGesturePadSurfaceView: View {
                     .multilineTextAlignment(.center)
                 }
                 .padding(12)
+                .allowsHitTesting(false)
+
+                MultiTouchGestureCaptureView(
+                    isEnabled: client.profile.gestureConfig.isGlobalOverlayEnabled,
+                    onGestureTriggered: onTriggerGesture
+                )
             }
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             // Tactile Quick Trigger Grid (>= 46pt height for crisp 1-finger taps)
@@ -2332,12 +2339,6 @@ public struct IOSPersistentControlStripView: View {
 
     public var body: some View {
         VStack(spacing: 8) {
-            IOSPinnedStripTilesRow(
-                client: client,
-                onPromptHUD: onPromptHUD,
-                onEditSlot: onEditSlot
-            )
-
             if preferSingleRow {
                 singleRowContent
             } else {
@@ -2365,61 +2366,41 @@ public struct IOSPersistentControlStripView: View {
     // MARK: - Responsive Strip Layouts
 
     private var singleRowContent: some View {
-        HStack(spacing: 10) {
-            volumeControlCluster
-                .frame(minWidth: 150, idealWidth: 188, maxWidth: 230)
-
-            stripDivider
-
-            brightnessControlCluster
-                .frame(minWidth: 120, idealWidth: 154, maxWidth: 196)
-
-            stripDivider
-
-            nowPlayingCluster
-                .frame(maxWidth: .infinity)
-
-            stripDivider
-
+        HStack(spacing: 12) {
+            volumeControlCluster.frame(maxWidth: .infinity)
+            brightnessControlCluster.frame(maxWidth: .infinity)
+            nowPlayingCluster.frame(maxWidth: .infinity)
             IOSAudioOutputPickerButton(client: client, compact: true)
-
-            IOSDisplayTargetPickerMenu(client: client, compact: true)
-
-            undoWindowMoveButton
-
-            micMuteButton(compactLabel: true)
-
-            clockTextView
+            extraControls
         }
     }
 
     private var twoRowContent: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                volumeControlCluster
-                    .frame(maxWidth: .infinity)
-
-                stripDivider
-
-                brightnessControlCluster
-                    .frame(maxWidth: .infinity)
+            HStack(spacing: 16) {
+                volumeControlCluster.frame(maxWidth: .infinity)
+                brightnessControlCluster.frame(maxWidth: .infinity)
             }
-
             HStack(spacing: 8) {
-                nowPlayingCluster
-                    .frame(maxWidth: .infinity)
-
-                IOSAudioOutputPickerButton(client: client, compact: true)
-
-                IOSDisplayTargetPickerMenu(client: client, compact: true)
-
-                undoWindowMoveButton
-
-                micMuteButton(compactLabel: false)
-
-                clockTextView
+                nowPlayingCluster.frame(maxWidth: .infinity)
+                extraControls
             }
         }
+    }
+
+    private var extraControls: some View {
+        Menu {
+            IOSAudioOutputPickerButton(client: client, compact: false)
+            IOSDisplayTargetPickerMenu(client: client, compact: false)
+            undoWindowMoveButton
+            micMuteButton(compactLabel: false)
+        } label: {
+            Image(systemName: "ellipsis")
+                .foregroundStyle(palette.secondaryText)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(L10n.tr("更多控制", "More Controls", language: lang))
     }
 
     private var stripDivider: some View {

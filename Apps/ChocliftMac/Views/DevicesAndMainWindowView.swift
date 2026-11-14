@@ -388,24 +388,27 @@ public struct DevicesAndSettingsView: View {
 
     public var body: some View {
         ScrollView {
-            HStack(alignment: .top, spacing: 20) {
-                // Left Column: Permissions + Devices + Preferences
-                VStack(alignment: .leading, spacing: 16) {
-                    accessibilityPermissionCard
+            VStack(alignment: .leading, spacing: 20) {
+                MacStudioSystemStatusRow(coordinator: coordinator)
+                HStack(alignment: .top, spacing: 20) {
+                    // Left Column: Permissions + Devices + Preferences
+                    VStack(alignment: .leading, spacing: 16) {
+                        accessibilityPermissionCard
 
-                    pairedDevicesCard
+                        pairedDevicesCard
 
-                    appearanceAndPreferencesCard
+                        appearanceAndPreferencesCard
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    // Right Column: Backup & Live Activity Stream
+                    VStack(alignment: .leading, spacing: 16) {
+                        backupAndResetCard
+
+                        liveActivityCard
+                    }
+                    .frame(width: 300)
                 }
-                .frame(maxWidth: .infinity)
-
-                // Right Column: Backup & Live Activity Stream
-                VStack(alignment: .leading, spacing: 16) {
-                    backupAndResetCard
-
-                    liveActivityCard
-                }
-                .frame(width: 348)
             }
             .padding(.horizontal, 26)
             .padding(.vertical, 20)
@@ -743,6 +746,13 @@ public struct DevicesAndSettingsView: View {
                 .frame(width: 196)
             }
 
+            LabeledContent(L10n.tr("Mac 音频输出", "Mac Audio Output", language: lang)) {
+                MacStudioAudioOutputMenu(
+                    coordinator: coordinator,
+                    triggeredBy: L10n.tr("Mac 工作台", "Mac Studio", language: lang)
+                )
+            }
+
             Divider()
 
             Toggle(
@@ -1004,48 +1014,60 @@ public struct MacMainWindowView: View {
 
             Divider()
 
-            ZStack(alignment: .bottom) {
-                Group {
-                    switch coordinator.selectedSection {
-                    case .chocolateBar:
-                        ChocolateBarStudioView(coordinator: coordinator)
-                    case .flows:
-                        ActionFlowsStudioView(coordinator: coordinator)
-                    case .soundboard:
-                        SoundboardStudioView(coordinator: coordinator)
-                    case .emojiBar:
-                        EmojiBarStudioView(coordinator: coordinator)
-                    case .timeTravel:
-                        TimeTravelStudioView(coordinator: coordinator)
-                    case .gestures:
-                        GestureStudioView(coordinator: coordinator)
-                    case .devicesAndSettings:
-                        DevicesAndSettingsView(coordinator: coordinator)
+            HStack(spacing: 0) {
+                studioSidebar
+                Divider()
+                ZStack(alignment: .bottom) {
+                    Group {
+                        switch coordinator.selectedSection {
+                        case .chocolateBar:
+                            ChocolateBarStudioView(coordinator: coordinator)
+                        case .flows:
+                            ActionFlowsStudioView(coordinator: coordinator)
+                        case .soundboard:
+                            SoundboardStudioView(coordinator: coordinator)
+                        case .emojiBar:
+                            EmojiBarStudioView(coordinator: coordinator)
+                        case .timeTravel:
+                            TimeTravelStudioView(coordinator: coordinator)
+                        case .gestures:
+                            GestureStudioView(coordinator: coordinator)
+                        case .devicesAndSettings:
+                            DevicesAndSettingsView(coordinator: coordinator)
+                        }
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                if let banner = coordinator.statusBannerMessage {
-                    HStack(spacing: 8) {
-                        Image(systemName: "sparkles")
-                            .font(.caption.bold())
-                            .foregroundStyle(palette.secondaryText)
-                        Text(banner)
-                            .font(.callout.weight(.semibold))
-                            .foregroundStyle(palette.primaryText)
+                    if let banner = coordinator.statusBannerMessage {
+                        let isAudioError = coordinator.lastAudioOutputError != nil
+                        HStack(spacing: 8) {
+                            Image(systemName: isAudioError ? "exclamationmark.triangle.fill" : "sparkles")
+                                .font(.caption.bold())
+                                .foregroundStyle(isAudioError ? palette.statusFailure : palette.secondaryText)
+                            Text(banner)
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(palette.primaryText)
+                                .lineLimit(2)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .background(palette.barSurface.opacity(0.96), in: Capsule())
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(
+                                    isAudioError ? palette.statusFailure.opacity(0.6) : palette.subtleCardStroke,
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(color: palette.primaryText.opacity(0.08), radius: 10, x: 0, y: 4)
+                        .padding(.bottom, 16)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
-                    .background(palette.barSurface.opacity(0.96), in: Capsule())
-                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                    .shadow(color: palette.primaryText.opacity(0.08), radius: 10, x: 0, y: 4)
-                    .padding(.bottom, 16)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .animation(.easeInOut(duration: 0.2), value: coordinator.statusBannerMessage)
         }
-        .frame(minWidth: 960, minHeight: 610)
+        .frame(minWidth: 1080, minHeight: 640)
         .background(
             LinearGradient(
                 colors: [palette.backgroundTop, palette.backgroundBottom],
@@ -1066,6 +1088,43 @@ public struct MacMainWindowView: View {
         }
     }
 
+    private var studioSidebar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sidebarButton(.chocolateBar, title: L10n.tr("巧栏", "Bar", language: lang))
+            VStack(alignment: .leading, spacing: 4) {
+                sidebarButton(.timeTravel)
+                sidebarButton(.gestures)
+            }
+            .padding(.leading, 16)
+            .padding(.bottom, 14)
+            sidebarButton(.flows)
+            sidebarButton(.soundboard)
+            sidebarButton(.emojiBar, title: L10n.tr("表情", "Emoji", language: lang))
+            Spacer()
+            sidebarButton(.devicesAndSettings, title: L10n.tr("设置", "Settings", language: lang))
+        }
+        .padding(14)
+        .frame(width: 170)
+        .background(palette.barSurface.opacity(0.7))
+    }
+
+    private func sidebarButton(_ section: MacStudioSection, title: String? = nil) -> some View {
+        Button {
+            coordinator.selectedSection = section
+        } label: {
+            Label(title ?? section.title(in: lang), systemImage: section.sfSymbol)
+                .font(.system(size: 13, weight: coordinator.selectedSection == section ? .semibold : .regular))
+                .foregroundStyle(coordinator.selectedSection == section ? palette.accent : palette.secondaryText)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 10)
+                .background(coordinator.selectedSection == section ? palette.accent.opacity(0.1) : .clear,
+                            in: RoundedRectangle(cornerRadius: 10))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
     private var topNavigationHeader: some View {
         HStack(spacing: 14) {
             // Brand Lockup
@@ -1081,44 +1140,6 @@ public struct MacMainWindowView: View {
                         .lineLimit(1)
                 }
             }
-
-            Spacer(minLength: 8)
-
-            // Section Tabs
-            HStack(spacing: 4) {
-                ForEach(MacStudioSection.allCases) { sec in
-                    let isSel = (coordinator.selectedSection == sec)
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.16)) {
-                            coordinator.selectedSection = sec
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: sec.sfSymbol)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(isSel ? palette.accent : palette.secondaryText)
-                            Text(sec.title(in: lang))
-                                .font(.system(size: 12.5, weight: isSel ? .bold : .medium, design: .rounded))
-                                .foregroundStyle(isSel ? palette.primaryText : palette.secondaryText)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(
-                            isSel ? palette.accent.opacity(0.12) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .strokeBorder(isSel ? palette.accent.opacity(0.65) : .clear, lineWidth: 1)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(4)
-            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
             Spacer(minLength: 8)
 
@@ -1248,7 +1269,6 @@ public struct MacMainWindowView: View {
 public struct MacMenuBarPopoverView: View {
     @ObservedObject var coordinator: MacAppCoordinator
     @ObservedObject var server: MacServerEngine
-    @Environment(\.openWindow) private var openWindow
 
     private var lang: AppLanguage { coordinator.lang }
     private var palette: ChocPalette { coordinator.palette }
@@ -1273,13 +1293,6 @@ public struct MacMenuBarPopoverView: View {
                     Text(menuSummary.menuBarTitle(in: lang))
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(server.lastErrorMessage != nil ? palette.statusFailure : palette.secondaryText)
-                    if let awakeReason = menuSummary.awakeReasonLine(in: lang) {
-                        Text(awakeReason)
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(palette.accentEmphasis)
-                            .lineLimit(1)
-                            .accessibilityIdentifier("mac-menubar-awake-reason")
-                    }
                 }
                 Spacer()
                 Circle()
@@ -1291,57 +1304,27 @@ public struct MacMenuBarPopoverView: View {
                     .frame(width: 8, height: 8)
             }
 
-            if !server.pairedDevices.filter(\.isCurrentlyConnected).isEmpty {
-                VStack(spacing: 5) {
-                    ForEach(server.pairedDevices.filter(\.isCurrentlyConnected)) { dev in
-                        HStack(spacing: 6) {
-                            Image(systemName: dev.platform.sfSymbol)
-                                .font(.caption)
-                                .foregroundStyle(palette.statusConnected)
-                            Text(dev.deviceName)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(palette.primaryText)
-                                .lineLimit(1)
-                            Spacer()
-                            if let link = dev.activeLink {
-                                ChocLinkBadge(link: link, language: lang, palette: palette)
-                            }
-                        }
-                    }
-                }
-                .padding(8)
-                .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-            }
+            Toggle(L10n.tr("保持 Mac 唤醒", "Keep Mac Awake", language: lang), isOn: Binding(
+                get: { coordinator.isKeepMacAwakeEnabled },
+                set: { _ = coordinator.keepAwakeService.setToggleEnabled($0) }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.small)
 
-            HStack {
-                Text(L10n.tr("配对码 PIN", "Pairing PIN", language: lang))
-                    .font(.caption)
-                    .foregroundStyle(palette.secondaryText)
-                Spacer()
-                Text(formattedSixDigitPIN(server.currentPIN))
-                    .font(.system(.callout, design: .monospaced, weight: .black))
-                    .foregroundStyle(palette.primaryText)
-                Button {
-                    server.regeneratePIN()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(palette.accent)
-                .help(L10n.tr("刷新配对码", "Refresh PIN", language: lang))
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+            MacStudioAudioOutputMenu(
+                coordinator: coordinator,
+                triggeredBy: L10n.tr("菜单栏", "Menu Bar", language: lang)
+            )
 
-            Divider()
+            if let audioError = coordinator.lastAudioOutputError {
+                Label(audioError, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(palette.statusFailure)
+                    .lineLimit(2)
+            }
 
             Button {
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: "studio-main")
+                coordinator.openMainStudioWindow()
             } label: {
                 Label(L10n.tr("打开 Choclift 工作台", "Open Choclift Studio", language: lang), systemImage: "macwindow")
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1350,45 +1333,6 @@ public struct MacMenuBarPopoverView: View {
             .tint(palette.accent)
             .foregroundStyle(palette.accentForeground)
 
-            if !coordinator.isAccessibilityGranted {
-                Button {
-                    coordinator.requestAccessibilityPermission()
-                } label: {
-                    Label(L10n.tr("授权辅助功能权限…", "Authorize Accessibility…", language: lang), systemImage: "hand.raised.fill")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.bordered)
-            }
-
-            Toggle(
-                isOn: Binding(
-                    get: { coordinator.notchPanelEnabled },
-                    set: { coordinator.setNotchPanelEnabled($0) }
-                )
-            ) {
-                Label(
-                    L10n.tr("顶部悬浮巧克力栏", "Notch Hover Panel", language: lang),
-                    systemImage: "menubar.dock.rectangle"
-                )
-                .font(.caption.weight(.medium))
-                .foregroundStyle(palette.primaryText)
-            }
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .tint(palette.accent)
-
-            Divider()
-
-            Button(role: .destructive) {
-                NSApplication.shared.terminate(nil)
-            } label: {
-                Label(L10n.tr("退出 Choclift", "Quit Choclift", language: lang), systemImage: "power")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .font(.caption)
-            .foregroundStyle(palette.secondaryText)
         }
         .padding(14)
         .frame(width: 292)
@@ -1406,5 +1350,102 @@ public struct MacMenuBarPopoverView: View {
         .onDisappear {
             coordinator.setMacSurfaceVisible(.menuBarPopover, isVisible: false)
         }
+    }
+}
+
+// MARK: - Mac Studio Audio Output Menu
+
+public struct MacStudioAudioOutputMenu: View {
+    @ObservedObject var coordinator: MacAppCoordinator
+    let triggeredBy: String
+
+    private var lang: AppLanguage { coordinator.lang }
+    private var palette: ChocPalette { coordinator.palette }
+    private var state: ControlStripState { coordinator.controlStripState }
+
+    public init(coordinator: MacAppCoordinator, triggeredBy: String = "Mac Studio") {
+        self.coordinator = coordinator
+        self.triggeredBy = triggeredBy
+    }
+
+    public var body: some View {
+        let selectedID = state.currentAudioOutputDevice?.id
+        let currentLabel = state.currentAudioOutputLabel(in: lang)
+
+        Menu {
+            if state.audioOutputDevices.isEmpty {
+                Text(L10n.tr("当前无可用音频输出设备", "No audio output devices available", language: lang))
+            } else {
+                ForEach(state.audioOutputDevices) { device in
+                    let isSelected = (selectedID == device.id)
+                    Button {
+                        coordinator.selectAudioOutputDevice(id: device.id, triggeredBy: triggeredBy)
+                    } label: {
+                        HStack {
+                            Text(device.name)
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                    .disabled(!state.canSwitchAudioOutput)
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(currentLabel)
+                    .font(.system(.caption, design: .rounded, weight: .bold))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9.5, weight: .bold))
+                    .foregroundStyle(palette.secondaryText)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(palette.tileFillBottom, in: Capsule())
+            .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier("mac-studio-audio-output-menu")
+    }
+}
+
+private struct MacStudioSystemStatusRow: View {
+    @ObservedObject var coordinator: MacAppCoordinator
+    private var palette: ChocPalette { coordinator.palette }
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 2)) { _ in
+            statusRow
+        }
+    }
+
+    private var statusRow: some View {
+        let state = coordinator.systemControlService.currentState
+        return HStack(spacing: 14) {
+            Toggle(L10n.tr("保持唤醒", "Keep Awake", language: coordinator.lang), isOn: Binding(
+                get: { coordinator.isKeepMacAwakeEnabled },
+                set: { _ = coordinator.keepAwakeService.setToggleEnabled($0) }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            MacStudioAudioOutputMenu(
+                coordinator: coordinator,
+                triggeredBy: L10n.tr("设置", "Settings", language: coordinator.lang)
+            )
+            Label(state.macBattery?.displayText(in: coordinator.lang) ?? "—", systemImage: state.macBattery?.sfSymbol ?? "battery.100")
+            Label(state.wifiDisplayLabel, systemImage: "wifi")
+        }
+        .font(.caption)
+        .foregroundStyle(palette.secondaryText)
+        .lineLimit(1)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14))
     }
 }

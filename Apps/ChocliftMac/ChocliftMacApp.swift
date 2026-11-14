@@ -11,7 +11,7 @@ struct ChocliftMacApp: App {
             MacMainWindowView(coordinator: coordinator)
                 .preferredColorScheme(.light)
         }
-        .defaultSize(width: 960, height: 640)
+        .defaultSize(width: 1120, height: 700)
         .commands {
             CommandGroup(after: .toolbar) {
                 Toggle(

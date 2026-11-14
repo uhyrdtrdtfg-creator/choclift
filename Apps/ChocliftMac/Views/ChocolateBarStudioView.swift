@@ -36,14 +36,18 @@ public struct ChocolateBarStudioView: View {
         VStack(spacing: 12) {
             pageSelectorStrip
 
-            appDeckBindingBar
-
             if filledSlotCount == 0 {
                 emptyPageCallout
             }
 
             chocolateHardwarePreview
                 .frame(maxHeight: .infinity)
+
+            DisclosureGroup(L10n.tr("应用关联", "App Binding", language: lang)) {
+                appDeckBindingBar
+            }
+            .font(.caption)
+            .foregroundStyle(palette.secondaryText)
 
             bottomHintBar
         }

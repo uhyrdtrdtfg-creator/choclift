@@ -88,6 +88,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     @Published public private(set) var canUndoWindowMove: Bool = false
     @Published public private(set) var connectedDisplays: [MacDisplayInfo] = []
     @Published public private(set) var selectedTargetDisplayID: UInt32?
+    @Published public private(set) var controlStripState: ControlStripState = ControlStripState()
+    @Published public private(set) var lastAudioOutputError: String?
     @Published public private(set) var clipboardPreview: ClipboardPreviewSnapshot = .empty
     @Published public private(set) var calendarSnapshot: NextCalendarEventSnapshot = .initial
     @Published public private(set) var isKeepMacAwakeEnabled: Bool = false
@@ -275,9 +277,12 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             self.systemControlService.syncDisplayTopology()
         }
         systemControlService.onStateChanged = { [weak self] state in
-            self?.server.broadcastControlStripState(state)
+            guard let self else { return }
+            self.controlStripState = state
+            self.server.broadcastControlStripState(state)
         }
         systemControlService.start()
+        self.controlStripState = systemControlService.currentState
 
         clipboardService.isTransientPasteInFlight = { [weak self] in
             self?.inputService.isStagingTransientPasteboard ?? false
@@ -581,10 +586,29 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             }
         }
         systemControlService.syncSoundboardVolume(clamped)
+        controlStripState = systemControlService.currentState
         server.broadcastControlStripState(
             systemControlService.currentState,
             excludingDeviceID: broadcastExcludingDeviceID
         )
+    }
+
+    @discardableResult
+    public func selectAudioOutputDevice(
+        id: String,
+        triggeredBy: String = "Mac Studio"
+    ) -> (success: Bool, title: String, detail: String) {
+        let res = systemControlService.setDefaultAudioOutputDevice(id: id, language: lang)
+        controlStripState = systemControlService.currentState
+        lastAudioOutputError = res.success ? nil : res.detail
+        server.broadcastControlStripState(systemControlService.currentState)
+        recordActivity(deviceName: triggeredBy, summary: res.detail, isSuccess: res.success)
+        if res.success {
+            flashBanner(res.detail)
+        } else {
+            flashBanner("\(res.title) · \(res.detail)")
+        }
+        return res
     }
 
     @discardableResult
@@ -1445,6 +1469,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .setAudioOutputDevice(let deviceID):
             let res = systemControlService.setDefaultAudioOutputDevice(id: deviceID, language: lang)
+            controlStripState = systemControlService.currentState
+            lastAudioOutputError = res.success ? nil : res.detail
             server.broadcastControlStripState(systemControlService.currentState)
             reply(.controlStripStateUpdated(systemControlService.currentState))
             recordActivity(deviceName: device.deviceName, summary: res.detail, isSuccess: res.success)

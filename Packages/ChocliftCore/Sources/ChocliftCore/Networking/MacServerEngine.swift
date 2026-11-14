@@ -42,7 +42,7 @@ public final class MacServerEngine: ObservableObject {
 
     /// Application-level idle timeout for authenticated Bluetooth sessions so a companion that disappears
     /// without sending a GATT unsubscribe is evicted cleanly on the Mac.
-    public var bluetoothSessionTimeoutSeconds: TimeInterval = 16.0
+    public var bluetoothSessionTimeoutSeconds: TimeInterval = 75.0
     /// Extended idle window while a Bluetooth companion is on `.awaitingPIN` so reading the 6-digit code
     /// on the Mac and tapping it on Apple Watch does not prematurely evict the unauthenticated session.
     public var bluetoothPairingTimeoutSeconds: TimeInterval = 180.0

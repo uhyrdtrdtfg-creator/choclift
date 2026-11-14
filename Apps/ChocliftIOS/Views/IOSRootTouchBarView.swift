@@ -50,6 +50,7 @@ public struct IOSRootTouchBarView: View {
     @State private var deckSwitchHighlightTask: Task<Void, Never>?
     @State private var currentEmojiSlideIndex: Int = 0
     @State private var currentEmojiSegment: IOSEmojiBarSegment = .emoji
+    @State private var showToolsSheet = false
     @State private var showPairingSheet: Bool = false
     @State private var showFlowsManagerSheet: Bool = false
     @State private var showWorkspaceSearchSheet: Bool = false
@@ -104,15 +105,6 @@ public struct IOSRootTouchBarView: View {
                 } else {
                     iPhonePortraitTouchBar
                 }
-
-                // Pass-through 2-finger & 3-finger Multi-Touch Recognizer:
-                // yields nil in hitTest for 0/1-finger touches so buttons underneath receive taps directly.
-                MultiTouchGestureCaptureView(
-                    isEnabled: client.profile.gestureConfig.isGlobalOverlayEnabled
-                ) { gesture in
-                    triggerCompanionGesture(gesture)
-                }
-                .ignoresSafeArea()
 
                 // Non-interactive HUD Toast
                 if let hud = hudToast {
@@ -172,6 +164,48 @@ public struct IOSRootTouchBarView: View {
         }
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
+        .sheet(isPresented: $showToolsSheet) {
+            NavigationStack {
+                ScrollView {
+                    VStack(spacing: 20) {
+                        HStack {
+                            Button(L10n.tr("搜索", "Search", language: lang)) {
+                                showToolsSheet = false
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showWorkspaceSearchSheet = true }
+                            }
+                            Spacer()
+                            Button(L10n.tr("动作流", "Flows", language: lang)) {
+                                showToolsSheet = false
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showFlowsManagerSheet = true }
+                            }
+                        }
+                        IOSPageReorderControls(client: client, activePageIndex: currentPageIndex, compact: false) { moveActiveBarPage($0) }
+                        IOSCompanionBarRibbon(client: client, compact: false, onPromptHUD: { flashHUD($0) })
+                        IOSCompactKeyAndRecentsBar(client: client, showInlineRecentChips: true, onPromptHUD: { flashHUD($0) })
+                        IOSPinnedStripTilesRow(client: client, onPromptHUD: { flashHUD($0) }, onEditSlot: { selection in
+                            showToolsSheet = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { editingSlot = selection }
+                        })
+                        IOSFrontmostAppStripBadge(client: client)
+                        IOSPrivacyCaptureStripBadge(client: client)
+                        if client.orcaStatus != nil { IOSOrcaTaskStatusBar(client: client, compact: false) }
+                    }
+                    .padding(20)
+                }
+                .background(palette.backgroundTop)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .principal) {
+                        Text(L10n.tr("Mac 控制", "Mac Controls", language: lang))
+                            .font(.headline)
+                            .foregroundStyle(palette.primaryText)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                    Button(L10n.tr("完成", "Done", language: lang)) { showToolsSheet = false }
+                } }
+            }
+            .tint(palette.accent)
+        }
         .sheet(isPresented: $showPairingSheet) {
             IOSPairingAndConnectionSheet(client: client)
         }
@@ -268,38 +302,23 @@ public struct IOSRootTouchBarView: View {
         }
     }
 
+    private var toolsButton: some View {
+        Button { showToolsSheet = true } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(palette.secondaryText)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.tr("Mac 控制", "Mac Controls", language: lang))
+    }
+
     // MARK: - iPhone Landscape Touch Bar (Signature Layout)
 
     private func iPhoneLandscapeTouchBar(totalWidth: CGFloat) -> some View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
-                if !client.connectionState.isConnected {
-                    nonConnectedStatusBanner(compact: true)
-                        .padding(.horizontal, 14)
-                        .padding(.top, 8)
-                } else if client.orcaStatus != nil {
-                    IOSOrcaTaskStatusBar(client: client, compact: true)
-                        .padding(.horizontal, 14)
-                        .padding(.top, 6)
-                }
-
-                IOSCompanionBarRibbon(
-                    client: client,
-                    compact: true,
-                    includeInlineClipboard: !(activeMode == .emojiBar && currentEmojiSegment == .clipboard),
-                    allowMultiRow: false,
-                    onOpenClipboardSegment: {
-                        modeBeforeAutoEmoji = nil
-                        withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
-                            activeMode = .emojiBar
-                            currentEmojiSegment = .clipboard
-                        }
-                    },
-                    onPromptHUD: { flashHUD($0) }
-                )
-                .padding(.horizontal, 14)
-                .padding(.top, 6)
-
                 if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
                     landscapePageDotsStepperBar
                         .padding(.horizontal, 14)
@@ -308,14 +327,6 @@ public struct IOSRootTouchBarView: View {
 
                 activeMainContent(isLandscape: true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-                IOSCompactKeyAndRecentsBar(
-                    client: client,
-                    showInlineRecentChips: false,
-                    onPromptHUD: { flashHUD($0) }
-                )
-                .padding(.horizontal, 14)
-                .padding(.bottom, 5)
 
                 IOSPersistentControlStripView(
                     client: client,
@@ -331,13 +342,7 @@ public struct IOSRootTouchBarView: View {
             VStack(spacing: 5) {
                 railConnectionStatusButton
 
-                railWorkspaceSearchButton
-
-                railFlowsManagerButton
-
-                if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
-                    verticalPagePillButton
-                }
+                toolsButton
 
                 Spacer(minLength: 2)
 
@@ -385,6 +390,10 @@ public struct IOSRootTouchBarView: View {
     // MARK: - iPhone Portrait Touch Bar
 
     private var iPhonePortraitTouchBar: some View {
+        portraitWorkspace(isWide: false)
+    }
+
+    private func portraitWorkspace(isWide: Bool) -> some View {
         VStack(spacing: 8) {
             // Top Brand & Connection Status Header
             HStack(spacing: 8) {
@@ -395,64 +404,27 @@ public struct IOSRootTouchBarView: View {
 
                 Spacer(minLength: 4)
 
-                workspaceQuickSearchButton
+                toolsButton
 
-                flowsQuickManagerButton
+                workspaceQuickSearchButton
 
                 connectionStatusPillButton
             }
             .padding(.horizontal, 16)
             .padding(.top, 10)
 
-            if !client.connectionState.isConnected {
-                nonConnectedStatusBanner(compact: false)
-                    .padding(.horizontal, 16)
-            } else if client.orcaStatus != nil {
-                IOSOrcaTaskStatusBar(client: client, compact: false)
-                    .padding(.horizontal, 16)
-            }
-
-            IOSCompanionBarRibbon(
-                client: client,
-                compact: true,
-                includeInlineClipboard: false,
-                onPromptHUD: { flashHUD($0) }
-            )
-            .padding(.horizontal, 16)
-
-            if client.connectionState.isConnected && !(activeMode == .emojiBar && currentEmojiSegment == .clipboard) {
-                IOSClipboardPreviewCard(
-                    client: client,
-                    expanded: false,
-                    onTapExpand: {
-                        modeBeforeAutoEmoji = nil
-                        withAnimation(.spring(response: 0.24, dampingFraction: 0.8)) {
-                            activeMode = .emojiBar
-                            currentEmojiSegment = .clipboard
-                        }
-                    }
-                )
-                .padding(.horizontal, 16)
-            }
 
             if activeMode == .chocolateBar || (activeMode == .emojiBar && currentEmojiSegment == .emoji) {
                 portraitPageStepperBar
                     .padding(.horizontal, 16)
             }
 
-            activeMainContent(isLandscape: false)
+            activeMainContent(isLandscape: isWide)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            IOSCompactKeyAndRecentsBar(
-                client: client,
-                showInlineRecentChips: true,
-                onPromptHUD: { flashHUD($0) }
-            )
-            .padding(.horizontal, 16)
 
             IOSPersistentControlStripView(
                 client: client,
-                preferSingleRow: false,
+                preferSingleRow: isWide,
                 onPromptHUD: { flashHUD($0) },
                 onEditSlot: { editingSlot = $0 }
             )
@@ -503,216 +475,9 @@ public struct IOSRootTouchBarView: View {
     // MARK: - iPad Native Resizable Multi-Panel Workspace
 
     private func iPadExpandedWorkspace(size: CGSize) -> some View {
-        VStack(spacing: 12) {
-            // Top Header with 8 Page Pills & Quiet Connection Status Pill
-            HStack(spacing: 12) {
-                HStack(spacing: 9) {
-                    ChocliftBrandIconView(size: 32)
-                    Text("choclift")
-                        .font(.system(.title3, design: .rounded, weight: .black))
-                        .foregroundStyle(palette.primaryText)
-                }
-
-                ScrollViewReader { scrollProxy in
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(Array(client.profile.pages.enumerated()), id: \.element.id) { pageOffset, page in
-                                let isSel = (currentPageIndex == pageOffset)
-                                let hasBoundApp = !client.profile.boundBundleIdentifiers(forPageID: page.id).isEmpty
-                                let displayTitle = PageSwitcherTitleFormatter.displayTitle(
-                                    rawTitle: page.title,
-                                    pageIndex: pageOffset,
-                                    language: lang
-                                )
-                                Button {
-                                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                                    withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
-                                        deckFollower.selectManualPage(index: pageOffset, in: client.profile)
-                                    }
-                                } label: {
-                                    HStack(spacing: 5) {
-                                        Text(page.iconEmoji)
-                                        MaxWidthPillTitleLayout(maxWidth: 120) {
-                                            Text(displayTitle)
-                                                .font(.system(.caption, design: .rounded, weight: .bold))
-                                                .lineLimit(1)
-                                                .truncationMode(.tail)
-                                        }
-                                        if hasBoundApp {
-                                            Image(systemName: "macwindow")
-                                                .font(.system(size: 9, weight: .bold))
-                                                .opacity(isSel ? 0.9 : 0.65)
-                                        }
-                                    }
-                                    .padding(.horizontal, 13)
-                                    .frame(height: 38)
-                                    .background(isSel ? palette.accent : palette.tileFillBottom, in: Capsule())
-                                    .foregroundStyle(isSel ? palette.accentForeground : palette.primaryText)
-                                    .overlay(
-                                        Capsule()
-                                            .strokeBorder(isSel ? .clear : palette.subtleCardStroke, lineWidth: 1)
-                                    )
-                                    .contentShape(Capsule())
-                                }
-                                .buttonStyle(.plain)
-                                .id("ipad-header-page-\(pageOffset)")
-                                .accessibilityIdentifier("ios-page-name-\(pageOffset)")
-                                .accessibilityLabel(displayTitle)
-                            }
-                        }
-                    }
-                    .onChange(of: currentPageIndex) { _, updatedIndex in
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            scrollProxy.scrollTo("ipad-header-page-\(updatedIndex)", anchor: .center)
-                        }
-                    }
-                }
-
-                Spacer(minLength: 8)
-
-                Button {
-                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                    showWorkspaceSearchSheet = true
-                } label: {
-                    Label(L10n.tr("搜索", "Search", language: lang), systemImage: "magnifyingglass")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(palette.primaryText)
-                        .padding(.horizontal, 12)
-                        .frame(minHeight: 38)
-                        .background(palette.tileFillTop.opacity(0.9), in: Capsule())
-                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("ios-workspace-search-button")
-
-                Button {
-                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                    showIPadSoundboardSheet = true
-                } label: {
-                    Label(L10n.tr("音效板", "Sounds", language: lang), systemImage: "speaker.wave.2.bubble.left.fill")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(palette.primaryText)
-                        .padding(.horizontal, 12)
-                        .frame(minHeight: 38)
-                        .background(palette.tileFillTop.opacity(0.9), in: Capsule())
-                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("ios-mode-soundboard")
-
-                Button {
-                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                    showFlowsManagerSheet = true
-                } label: {
-                    Label(L10n.tr("动作流", "Flows", language: lang), systemImage: "arrow.triangle.branch")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundStyle(palette.primaryText)
-                        .padding(.horizontal, 12)
-                        .frame(minHeight: 38)
-                        .background(palette.tileFillTop.opacity(0.9), in: Capsule())
-                        .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-
-                connectionStatusPillButton
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-
-            if !client.connectionState.isConnected {
-                nonConnectedStatusBanner(compact: true)
-                    .padding(.horizontal, 18)
-            } else if client.orcaStatus != nil {
-                IOSOrcaTaskStatusBar(client: client, compact: false)
-                    .padding(.horizontal, 18)
-            }
-
-            IOSCompanionBarRibbon(
-                client: client,
-                compact: false,
-                includeInlineClipboard: false,
-                onPromptHUD: { flashHUD($0) }
-            )
-            .padding(.horizontal, 18)
-
-            // Main Split: Left = Chocolate Bar + Control Strip + Time Travel Strip | Right = Clipboard + Emoji Bar + Gestures
-            let rightPanelWidth = min(368, size.width * 0.36)
-            let leftColumnWidth = max(320, size.width - 36 - 14 - rightPanelWidth)
-
-            HStack(spacing: 14) {
-                VStack(spacing: 12) {
-                    IOSIPadChocolateBarDeckView(
-                        client: client,
-                        currentPageIndex: manualPageSelectionBinding,
-                        isFollowingFrontmostApp: deckFollower.isFollowingFrontmostApp,
-                        isDeckSwitchHighlighted: isDeckSwitchHighlighted,
-                        onFollowFrontmostApp: resumeFollowingFrontmostApp,
-                        onSelectManualPage: { pageOffset in
-                            withAnimation(.spring(response: 0.24, dampingFraction: 0.84)) {
-                                deckFollower.selectManualPage(index: pageOffset, in: client.profile)
-                            }
-                        },
-                        onMovePage: { direction in
-                            moveActiveBarPage(direction)
-                        },
-                        availableWidth: leftColumnWidth,
-                        isLandscape: true,
-                        onPromptHUD: { message in
-                            flashHUD(message)
-                        }
-                    ) { slot in
-                        editingSlot = slot
-                    }
-
-                    iPadTimeTravelDockStrip
-                }
-                .frame(maxWidth: .infinity)
-
-                VStack(spacing: 12) {
-                    if client.connectionState.isConnected && currentEmojiSegment != .clipboard {
-                        IOSClipboardPreviewCard(
-                            client: client,
-                            expanded: false,
-                            onTapExpand: {
-                                withAnimation(.spring(response: 0.22, dampingFraction: 0.84)) {
-                                    currentEmojiSegment = .clipboard
-                                }
-                            }
-                        )
-                    }
-
-                    IOSEmojiBarSurfaceView(
-                        client: client,
-                        currentSlideIndex: $currentEmojiSlideIndex,
-                        activeSegment: $currentEmojiSegment,
-                        isLandscape: true
-                    )
-                    .background(palette.barSurface.opacity(0.65), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
-                    )
-
-                    IOSGesturePadSurfaceView(
-                        client: client,
-                        isLandscape: false
-                    ) { gesture in
-                        triggerCompanionGesture(gesture)
-                    }
-                    .background(palette.barSurface.opacity(0.65), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
-                    )
-                }
-                .frame(width: rightPanelWidth)
-            }
-            .padding(.horizontal, 18)
-            .padding(.bottom, 14)
-        }
+        portraitWorkspace(isWide: true)
+            .frame(maxWidth: 1100)
+            .frame(maxWidth: .infinity)
     }
 
     private var iPadTimeTravelDockStrip: some View {
@@ -1159,61 +924,40 @@ public struct IOSRootTouchBarView: View {
     }
 
     private var portraitPageStepperBar: some View {
-        let isEmoji = (activeMode == .emojiBar)
+        let isEmoji = activeMode == .emojiBar
         let count = max(1, isEmoji ? client.profile.emojiSlides.count : client.profile.pages.count)
-        let activeIdx = min(max(0, isEmoji ? currentEmojiSlideIndex : currentPageIndex), count - 1)
-
-        return VStack(spacing: 6) {
-            HStack(spacing: 7) {
-                Button {
-                    stepPortraitPage(by: -1, count: count, isEmoji: isEmoji, current: activeIdx)
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(palette.primaryText)
-                        .frame(width: 38, height: 36)
-                        .background(palette.tileFillBottom.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("ios-page-prev-button")
-
-                reachablePageNamesRow(count: count, isEmoji: isEmoji, activeIdx: activeIdx, compact: false)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 36)
-
-                Button {
-                    stepPortraitPage(by: 1, count: count, isEmoji: isEmoji, current: activeIdx)
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(palette.primaryText)
-                        .frame(width: 38, height: 36)
-                        .background(palette.tileFillBottom.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("ios-page-next-button")
+        let index = min(max(0, isEmoji ? currentEmojiSlideIndex : currentPageIndex), count - 1)
+        let titles = isEmoji ? client.profile.emojiSlides.map(\.title) : client.profile.pages.map(\.title)
+        let title = titles.indices.contains(index) ? titles[index] : L10n.tr("页面", "Page", language: lang)
+        return HStack(spacing: 10) {
+            Button { stepPortraitPage(by: -1, count: count, isEmoji: isEmoji, current: index) } label: {
+                Image(systemName: "chevron.left").frame(width: 44, height: 44)
             }
-
-            HStack(spacing: 6) {
-                if !isEmoji {
-                    IOSPageReorderControls(
-                        client: client,
-                        activePageIndex: activeIdx,
-                        compact: false
-                    ) { direction in
-                        moveActiveBarPage(direction)
+            .accessibilityIdentifier("ios-page-prev-button")
+            Menu {
+                ForEach(0..<count, id: \.self) { page in
+                    Button(titles.indices.contains(page) ? titles[page] : title) {
+                        selectPageDot(index: page, count: count, isEmoji: isEmoji)
                     }
+                    .accessibilityIdentifier(isEmoji ? "ios-emoji-name-\(page)" : "ios-page-name-\(page)")
                 }
-
-                reachablePageDotsRow(count: count, isEmoji: isEmoji, activeIdx: activeIdx)
-                    .padding(.horizontal, 4)
-                    .frame(height: 26)
-                    .background(palette.barSurface.opacity(0.82), in: Capsule())
-                    .overlay(Capsule().strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+            } label: {
+                HStack(spacing: 5) {
+                    Text(title).font(.system(.callout, design: .rounded, weight: .semibold)).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.caption2)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             }
+            .accessibilityIdentifier("ios-page-name-switcher")
+            reachablePageDotsRow(count: count, isEmoji: isEmoji, activeIdx: index)
+                .frame(width: 100, height: 44)
+            Button { stepPortraitPage(by: 1, count: count, isEmoji: isEmoji, current: index) } label: {
+                Image(systemName: "chevron.right").frame(width: 44, height: 44)
+            }
+            .accessibilityIdentifier("ios-page-next-button")
         }
+        .foregroundStyle(palette.secondaryText)
+        .buttonStyle(.plain)
     }
 
     private var landscapePageDotsStepperBar: some View {

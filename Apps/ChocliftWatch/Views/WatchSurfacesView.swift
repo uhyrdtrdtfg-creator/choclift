@@ -301,22 +301,11 @@ public struct WatchChocolateBarView: View {
             VStack(spacing: 8) {
                 if !client.connectionState.isConnected {
                     WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
-                } else {
-                    if let orcaStatus = client.orcaStatus {
-                        WatchOrcaComplicationLine(client: client, status: orcaStatus)
-                    }
-                    WatchCalendarComplicationLine(client: client)
+                } else if let orcaStatus = client.orcaStatus {
+                    WatchOrcaComplicationLine(client: client, status: orcaStatus)
                 }
 
                 pageSwitcherBar
-
-                pageDotsBar
-
-                if !deckFollower.isFollowingFrontmostApp {
-                    followFrontmostAppButton
-                } else if let bound = activeBoundDeckContext {
-                    followingAppBadge(appName: bound.appName, page: bound.page)
-                }
 
                 let columns = [
                     GridItem(.flexible(), spacing: 8),
@@ -983,6 +972,7 @@ public struct WatchQuickActionsView: View {
     @State private var pressedAction: SystemQuickAction?
     @State private var confirmGate = DestructiveActionConfirmGate()
     @State private var showDisplayPickerSheet: Bool = false
+    @State private var showAudioOutputSheet: Bool = false
 
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
@@ -1008,11 +998,14 @@ public struct WatchQuickActionsView: View {
                     WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
                 }
 
+                WatchCalendarComplicationLine(client: client)
+
                 // Media & Volume Strip (Clean iconic transport buttons >= 46pt)
                 sectionHeader(L10n.tr("媒体与音量", "Media & Volume", language: lang), symbol: "speaker.wave.2.fill")
 
                 tripleMediaStrip([.mediaPrevious, .mediaPlayPause, .mediaNext])
                 tripleMediaStrip([.volumeDown, .volumeMute, .volumeUp])
+                watchAudioOutputButton
 
                 // Window Snap & Sizing
                 sectionHeader(L10n.tr("窗口布局", "Window Layout", language: lang), symbol: "macwindow")
@@ -1035,6 +1028,47 @@ public struct WatchQuickActionsView: View {
         .sheet(isPresented: $showDisplayPickerSheet) {
             watchDisplayPickerSheet
         }
+        .sheet(isPresented: $showAudioOutputSheet) {
+            WatchAudioOutputPickerSheet(client: client)
+        }
+    }
+
+    private var watchAudioOutputButton: some View {
+        let state = client.controlStripState
+        let current = state.currentAudioOutputDevice
+        let symbol = current?.transportKind.sfSymbol ?? "hifispeaker.2.fill"
+
+        return Button {
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+            if client.connectionState.isConnected {
+                client.requestControlStripState()
+            }
+            showAudioOutputSheet = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(current != nil ? palette.accent : palette.secondaryText)
+                Text(state.currentAudioOutputLabel(in: lang))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 2)
+                Image(systemName: state.canSwitchAudioOutput ? "chevron.up.chevron.down" : "lock.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(palette.secondaryText)
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: 44)
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(current != nil ? palette.accent.opacity(0.55) : palette.subtleCardStroke, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("watch-audio-output-button")
     }
 
     private var watchDisplayPickerButton: some View {
@@ -1815,6 +1849,126 @@ private struct WatchTileFolderSheet: View {
                     }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Watch Audio Output Picker Sheet
+
+public struct WatchAudioOutputPickerSheet: View {
+    @ObservedObject var client: CompanionClientEngine
+
+    @State private var awaitingSwitchFeedback: Bool = false
+    @State private var sheetFeedback: CompanionFeedbackToast?
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+    private var state: ControlStripState { client.controlStripState }
+    private var isConnected: Bool { client.connectionState.isConnected }
+
+    public init(client: CompanionClientEngine) {
+        self.client = client
+    }
+
+    public var body: some View {
+        let selectedID = state.currentAudioOutputDevice?.id
+
+        List {
+            if let feedback = sheetFeedback {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: feedback.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.caption.bold())
+                        .foregroundStyle(feedback.success ? palette.statusConnected : palette.statusFailure)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(feedback.title)
+                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(palette.primaryText)
+                        if let detail = feedback.detail, !detail.isEmpty {
+                            Text(detail)
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(feedback.success ? palette.secondaryText : palette.statusFailure)
+                        }
+                    }
+                }
+                .listRowBackground((feedback.success ? palette.statusConnected : palette.statusFailure).opacity(0.14))
+            }
+
+            if !isConnected {
+                Text(L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(palette.secondaryText)
+                    .listRowBackground(palette.barSurface)
+            } else if !state.canSwitchAudioOutput {
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.fill")
+                        .font(.caption2.bold())
+                        .foregroundStyle(palette.accentEmphasis)
+                    Text(L10n.tr("音频输出只读", "Audio Output Read-Only", language: lang))
+                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                        .foregroundStyle(palette.secondaryText)
+                }
+                .listRowBackground(palette.tileFillBottom)
+            }
+
+            if isConnected && state.audioOutputDevices.isEmpty {
+                Text(L10n.tr("无可用音频输出设备", "No Audio Outputs", language: lang))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(palette.secondaryText)
+                    .listRowBackground(palette.barSurface)
+            } else if isConnected {
+                ForEach(state.audioOutputDevices) { device in
+                    let isSelected = (device.id == selectedID)
+                    Button {
+                        guard state.canSwitchAudioOutput else { return }
+                        CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                        sheetFeedback = nil
+                        awaitingSwitchFeedback = true
+                        client.selectAudioOutputDevice(id: device.id)
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: device.transportKind.sfSymbol)
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(isSelected ? palette.statusConnected : palette.accent)
+                            Text(device.name)
+                                .font(.system(size: 12.5, weight: isSelected ? .bold : .medium, design: .rounded))
+                                .foregroundStyle(palette.primaryText)
+                                .lineLimit(2)
+                            Spacer(minLength: 4)
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(palette.statusConnected)
+                            } else if !state.canSwitchAudioOutput {
+                                Image(systemName: "lock")
+                                    .font(.caption2.bold())
+                                    .foregroundStyle(palette.secondaryText.opacity(0.65))
+                            }
+                        }
+                        .frame(minHeight: 38)
+                    }
+                    .disabled(!state.canSwitchAudioOutput)
+                    .listRowBackground(palette.barSurface)
+                    .accessibilityIdentifier("watch-audio-output-device-\(device.id)")
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
+        .onReceive(client.$lastFeedback) { newFeedback in
+            guard awaitingSwitchFeedback, let newFeedback else { return }
+            awaitingSwitchFeedback = false
+            sheetFeedback = newFeedback
+            CompanionFeedbackHaptics.notify(
+                enabled: client.profile.settings.hapticFeedbackEnabled,
+                kind: newFeedback.success ? .success : .error
+            )
         }
     }
 }

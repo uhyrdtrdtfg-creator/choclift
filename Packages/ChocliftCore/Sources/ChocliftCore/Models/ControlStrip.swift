@@ -294,7 +294,10 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.soundboardVolume = ControlStripLevel.clamp(soundboardVolume)
         self.isKeepMacAwakeEnabled = isKeepMacAwakeEnabled
         self.audioOutputDevices = audioOutputDevices
-        self.selectedAudioOutputDeviceID = Self.cleanAudioID(selectedAudioOutputDeviceID)
+        self.selectedAudioOutputDeviceID = Self.resolvedSelectedAudioOutputDeviceID(
+            selectedID: selectedAudioOutputDeviceID,
+            devices: audioOutputDevices
+        )
         self.canSwitchAudioOutput = canSwitchAudioOutput
         self.macBattery = macBattery
         self.areFinderDesktopIconsVisible = areFinderDesktopIconsVisible
@@ -326,9 +329,12 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         )
         self.soundboardVolume = ControlStripLevel.clamp(decodedSBVolume)
         self.isKeepMacAwakeEnabled = try container.decodeIfPresent(Bool.self, forKey: .isKeepMacAwakeEnabled) ?? false
-        self.audioOutputDevices = try container.decodeIfPresent([MacAudioOutputDevice].self, forKey: .audioOutputDevices) ?? []
-        self.selectedAudioOutputDeviceID = Self.cleanAudioID(
-            try container.decodeIfPresent(String.self, forKey: .selectedAudioOutputDeviceID)
+        let decodedAudioDevices = try container.decodeIfPresent([MacAudioOutputDevice].self, forKey: .audioOutputDevices) ?? []
+        let rawAudioSelectedID = try container.decodeIfPresent(String.self, forKey: .selectedAudioOutputDeviceID)
+        self.audioOutputDevices = decodedAudioDevices
+        self.selectedAudioOutputDeviceID = Self.resolvedSelectedAudioOutputDeviceID(
+            selectedID: rawAudioSelectedID,
+            devices: decodedAudioDevices
         )
         self.canSwitchAudioOutput = try container.decodeIfPresent(Bool.self, forKey: .canSwitchAudioOutput) ?? true
         self.macBattery = try container.decodeIfPresent(MacBatteryStatus.self, forKey: .macBattery)
@@ -366,7 +372,11 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         if !audioOutputDevices.isEmpty {
             try container.encode(audioOutputDevices, forKey: .audioOutputDevices)
         }
-        try container.encodeIfPresent(Self.cleanAudioID(selectedAudioOutputDeviceID), forKey: .selectedAudioOutputDeviceID)
+        let resolvedAudioSelectedID = Self.resolvedSelectedAudioOutputDeviceID(
+            selectedID: selectedAudioOutputDeviceID,
+            devices: audioOutputDevices
+        )
+        try container.encodeIfPresent(resolvedAudioSelectedID, forKey: .selectedAudioOutputDeviceID)
         try container.encode(canSwitchAudioOutput, forKey: .canSwitchAudioOutput)
         try container.encodeIfPresent(macBattery, forKey: .macBattery)
         try container.encode(areFinderDesktopIconsVisible, forKey: .areFinderDesktopIconsVisible)
@@ -399,11 +409,13 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
     }
 
     public var currentAudioOutputDevice: MacAudioOutputDevice? {
-        if let selectedID = Self.cleanAudioID(selectedAudioOutputDeviceID),
-           let matched = audioOutputDevices.first(where: { $0.id == selectedID }) {
-            return matched
+        guard let selectedID = Self.resolvedSelectedAudioOutputDeviceID(
+            selectedID: selectedAudioOutputDeviceID,
+            devices: audioOutputDevices
+        ) else {
+            return nil
         }
-        return audioOutputDevices.first
+        return audioOutputDevices.first(where: { $0.id == selectedID })
     }
 
     public func currentAudioOutputLabel(in language: AppLanguage = .system) -> String {
@@ -411,6 +423,17 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             return device.name
         }
         return L10n.tr("系统音频输出", "System Output", language: language)
+    }
+
+    public static func resolvedSelectedAudioOutputDeviceID(
+        selectedID: String?,
+        devices: [MacAudioOutputDevice]
+    ) -> String? {
+        guard let cleaned = cleanAudioID(selectedID),
+              devices.contains(where: { $0.id == cleaned }) else {
+            return nil
+        }
+        return cleaned
     }
 
     private static func cleanAudioID(_ raw: String?) -> String? {
@@ -450,7 +473,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             effectiveTargetDisplayID != other.effectiveTargetDisplayID ||
             isKeepMacAwakeEnabled != other.isKeepMacAwakeEnabled ||
             audioOutputDevices != other.audioOutputDevices ||
-            Self.cleanAudioID(selectedAudioOutputDeviceID) != Self.cleanAudioID(other.selectedAudioOutputDeviceID) ||
+            Self.resolvedSelectedAudioOutputDeviceID(selectedID: selectedAudioOutputDeviceID, devices: audioOutputDevices) !=
+                Self.resolvedSelectedAudioOutputDeviceID(selectedID: other.selectedAudioOutputDeviceID, devices: other.audioOutputDevices) ||
             canSwitchAudioOutput != other.canSwitchAudioOutput ||
             macBattery != other.macBattery ||
             areFinderDesktopIconsVisible != other.areFinderDesktopIconsVisible ||

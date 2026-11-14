@@ -132,6 +132,11 @@ public final class CompanionClientEngine: ObservableObject {
     public var connectTimeoutSeconds: TimeInterval = 8.0
     public var heartbeatIntervalSeconds: TimeInterval = 5.0
     public var heartbeatTimeoutSeconds: TimeInterval = 15.0
+    /// BLE tolerates radio scheduling gaps independently of TCP/HTTP. PIN timing is unchanged.
+    public var bluetoothHeartbeatTimeoutSeconds: TimeInterval = 60.0
+    var simulatedKnownBluetoothConnector: ((UUID) -> CompanionFrameTransport?)?
+    private var recoveringSavedBluetooth = false
+    private var wifiRecoveryPathMonitor: NWPathMonitor?
     public var maxAutoReconnectAttempts: Int = 3
     public var pinGlitchRecoveryWindowSeconds: TimeInterval = 6.0
     public var tileFeedbackDurationSeconds: TimeInterval = TileActionFeedbackBanner.defaultDisplayDurationSeconds
@@ -261,6 +266,7 @@ public final class CompanionClientEngine: ObservableObject {
                     $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 }
                 if self.connectionState == .disconnected,
+                   !self.recoveringSavedBluetooth,
                    self.reconnectTask == nil,
                    self.matchingSavedWiFiHost() != nil {
                     self.consecutiveReconnectFailures = 0
@@ -292,6 +298,7 @@ public final class CompanionClientEngine: ObservableObject {
             self.isBluetoothPoweredOn = scanner.isPoweredOn
             self.bluetoothAvailability = scanner.availability
             if self.connectionState == .disconnected,
+               !self.recoveringSavedBluetooth,
                self.reconnectTask == nil,
                self.matchingSavedDiscoveredBluetoothHost() != nil {
                 self.consecutiveReconnectFailures = 0
@@ -327,6 +334,11 @@ public final class CompanionClientEngine: ObservableObject {
         discoveredBluetoothMacs = enrichedDiscoveredBluetoothMacs(from: scanner.discovered)
     }
 
+    func simulateDiscoveredWiFiMacs(_ hosts: [DiscoveredMacHost]) {
+        discoveredMacs = hosts
+        autoConnectIfAppropriate()
+    }
+
     func simulateDiscoveredBluetoothMacs(
         _ hosts: [DiscoveredBluetoothMac],
         autoConnect: Bool = true
@@ -334,6 +346,7 @@ public final class CompanionClientEngine: ObservableObject {
         isBrowsingActive = true
         discoveredBluetoothMacs = enrichedDiscoveredBluetoothMacs(from: hosts)
         if connectionState == .disconnected,
+           !recoveringSavedBluetooth,
            reconnectTask == nil,
            matchingSavedDiscoveredBluetoothHost() != nil {
             consecutiveReconnectFailures = 0
@@ -379,7 +392,7 @@ public final class CompanionClientEngine: ObservableObject {
             }
         }
         if connectionState == .disconnected && !intentionalDisconnect {
-            consecutiveReconnectFailures = 0
+            if !recoveringSavedBluetooth { consecutiveReconnectFailures = 0 }
             autoConnectIfAppropriate(allowBluetoothNow: discoveredMacs.isEmpty)
         }
     }
@@ -388,6 +401,12 @@ public final class CompanionClientEngine: ObservableObject {
 
     private func autoConnectIfAppropriate(allowBluetoothNow: Bool = false) {
         guard connectionState == .disconnected, !intentionalDisconnect, !savedMacs.isEmpty else { return }
+        if recoveringSavedBluetooth {
+            if reconnectTask == nil, wifiRecoveryPathMonitor == nil {
+                scheduleRecoveryAttempt(failedLink: .bluetooth, delaySeconds: reconnectDelaySeconds, preservePINState: false)
+            }
+            return
+        }
 
         // 1. Always prefer live Wi-Fi TCP when both links are available.
         if let wifiHost = matchingSavedWiFiHost() {
@@ -726,9 +745,23 @@ public final class CompanionClientEngine: ObservableObject {
         macID: String?,
         preservePINState: Bool = false
     ) -> Bool {
+        if let link = simulatedBluetoothReconnectProvider?() {
+            attachBluetoothTransport(link, targetName: targetName, macID: macID, peripheralID: id,
+                                     armWatchdog: false, preservePINState: preservePINState,
+                                     probeSavedMac: false, probeTargetMacID: nil)
+            return true
+        }
+        if let connector = simulatedKnownBluetoothConnector {
+            guard let link = connector(id) else { return false }
+            attachBluetoothTransport(link, targetName: targetName, macID: macID, peripheralID: id,
+                                     armWatchdog: false, preservePINState: preservePINState,
+                                     probeSavedMac: false, probeTargetMacID: nil)
+            return true
+        }
         if bluetoothBrowser == nil {
             startBluetoothBrowsing()
         }
+        guard isBluetoothPoweredOn else { return false }
         guard let link = bluetoothBrowser?.retrieveAndConnect(
             peripheralID: id,
             fallbackName: targetName,
@@ -913,6 +946,11 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     private func handleBluetoothWriteFailure(_ reason: String) {
+        if connectionState.isConnected {
+            handleConnectionDropped(failedLink: .bluetooth)
+            lastConnectionIssue = reason
+            return
+        }
         currentSessionID = UUID()
         isTransportReady = false
         isSavedMacProbeConnect = false
@@ -1376,6 +1414,9 @@ public final class CompanionClientEngine: ObservableObject {
 
     public func disconnect() {
         intentionalDisconnect = true
+        recoveringSavedBluetooth = false
+        wifiRecoveryPathMonitor?.cancel()
+        wifiRecoveryPathMonitor = nil
         isSavedMacProbeConnect = false
         probeTargetMacID = nil
         currentSessionID = UUID()
@@ -1453,7 +1494,9 @@ public final class CompanionClientEngine: ObservableObject {
                       self.shouldSendSessionHeartbeats else {
                     break
                 }
-                if Date().timeIntervalSince(self.lastServerActivityAt) > max(0.1, self.heartbeatTimeoutSeconds) {
+                let timeout = self.activeLink == .bluetooth && self.connectionState.isConnected
+                    ? self.bluetoothHeartbeatTimeoutSeconds : self.heartbeatTimeoutSeconds
+                if Date().timeIntervalSince(self.lastServerActivityAt) > max(0.1, timeout) {
                     self.handleConnectionDropped(failedLink: self.activeLink ?? .bluetooth)
                     break
                 }
@@ -1504,6 +1547,10 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     private func handleConnectionDropped(failedLink: CompanionLinkKind) {
+        if failedLink == .bluetooth, connectionState.isConnected,
+           savedMacs.contains(where: { $0.macID == candidateMacID }) {
+            recoveringSavedBluetooth = true
+        }
         currentSessionID = UUID()
         isTransportReady = false
         connectWatchdogTask?.cancel()
@@ -1657,7 +1704,7 @@ public final class CompanionClientEngine: ObservableObject {
         }
 
         consecutiveReconnectFailures += 1
-        guard consecutiveReconnectFailures <= maxAutoReconnectAttempts else {
+        guard recoveringSavedBluetooth || consecutiveReconnectFailures <= maxAutoReconnectAttempts else {
             lastConnectionIssue = L10n.tr(
                 "无法连接到 \(target)，已停止重试；当 Mac 重新出现在 Wi-Fi 或蓝牙范围时会自动连接。",
                 "Could not reach \(target). Stopped retrying; will reconnect automatically when your Mac reappears on Wi-Fi or Bluetooth.",
@@ -1668,9 +1715,13 @@ public final class CompanionClientEngine: ObservableObject {
 
         scheduleRecoveryAttempt(
             failedLink: failedLink,
-            delaySeconds: reconnectDelaySeconds,
+            delaySeconds: recoveringSavedBluetooth ? savedBluetoothRecoveryDelay : reconnectDelaySeconds,
             preservePINState: false
         )
+    }
+
+    private var savedBluetoothRecoveryDelay: TimeInterval {
+        min(30, reconnectDelaySeconds * pow(2, Double(min(max(0, consecutiveReconnectFailures - 1), 5))))
     }
 
     private func scheduleRecoveryAttempt(
@@ -1678,6 +1729,9 @@ public final class CompanionClientEngine: ObservableObject {
         delaySeconds: TimeInterval,
         preservePINState: Bool
     ) {
+        wifiRecoveryPathMonitor?.cancel()
+        wifiRecoveryPathMonitor = nil
+        let recoverySessionID = currentSessionID
         let retryEndpoint = activeEndpoint
         let retryName = activeTargetName
         let retryMacID = candidateMacID
@@ -1691,6 +1745,36 @@ public final class CompanionClientEngine: ObservableObject {
                 guard self.pinGlitchState != nil else { return }
             } else {
                 guard self.connectionState == .disconnected else { return }
+            }
+
+            self.reconnectTask = nil
+            // A Bonjour record is not proof of reachability. Retrieve the known BLE peripheral first.
+            if self.recoveringSavedBluetooth,
+               let pid = retryPeripheralID ?? self.savedMacs.first(where: { $0.macID == retryMacID })?.lastBluetoothPeripheralID {
+                if self.connectKnownBluetoothPeripheral(id: pid, targetName: retryName, macID: retryMacID) {
+                    return
+                }
+                // Only a live Wi-Fi path may be used after BLE retrieval fails.
+                let monitor = NWPathMonitor(requiredInterfaceType: .wifi)
+                self.wifiRecoveryPathMonitor = monitor
+                monitor.pathUpdateHandler = { [weak self] path in
+                    monitor.cancel()
+                    Task { @MainActor [weak self] in
+                        guard let self, !self.intentionalDisconnect, self.currentSessionID == recoverySessionID,
+                              self.connectionState == .disconnected else { return }
+                        self.wifiRecoveryPathMonitor = nil
+                        if path.status == .satisfied, let host = self.matchingSavedWiFiHost() {
+                            self.openConnection(to: host.endpoint, targetName: host.name, preservePINState: false)
+                        } else {
+                            self.consecutiveReconnectFailures += 1
+                            self.scheduleRecoveryAttempt(failedLink: .bluetooth,
+                                delaySeconds: self.savedBluetoothRecoveryDelay,
+                                preservePINState: false)
+                        }
+                    }
+                }
+                monitor.start(queue: self.networkQueue)
+                return
             }
 
             // 1. Prefer live Bonjour Wi-Fi if discovered.
@@ -2634,6 +2718,7 @@ public final class CompanionClientEngine: ObservableObject {
             isSavedMacProbeConnect = false
             probeTargetMacID = nil
             consecutiveReconnectFailures = 0
+            recoveringSavedBluetooth = false
             lastConnectionIssue = nil
             candidateMacID = macID
             activeTargetName = macName
