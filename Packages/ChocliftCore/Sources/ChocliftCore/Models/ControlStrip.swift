@@ -77,6 +77,36 @@ public struct ControlLevelDragThrottle: Equatable, Sendable {
 
 // MARK: - Now Playing & Control Strip Snapshot
 
+public enum NowPlayingRepeatMode: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
+    case off
+    case all
+    case one
+
+    public var isActive: Bool {
+        self != .off
+    }
+
+    public var symbolName: String {
+        switch self {
+        case .off, .all:
+            return "repeat"
+        case .one:
+            return "repeat.1"
+        }
+    }
+
+    public func accessibilityValueText(in language: AppLanguage = .system) -> String {
+        switch self {
+        case .off:
+            return L10n.tr("关闭", "Off", language: language)
+        case .all:
+            return L10n.tr("列表循环", "All", language: language)
+        case .one:
+            return L10n.tr("单曲循环", "One", language: language)
+        }
+    }
+}
+
 public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
     public var title: String?
     public var artist: String?
@@ -88,6 +118,10 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
     public var durationSeconds: Double?
     /// Bundle identifier of the active Now Playing application when known (`com.spotify.client`, `com.apple.Music`, etc.).
     public var bundleIdentifier: String?
+    /// Public AppleEvent shuffle state for `com.apple.Music` / `com.spotify.client` (`nil` when unavailable or unsupported).
+    public var shuffleEnabled: Bool?
+    /// Public AppleEvent repeat mode for `com.apple.Music` / `com.spotify.client` (`nil` when unavailable or unsupported).
+    public var repeatMode: NowPlayingRepeatMode?
 
     private enum CodingKeys: String, CodingKey {
         case title
@@ -97,6 +131,8 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         case elapsedSeconds
         case durationSeconds
         case bundleIdentifier
+        case shuffleEnabled
+        case repeatMode
     }
 
     public init(
@@ -106,7 +142,9 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         isPlaying: Bool = false,
         elapsedSeconds: Double? = nil,
         durationSeconds: Double? = nil,
-        bundleIdentifier: String? = nil
+        bundleIdentifier: String? = nil,
+        shuffleEnabled: Bool? = nil,
+        repeatMode: NowPlayingRepeatMode? = nil
     ) {
         self.title = Self.clean(title)
         self.artist = Self.clean(artist)
@@ -115,7 +153,15 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         let validDuration = Self.cleanDuration(durationSeconds)
         self.durationSeconds = validDuration
         self.elapsedSeconds = Self.cleanElapsed(elapsedSeconds, cappedBy: validDuration)
-        self.bundleIdentifier = Self.clean(bundleIdentifier)
+        let cleanedBundle = Self.clean(bundleIdentifier)
+        self.bundleIdentifier = cleanedBundle
+        if let cleanedBundle, MacMediaPlaybackModeRouter.isSupportedBundleIdentifier(cleanedBundle) {
+            self.shuffleEnabled = shuffleEnabled
+            self.repeatMode = repeatMode
+        } else {
+            self.shuffleEnabled = nil
+            self.repeatMode = nil
+        }
     }
 
     public init(from decoder: Decoder) throws {
@@ -129,7 +175,17 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         let validDuration = Self.cleanDuration(rawDuration)
         self.durationSeconds = validDuration
         self.elapsedSeconds = Self.cleanElapsed(rawElapsed, cappedBy: validDuration)
-        self.bundleIdentifier = Self.clean(try container.decodeIfPresent(String.self, forKey: .bundleIdentifier))
+        let cleanedBundle = Self.clean(try container.decodeIfPresent(String.self, forKey: .bundleIdentifier))
+        self.bundleIdentifier = cleanedBundle
+        let rawShuffle = try container.decodeIfPresent(Bool.self, forKey: .shuffleEnabled)
+        let rawRepeat = try container.decodeIfPresent(NowPlayingRepeatMode.self, forKey: .repeatMode)
+        if let cleanedBundle, MacMediaPlaybackModeRouter.isSupportedBundleIdentifier(cleanedBundle) {
+            self.shuffleEnabled = rawShuffle
+            self.repeatMode = rawRepeat
+        } else {
+            self.shuffleEnabled = nil
+            self.repeatMode = nil
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -142,7 +198,12 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         let validElapsed = Self.cleanElapsed(elapsedSeconds, cappedBy: validDuration)
         try container.encodeIfPresent(validElapsed, forKey: .elapsedSeconds)
         try container.encodeIfPresent(validDuration, forKey: .durationSeconds)
-        try container.encodeIfPresent(Self.clean(bundleIdentifier), forKey: .bundleIdentifier)
+        let cleanedBundle = Self.clean(bundleIdentifier)
+        try container.encodeIfPresent(cleanedBundle, forKey: .bundleIdentifier)
+        if let cleanedBundle, MacMediaPlaybackModeRouter.isSupportedBundleIdentifier(cleanedBundle) {
+            try container.encodeIfPresent(shuffleEnabled, forKey: .shuffleEnabled)
+            try container.encodeIfPresent(repeatMode, forKey: .repeatMode)
+        }
     }
 
     /// Track title if available, otherwise the active media app name.
@@ -188,6 +249,15 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         return MacMediaSeekRouter.isSupportedSeekBundleIdentifier(cleanedBundle)
     }
 
+    /// True ONLY for `com.apple.Music` and `com.spotify.client`, whose public AppleEvent dictionaries
+    /// expose read/write shuffle and repeat properties. False for all other players.
+    public var supportsShuffleAndRepeat: Bool {
+        guard let cleanedBundle = Self.clean(bundleIdentifier) else {
+            return false
+        }
+        return MacMediaPlaybackModeRouter.isSupportedBundleIdentifier(cleanedBundle)
+    }
+
     /// Normalized `0.0...1.0` playback fraction when `durationSeconds` is present (`> 0`); `nil` when duration is missing.
     public var progressFraction: Double? {
         guard let validDuration = Self.cleanDuration(durationSeconds),
@@ -202,14 +272,17 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
     /// metadata means there is no current track; the state string controls the glyph.
     public static func distributedPlayerUpdate(
         playerState: String, title: String?, artist: String?, appName: String,
-        bundleIdentifier: String, elapsedSeconds: Double? = nil, durationSeconds: Double? = nil
+        bundleIdentifier: String, elapsedSeconds: Double? = nil, durationSeconds: Double? = nil,
+        shuffleEnabled: Bool? = nil, repeatMode: NowPlayingRepeatMode? = nil
     ) -> NowPlayingStatus? {
         guard clean(title) != nil else { return nil }
         return NowPlayingStatus(
             title: title, artist: artist, appName: appName,
             isPlaying: playerState.lowercased() == "playing",
             elapsedSeconds: elapsedSeconds, durationSeconds: durationSeconds,
-            bundleIdentifier: bundleIdentifier
+            bundleIdentifier: bundleIdentifier,
+            shuffleEnabled: shuffleEnabled,
+            repeatMode: repeatMode
         )
     }
 
@@ -218,6 +291,32 @@ public struct NowPlayingStatus: Codable, Equatable, Hashable, Sendable {
         guard success else { return previous }
         var next = previous ?? NowPlayingStatus(appName: "Now Playing")
         next.isPlaying = !(previous?.isPlaying ?? false)
+        return next
+    }
+
+    /// Applies a shuffle change ONLY after a confirmed AppleEvent write; leaves `previous` unflipped on failure.
+    public static func afterShuffleChange(
+        _ previous: NowPlayingStatus?,
+        enabled: Bool,
+        success: Bool
+    ) -> NowPlayingStatus? {
+        guard success, var next = previous, next.supportsShuffleAndRepeat else {
+            return previous
+        }
+        next.shuffleEnabled = enabled
+        return next
+    }
+
+    /// Applies a repeat-mode change ONLY after a confirmed AppleEvent write; leaves `previous` unflipped on failure.
+    public static func afterRepeatChange(
+        _ previous: NowPlayingStatus?,
+        mode: NowPlayingRepeatMode,
+        success: Bool
+    ) -> NowPlayingStatus? {
+        guard success, var next = previous, next.supportsShuffleAndRepeat else {
+            return previous
+        }
+        next.repeatMode = mode
         return next
     }
 
@@ -1166,5 +1265,334 @@ public enum MacMediaSeekRouter {
             }
             return .musicScript(positionSeconds: clampedPosition)
         }
+    }
+}
+
+// MARK: - Shuffle & Repeat Router (Public AppleEvent Properties Only: com.apple.Music & com.spotify.client)
+
+public enum MacMediaPlaybackModeTargetPlayer: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
+    case music
+    case spotify
+
+    public var bundleIdentifier: String {
+        switch self {
+        case .music:
+            return MacMediaTransportRouter.musicBundleIdentifier
+        case .spotify:
+            return MacMediaTransportRouter.spotifyBundleIdentifier
+        }
+    }
+
+    public var displayName: String {
+        switch self {
+        case .music:
+            return "Music"
+        case .spotify:
+            return "Spotify"
+        }
+    }
+
+    public init?(bundleIdentifier raw: String?) {
+        guard let cleaned = MacMediaTransportContext.normalizedBundleID(raw) else {
+            return nil
+        }
+        if cleaned.caseInsensitiveCompare(MacMediaTransportRouter.musicBundleIdentifier) == .orderedSame {
+            self = .music
+        } else if cleaned.caseInsensitiveCompare(MacMediaTransportRouter.spotifyBundleIdentifier) == .orderedSame {
+            self = .spotify
+        } else {
+            return nil
+        }
+    }
+
+    public func supportsRepeatMode(_ mode: NowPlayingRepeatMode) -> Bool {
+        switch self {
+        case .music:
+            return true
+        case .spotify:
+            // Spotify's public AppleEvent dictionary exposes boolean `repeating` (`false` = off, `true` = all).
+            return mode != .one
+        }
+    }
+
+    public func nextRepeatMode(after current: NowPlayingRepeatMode?) -> NowPlayingRepeatMode {
+        let resolved = current ?? .off
+        switch self {
+        case .music:
+            switch resolved {
+            case .off:
+                return .all
+            case .all:
+                return .one
+            case .one:
+                return .off
+            }
+        case .spotify:
+            switch resolved {
+            case .off:
+                return .all
+            case .all, .one:
+                return .off
+            }
+        }
+    }
+
+    /// Reads the public AppleEvent shuffle and repeat properties without launching or activating the player.
+    /// - `com.apple.Music`: `shuffle enabled` (`pShE`) and `song repeat` (`pRpt`: `off` / `all` / `one`)
+    /// - `com.spotify.client`: `shuffling` (`pShu`) and `repeating` (`pRep`: boolean)
+    public func readPlaybackModesScriptSource() -> String {
+        switch self {
+        case .music:
+            return """
+            if application id "\(bundleIdentifier)" is running then
+                tell application id "\(bundleIdentifier)"
+                    if shuffle enabled then
+                        set shuffleToken to "true"
+                    else
+                        set shuffleToken to "false"
+                    end if
+                    set currentRepeat to song repeat
+                    if currentRepeat is one then
+                        set repeatToken to "one"
+                    else if currentRepeat is all then
+                        set repeatToken to "all"
+                    else
+                        set repeatToken to "off"
+                    end if
+                    return {shuffleToken, repeatToken}
+                end tell
+            else
+                return {"NOT_RUNNING", "NOT_RUNNING"}
+            end if
+            """
+        case .spotify:
+            return """
+            if application id "\(bundleIdentifier)" is running then
+                tell application id "\(bundleIdentifier)"
+                    if shuffling then
+                        set shuffleToken to "true"
+                    else
+                        set shuffleToken to "false"
+                    end if
+                    if repeating then
+                        set repeatToken to "all"
+                    else
+                        set repeatToken to "off"
+                    end if
+                    return {shuffleToken, repeatToken}
+                end tell
+            else
+                return {"NOT_RUNNING", "NOT_RUNNING"}
+            end if
+            """
+        }
+    }
+
+    /// Writes the public AppleEvent shuffle property without launching or activating the player.
+    public func writeShuffleScriptSource(enabled: Bool) -> String {
+        let boolLiteral = enabled ? "true" : "false"
+        let propertyAssignment: String
+        switch self {
+        case .music:
+            propertyAssignment = "set shuffle enabled to \(boolLiteral)"
+        case .spotify:
+            propertyAssignment = "set shuffling to \(boolLiteral)"
+        }
+        return """
+        if application id "\(bundleIdentifier)" is running then
+            tell application id "\(bundleIdentifier)" to \(propertyAssignment)
+            return "OK"
+        else
+            return "NOT_RUNNING"
+        end if
+        """
+    }
+
+    /// Writes the public AppleEvent repeat property without launching or activating the player.
+    /// Returns `nil` when `mode` is unsupported by the player's public AppleEvent dictionary (e.g. `.one` on Spotify).
+    public func writeRepeatScriptSource(mode: NowPlayingRepeatMode) -> String? {
+        let propertyAssignment: String
+        switch self {
+        case .music:
+            let enumLiteral: String
+            switch mode {
+            case .off:
+                enumLiteral = "off"
+            case .all:
+                enumLiteral = "all"
+            case .one:
+                enumLiteral = "one"
+            }
+            propertyAssignment = "set song repeat to \(enumLiteral)"
+        case .spotify:
+            switch mode {
+            case .off:
+                propertyAssignment = "set repeating to false"
+            case .all:
+                propertyAssignment = "set repeating to true"
+            case .one:
+                return nil
+            }
+        }
+        return """
+        if application id "\(bundleIdentifier)" is running then
+            tell application id "\(bundleIdentifier)" to \(propertyAssignment)
+            return "OK"
+        else
+            return "NOT_RUNNING"
+        end if
+        """
+    }
+}
+
+public enum MacMediaPlaybackModeRejectionReason: Equatable, Hashable, Sendable {
+    case noActiveMediaPlayer
+    case playerNotRunning(bundleID: String)
+    case unsupportedPlayer(bundleID: String)
+    case unsupportedRepeatMode(bundleID: String, mode: NowPlayingRepeatMode)
+
+    public func message(in language: AppLanguage = .system) -> String {
+        switch self {
+        case .noActiveMediaPlayer:
+            return L10n.tr(
+                "当前没有正在播放的媒体会话",
+                "No active Now Playing session",
+                language: language
+            )
+        case .playerNotRunning(let bundleID):
+            let appName = MacMediaPlaybackModeTargetPlayer(bundleIdentifier: bundleID)?.displayName ?? bundleID
+            return L10n.tr(
+                "\(appName) 当前未在运行",
+                "\(appName) is not currently running",
+                language: language
+            )
+        case .unsupportedPlayer(let bundleID):
+            return L10n.tr(
+                "\(bundleID) 不支持公开的随机与循环播放 AppleEvent 属性",
+                "\(bundleID) does not support public shuffle and repeat AppleEvent properties",
+                language: language
+            )
+        case .unsupportedRepeatMode(_, let mode):
+            return L10n.tr(
+                "Spotify 的公开 AppleEvent 属性仅支持开启或关闭循环，不支持 \(mode.rawValue)",
+                "Spotify's public AppleEvent repeating property supports only off and all, not \(mode.rawValue)",
+                language: language
+            )
+        }
+    }
+}
+
+public enum MacMediaPlaybackModeRoute: Equatable, Hashable, Sendable {
+    case script(target: MacMediaPlaybackModeTargetPlayer, source: String)
+    case rejected(MacMediaPlaybackModeRejectionReason)
+}
+
+public struct MacMediaPlaybackModeContext: Equatable, Hashable, Sendable {
+    public var nowPlayingBundleID: String?
+    public var isSpotifyRunning: Bool
+    public var isMusicRunning: Bool
+
+    public init(
+        nowPlayingBundleID: String? = nil,
+        isSpotifyRunning: Bool = false,
+        isMusicRunning: Bool = false
+    ) {
+        self.nowPlayingBundleID = MacMediaTransportContext.normalizedBundleID(nowPlayingBundleID)
+        self.isSpotifyRunning = isSpotifyRunning
+        self.isMusicRunning = isMusicRunning
+    }
+}
+
+public enum MacMediaPlaybackModeRouter {
+    public static let spotifyBundleIdentifier = MacMediaTransportRouter.spotifyBundleIdentifier
+    public static let musicBundleIdentifier = MacMediaTransportRouter.musicBundleIdentifier
+
+    public static func isSupportedBundleIdentifier(_ raw: String?) -> Bool {
+        MacMediaPlaybackModeTargetPlayer(bundleIdentifier: raw) != nil
+    }
+
+    public static func parsePlaybackModes(
+        shuffleToken: String?,
+        repeatToken: String?
+    ) -> (shuffleEnabled: Bool, repeatMode: NowPlayingRepeatMode)? {
+        guard let rawShuffle = shuffleToken?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              let rawRepeat = repeatToken?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              rawShuffle != "not_running",
+              rawRepeat != "not_running" else {
+            return nil
+        }
+
+        let shuffleEnabled: Bool
+        switch rawShuffle {
+        case "true", "1", "yes":
+            shuffleEnabled = true
+        case "false", "0", "no":
+            shuffleEnabled = false
+        default:
+            return nil
+        }
+
+        let repeatMode: NowPlayingRepeatMode
+        switch rawRepeat {
+        case "off", "false", "0":
+            repeatMode = .off
+        case "all", "true", "1":
+            repeatMode = .all
+        case "one":
+            repeatMode = .one
+        default:
+            return nil
+        }
+
+        return (shuffleEnabled, repeatMode)
+    }
+
+    public static func chooseShuffleRoute(
+        enabled: Bool,
+        context: MacMediaPlaybackModeContext
+    ) -> MacMediaPlaybackModeRoute {
+        guard let bundleID = MacMediaTransportContext.normalizedBundleID(context.nowPlayingBundleID) else {
+            return .rejected(.noActiveMediaPlayer)
+        }
+        guard let target = MacMediaPlaybackModeTargetPlayer(bundleIdentifier: bundleID) else {
+            return .rejected(.unsupportedPlayer(bundleID: bundleID))
+        }
+        switch target {
+        case .music:
+            guard context.isMusicRunning else {
+                return .rejected(.playerNotRunning(bundleID: musicBundleIdentifier))
+            }
+        case .spotify:
+            guard context.isSpotifyRunning else {
+                return .rejected(.playerNotRunning(bundleID: spotifyBundleIdentifier))
+            }
+        }
+        return .script(target: target, source: target.writeShuffleScriptSource(enabled: enabled))
+    }
+
+    public static func chooseRepeatRoute(
+        mode: NowPlayingRepeatMode,
+        context: MacMediaPlaybackModeContext
+    ) -> MacMediaPlaybackModeRoute {
+        guard let bundleID = MacMediaTransportContext.normalizedBundleID(context.nowPlayingBundleID) else {
+            return .rejected(.noActiveMediaPlayer)
+        }
+        guard let target = MacMediaPlaybackModeTargetPlayer(bundleIdentifier: bundleID) else {
+            return .rejected(.unsupportedPlayer(bundleID: bundleID))
+        }
+        switch target {
+        case .music:
+            guard context.isMusicRunning else {
+                return .rejected(.playerNotRunning(bundleID: musicBundleIdentifier))
+            }
+        case .spotify:
+            guard context.isSpotifyRunning else {
+                return .rejected(.playerNotRunning(bundleID: spotifyBundleIdentifier))
+            }
+        }
+        guard let source = target.writeRepeatScriptSource(mode: mode) else {
+            return .rejected(.unsupportedRepeatMode(bundleID: target.bundleIdentifier, mode: mode))
+        }
+        return .script(target: target, source: source)
     }
 }

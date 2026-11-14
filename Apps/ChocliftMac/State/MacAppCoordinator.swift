@@ -260,6 +260,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         inputService.mediaSeekContextProvider = { [weak self] in
             self?.systemControlService.currentMediaSeekContext() ?? MacMediaSeekContext()
         }
+        inputService.mediaPlaybackModeContextProvider = { [weak self] in
+            self?.systemControlService.currentMediaPlaybackModeContext() ?? MacMediaPlaybackModeContext()
+        }
 
         keepAwakeService.onAssertionStateChanged = { [weak self] isHolding in
             guard let self else { return }
@@ -298,6 +301,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             guard let self else { return }
             self.controlStripState = state
             self.nowPlayingScrub.reconcile(with: state.nowPlaying)
+            if let bid = state.nowPlaying?.bundleIdentifier {
+                self.server.pushMissingIconsToAllSessions(bundleIDs: [bid])
+            }
             self.server.broadcastControlStripState(state)
         }
         systemControlService.start()
@@ -1353,6 +1359,52 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         return res
     }
 
+    @discardableResult
+    public func setNowPlayingShuffle(
+        _ enabled: Bool,
+        triggeredBy deviceName: String = "Mac Studio",
+        originDeviceID: String? = nil
+    ) -> (success: Bool, appliedShuffle: Bool?, message: String) {
+        let res = inputService.setNowPlayingShuffle(enabled: enabled, language: lang)
+        if res.success, let applied = res.appliedShuffle, let targetBundleID = res.targetBundleID {
+            systemControlService.recordAppliedShuffle(applied, bundleIdentifier: targetBundleID)
+            controlStripState = systemControlService.currentState
+            nowPlayingScrub.reconcile(with: controlStripState.nowPlaying)
+            server.broadcastControlStripState(
+                systemControlService.currentState,
+                excludingDeviceID: originDeviceID
+            )
+        } else {
+            controlStripState = systemControlService.currentState
+            nowPlayingScrub.reconcile(with: controlStripState.nowPlaying)
+        }
+        recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
+        return (res.success, res.appliedShuffle, res.message)
+    }
+
+    @discardableResult
+    public func setNowPlayingRepeat(
+        _ mode: NowPlayingRepeatMode,
+        triggeredBy deviceName: String = "Mac Studio",
+        originDeviceID: String? = nil
+    ) -> (success: Bool, appliedRepeat: NowPlayingRepeatMode?, message: String) {
+        let res = inputService.setNowPlayingRepeat(mode: mode, language: lang)
+        if res.success, let applied = res.appliedRepeat, let targetBundleID = res.targetBundleID {
+            systemControlService.recordAppliedRepeat(applied, bundleIdentifier: targetBundleID)
+            controlStripState = systemControlService.currentState
+            nowPlayingScrub.reconcile(with: controlStripState.nowPlaying)
+            server.broadcastControlStripState(
+                systemControlService.currentState,
+                excludingDeviceID: originDeviceID
+            )
+        } else {
+            controlStripState = systemControlService.currentState
+            nowPlayingScrub.reconcile(with: controlStripState.nowPlaying)
+        }
+        recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
+        return (res.success, res.appliedRepeat, res.message)
+    }
+
     private func recordActivity(deviceName: String, summary: String, isSuccess: Bool) {
         let event = MacActivityEvent(deviceName: deviceName, summary: summary, isSuccess: isSuccess)
         activityLog.insert(event, at: 0)
@@ -1459,13 +1511,21 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .activateRecentApp(let bundleIdentifier, let appPath):
             Task { @MainActor in
-                let result = await catalogService.launchOrActivateApp(
+                let result = await catalogService.launchOrActivateAppWithHandle(
                     bundleIdentifier: bundleIdentifier,
                     appPath: appPath,
                     windowService: windowService
                 )
+                let title = result.app?.appName
+                    ?? timeTravel.timeline.first(where: {
+                        $0.bundleIdentifier.caseInsensitiveCompare(bundleIdentifier) == .orderedSame
+                    })?.appName
+                    ?? systemControlService.currentState.nowPlaying.flatMap {
+                        $0.bundleIdentifier?.caseInsensitiveCompare(bundleIdentifier) == .orderedSame ? $0.appName : nil
+                    }
+                    ?? bundleIdentifier
                 recordActivity(deviceName: device.deviceName, summary: result.message, isSuccess: result.success)
-                reply(.actionFeedback(success: result.success, title: bundleIdentifier, detail: result.message))
+                reply(.actionFeedback(success: result.success, title: title, detail: result.message))
             }
 
         case .setRecentAppPinned(let bundleIdentifier, let isPinned):
@@ -1526,8 +1586,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         case .requestControlStripState:
             let immediate = systemControlService.currentState
+            if let bid = immediate.nowPlaying?.bundleIdentifier {
+                server.pushMissingIconsToAllSessions(bundleIDs: [bid])
+            }
             reply(.controlStripStateUpdated(immediate))
-            systemControlService.refreshNow { refreshed in
+            systemControlService.refreshNow { [weak self] refreshed in
+                if let bid = refreshed.nowPlaying?.bundleIdentifier {
+                    self?.server.pushMissingIconsToAllSessions(bundleIDs: [bid])
+                }
                 if refreshed.hasMeaningfulDifference(from: immediate) {
                     reply(.controlStripStateUpdated(refreshed))
                 }
@@ -1819,6 +1885,36 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 reply(.actionFeedback(
                     success: false,
                     title: L10n.tr("播放进度", "Playback Position", language: lang),
+                    detail: res.message
+                ))
+            }
+
+        case .setNowPlayingShuffle(let enabled):
+            let res = setNowPlayingShuffle(
+                enabled,
+                triggeredBy: device.deviceName,
+                originDeviceID: device.deviceID
+            )
+            reply(.controlStripStateUpdated(systemControlService.currentState))
+            if !res.success {
+                reply(.actionFeedback(
+                    success: false,
+                    title: L10n.tr("随机播放", "Shuffle", language: lang),
+                    detail: res.message
+                ))
+            }
+
+        case .setNowPlayingRepeat(let mode):
+            let res = setNowPlayingRepeat(
+                mode,
+                triggeredBy: device.deviceName,
+                originDeviceID: device.deviceID
+            )
+            reply(.controlStripStateUpdated(systemControlService.currentState))
+            if !res.success {
+                reply(.actionFeedback(
+                    success: false,
+                    title: L10n.tr("循环播放", "Repeat", language: lang),
                     detail: res.message
                 ))
             }

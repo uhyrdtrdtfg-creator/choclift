@@ -117,6 +117,7 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var nowPlayingScrub = NowPlayingScrubController()
     @Published public private(set) var hapticQuietHours: HapticQuietHoursSettings = .disabled
     @Published public private(set) var observedClipboardPreviewTexts: Set<String> = []
+    @Published public private(set) var lastNowPlayingModeError: String?
     @Published public var lastFeedback: CompanionFeedbackToast?
 
     public let deviceID: String
@@ -196,6 +197,8 @@ public final class CompanionClientEngine: ObservableObject {
     private var maintenanceConfirmExpiryTask: Task<Void, Never>?
     private var lockScreenConfirmExpiryTask: Task<Void, Never>?
     private var connectedClipboardMacID: String?
+    private var awaitingPlaybackModeFeedback = false
+    private var requestedNowPlayingIconBundleIDs: Set<String> = []
 
     private final class BackgroundWiFiUpgradeSession {
         let sessionID = UUID()
@@ -2296,6 +2299,9 @@ public final class CompanionClientEngine: ObservableObject {
         disconnectedStrip.frontmostAppName = nil
         controlStripState = disconnectedStrip
         nowPlayingScrub.cancel()
+        awaitingPlaybackModeFeedback = false
+        lastNowPlayingModeError = nil
+        requestedNowPlayingIconBundleIDs.removeAll()
         disarmMaintenanceConfirmation()
         disarmLockMacScreenConfirmation()
         tileFeedbackTracker.clearPendingWithoutFeedback()
@@ -2504,6 +2510,9 @@ public final class CompanionClientEngine: ObservableObject {
         disconnectedStrip.frontmostAppName = nil
         controlStripState = disconnectedStrip
         nowPlayingScrub.cancel()
+        awaitingPlaybackModeFeedback = false
+        lastNowPlayingModeError = nil
+        requestedNowPlayingIconBundleIDs.removeAll()
         disarmMaintenanceConfirmation()
         disarmLockMacScreenConfirmation()
         if let failedBanner = tileFeedbackTracker.failPendingOnDisconnect() {
@@ -2828,6 +2837,88 @@ public final class CompanionClientEngine: ObservableObject {
         send(.activateRecentApp(bundleIdentifier: entry.bundleIdentifier, appPath: entry.appPath))
     }
 
+    /// Returns the Mac app icon PNG data already cached in `appIconsByBundleID` for `bundleIdentifier`,
+    /// or `nil` when no cached icon exists for that bundle ID (falling back to the generic note).
+    public static func resolvedCachedAppIconData(
+        forBundleIdentifier bundleIdentifier: String?,
+        cachedIconsByBundleID: [String: Data]
+    ) -> Data? {
+        guard let trimmed = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty else {
+            return nil
+        }
+        if let exact = cachedIconsByBundleID[trimmed], !exact.isEmpty {
+            return exact
+        }
+        if let matched = cachedIconsByBundleID.first(where: {
+            $0.key.caseInsensitiveCompare(trimmed) == .orderedSame && !$0.value.isEmpty
+        }) {
+            return matched.value
+        }
+        return nil
+    }
+
+    public func cachedAppIconData(forBundleIdentifier bundleIdentifier: String?) -> Data? {
+        Self.resolvedCachedAppIconData(
+            forBundleIdentifier: bundleIdentifier,
+            cachedIconsByBundleID: appIconsByBundleID
+        )
+    }
+
+    public func cacheAppIconData(_ pngData: Data, forBundleIdentifier bundleIdentifier: String) {
+        let trimmed = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !pngData.isEmpty else { return }
+        appIconsByBundleID[trimmed] = pngData
+    }
+
+    public func requestNowPlayingAppIconIfNeeded() {
+        guard connectionState.isConnected,
+              let rawBid = controlStripState.nowPlaying?.bundleIdentifier?
+                  .trimmingCharacters(in: .whitespacesAndNewlines),
+              !rawBid.isEmpty,
+              cachedAppIconData(forBundleIdentifier: rawBid) == nil else {
+            return
+        }
+        let lower = rawBid.lowercased()
+        guard !requestedNowPlayingIconBundleIDs.contains(lower) else { return }
+        requestedNowPlayingIconBundleIDs.insert(lower)
+        send(.requestIcons(bundleIdentifiers: [rawBid]))
+    }
+
+    @discardableResult
+    public func activateMacApp(bundleIdentifier: String, appPath: String? = nil) -> Bool {
+        let lang = profile.settings.language
+        let trimmed = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        guard connectionState.isConnected else {
+            let displayName = controlStripState.nowPlaying?.appName ?? trimmed
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: displayName,
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return false
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.activateRecentApp(bundleIdentifier: trimmed, appPath: appPath))
+        return true
+    }
+
+    @discardableResult
+    public func activateNowPlayingApp() -> Bool {
+        guard let bundleID = controlStripState.nowPlaying?.bundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !bundleID.isEmpty else {
+            return false
+        }
+        let resolvedPath = recentApps.first(where: {
+            $0.bundleIdentifier.caseInsensitiveCompare(bundleID) == .orderedSame
+        })?.appPath ?? macCatalogApps.first(where: {
+            $0.bundleIdentifier.caseInsensitiveCompare(bundleID) == .orderedSame
+        })?.appPath
+        return activateMacApp(bundleIdentifier: bundleID, appPath: resolvedPath)
+    }
+
     public func togglePinRecentApp(_ entry: RecentAppEntry) {
         tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.setRecentAppPinned(bundleIdentifier: entry.bundleIdentifier, isPinned: !entry.isPinned))
@@ -2982,6 +3073,78 @@ public final class CompanionClientEngine: ObservableObject {
         tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.seekNowPlaying(positionSeconds: clampedSeconds))
         return clampedSeconds
+    }
+
+    /// Requests setting the public AppleEvent shuffle property on the Mac (`com.apple.Music` or `com.spotify.client`).
+    /// Never optimistically flips `controlStripState.nowPlaying?.shuffleEnabled` locally.
+    @discardableResult
+    public func setNowPlayingShuffle(_ enabled: Bool) -> Bool {
+        let lang = profile.settings.language
+        guard let nowPlaying = controlStripState.nowPlaying,
+              nowPlaying.supportsShuffleAndRepeat else {
+            return false
+        }
+        guard connectionState.isConnected else {
+            let detail = L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            lastNowPlayingModeError = detail
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("随机播放", "Shuffle", language: lang),
+                detail: detail
+            )
+            return false
+        }
+        lastNowPlayingModeError = nil
+        awaitingPlaybackModeFeedback = true
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.setNowPlayingShuffle(enabled: enabled))
+        return true
+    }
+
+    @discardableResult
+    public func toggleNowPlayingShuffle() -> Bool {
+        guard let nowPlaying = controlStripState.nowPlaying,
+              nowPlaying.supportsShuffleAndRepeat else {
+            return false
+        }
+        let nextEnabled = !(nowPlaying.shuffleEnabled ?? false)
+        return setNowPlayingShuffle(nextEnabled)
+    }
+
+    /// Requests setting the public AppleEvent repeat property on the Mac (`com.apple.Music` or `com.spotify.client`).
+    /// Never optimistically flips `controlStripState.nowPlaying?.repeatMode` locally.
+    @discardableResult
+    public func setNowPlayingRepeat(_ mode: NowPlayingRepeatMode) -> Bool {
+        let lang = profile.settings.language
+        guard let nowPlaying = controlStripState.nowPlaying,
+              nowPlaying.supportsShuffleAndRepeat else {
+            return false
+        }
+        guard connectionState.isConnected else {
+            let detail = L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            lastNowPlayingModeError = detail
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("循环播放", "Repeat", language: lang),
+                detail: detail
+            )
+            return false
+        }
+        lastNowPlayingModeError = nil
+        awaitingPlaybackModeFeedback = true
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.setNowPlayingRepeat(mode: mode))
+        return true
+    }
+
+    @discardableResult
+    public func cycleNowPlayingRepeat() -> Bool {
+        guard let nowPlaying = controlStripState.nowPlaying,
+              let target = MacMediaPlaybackModeTargetPlayer(bundleIdentifier: nowPlaying.bundleIdentifier) else {
+            return false
+        }
+        let nextMode = target.nextRepeatMode(after: nowPlaying.repeatMode)
+        return setNowPlayingRepeat(nextMode)
     }
 
     public func setControlLevel(kind: ControlLevelKind, level: Double) {
@@ -3636,10 +3799,23 @@ public final class CompanionClientEngine: ObservableObject {
                     return false
                 }
                 upgrade.queuedOutboundMessages.append(.setControlLevel(kind: kind, level: level))
+                return
             default:
                 upgrade.queuedOutboundMessages.append(message)
+                return
             }
-            return
+        }
+        switch message {
+        case .setNowPlayingShuffle,
+             .setNowPlayingRepeat,
+             .ping,
+             .requestIcons,
+             .requestControlStripState,
+             .requestCompanionDashboard,
+             .requestFrontmostAppWindows:
+            break
+        default:
+            awaitingPlaybackModeFeedback = false
         }
         do {
             let framed = try WireFrameCodec.encode(message)
@@ -3778,6 +3954,9 @@ public final class CompanionClientEngine: ObservableObject {
             clipboardPreview = .empty
             frontmostWindows = .empty
             isCapturingScreenshot = false
+            awaitingPlaybackModeFeedback = false
+            lastNowPlayingModeError = nil
+            requestedNowPlayingIconBundleIDs.removeAll()
             connectionState = .connected(macID: macID, macName: macName)
             startHeartbeat(sessionID: currentSessionID)
             requestMissingIconsIfNeeded()
@@ -3843,6 +4022,16 @@ public final class CompanionClientEngine: ObservableObject {
             if let resolvedTileBanner = tileFeedbackTracker.resolvePending(success: success) {
                 publishTileFeedback(resolvedTileBanner)
             }
+            if awaitingPlaybackModeFeedback {
+                awaitingPlaybackModeFeedback = false
+                if success {
+                    lastNowPlayingModeError = nil
+                } else {
+                    let trimmedDetail = detail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                    lastNowPlayingModeError = !trimmedDetail.isEmpty ? trimmedDetail : trimmedTitle
+                }
+            }
             lastFeedback = CompanionFeedbackToast(success: success, title: title, detail: detail)
 
         case .orcaStatusUpdated(let snapshot):
@@ -3852,6 +4041,7 @@ public final class CompanionClientEngine: ObservableObject {
             break
 
         case .controlStripStateUpdated(let state):
+            let previousNowPlaying = controlStripState.nowPlaying
             var mergedState = state
             if awaitingPostUpgradeControlStripRefresh {
                 awaitingPostUpgradeControlStripRefresh = false
@@ -3869,6 +4059,16 @@ public final class CompanionClientEngine: ObservableObject {
             controlStripState = mergedState
             nowPlayingScrub.reconcile(with: mergedState.nowPlaying)
             profile.soundboardVolume = mergedState.soundboardVolume
+            if previousNowPlaying?.bundleIdentifier != mergedState.nowPlaying?.bundleIdentifier {
+                awaitingPlaybackModeFeedback = false
+                lastNowPlayingModeError = nil
+            } else if awaitingPlaybackModeFeedback,
+                      (previousNowPlaying?.shuffleEnabled != mergedState.nowPlaying?.shuffleEnabled ||
+                       previousNowPlaying?.repeatMode != mergedState.nowPlaying?.repeatMode) {
+                awaitingPlaybackModeFeedback = false
+                lastNowPlayingModeError = nil
+            }
+            requestNowPlayingAppIconIfNeeded()
             if mergedState.ejectableExternalVolumeCount <= 0,
                maintenanceConfirmController.gate.armedTargetID == Round08MaintenanceAction.ejectExternalDisks.rawValue {
                 disarmMaintenanceConfirmation()

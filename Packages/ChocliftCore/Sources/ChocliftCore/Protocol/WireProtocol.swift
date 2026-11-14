@@ -55,6 +55,8 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case lockMacScreen
     case hideOtherApplications
     case seekNowPlaying(positionSeconds: Double)
+    case setNowPlayingShuffle(enabled: Bool)
+    case setNowPlayingRepeat(mode: NowPlayingRepeatMode)
     case unknownClientMessage
 }
 

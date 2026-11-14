@@ -2168,18 +2168,86 @@ public struct IOSNowPlayingPage: View {
             ScrollView {
                 VStack(spacing: 24) {
                     VStack(spacing: 12) {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 56, weight: .light))
-                            .foregroundStyle(palette.accent)
-                            .frame(height: 100)
-                        Text(state.nowPlaying?.title ?? state.nowPlaying?.appName ?? L10n.tr("未在播放", "Nothing playing", language: lang))
-                            .font(ChocType.title).foregroundStyle(palette.primaryText)
-                            .multilineTextAlignment(.center)
-                        if let artist = state.nowPlaying?.artist {
-                            Text(artist).font(ChocType.body).foregroundStyle(palette.secondaryText)
+                        if let iconData = client.cachedAppIconData(forBundleIdentifier: state.nowPlaying?.bundleIdentifier),
+                           let appIconImage = DataImageView.swiftUIImage(from: iconData) {
+                            appIconImage
+                                .renderingMode(.original)
+                                .resizable()
+                                .interpolation(.high)
+                                .scaledToFit()
+                                .frame(width: 80, height: 80)
+                                .frame(height: 100)
+                                .accessibilityLabel(resolvedPlayerName ?? L10n.tr("播放器图标", "Player app icon", language: lang))
+                                .accessibilityIdentifier("ios-player-app-icon")
+                        } else {
+                            Image(systemName: "music.note")
+                                .font(.system(size: 56, weight: .light))
+                                .foregroundStyle(palette.accent)
+                                .frame(height: 100)
+                                .accessibilityIdentifier("ios-player-generic-icon")
                         }
-                        if state.nowPlaying?.title != nil, let source = state.nowPlaying?.appName {
-                            Text(source).font(ChocType.caption).foregroundStyle(palette.secondaryText)
+
+                        if let title = state.nowPlaying?.title {
+                            Text(title)
+                                .font(ChocType.title).foregroundStyle(palette.primaryText)
+                                .multilineTextAlignment(.center)
+                            if let artist = state.nowPlaying?.artist {
+                                Text(artist).font(ChocType.body).foregroundStyle(palette.secondaryText)
+                            }
+                            if let source = resolvedPlayerName {
+                                if canActivatePlayerApp {
+                                    Button {
+                                        _ = client.activateNowPlayingApp()
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Text(source)
+                                            Image(systemName: "arrow.up.forward.app")
+                                                .font(.system(size: 11, weight: .semibold))
+                                        }
+                                        .font(ChocType.caption.weight(.medium))
+                                        .foregroundStyle(palette.accent)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(source)
+                                    .accessibilityHint(L10n.tr("在 Mac 上激活 \(source)", "Activate \(source) on Mac", language: lang))
+                                    .accessibilityIdentifier("ios-player-activate-app")
+                                } else {
+                                    Text(source).font(ChocType.caption).foregroundStyle(palette.secondaryText)
+                                }
+                            }
+                        } else if let source = resolvedPlayerName {
+                            if canActivatePlayerApp {
+                                Button {
+                                    _ = client.activateNowPlayingApp()
+                                } label: {
+                                    HStack(spacing: 6) {
+                                        Text(source)
+                                        Image(systemName: "arrow.up.forward.app")
+                                            .font(.system(size: 14, weight: .semibold))
+                                    }
+                                    .font(ChocType.title)
+                                    .foregroundStyle(palette.primaryText)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 4)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(source)
+                                .accessibilityHint(L10n.tr("在 Mac 上激活 \(source)", "Activate \(source) on Mac", language: lang))
+                                .accessibilityIdentifier("ios-player-activate-app")
+                            } else {
+                                Text(source)
+                                    .font(ChocType.title).foregroundStyle(palette.primaryText)
+                                    .multilineTextAlignment(.center)
+                            }
+                        } else {
+                            Text(L10n.tr("未在播放", "Nothing playing", language: lang))
+                                .font(ChocType.title).foregroundStyle(palette.primaryText)
+                                .multilineTextAlignment(.center)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -2205,13 +2273,30 @@ public struct IOSNowPlayingPage: View {
                         }
                     }
 
-                    HStack(spacing: 24) {
-                        transport(.mediaPrevious, symbol: "backward.fill")
-                        transport(.mediaPlayPause, symbol: state.nowPlaying?.isPlaying == true ? "pause.fill" : "play.fill")
-                        transport(.mediaNext, symbol: "forward.fill")
+                    VStack(spacing: 8) {
+                        let supportsModes = state.nowPlaying?.supportsShuffleAndRepeat == true
+                        HStack(spacing: supportsModes ? 12 : 24) {
+                            if supportsModes {
+                                shuffleButton
+                            }
+                            transport(.mediaPrevious, symbol: "backward.fill")
+                            transport(.mediaPlayPause, symbol: state.nowPlaying?.isPlaying == true ? "pause.fill" : "play.fill")
+                            transport(.mediaNext, symbol: "forward.fill")
+                            if supportsModes {
+                                repeatButton
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+
+                        if let modeError = client.lastNowPlayingModeError {
+                            Label(modeError, systemImage: "exclamationmark.triangle.fill")
+                                .font(ChocType.caption)
+                                .foregroundStyle(palette.statusFailure)
+                                .multilineTextAlignment(.center)
+                                .accessibilityIdentifier("ios-player-mode-error")
+                        }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
 
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -2294,9 +2379,87 @@ public struct IOSNowPlayingPage: View {
         }
         .tint(palette.accent)
         .sheet(isPresented: $showAudioOutputs) { IOSAudioOutputPickerSheet(client: client) }
-        .onAppear { client.requestControlStripState() }
+        .onAppear {
+            client.requestControlStripState()
+            client.requestNowPlayingAppIconIfNeeded()
+        }
         .onDisappear { client.cancelNowPlayingScrub() }
         .accessibilityIdentifier("ios-now-playing-page")
+    }
+
+    private var canActivatePlayerApp: Bool {
+        guard let bundleID = state.nowPlaying?.bundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines) else {
+            return false
+        }
+        return !bundleID.isEmpty
+    }
+
+    private var resolvedPlayerName: String? {
+        if let appName = state.nowPlaying?.appName, !appName.isEmpty {
+            return appName
+        }
+        guard let bundleID = state.nowPlaying?.bundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !bundleID.isEmpty else {
+            return nil
+        }
+        if let target = MacMediaPlaybackModeTargetPlayer(bundleIdentifier: bundleID) {
+            return target.displayName
+        }
+        return client.profile.resolvedAppDisplayName(
+            forBundleIdentifier: bundleID,
+            preferredAppName: nil,
+            recentApps: client.recentApps,
+            catalogApps: client.macCatalogApps
+        )
+    }
+
+    private var shuffleButton: some View {
+        let isOn = state.nowPlaying?.shuffleEnabled == true
+        return Button {
+            _ = client.toggleNowPlayingShuffle()
+        } label: {
+            Image(systemName: "shuffle")
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(isOn ? palette.accent : palette.secondaryText)
+                .frame(width: 44, height: 44)
+                .background(
+                    Circle()
+                        .fill(isOn ? palette.accent.opacity(0.16) : Color.clear)
+                )
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.tr("随机播放", "Shuffle", language: lang))
+        .accessibilityValue(isOn ? L10n.tr("开启", "On", language: lang) : L10n.tr("关闭", "Off", language: lang))
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+        .accessibilityIdentifier("ios-player-shuffle")
+    }
+
+    private var repeatButton: some View {
+        let mode = state.nowPlaying?.repeatMode ?? .off
+        let isActive = mode.isActive
+        return Button {
+            _ = client.cycleNowPlayingRepeat()
+        } label: {
+            Image(systemName: mode.symbolName)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(isActive ? palette.accent : palette.secondaryText)
+                .frame(width: 44, height: 44)
+                .background(
+                    Circle()
+                        .fill(isActive ? palette.accent.opacity(0.16) : Color.clear)
+                )
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.tr("循环播放", "Repeat", language: lang))
+        .accessibilityValue(mode.accessibilityValueText(in: lang))
+        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .accessibilityIdentifier("ios-player-repeat")
     }
 
     private func transport(_ action: SystemQuickAction, symbol: String) -> some View {

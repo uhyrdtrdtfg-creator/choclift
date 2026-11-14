@@ -467,7 +467,7 @@ public struct DataImageView: View {
     }
 
     public var body: some View {
-        if let pngData, let image = makeSwiftUIImage(from: pngData) {
+        if let pngData, let image = Self.swiftUIImage(from: pngData) {
             image
                 .renderingMode(.original)
                 .resizable()
@@ -482,7 +482,8 @@ public struct DataImageView: View {
         }
     }
 
-    private func makeSwiftUIImage(from data: Data) -> Image? {
+    public static func swiftUIImage(from data: Data) -> Image? {
+        guard !data.isEmpty else { return nil }
         #if os(macOS)
         guard let nsImage = NSImage(data: data) else { return nil }
         return Image(nsImage: nsImage)
