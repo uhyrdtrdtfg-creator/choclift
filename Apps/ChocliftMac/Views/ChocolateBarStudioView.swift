@@ -11,6 +11,9 @@ private struct EditingSlotTarget: Identifiable {
 
 public struct ChocolateBarStudioView: View {
     @ObservedObject var coordinator: MacAppCoordinator
+    @State private var clearGate = DestructiveActionConfirmGate()
+    @State private var selectedSlotIndex: Int?
+    @State private var volumePreview: Double?
     @State private var editingSlot: EditingSlotTarget?
     @State private var hoveredSlotIndex: Int?
     @State private var draggedSlotIndex: Int?
@@ -34,6 +37,22 @@ public struct ChocolateBarStudioView: View {
 
     public var body: some View {
         VStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 18) {
+                MacStudioNowPlayingRow(coordinator: coordinator, compact: true)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L10n.tr("音量", "Volume", language: lang)).font(.caption.bold())
+                    Slider(value: Binding(get: { volumePreview ?? coordinator.controlStripState.volume }, set: { volumePreview = $0 }), in: 0...1, onEditingChanged: { editing in
+                        if !editing {
+                            coordinator.setStudioVolume(volumePreview ?? coordinator.controlStripState.volume)
+                            volumePreview = nil
+                        }
+                    })
+                    Text("\(ControlStripLevel.percentage(for: volumePreview ?? coordinator.controlStripState.volume))%")
+                        .font(.caption.monospacedDigit())
+                }
+                .frame(width: 190).padding(14)
+            }
+            MacStudioSystemStatusRow(coordinator: coordinator)
             pageSelectorStrip
 
             if filledSlotCount == 0 {
@@ -496,6 +515,7 @@ public struct ChocolateBarStudioView: View {
             Divider()
 
             Button(role: .destructive) {
+                guard confirmClear("page-\(idx)") else { return }
                 coordinator.mutateProfile { draft in
                     draft.pages[idx].slots = Array(repeating: nil, count: BarPage.slotsPerPage)
                 }
@@ -645,7 +665,7 @@ public struct ChocolateBarStudioView: View {
 
         return ZStack(alignment: .topTrailing) {
             Button {
-                editingSlot = EditingSlotTarget(pageIndex: pageIndex, slotIndex: slotIndex)
+                selectedSlotIndex = slotIndex
             } label: {
                 ChocBarTileCard(
                     item: item,
@@ -661,6 +681,10 @@ public struct ChocolateBarStudioView: View {
                 .animation(.spring(response: 0.2, dampingFraction: 0.8), value: isHovered)
             }
             .buttonStyle(.plain)
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(selectedSlotIndex == slotIndex ? palette.accent : .clear, lineWidth: 2))
+            .simultaneousGesture(TapGesture(count: 2).onEnded {
+                editingSlot = EditingSlotTarget(pageIndex: pageIndex, slotIndex: slotIndex)
+            })
 
             if let item, isHovered {
                 HStack(spacing: 4) {
@@ -680,7 +704,7 @@ public struct ChocolateBarStudioView: View {
                     }
 
                     Button {
-                        coordinator.setSlotItem(nil, pageIndex: pageIndex, slotIndex: slotIndex)
+                        clearSlot(pageIndex: pageIndex, slotIndex: slotIndex)
                     } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 9, weight: .bold))
@@ -722,12 +746,26 @@ public struct ChocolateBarStudioView: View {
                 Divider()
 
                 Button(role: .destructive) {
-                    coordinator.setSlotItem(nil, pageIndex: pageIndex, slotIndex: slotIndex)
+                    clearSlot(pageIndex: pageIndex, slotIndex: slotIndex)
                 } label: {
                     Label(L10n.tr("清空槽位", "Clear Slot", language: lang), systemImage: "trash")
                 }
             }
         }
+    }
+
+    private func confirmClear(_ target: String) -> Bool {
+        let decision = clearGate.registerTap(targetID: target, isDestructive: true, at: ProcessInfo.processInfo.systemUptime)
+        if case .requireSecondTap = decision {
+            coordinator.flashBanner(L10n.tr("3 秒内再点清空以确认", "Tap Clear again within 3s to confirm", language: lang))
+            return false
+        }
+        return true
+    }
+
+    private func clearSlot(pageIndex: Int, slotIndex: Int) {
+        guard confirmClear("slot-\(pageIndex)-\(slotIndex)") else { return }
+        coordinator.setSlotItem(nil, pageIndex: pageIndex, slotIndex: slotIndex)
     }
 
     private func handleDrop(providers: [NSItemProvider], pageIndex: Int, targetSlot: Int) -> Bool {

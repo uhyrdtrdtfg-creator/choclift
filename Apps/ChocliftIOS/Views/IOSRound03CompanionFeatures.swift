@@ -583,8 +583,17 @@ public struct IOSWorkspaceSearchSheet: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
 
-                scopePickerRow
-                    .padding(.horizontal, 16)
+                Menu {
+                    Picker(L10n.tr("范围", "Scope", language: lang), selection: $scope) {
+                        ForEach(CompanionSearchScope.allCases) { option in
+                            Text(option.title(in: lang)).tag(option)
+                        }
+                    }
+                } label: {
+                    Label(L10n.tr("搜索范围", "Search Scope", language: lang), systemImage: "line.3.horizontal.decrease.circle")
+                        .frame(minHeight: 44)
+                }
+                .padding(.horizontal, 16)
 
                 let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
                 if trimmed.isEmpty {
@@ -661,7 +670,7 @@ public struct IOSWorkspaceSearchSheet: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 16))
                         .foregroundStyle(palette.secondaryText)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 44, height: 44)
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
@@ -669,7 +678,7 @@ public struct IOSWorkspaceSearchSheet: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(minHeight: 42)
+        .frame(minHeight: 44)
         .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 13, style: .continuous)

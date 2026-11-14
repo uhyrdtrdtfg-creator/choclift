@@ -53,7 +53,7 @@ public struct IOSKeepMacAwakeTogglePill: View {
                 .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, compact ? 9 : 10)
-            .frame(minHeight: 34)
+            .frame(minHeight: 44)
             .background(
                 isAwakeActive
                     ? palette.statusConnected.opacity(isPressed ? 0.85 : 1.0)
@@ -503,7 +503,7 @@ public struct IOSFrontmostWindowsRibbonButton: View {
                 }
             }
             .padding(.horizontal, compact ? 9 : 10)
-            .frame(minHeight: 34)
+            .frame(minHeight: 44)
             .background(
                 isPressed ? palette.tileFillBottom : palette.tileFillTop.opacity(0.94),
                 in: RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -850,7 +850,7 @@ public struct IOSFrontmostWindowsInlineCard: View {
                                         .background(palette.accent.opacity(0.12), in: Capsule())
                                 }
                                 .padding(.horizontal, 10)
-                                .frame(minHeight: 36)
+                                .frame(minHeight: 44)
                                 .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 10, style: .continuous)

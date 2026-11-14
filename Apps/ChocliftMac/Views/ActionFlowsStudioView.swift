@@ -389,6 +389,7 @@ private struct MacFlowDetailWorkspaceView: View {
     let onOpenFullEditor: (ActionFlow) -> Void
     let onDeleted: () -> Void
 
+    @State private var stepDeleteGate = DestructiveActionConfirmGate()
     @State private var stepEditorTarget: StepSheetTarget?
 
     private var lang: AppLanguage { coordinator.lang }
@@ -481,7 +482,7 @@ private struct MacFlowDetailWorkspaceView: View {
 
                     Button(role: .destructive) {
                         coordinator.deleteFlow(id: flow.id)
-                        onDeleted()
+                        if coordinator.profile.flow(withID: flow.id) == nil { onDeleted() }
                     } label: {
                         Label(L10n.tr("删除", "Delete", language: lang), systemImage: "trash")
                     }
@@ -598,7 +599,7 @@ private struct MacFlowDetailWorkspaceView: View {
             } else {
                 VStack(spacing: 8) {
                     ForEach(Array(flow.steps.enumerated()), id: \.element.id) { idx, step in
-                        stepPipelineRow(step: step, index: idx)
+                        stepPipelineRow(step: step, index: idx).frame(minHeight: 52)
                     }
                 }
             }
@@ -739,11 +740,16 @@ private struct MacFlowDetailWorkspaceView: View {
                 .controlSize(.small)
 
                 Button(role: .destructive) {
+                    let decision = stepDeleteGate.registerTap(targetID: step.id.uuidString, isDestructive: true, at: ProcessInfo.processInfo.systemUptime)
+                    if case .requireSecondTap = decision {
+                        coordinator.flashBanner(L10n.tr("3 秒内再点删除步骤以确认", "Tap Delete Step again within 3s to confirm", language: lang))
+                        return
+                    }
                     var updated = flow
                     updated.steps.removeAll { $0.id == step.id }
                     coordinator.saveFlow(updated)
                 } label: {
-                    Image(systemName: "trash")
+                    Image(systemName: stepDeleteGate.isArmed(targetID: step.id.uuidString, at: ProcessInfo.processInfo.systemUptime) ? "exclamationmark.triangle.fill" : "trash")
                 }
                 .buttonStyle(.bordered)
                 .tint(palette.statusFailure)
@@ -796,6 +802,7 @@ public struct MacFlowEditorSheet: View {
     let onCommit: (ActionFlow) -> Void
     @Environment(\.dismiss) private var dismiss
 
+    @State private var stepDeleteGate = DestructiveActionConfirmGate()
     @State private var draft: ActionFlow
     @State private var stepSheetTarget: StepSheetTarget?
 
@@ -1032,9 +1039,11 @@ public struct MacFlowEditorSheet: View {
                                         .buttonStyle(.borderless)
 
                                         Button(role: .destructive) {
+                                            let decision = stepDeleteGate.registerTap(targetID: step.id.uuidString, isDestructive: true, at: ProcessInfo.processInfo.systemUptime)
+                                            if case .requireSecondTap = decision { return }
                                             draft.steps.removeAll { $0.id == step.id }
                                         } label: {
-                                            Image(systemName: "trash")
+                                            Image(systemName: stepDeleteGate.isArmed(targetID: step.id.uuidString, at: ProcessInfo.processInfo.systemUptime) ? "exclamationmark.triangle.fill" : "trash")
                                         }
                                         .buttonStyle(.borderless)
                                     }

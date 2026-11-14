@@ -41,20 +41,25 @@ public struct IOSPairingAndConnectionSheet: View {
                             pinEntryView(macName: macName, errorMessage: errorMsg)
                         case .connected(let macID, let macName):
                             connectedSummaryCard(macID: macID, macName: macName)
-                            IOSHapticQuietHoursCard(client: client)
+                            DisclosureGroup(L10n.tr("触觉反馈", "Haptic Feedback", language: lang)) {
+                                IOSHapticQuietHoursCard(client: client)
+                            }
                             discoveredHostsCard
                             bluetoothHostsCard
                             savedMacsCard
                         case .connecting(let targetName):
                             connectingCard(targetName: targetName)
-                            IOSHapticQuietHoursCard(client: client)
                         case .disconnected:
                             disconnectedHeroOrIssueCard
-                            IOSHapticQuietHoursCard(client: client)
+                            Text(L10n.tr("蓝牙与 Wi-Fi 自动发现", "Bluetooth & Wi-Fi discovery", language: lang))
+                                .font(.caption).foregroundStyle(palette.secondaryText)
                             discoveredHostsCard
                             bluetoothHostsCard
-                            directConnectionCard
-                            savedMacsCard
+                            DisclosureGroup(L10n.tr("其他连接方式", "Other connections", language: lang)) {
+                                directConnectionCard
+                                savedMacsCard
+                                IOSHapticQuietHoursCard(client: client)
+                            }
                         }
                     }
                     .padding(18)
@@ -94,128 +99,36 @@ public struct IOSPairingAndConnectionSheet: View {
     // MARK: - 6-Digit Chocolate PIN Pad
 
     private func pinEntryView(macName: String, errorMessage: String?) -> some View {
-        let isVerifying = (enteredPIN.count == 6 && errorMessage == nil)
-
-        return VStack(spacing: 16) {
+        VStack(spacing: 16) {
             ChocliftBrandIconView(size: 48)
-
-            VStack(spacing: 6) {
-                Text(L10n.tr("输入「\(macName)」上的 6 位配对码", "Enter 6-Digit PIN Shown on \"\(macName)\"", language: lang))
-                    .font(.system(.headline, design: .rounded, weight: .bold))
-                    .foregroundStyle(palette.primaryText)
-                    .multilineTextAlignment(.center)
-
-                if let link = client.activeLink {
-                    ChocLinkBadge(link: link, language: lang, palette: palette, prominent: true)
+            Text(L10n.tr("输入 Mac 配对码", "Enter your Mac PIN", language: lang))
+                .font(.headline).foregroundStyle(palette.primaryText)
+            Text(macName).font(.caption).foregroundStyle(palette.secondaryText)
+            TextField("000000", text: $enteredPIN)
+                .textContentType(.oneTimeCode)
+                .keyboardType(.numberPad)
+                .multilineTextAlignment(.center)
+                .frame(minHeight: 48)
+                .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 12))
+                .onChange(of: enteredPIN) { _, value in
+                    enteredPIN = String(value.filter(\.isNumber).prefix(6))
                 }
-            }
-
-            HStack(spacing: 8) {
-                ForEach(0..<6, id: \.self) { idx in
-                    let charStr: String = {
-                        guard idx < enteredPIN.count else { return "" }
-                        let strIdx = enteredPIN.index(enteredPIN.startIndex, offsetBy: idx)
-                        return String(enteredPIN[strIdx])
-                    }()
-                    let isActiveSlot = (idx == enteredPIN.count && errorMessage == nil)
-
-                    Text(charStr)
-                        .font(.system(size: 24, weight: .black, design: .monospaced))
-                        .foregroundStyle(palette.primaryText)
-                        .frame(width: 44, height: 52)
-                        .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .strokeBorder(
-                                    errorMessage != nil
-                                        ? palette.statusFailure
-                                        : (isActiveSlot ? palette.accent : palette.tileBorderHighlight.opacity(0.45)),
-                                    lineWidth: (isActiveSlot || errorMessage != nil) ? 1.8 : 1
-                                )
-                        )
-                }
-            }
-
             if let errorMessage {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(palette.statusFailure)
-                    Text(errorMessage)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(palette.primaryText)
-                        .multilineTextAlignment(.leading)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(palette.statusFailure.opacity(0.18), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(palette.statusFailure.opacity(0.65), lineWidth: 1)
-                )
-            } else if isVerifying {
-                HStack(spacing: 8) {
-                    ProgressView()
-                        .tint(palette.accent)
-                        .scaleEffect(0.85)
-                    Text(L10n.tr("正在向 Mac 验证配对码…", "Verifying PIN with \(macName)…", language: lang))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(palette.secondaryText)
-                }
-                .padding(.vertical, 4)
+                Text(errorMessage).font(.caption).foregroundStyle(palette.statusFailure)
             }
-
-            // Numeric Keypad (>= 50pt tall buttons)
-            let digits = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "CLR", "0", "⌫"]
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(82), spacing: 10), count: 3), spacing: 10) {
-                ForEach(digits, id: \.self) { key in
-                    Button {
-                        handlePINKey(key)
-                    } label: {
-                        Group {
-                            if key == "⌫" {
-                                Image(systemName: "delete.left.fill")
-                                    .font(.system(size: 18, weight: .semibold))
-                            } else {
-                                Text(key)
-                                    .font(.system(size: key == "CLR" ? 13 : 21, weight: .bold, design: .rounded))
-                            }
-                        }
-                        .foregroundStyle(key == "CLR" ? palette.secondaryText : palette.primaryText)
-                        .frame(width: 82, height: 50)
-                        .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
-                        )
-                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isVerifying)
-                    .opacity(isVerifying ? 0.55 : 1.0)
-                    .accessibilityIdentifier("ios-pin-key-\(key)")
-                }
-            }
-
-            Button {
+            Button(L10n.tr("连接", "Connect", language: lang)) { client.submitPIN(enteredPIN) }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .buttonStyle(.borderedProminent)
+                .disabled(enteredPIN.count != 6)
+            if let link = client.activeLink { ChocLinkBadge(link: link, language: lang, palette: palette) }
+            Button(L10n.tr("选择其他 Mac", "Choose another Mac", language: lang)) {
                 enteredPIN = ""
                 client.disconnect()
-            } label: {
-                Text(L10n.tr("取消并返回设备列表", "Cancel & Choose Another Mac", language: lang))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(palette.secondaryText)
-                    .padding(.horizontal, 16)
-                    .frame(height: 38)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .frame(minHeight: 44)
         }
         .padding(20)
-        .background(palette.barSurface.opacity(0.94), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
-        )
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 20))
     }
 
     private func handlePINKey(_ key: String) {

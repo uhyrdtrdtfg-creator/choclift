@@ -34,18 +34,31 @@ public struct IOSCompanionBarRibbon: View {
     }
 
     public var body: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 12) {
-            calendarEventButton
-            screenshotCaptureButton
-            IOSKeepMacAwakeTogglePill(client: client, compact: compact)
-            IOSSleepDisplayPillButton(client: client, compact: compact)
-            IOSLockScreenPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
-            IOSShowDesktopPillButton(client: client, compact: compact)
-            IOSHideOtherWindowsPillButton(client: client, compact: compact)
-            IOSFinderDesktopIconsPillButton(client: client, compact: compact)
-            IOSEmptyTrashPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
-            IOSEjectExternalDisksPillButton(client: client, compact: compact, onPromptHUD: onPromptHUD)
-            IOSFrontmostWindowsRibbonButton(client: client, compact: compact)
+        VStack(alignment: .leading, spacing: 12) {
+            GroupBox(L10n.tr("日历与截屏", "Calendar & Screenshots", language: lang)) {
+                VStack(spacing: 10) { calendarEventButton; screenshotCaptureButton }
+            }
+            GroupBox(L10n.tr("电源与安全", "Power & Security", language: lang)) {
+                VStack(spacing: 10) {
+                    IOSKeepMacAwakeTogglePill(client: client, compact: false)
+                    IOSSleepDisplayPillButton(client: client, compact: false)
+                    IOSLockScreenPillButton(client: client, compact: false, onPromptHUD: onPromptHUD)
+                }
+            }
+            GroupBox(L10n.tr("桌面与窗口", "Desktop & Windows", language: lang)) {
+                VStack(spacing: 10) {
+                    IOSShowDesktopPillButton(client: client, compact: false)
+                    IOSHideOtherWindowsPillButton(client: client, compact: false)
+                    IOSFinderDesktopIconsPillButton(client: client, compact: false)
+                    IOSFrontmostWindowsRibbonButton(client: client, compact: false)
+                }
+            }
+            GroupBox(L10n.tr("清理与磁盘", "Cleanup & Disks", language: lang)) {
+                VStack(spacing: 10) {
+                    IOSEmptyTrashPillButton(client: client, compact: false, onPromptHUD: onPromptHUD)
+                    IOSEjectExternalDisksPillButton(client: client, compact: false, onPromptHUD: onPromptHUD)
+                }
+            }
         }
     }
 
@@ -127,7 +140,7 @@ public struct IOSCompanionBarRibbon: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
-        .frame(maxWidth: .infinity, minHeight: 34)
+        .frame(maxWidth: .infinity, minHeight: 44)
         .background(
             isPressed ? palette.tileFillBottom : palette.barSurface.opacity(0.92),
             in: RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -175,7 +188,7 @@ public struct IOSCompanionBarRibbon: View {
                 }
                 .padding(.leading, 9)
                 .padding(.trailing, 4)
-                .frame(maxWidth: .infinity, minHeight: 34)
+                .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -194,7 +207,7 @@ public struct IOSCompanionBarRibbon: View {
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .foregroundStyle(preview.hasText ? palette.accentForeground : palette.secondaryText)
                     .padding(.horizontal, 9)
-                    .frame(height: 26)
+                    .frame(height: 44)
                     .background(
                         preview.hasText ? palette.accent : palette.tileFillBottom,
                         in: Capsule()
@@ -206,7 +219,7 @@ public struct IOSCompanionBarRibbon: View {
             .padding(.trailing, 4)
             .accessibilityIdentifier("ios-paste-clipboard-button")
         }
-        .frame(maxWidth: .infinity, minHeight: 34)
+        .frame(maxWidth: .infinity, minHeight: 44)
         .background(palette.barSurface.opacity(0.92), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -252,7 +265,7 @@ public struct IOSCompanionBarRibbon: View {
                     .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, 11)
-            .frame(minHeight: 34)
+            .frame(minHeight: 44)
             .background(
                 isPressed ? palette.tileFillBottom : palette.tileFillTop.opacity(0.94),
                 in: RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -348,7 +361,7 @@ public struct IOSClipboardPreviewCard: View {
                     }
                     .foregroundStyle((isConnected && preview.hasText) ? palette.accentForeground : palette.secondaryText)
                     .padding(.horizontal, 12)
-                    .frame(minHeight: 34)
+                    .frame(minHeight: 44)
                     .background(
                         (isConnected && preview.hasText) ? palette.accent : palette.tileFillBottom,
                         in: Capsule()
@@ -586,7 +599,7 @@ public struct IOSDisplayTargetPickerMenu: View {
                     }
                 }
                 .padding(.horizontal, 8)
-                .frame(minWidth: 34, minHeight: 34)
+                .frame(minWidth: 34, minHeight: 44)
                 .background(
                     (selectedDisplay != nil ? palette.accent.opacity(0.14) : palette.tileFillBottom),
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous)

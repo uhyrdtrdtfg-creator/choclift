@@ -385,6 +385,7 @@ private struct IOSFlowsListContent: View {
     let onRequestEdit: (IOSFlowEditSession) -> Void
     let onRequestPlaceInSlot: ((ActionFlow) -> Void)?
 
+    @State private var deleteGate = DestructiveActionConfirmGate()
     @State private var flowConfirmGate = DestructiveActionConfirmGate()
 
     private var lang: AppLanguage { client.profile.settings.language }
@@ -526,6 +527,21 @@ private struct IOSFlowsListContent: View {
                             .buttonStyle(.plain)
                         }
 
+                        if onSelectForSlot == nil {
+                            Button {
+                                let decision = flowConfirmGate.registerTap(targetID: flow.id.uuidString, isDestructive: flow.requiresDestructiveConfirmation, at: ProcessInfo.processInfo.systemUptime)
+                                switch decision {
+                                case .requireSecondTap: break
+                                case .runImmediately, .confirmedRun: client.triggerFlow(id: flow.id)
+                                }
+                            } label: {
+                                Image(systemName: "play.fill").frame(width: 44, height: 44)
+                            }
+                            .buttonStyle(.borderedProminent).tint(palette.accent)
+                            .disabled(!client.connectionState.isConnected)
+                            .accessibilityLabel(L10n.tr("运行动作流", "Run Flow", language: lang))
+                        }
+
                         Menu {
                             if let onSelectForSlot {
                                 Button {
@@ -594,15 +610,16 @@ private struct IOSFlowsListContent: View {
                             Button(role: .destructive) {
                                 deleteFlow(id: flow.id)
                             } label: {
-                                Label(L10n.tr("删除动作流", "Delete Flow", language: lang), systemImage: "trash")
+                                Label(deleteGate.isArmed(targetID: flow.id.uuidString, at: ProcessInfo.processInfo.systemUptime) ? L10n.tr("再点确认删除", "Tap again to delete", language: lang) : L10n.tr("删除动作流", "Delete Flow", language: lang), systemImage: "trash")
                             }
                         } label: {
                             Image(systemName: "ellipsis.circle")
                                 .font(.title3)
                                 .foregroundStyle(palette.secondaryText)
-                                .padding(.leading, 4)
+                                .frame(width: 44, height: 44)
                         }
                     }
+                    .frame(minHeight: 60)
                     .padding(.vertical, 3)
                     .listRowBackground(palette.barSurface)
                 }
@@ -612,12 +629,8 @@ private struct IOSFlowsListContent: View {
                     client.pushUpdatedProfile(updated)
                 }
                 .onDelete { offsets in
-                    var updated = client.profile
                     let ids = offsets.compactMap { client.profile.flows.indices.contains($0) ? client.profile.flows[$0].id : nil }
-                    for id in ids {
-                        _ = updated.deleteFlow(id: id)
-                    }
-                    client.pushUpdatedProfile(updated)
+                    for id in ids { deleteFlow(id: id) }
                 }
             }
             .scrollContentBackground(.hidden)
@@ -631,6 +644,8 @@ private struct IOSFlowsListContent: View {
     }
 
     private func deleteFlow(id: UUID) {
+        let decision = deleteGate.registerTap(targetID: id.uuidString, isDestructive: true, at: ProcessInfo.processInfo.systemUptime)
+        if case .requireSecondTap = decision { return }
         var updated = client.profile
         _ = updated.deleteFlow(id: id)
         client.pushUpdatedProfile(updated)

@@ -557,7 +557,15 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         }
     }
 
+    private var flowDeleteGate = DestructiveActionConfirmGate()
+
     public func deleteFlow(id: UUID) {
+        let decision = flowDeleteGate.registerTap(targetID: id.uuidString, isDestructive: true, at: ProcessInfo.processInfo.systemUptime)
+        if case .requireSecondTap = decision {
+            flashBanner(L10n.tr("3 秒内再点删除以确认", "Tap Delete again within 3s to confirm", language: lang))
+            return
+        }
+
         mutateProfile { draft in
             _ = draft.deleteFlow(id: id)
         }
@@ -697,7 +705,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         }
     }
 
+    private var soundDeleteGate = DestructiveActionConfirmGate()
+
     public func deleteSoundClip(id: UUID) {
+        let decision = soundDeleteGate.registerTap(targetID: id.uuidString, isDestructive: true, at: ProcessInfo.processInfo.systemUptime)
+        if case .requireSecondTap = decision {
+            flashBanner(L10n.tr("3 秒内再点移除以确认", "Tap Remove again within 3s to confirm", language: lang))
+            return
+        }
         if soundboardService.activeSoundID == id {
             soundboardService.stopAll()
         }
@@ -1126,6 +1141,12 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         default:
             break
         }
+    }
+
+    public func setStudioVolume(_ level: Double) {
+        _ = systemControlService.setVolume(level: ControlStripLevel.clamp(level))
+        controlStripState = systemControlService.currentState
+        server.broadcastControlStripState(controlStripState)
     }
 
     @discardableResult

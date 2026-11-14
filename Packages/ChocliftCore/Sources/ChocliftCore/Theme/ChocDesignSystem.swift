@@ -1289,6 +1289,7 @@ public struct ChocPressedKeyButtonStyle<Key: Hashable>: ButtonStyle {
         var body: some View {
             #if os(macOS)
             configuration.label
+                .scaleEffect(configuration.isPressed && !isSuppressed ? 0.97 : 1)
                 .onChange(of: configuration.isPressed) { isPressed in
                     handlePressChange(isPressed)
                 }
@@ -1302,6 +1303,7 @@ public struct ChocPressedKeyButtonStyle<Key: Hashable>: ButtonStyle {
                 }
             #else
             configuration.label
+                .scaleEffect(configuration.isPressed && !isSuppressed ? 0.97 : 1)
                 .onChange(of: configuration.isPressed) { _, isPressed in
                     handlePressChange(isPressed)
                 }

@@ -43,7 +43,7 @@ public struct IOSSleepDisplayPillButton: View {
                 .fixedSize(horizontal: true, vertical: false)
             }
             .padding(.horizontal, compact ? 9 : 10)
-            .frame(minHeight: 34)
+            .frame(minHeight: 44)
             .background(
                 isPressed ? palette.tileFillBottom : palette.tileFillTop.opacity(0.94),
                 in: RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -143,7 +143,7 @@ public struct IOSCompactKeyAndRecentsBar: View {
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(minWidth: isWideKey ? 52 : 34, minHeight: 34)
+            .frame(minWidth: isWideKey ? 52 : 34, minHeight: 44)
             .background(
                 isPressed ? palette.tileFillBottom : palette.tileFillTop,
                 in: RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -194,7 +194,7 @@ public struct IOSCompactKeyAndRecentsBar: View {
                 }
             }
             .padding(.horizontal, 9)
-            .frame(minHeight: 34)
+            .frame(minHeight: 44)
             .background(
                 isPressed ? palette.tileFillBottom : palette.tileFillTop,
                 in: RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -632,7 +632,7 @@ public struct IOSPinnedStripTilesRow: View {
                 }
             }
             .padding(.horizontal, 6)
-            .frame(maxWidth: .infinity, minHeight: 36)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .background(
                 isPressed ? palette.tileFillBottom : palette.tileFillTop,
                 in: RoundedRectangle(cornerRadius: 11, style: .continuous)
