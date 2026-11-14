@@ -214,6 +214,31 @@ public final class MacAccessibilityAndWindowService {
         return trusted
     }
 
+    /// Reads selection directly from the frontmost app; never copies via the pasteboard.
+    public func readFrontmostSelection() throws -> OrcaSelection {
+        guard AXIsProcessTrusted() else {
+            _ = promptForAccessibilityPermission()
+            throw OrcaSelectionError.unavailable(L10n.tr("请在系统设置 → 辅助功能中授权 Choclift", "Grant Accessibility permission in System Settings"))
+        }
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
+            throw OrcaSelectionError.emptySelection
+        }
+        var focused: CFTypeRef?
+        let application = AXUIElementCreateApplication(app.processIdentifier)
+        guard AXUIElementCopyAttributeValue(application, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else {
+            throw OrcaSelectionError.emptySelection
+        }
+        var selected: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focused as! AXUIElement, kAXSelectedTextAttribute as CFString, &selected) == .success,
+              let text = selected as? String,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw OrcaSelectionError.emptySelection
+        }
+        return OrcaSelection(text: text, appName: app.localizedName ?? "App")
+    }
+
     // MARK: - Text Field Focus Detection & AX Direct Text Insertion
 
     public struct FocusedTextInputTarget {

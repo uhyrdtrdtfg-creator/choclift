@@ -6,6 +6,8 @@ import Foundation
 
 @MainActor
 public final class MacInputAndMediaService {
+    public var onSelectionDispatchFeedback: ((Bool, String) -> Void)?
+    private var selectionDispatchInProgress = false
     private let windowService: MacAccessibilityAndWindowService
     private var pendingClipboardSnapshot: [PasteboardItemSnapshot]?
     private var clipboardRestoreTask: Task<Void, Never>?
@@ -253,6 +255,27 @@ public final class MacInputAndMediaService {
         strictTargetPID: Bool = false
     ) -> (success: Bool, message: String) {
         switch action {
+        case .sendSelectionToOrca:
+            guard ensureAccessibilityOrPrompt() else { return accessibilityDeniedResult() }
+            guard !selectionDispatchInProgress else { return (false, L10n.tr("正在处理 Orca 任务", "An Orca dispatch is already in progress")) }
+            do {
+                let selection = try windowService.readFrontmostSelection()
+                guard let orca = OrcaSelectionDispatch.resolveExecutable(name: "orca", fallbacks: OrcaCommandBuilder.allowedCandidatePaths),
+                      let kiro = OrcaSelectionDispatch.resolveExecutable(name: "kiro-cli", fallbacks: ["/Users/xiaobo/.local/bin/kiro-cli"]) else {
+                    return (false, L10n.tr("请安装 Orca 和 kiro-cli", "Install Orca and kiro-cli first"))
+                }
+                selectionDispatchInProgress = true
+                Task { [weak self] in
+                    defer { self?.selectionDispatchInProgress = false }
+                    do {
+                        let receipt = try await OrcaSelectionRunner.dispatch(selection: selection, orca: orca, kiro: kiro, run: MacSelectionProcessRunner.run)
+                        self?.onSelectionDispatchFeedback?(true, "Kiro: \(receipt.terminalID); exit \(receipt.exitCode)")
+                    } catch {
+                        self?.onSelectionDispatchFeedback?(false, error.localizedDescription)
+                    }
+                }
+                return (true, L10n.tr("正在通过 Orca 调度 Kiro…", "Dispatching Kiro through Orca…"))
+            } catch { return (false, error.localizedDescription) }
         case .maximizeWindow:
             return windowService.performWindowOperation(.maximizeOrRestore, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .minimizeWindow:

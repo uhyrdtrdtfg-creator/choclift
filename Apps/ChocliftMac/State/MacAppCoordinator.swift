@@ -246,6 +246,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             self?.timeTravel.frontmostAppName
         }
 
+        inputService.onSelectionDispatchFeedback = { [weak self] success, message in
+            self?.recordActivity(deviceName: "Mac", summary: message, isSuccess: success)
+        }
         inputService.mediaTransportContextProvider = { [weak self] in
             self?.systemControlService.currentMediaTransportContext() ?? MacMediaTransportContext()
         }
@@ -1235,6 +1238,11 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             activityLog.removeLast(activityLog.count - 40)
         }
         flashBanner(summary)
+    }
+
+    public func sendSelectionToOrca() {
+        let result = inputService.executeSystemAction(.sendSelectionToOrca, preferredPID: nil)
+        recordActivity(deviceName: "Mac", summary: result.message, isSuccess: result.success)
     }
 
     public func flashBanner(_ text: String) {
