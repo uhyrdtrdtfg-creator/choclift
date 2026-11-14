@@ -2224,6 +2224,9 @@ public enum ChocliftDefaults {
     public static let defaultTCPPort: UInt16 = 54821
     public static let protocolVersion = 3
     public static let orcaStatusMinProtocolVersion = 3
+    public static let macSparkleFeedURLString = "https://raw.githubusercontent.com/uhyrdtrdtfg-creator/choclift/main/appcast.xml"
+    public static let macSparkleFeedURL = URL(string: macSparkleFeedURLString)!
+    public static let macSparkleScheduledCheckInterval = 86400
 
     public static func makeDefaultGestureConfiguration() -> GestureConfiguration {
         GestureConfiguration(

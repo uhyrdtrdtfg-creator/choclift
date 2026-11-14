@@ -119,6 +119,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     public let calendarService: MacCalendarEventService
     public let soundboardService: MacSoundboardService
     public let keepAwakeService: MacKeepAwakeService
+    public let updaterService: MacSparkleUpdaterService
 
     private let appSupportDirectory: URL
     private let profileFileURL: URL
@@ -184,6 +185,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.calendarService = MacCalendarEventService()
         self.soundboardService = MacSoundboardService()
         self.keepAwakeService = MacKeepAwakeService()
+        self.updaterService = MacSparkleUpdaterService()
         let loginSvc = MacLaunchAtLoginService()
         self.launchAtLoginService = loginSvc
         self.timeTravel = MacTimeTravelMonitor()

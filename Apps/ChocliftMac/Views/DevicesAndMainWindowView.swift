@@ -402,8 +402,13 @@ public struct DevicesAndSettingsView: View {
                     }
                     .frame(maxWidth: .infinity)
 
-                    // Right Column: Backup & Live Activity Stream
+                    // Right Column: Software Updates, Backup & Live Activity Stream
                     VStack(alignment: .leading, spacing: 16) {
+                        MacSoftwareUpdatesCard(
+                            coordinator: coordinator,
+                            updater: coordinator.updaterService
+                        )
+
                         backupAndResetCard
 
                         liveActivityCard
@@ -1623,5 +1628,78 @@ public struct MacStudioNowPlayingRow: View {
         .buttonStyle(.plain)
         .help(label)
         .accessibilityLabel(label)
+    }
+}
+
+// MARK: - Software Updates Card
+
+private struct MacSoftwareUpdatesCard: View {
+    @ObservedObject var coordinator: MacAppCoordinator
+    @ObservedObject var updater: MacSparkleUpdaterService
+
+    private var lang: AppLanguage { coordinator.lang }
+    private var palette: ChocPalette { coordinator.palette }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 8) {
+                Label(
+                    MacUpdateConfiguration.softwareUpdatesSectionTitle(in: lang),
+                    systemImage: "arrow.triangle.2.circlepath.circle.fill"
+                )
+                .font(.headline)
+                .foregroundStyle(palette.primaryText)
+
+                Spacer(minLength: 4)
+
+                Text(updater.currentVersionBadgeText)
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(palette.secondaryText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(palette.tileFillBottom, in: Capsule())
+            }
+
+            Toggle(
+                MacUpdateConfiguration.automaticChecksToggleTitle(in: lang),
+                isOn: Binding(
+                    get: { updater.automaticallyChecksForUpdates },
+                    set: { updater.setAutomaticallyChecksForUpdates($0) }
+                )
+            )
+            .tint(palette.accent)
+            .accessibilityIdentifier("mac-automatic-update-checks-toggle")
+
+            HStack(spacing: 8) {
+                Button {
+                    updater.checkForUpdates()
+                } label: {
+                    Label(
+                        MacUpdateConfiguration.checkForUpdatesMenuTitle(in: lang),
+                        systemImage: "arrow.down.circle"
+                    )
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(palette.accent)
+                .foregroundStyle(palette.accentForeground)
+                .disabled(!updater.canCheckForUpdates)
+                .accessibilityIdentifier("mac-check-for-updates-button")
+
+                Spacer(minLength: 4)
+
+                if let lastCheck = updater.lastUpdateCheckDate {
+                    Text(lastCheck.formatted(.relative(presentation: .named)))
+                        .font(.caption2)
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(16)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
     }
 }
