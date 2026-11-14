@@ -1430,7 +1430,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                        let targetAppName, !targetAppName.isEmpty {
                         return targetAppName
                     }
-                case .delay, .unsupported:
+                case .delay, .unsupported, .openWebsite, .runShortcut, .insertSnippet:
                     break
                 }
             }

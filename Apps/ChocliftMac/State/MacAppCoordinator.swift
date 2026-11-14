@@ -84,6 +84,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     @Published public private(set) var notchPanelEnabled: Bool = true
     @Published public private(set) var leftEdgePanelEnabled: Bool = false
     @Published public private(set) var runningFlowID: UUID?
+    @Published public private(set) var lastFlowRunResults: [UUID: ActionFlowRunResult] = [:]
     @Published public private(set) var orcaStatus: OrcaTaskStatusSnapshot?
     @Published public private(set) var canUndoWindowMove: Bool = false
     @Published public private(set) var connectedDisplays: [MacDisplayInfo] = []
@@ -573,6 +574,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             return
         }
 
+        lastFlowRunResults.removeValue(forKey: id)
         mutateProfile { draft in
             _ = draft.deleteFlow(id: id)
         }
@@ -1190,6 +1192,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             }
             let res = await ActionFlowRunner.run(flow, driver: driver, language: self.lang)
             capturedResult = res
+            self.lastFlowRunResults[flow.id] = res
             self.recordActivity(deviceName: deviceName, summary: res.detail, isSuccess: res.success)
         }
 
@@ -1960,6 +1963,100 @@ private final class MacCoordinatorFlowDriver: ActionFlowDriver {
                 strictTargetPID: true
             )
         }
+    }
+
+    func openWebsite(
+        url: String,
+        switchExistingTab: Bool
+    ) async -> (success: Bool, message: String) {
+        guard let coordinator else {
+            return (false, "Mac coordinator unavailable")
+        }
+        return await coordinator.catalogService.openWebsite(
+            rawURL: url,
+            switchExistingTab: switchExistingTab
+        )
+    }
+
+    func runShortcut(
+        named shortcutName: String
+    ) async -> (success: Bool, message: String) {
+        guard let coordinator else {
+            return (false, "Mac coordinator unavailable")
+        }
+        return await coordinator.catalogService.runShortcut(
+            named: shortcutName,
+            allowSchemeFallback: false
+        )
+    }
+
+    func insertSnippet(
+        snippetID: UUID,
+        titleSnapshot: String?,
+        preferredPID: Int32?
+    ) -> (success: Bool, message: String) {
+        guard let coordinator else {
+            return (false, "Mac coordinator unavailable")
+        }
+        let lang = coordinator.lang
+        guard let snippet = coordinator.profile.snippet(withID: snippetID) else {
+            let trimmedTitle = titleSnapshot?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let label = trimmedTitle.isEmpty
+                ? L10n.tr("文本片段", "Snippet", language: lang)
+                : trimmedTitle
+            let msg = L10n.tr(
+                "未找到文本片段「\(label)」，可能已被删除",
+                "Snippet \"\(label)\" was not found (it may have been deleted)",
+                language: lang
+            )
+            return (false, msg)
+        }
+
+        let effectivePID = preferredPID ?? coordinator.timeTravel.lastExternalAppPID
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let chocliftIsFrontmost = (NSWorkspace.shared.frontmostApplication?.processIdentifier == myPID)
+        if chocliftIsFrontmost,
+           snippet.insertMode == .typeKeys,
+           let effectivePID,
+           effectivePID != myPID,
+           let app = NSRunningApplication(processIdentifier: effectivePID),
+           !app.isTerminated {
+            app.activate()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.06))
+        }
+
+        let res = coordinator.inputService.executeSnippet(
+            snippet.body,
+            mode: snippet.insertMode,
+            preferredPID: effectivePID,
+            allowActivatingPreferredPID: chocliftIsFrontmost,
+            language: lang
+        )
+        if res.success {
+            return (true, res.message)
+        }
+        let trimmedMessage = res.message.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedMessage.isEmpty {
+            return (false, trimmedMessage)
+        }
+        if !coordinator.windowService.isAccessibilityTrusted() {
+            return (
+                false,
+                L10n.tr(
+                    "请在系统设置 → 辅助功能中授权 Choclift 后键入文本片段",
+                    "Grant Accessibility permission in System Settings to type snippets",
+                    language: lang
+                )
+            )
+        }
+        return (
+            false,
+            L10n.tr(
+                "未检测到焦点输入框，请先在 Mac 中点击文本框",
+                "No text field focused on Mac — click a text field first",
+                language: lang
+            )
+        )
     }
 
     func sleep(seconds: Double) async {

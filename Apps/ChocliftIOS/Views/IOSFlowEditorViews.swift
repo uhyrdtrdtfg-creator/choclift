@@ -488,7 +488,7 @@ private struct IOSFlowsListContent: View {
                                     Text(
                                         flow.steps
                                             .filter(\.isEnabled)
-                                            .map { $0.displayTitle(in: lang) }
+                                            .map { stepSummaryTitle($0) }
                                             .joined(separator: " → ")
                                     )
                                     .font(ChocType.micro)
@@ -650,6 +650,15 @@ private struct IOSFlowsListContent: View {
         _ = updated.deleteFlow(id: id)
         client.pushUpdatedProfile(updated)
     }
+
+    private func stepSummaryTitle(_ step: ActionFlowStep) -> String {
+        if case .insertSnippet(let snippetID, _) = step.kind,
+           let live = client.profile.snippet(withID: snippetID) {
+            let liveTitle = live.displayTitle(in: lang)
+            return L10n.tr("插入片段「\(liveTitle)」", "Insert Snippet \"\(liveTitle)\"", language: lang)
+        }
+        return step.displayTitle(in: lang)
+    }
 }
 
 // MARK: - Full Flow Editor Sheet (iPhone & iPad)
@@ -751,12 +760,22 @@ public struct IOSFlowEditorSheet: View {
                             .listRowBackground(palette.barSurface)
                     } else {
                         ForEach(Array(draft.steps.enumerated()), id: \.element.id) { idx, step in
+                            let resolvedText = resolvedStepText(for: step)
                             HStack(spacing: 10) {
                                 Text("\(idx + 1)")
                                     .font(ChocType.micro)
                                     .foregroundStyle(.white)
                                     .frame(width: 22, height: 22)
                                     .background(Color(hex: step.accentHex).opacity(step.isEnabled ? 1 : 0.4), in: Circle())
+
+                                Image(systemName: resolvedText.isWarning ? "exclamationmark.triangle.fill" : step.sfSymbol)
+                                    .font(ChocType.caption)
+                                    .foregroundStyle(
+                                        resolvedText.isWarning
+                                            ? palette.statusFailure
+                                            : Color(hex: step.accentHex).opacity(step.isEnabled ? 1 : 0.5)
+                                    )
+                                    .frame(width: 20)
 
                                 Button {
                                     stepSession = IOSStepEditSession(
@@ -765,13 +784,13 @@ public struct IOSFlowEditorSheet: View {
                                     )
                                 } label: {
                                     VStack(alignment: .leading, spacing: 2) {
-                                        Text(step.displayTitle(in: lang))
+                                        Text(resolvedText.title)
                                             .font(ChocType.body.weight(.semibold))
                                             .foregroundStyle(step.isEnabled ? palette.primaryText : palette.secondaryText)
                                             .strikethrough(!step.isEnabled)
-                                        Text(step.subtitle(in: lang))
+                                        Text(resolvedText.subtitle)
                                             .font(ChocType.micro)
-                                            .foregroundStyle(palette.secondaryText)
+                                            .foregroundStyle(resolvedText.isWarning ? palette.statusFailure : palette.secondaryText)
                                     }
                                 }
                                 .buttonStyle(.plain)
@@ -879,6 +898,9 @@ public struct IOSFlowEditorSheet: View {
         }
         .tint(palette.accent)
         .preferredColorScheme(.light)
+        .onAppear {
+            client.requestMacCatalog()
+        }
     }
 
     private var addStepMenuRow: some View {
@@ -931,11 +953,61 @@ public struct IOSFlowEditorSheet: View {
             } label: {
                 Label(L10n.tr("固定短延时…", "Short Bounded Delay…", language: lang), systemImage: "timer")
             }
+
+            Divider()
+
+            Button {
+                let step = ActionFlowStep(kind: .openWebsite(url: "", title: nil, switchExistingTab: true))
+                stepSession = IOSStepEditSession(step: step, defaultFollowBundleID: followBundle)
+            } label: {
+                Label(L10n.tr("打开网页…", "Open Website…", language: lang), systemImage: "globe")
+            }
+
+            Button {
+                let initialShortcut = client.macCatalogShortcuts.first?.name ?? ""
+                let step = ActionFlowStep(kind: .runShortcut(shortcutName: initialShortcut))
+                stepSession = IOSStepEditSession(step: step, defaultFollowBundleID: followBundle)
+            } label: {
+                Label(L10n.tr("运行 Mac 快捷指令…", "Run Mac Shortcut…", language: lang), systemImage: "sparkles.rectangle.stack")
+            }
+
+            Button {
+                let firstSnippet = client.profile.snippets.first
+                let step = ActionFlowStep(
+                    kind: .insertSnippet(
+                        snippetID: firstSnippet?.id ?? UUID(),
+                        titleSnapshot: firstSnippet?.displayTitle(in: lang)
+                    )
+                )
+                stepSession = IOSStepEditSession(step: step, defaultFollowBundleID: followBundle)
+            } label: {
+                Label(L10n.tr("插入文本片段…", "Insert Saved Snippet…", language: lang), systemImage: "text.quote")
+            }
         } label: {
             Label(L10n.tr("添加步骤…", "Add Step…", language: lang), systemImage: "plus.circle.fill")
                 .font(ChocType.body.weight(.semibold))
                 .foregroundStyle(palette.accent)
         }
+    }
+
+    private func resolvedStepText(for step: ActionFlowStep) -> (title: String, subtitle: String, isWarning: Bool) {
+        if case .insertSnippet(let snippetID, _) = step.kind {
+            if let live = client.profile.snippet(withID: snippetID) {
+                let liveTitle = live.displayTitle(in: lang)
+                let title = L10n.tr("插入片段「\(liveTitle)」", "Insert Snippet \"\(liveTitle)\"", language: lang)
+                let preview = live.singleLinePreview
+                let subtitle = preview.isEmpty
+                    ? live.insertMode.badgeTitle(in: lang)
+                    : "\(live.insertMode.badgeTitle(in: lang)) · \(preview)"
+                return (title, subtitle, false)
+            }
+            return (
+                step.displayTitle(in: lang),
+                L10n.tr("该文本片段已被删除，执行时此步骤将报错停止", "Snippet was deleted — this step will fail when run", language: lang),
+                true
+            )
+        }
+        return (step.displayTitle(in: lang), step.subtitle(in: lang), false)
     }
 
     private func priorBundleID(before index: Int) -> String? {
@@ -976,8 +1048,49 @@ public struct IOSFlowStepEditorSheet: View {
         case waitFrontmost
         case systemAction
         case delay
+        case openWebsite
+        case runShortcut
+        case insertSnippet
 
         public var id: String { rawValue }
+
+        func title(in lang: AppLanguage) -> String {
+            switch self {
+            case .launchApp:
+                return L10n.tr("打开应用", "Open App", language: lang)
+            case .waitFrontmost:
+                return L10n.tr("等待前置", "Wait Frontmost", language: lang)
+            case .systemAction:
+                return L10n.tr("系统动作", "Quick Action", language: lang)
+            case .delay:
+                return L10n.tr("延时", "Delay", language: lang)
+            case .openWebsite:
+                return L10n.tr("打开网页", "Open Website", language: lang)
+            case .runShortcut:
+                return L10n.tr("运行快捷指令", "Run Shortcut", language: lang)
+            case .insertSnippet:
+                return L10n.tr("插入文本片段", "Insert Snippet", language: lang)
+            }
+        }
+
+        var sfSymbol: String {
+            switch self {
+            case .launchApp:
+                return "app.badge.checkmark"
+            case .waitFrontmost:
+                return "macwindow.on.rectangle"
+            case .systemAction:
+                return "bolt.fill"
+            case .delay:
+                return "timer"
+            case .openWebsite:
+                return "globe"
+            case .runShortcut:
+                return "sparkles.rectangle.stack"
+            case .insertSnippet:
+                return "text.quote"
+            }
+        }
     }
 
     @ObservedObject var client: CompanionClientEngine
@@ -1000,6 +1113,17 @@ public struct IOSFlowStepEditorSheet: View {
     @State private var selectedAction: SystemQuickAction = .maximizeWindow
     @State private var actionFollowActiveFlowApp: Bool = true
 
+    @State private var websiteURL: String = ""
+    @State private var websiteTitle: String = ""
+    @State private var websiteSwitchTab: Bool = true
+
+    @State private var shortcutSearch: String = ""
+    @State private var shortcutName: String = ""
+
+    @State private var snippetSearch: String = ""
+    @State private var selectedSnippetID: UUID?
+    @State private var missingSnippetTitle: String?
+
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
@@ -1018,6 +1142,23 @@ public struct IOSFlowStepEditorSheet: View {
         guard !q.isEmpty else { return rows }
         return rows.filter {
             $0.1.localizedCaseInsensitiveContains(q) || $0.0.localizedCaseInsensitiveContains(q)
+        }
+    }
+
+    private var filteredShortcuts: [InstalledShortcutSummary] {
+        let q = shortcutSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return client.macCatalogShortcuts }
+        return client.macCatalogShortcuts.filter {
+            $0.name.localizedCaseInsensitiveContains(q)
+        }
+    }
+
+    private var filteredSnippets: [TextSnippet] {
+        let q = snippetSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return client.profile.snippets }
+        return client.profile.snippets.filter {
+            $0.displayTitle(in: lang).localizedCaseInsensitiveContains(q) ||
+            $0.body.localizedCaseInsensitiveContains(q)
         }
     }
 
@@ -1060,6 +1201,25 @@ public struct IOSFlowStepEditorSheet: View {
             _choice = State(initialValue: .delay)
             _delaySeconds = State(initialValue: ActionFlowStep.clampDelay(secs))
 
+        case .openWebsite(let url, let title, let switchExistingTab):
+            _choice = State(initialValue: .openWebsite)
+            _websiteURL = State(initialValue: url)
+            _websiteTitle = State(initialValue: title ?? "")
+            _websiteSwitchTab = State(initialValue: switchExistingTab)
+
+        case .runShortcut(let name):
+            _choice = State(initialValue: .runShortcut)
+            _shortcutName = State(initialValue: name)
+
+        case .insertSnippet(let snippetID, let titleSnapshot):
+            _choice = State(initialValue: .insertSnippet)
+            if client.profile.snippet(withID: snippetID) != nil {
+                _selectedSnippetID = State(initialValue: snippetID)
+            } else {
+                _selectedSnippetID = State(initialValue: nil)
+                _missingSnippetTitle = State(initialValue: titleSnapshot)
+            }
+
         case .unsupported:
             _choice = State(initialValue: .systemAction)
         }
@@ -1070,12 +1230,12 @@ public struct IOSFlowStepEditorSheet: View {
             Form {
                 Section {
                     Picker(L10n.tr("步骤类型", "Step Type", language: lang), selection: $choice) {
-                        Text(L10n.tr("打开应用", "Open App", language: lang)).tag(StepKindChoice.launchApp)
-                        Text(L10n.tr("等待前置", "Wait Frontmost", language: lang)).tag(StepKindChoice.waitFrontmost)
-                        Text(L10n.tr("系统动作", "Quick Action", language: lang)).tag(StepKindChoice.systemAction)
-                        Text(L10n.tr("延时", "Delay", language: lang)).tag(StepKindChoice.delay)
+                        ForEach(StepKindChoice.allCases) { kind in
+                            Label(kind.title(in: lang), systemImage: kind.sfSymbol)
+                                .tag(kind)
+                        }
                     }
-                    .pickerStyle(.segmented)
+                    .pickerStyle(.menu)
 
                     Toggle(L10n.tr("启用此步骤", "Step Enabled", language: lang), isOn: $stepEnabled)
                         .tint(palette.accent)
@@ -1091,6 +1251,12 @@ public struct IOSFlowStepEditorSheet: View {
                     systemActionSections
                 case .delay:
                     delaySections
+                case .openWebsite:
+                    websiteSections
+                case .runShortcut:
+                    shortcutSections
+                case .insertSnippet:
+                    snippetSections
                 }
             }
             .scrollContentBackground(.hidden)
@@ -1120,6 +1286,16 @@ public struct IOSFlowStepEditorSheet: View {
                     .disabled(!canSave)
                 }
             }
+            .onAppear {
+                client.requestMacCatalog()
+            }
+            .onChange(of: choice) { _, newChoice in
+                if newChoice == .insertSnippet, selectedSnippetID == nil, missingSnippetTitle == nil {
+                    selectedSnippetID = client.profile.snippets.first?.id
+                } else if newChoice == .runShortcut, shortcutName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    shortcutName = client.macCatalogShortcuts.first?.name ?? ""
+                }
+            }
         }
         .tint(palette.accent)
         .preferredColorScheme(.light)
@@ -1138,6 +1314,13 @@ public struct IOSFlowStepEditorSheet: View {
             return true
         case .delay:
             return delaySeconds >= ActionFlowStep.minDelaySeconds
+        case .openWebsite:
+            return ActionFlowStep.isValidWebsiteURL(websiteURL)
+        case .runShortcut:
+            return !shortcutName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .insertSnippet:
+            guard let id = selectedSnippetID else { return false }
+            return client.profile.snippet(withID: id) != nil
         }
     }
 
@@ -1296,6 +1479,190 @@ public struct IOSFlowStepEditorSheet: View {
         .listRowBackground(palette.barSurface)
     }
 
+    @ViewBuilder
+    private var websiteSections: some View {
+        let trimmedURL = websiteURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let showInvalidHint = !trimmedURL.isEmpty && !ActionFlowStep.isValidWebsiteURL(websiteURL)
+
+        Section(L10n.tr("目标网页", "Target Website", language: lang)) {
+            TextField("https://example.com", text: $websiteURL)
+                .keyboardType(.URL)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+
+            if showInvalidHint {
+                Label(
+                    L10n.tr("请输入包含有效域名的网址（如 example.com）", "Enter a valid website URL with a host (e.g. example.com)", language: lang),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(ChocType.micro)
+                .foregroundStyle(palette.statusFailure)
+            }
+
+            TextField(L10n.tr("显示标题（可选）", "Display Title (Optional)", language: lang), text: $websiteTitle)
+
+            Toggle(
+                L10n.tr("智能切换到已打开的浏览器标签页", "Switch to Already-Open Browser Tab", language: lang),
+                isOn: $websiteSwitchTab
+            )
+            .tint(palette.accent)
+        }
+        .listRowBackground(palette.barSurface)
+
+        Section(L10n.tr("常用网页预设", "Quick Website Presets", language: lang)) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(
+                        [
+                            ("GitHub", "https://github.com"),
+                            ("Google", "https://www.google.com"),
+                            ("ChatGPT", "https://chatgpt.com"),
+                            ("Linear", "https://linear.app"),
+                            ("localhost:3000", "http://localhost:3000")
+                        ],
+                        id: \.0
+                    ) { preset in
+                        Button(preset.0) {
+                            websiteURL = preset.1
+                            if websiteTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                websiteTitle = preset.0
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .listRowBackground(palette.barSurface)
+    }
+
+    @ViewBuilder
+    private var shortcutSections: some View {
+        Section(L10n.tr("Mac 快捷指令名称", "Mac Shortcut Name", language: lang)) {
+            TextField(L10n.tr("输入已有快捷指令精确名称", "Exact Mac Shortcut name", language: lang), text: $shortcutName)
+                .autocorrectionDisabled()
+
+            Button {
+                client.requestMacCatalog()
+            } label: {
+                Label(L10n.tr("刷新 Mac 快捷指令列表", "Refresh Mac Shortcuts", language: lang), systemImage: "arrow.clockwise")
+                    .font(ChocType.caption)
+            }
+        }
+        .listRowBackground(palette.barSurface)
+
+        if !client.macCatalogShortcuts.isEmpty {
+            Section(L10n.tr("从已同步的 Mac 快捷指令中选取", "Pick from Mac Shortcuts", language: lang)) {
+                TextField(L10n.tr("搜索快捷指令…", "Filter shortcuts…", language: lang), text: $shortcutSearch)
+                ForEach(filteredShortcuts) { sc in
+                    Button {
+                        shortcutName = sc.name
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "sparkles.rectangle.stack")
+                                .foregroundStyle(palette.accent)
+                            Text(sc.name)
+                                .foregroundStyle(palette.primaryText)
+                            Spacer()
+                            if shortcutName.trimmingCharacters(in: .whitespacesAndNewlines) == sc.name {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(palette.statusConnected)
+                            }
+                        }
+                    }
+                }
+            }
+            .listRowBackground(palette.barSurface)
+        } else {
+            Section {
+                Text(
+                    L10n.tr(
+                        "连接 Mac 后会自动同步本机快捷指令列表；也可在上方直接填写快捷指令名称。",
+                        "Connect to your Mac to browse installed Shortcuts, or type an existing Shortcut's exact name above.",
+                        language: lang
+                    )
+                )
+                .font(ChocType.caption)
+                .foregroundStyle(palette.secondaryText)
+            }
+            .listRowBackground(palette.barSurface)
+        }
+    }
+
+    @ViewBuilder
+    private var snippetSections: some View {
+        if let missingTitle = missingSnippetTitle, selectedSnippetID == nil {
+            Section {
+                Label(
+                    L10n.tr(
+                        "原有关联片段「\(missingTitle)」已被删除，请重新选择一个现有片段。",
+                        "Previously selected snippet \"\(missingTitle)\" was deleted. Select an existing snippet below.",
+                        language: lang
+                    ),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(ChocType.caption)
+                .foregroundStyle(palette.statusFailure)
+            }
+            .listRowBackground(palette.barSurface)
+        }
+
+        if client.profile.snippets.isEmpty {
+            Section(L10n.tr("已保存的文本片段", "Saved Snippets", language: lang)) {
+                Text(
+                    L10n.tr(
+                        "当前工作区尚无已保存的文本片段。请先在「片段 (Snippets)」页面创建文本片段，随后即可在动作流中选用。",
+                        "No saved snippets yet. Create a snippet in the Snippets tab first, then select it here.",
+                        language: lang
+                    )
+                )
+                .font(ChocType.caption)
+                .foregroundStyle(palette.secondaryText)
+            }
+            .listRowBackground(palette.barSurface)
+        } else {
+            Section(L10n.tr("选择要插入的文本片段", "Select Saved Snippet", language: lang)) {
+                TextField(L10n.tr("搜索文本片段…", "Search snippets…", language: lang), text: $snippetSearch)
+                ForEach(filteredSnippets) { snippet in
+                    Button {
+                        selectedSnippetID = snippet.id
+                        missingSnippetTitle = nil
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "text.quote")
+                                .foregroundStyle(palette.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(snippet.displayTitle(in: lang))
+                                        .font(ChocType.body.weight(.semibold))
+                                        .foregroundStyle(palette.primaryText)
+                                        .lineLimit(1)
+                                    Text(snippet.insertMode.badgeTitle(in: lang))
+                                        .font(ChocType.micro)
+                                        .foregroundStyle(palette.secondaryText)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(palette.accent.opacity(0.12), in: Capsule())
+                                }
+                                Text(snippet.singleLinePreview)
+                                    .font(ChocType.micro)
+                                    .foregroundStyle(palette.secondaryText)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            if selectedSnippetID == snippet.id {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(palette.statusConnected)
+                            }
+                        }
+                    }
+                }
+            }
+            .listRowBackground(palette.barSurface)
+        }
+    }
+
     private func buildStep() -> ActionFlowStep? {
         let cleanBid = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanName = appName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1355,6 +1722,43 @@ public struct IOSFlowStepEditorSheet: View {
             return ActionFlowStep(
                 id: stepID,
                 kind: .delay(seconds: delaySeconds),
+                isEnabled: stepEnabled
+            )
+
+        case .openWebsite:
+            guard ActionFlowStep.isValidWebsiteURL(websiteURL) else { return nil }
+            let cleanURL = ActionFlowStep.normalizedWebsiteURL(websiteURL)
+            let cleanTitle = websiteTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            return ActionFlowStep(
+                id: stepID,
+                kind: .openWebsite(
+                    url: cleanURL,
+                    title: cleanTitle.isEmpty ? nil : cleanTitle,
+                    switchExistingTab: websiteSwitchTab
+                ),
+                isEnabled: stepEnabled
+            )
+
+        case .runShortcut:
+            let cleanShortcut = shortcutName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanShortcut.isEmpty else { return nil }
+            return ActionFlowStep(
+                id: stepID,
+                kind: .runShortcut(shortcutName: cleanShortcut),
+                isEnabled: stepEnabled
+            )
+
+        case .insertSnippet:
+            guard let id = selectedSnippetID,
+                  let snippet = client.profile.snippet(withID: id) else {
+                return nil
+            }
+            return ActionFlowStep(
+                id: stepID,
+                kind: .insertSnippet(
+                    snippetID: snippet.id,
+                    titleSnapshot: snippet.displayTitle(in: lang)
+                ),
                 isEnabled: stepEnabled
             )
         }
