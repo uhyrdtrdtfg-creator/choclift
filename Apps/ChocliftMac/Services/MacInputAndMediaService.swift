@@ -316,6 +316,8 @@ public final class MacInputAndMediaService {
             return windowService.performWindowOperation(.center, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .toggleFullscreen:
             return windowService.performWindowOperation(.toggleFullscreen, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+        case .moveWindowToNextDisplay:
+            return windowService.performWindowOperation(.moveToNextDisplay, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
 
         case .switchToNextWindow, .switchToPreviousWindow:
             guard ensureAccessibilityOrPrompt() else { return accessibilityDeniedResult() }

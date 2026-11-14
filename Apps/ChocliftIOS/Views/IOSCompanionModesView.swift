@@ -1889,6 +1889,15 @@ public struct IOSGesturePadSurfaceView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                ForEach(SystemQuickAction.allCases) { action in
+                                    Button {
+                                        client.setGestureBinding(gesture, action: action)
+                                    } label: {
+                                        Label(action.title(in: lang), systemImage: action.sfSymbol)
+                                    }
+                                }
+                            }
                             .accessibilityIdentifier("ios-quick-gesture-\(gesture.rawValue)")
                         }
                     }

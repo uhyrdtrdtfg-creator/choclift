@@ -29,7 +29,7 @@ public final class MacAccessibilityAndWindowService {
     public private(set) var selectedTargetDisplayID: CGDirectDisplayID?
 
     private var previousWindowFrames: [String: CGRect] = [:]
-    private var undoBuffer = WindowMoveUndoBuffer<String>()
+    private var moveCoordinator = WindowMoveCoordinator<String>()
     private var retainedUndoTargets: [String: RetainedWindowUndoTarget] = [:]
     private var cachedFrontmostWindowTargets: [String: CachedFrontmostWindowTarget] = [:]
     private var screenObserverToken: NSObjectProtocol?
@@ -97,23 +97,53 @@ public final class MacAccessibilityAndWindowService {
         NSScreen.screens.first { Self.displayID(for: $0) == targetID }
     }
 
+    public var lastWindowMove: WindowMoveSnapshot<String>? {
+        moveCoordinator.lastWindowMove
+    }
+
     public var canUndoLastWindowMove: Bool {
-        undoBuffer.canUndo
+        moveCoordinator.canUndo
     }
 
     public func beginWindowUndoTransaction() {
-        undoBuffer.beginTransaction()
+        moveCoordinator.beginTransaction()
     }
 
     public func commitWindowUndoTransaction() {
-        let didReplace = undoBuffer.commitTransaction()
+        let didReplace = moveCoordinator.commitTransaction()
         if didReplace {
-            let activeIDs = Set(undoBuffer.lastEntry?.map(\.windowID) ?? [])
+            let activeIDs = Set(moveCoordinator.lastEntry?.map(\.windowID) ?? [])
             retainedUndoTargets = retainedUndoTargets.filter { activeIDs.contains($0.key) }
             onUndoAvailabilityChanged?()
         } else {
-            let activeIDs = Set(undoBuffer.lastEntry?.map(\.windowID) ?? [])
+            let activeIDs = Set(moveCoordinator.lastEntry?.map(\.windowID) ?? [])
             retainedUndoTargets = retainedUndoTargets.filter { activeIDs.contains($0.key) }
+        }
+    }
+
+    private func registerRetainedUndoTargetAfterMove(
+        windowKey: String,
+        pid: pid_t,
+        windowElement: AXUIElement,
+        appName: String
+    ) {
+        if moveCoordinator.isInTransaction {
+            if retainedUndoTargets[windowKey] == nil {
+                retainedUndoTargets[windowKey] = RetainedWindowUndoTarget(
+                    pid: pid,
+                    windowElement: windowElement,
+                    appName: appName
+                )
+            }
+        } else {
+            retainedUndoTargets = [
+                windowKey: RetainedWindowUndoTarget(
+                    pid: pid,
+                    windowElement: windowElement,
+                    appName: appName
+                )
+            ]
+            onUndoAvailabilityChanged?()
         }
     }
 
@@ -124,40 +154,23 @@ public final class MacAccessibilityAndWindowService {
         appName: String,
         previousFrame: CGRect
     ) {
-        if undoBuffer.isInTransaction {
-            if retainedUndoTargets[windowKey] == nil {
-                retainedUndoTargets[windowKey] = RetainedWindowUndoTarget(
-                    pid: pid,
-                    windowElement: windowElement,
-                    appName: appName
-                )
-            }
-            undoBuffer.recordMove(
-                windowID: windowKey,
-                appName: appName,
-                previousFrame: WindowQuartzRect(previousFrame)
-            )
-        } else {
-            retainedUndoTargets = [
-                windowKey: RetainedWindowUndoTarget(
-                    pid: pid,
-                    windowElement: windowElement,
-                    appName: appName
-                )
-            ]
-            undoBuffer.recordMove(
-                windowID: windowKey,
-                appName: appName,
-                previousFrame: WindowQuartzRect(previousFrame)
-            )
-            onUndoAvailabilityChanged?()
-        }
+        moveCoordinator.recordMove(
+            windowID: windowKey,
+            appName: appName,
+            previousFrame: WindowQuartzRect(previousFrame)
+        )
+        registerRetainedUndoTargetAfterMove(
+            windowKey: windowKey,
+            pid: pid,
+            windowElement: windowElement,
+            appName: appName
+        )
     }
 
     /// Restores the single most recent window move (or multi-window split flow move).
     /// One level only; returns `.nothingToUndo` quietly when empty or when target windows are gone.
     public func undoLastWindowMove(language: AppLanguage = .system) -> WindowUndoOutcome {
-        guard let snapshots = undoBuffer.popUndoEntry(), !snapshots.isEmpty else {
+        guard let snapshots = moveCoordinator.popUndoEntry(), !snapshots.isEmpty else {
             return .nothingToUndo
         }
         let targets = retainedUndoTargets
@@ -175,7 +188,12 @@ public final class MacAccessibilityAndWindowService {
                   !runningApp.isTerminated else {
                 continue
             }
-            if writeWindowQuartzFrame(target.windowElement, frame: snapshot.previousFrame.cgRect) {
+            let sizeSettable = isAttributeSettable(kAXSizeAttribute as String, on: target.windowElement)
+            if case .success = writeWindowQuartzFrameResult(
+                target.windowElement,
+                frame: snapshot.previousFrame.cgRect,
+                applySize: sizeSettable
+            ) {
                 previousWindowFrames.removeValue(forKey: snapshot.windowID)
                 let cleanName = snapshot.appName.trimmingCharacters(in: .whitespacesAndNewlines)
                 let displayName = cleanName.isEmpty ? (runningApp.localizedName ?? "App") : cleanName
@@ -400,6 +418,7 @@ public final class MacAccessibilityAndWindowService {
         case snapRight
         case center
         case toggleFullscreen
+        case moveToNextDisplay
     }
 
     public func hasAdjustableWindow(forPID pid: pid_t) -> Bool {
@@ -448,9 +467,18 @@ public final class MacAccessibilityAndWindowService {
         }
 
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
-        guard let windowElement = resolveTargetWindow(for: appElement) else {
+        let windowElement: AXUIElement
+        switch resolveTargetWindowResult(for: appElement) {
+        case .window(let resolved):
+            windowElement = resolved
+        case .axFailure(let axErr):
+            return (false, WindowAXErrorFormatting.moveFailureMessage(rawCode: axErr.rawValue))
+        case .noWindow:
             return (false, L10n.tr("\(app.localizedName ?? "App") 当前没有可调整的窗口", "No adjustable window in \(app.localizedName ?? "app")"))
         }
+
+        let appDisplayName = app.localizedName ?? "App"
+        let windowKey = "\(app.processIdentifier)-\(CFHash(windowElement))"
 
         switch op {
         case .minimize:
@@ -481,7 +509,7 @@ public final class MacAccessibilityAndWindowService {
                 ? (true, L10n.tr("已切换全屏状态", "Toggled fullscreen"))
                 : (false, L10n.tr("当前窗口不支持全屏切换", "Window does not support fullscreen"))
 
-        case .maximizeOrRestore, .snapLeft, .snapRight, .center:
+        case .center:
             let currentFrame = readWindowQuartzFrame(windowElement)
             let targetScreen: NSScreen? = {
                 if NSScreen.screens.count > 1,
@@ -496,7 +524,109 @@ public final class MacAccessibilityAndWindowService {
             }
 
             let visibleQuartz = convertAppKitScreenRectToQuartz(screen.visibleFrame)
-            let windowKey = "\(app.processIdentifier)-\(CFHash(windowElement))"
+            let sizeSettable = isAttributeSettable(kAXSizeAttribute as String, on: windowElement)
+            let result = moveCoordinator.performCenter(
+                windowID: windowKey,
+                appName: appDisplayName,
+                visibleQuartz: visibleQuartz,
+                allowResize: sizeSettable,
+                readFrame: {
+                    readWindowQuartzFrameResult(windowElement)
+                },
+                writeFrame: { desiredFrame in
+                    switch writeWindowQuartzFrameResult(
+                        windowElement,
+                        frame: desiredFrame,
+                        applySize: sizeSettable,
+                        rollbackOrigin: currentFrame?.origin
+                    ) {
+                    case .success:
+                        return AXError.success.rawValue
+                    case .failure(let err):
+                        return err.code
+                    }
+                }
+            )
+            switch result {
+            case .success:
+                registerRetainedUndoTargetAfterMove(
+                    windowKey: windowKey,
+                    pid: app.processIdentifier,
+                    windowElement: windowElement,
+                    appName: appDisplayName
+                )
+                return (true, L10n.tr("已调整 \(app.localizedName ?? "") 窗口", "Adjusted \(app.localizedName ?? "") window"))
+            case .failure(let err):
+                return (false, err.message())
+            }
+
+        case .moveToNextDisplay:
+            let screens = NSScreen.screens
+            let screenDescriptors = screens.map {
+                WindowScreenDescriptor(frame: $0.frame, visibleFrame: $0.visibleFrame)
+            }
+            let currentFrame = readWindowQuartzFrame(windowElement)
+            let sizeSettable = isAttributeSettable(kAXSizeAttribute as String, on: windowElement)
+            let result = moveCoordinator.performMoveToNextDisplay(
+                windowID: windowKey,
+                appName: appDisplayName,
+                appKitScreens: screenDescriptors,
+                allowResize: sizeSettable,
+                readFrame: {
+                    readWindowQuartzFrameResult(windowElement)
+                },
+                writeFrame: { desiredFrame in
+                    switch writeWindowQuartzFrameResult(
+                        windowElement,
+                        frame: desiredFrame,
+                        applySize: sizeSettable,
+                        rollbackOrigin: currentFrame?.origin
+                    ) {
+                    case .success:
+                        return AXError.success.rawValue
+                    case .failure(let err):
+                        return err.code
+                    }
+                }
+            )
+            switch result {
+            case .success(let plan):
+                previousWindowFrames.removeValue(forKey: windowKey)
+                registerRetainedUndoTargetAfterMove(
+                    windowKey: windowKey,
+                    pid: app.processIdentifier,
+                    windowElement: windowElement,
+                    appName: appDisplayName
+                )
+                let destinationName = screens.indices.contains(plan.targetScreenIndex)
+                    ? screens[plan.targetScreenIndex].localizedName
+                    : L10n.tr("下一显示器", "Next Display")
+                return (
+                    true,
+                    L10n.tr(
+                        "已将 \(appDisplayName) 窗口移至 \(destinationName)",
+                        "Moved \(appDisplayName) window to \(destinationName)"
+                    )
+                )
+            case .failure(let err):
+                return (false, err.message())
+            }
+
+        case .maximizeOrRestore, .snapLeft, .snapRight:
+            let currentFrame = readWindowQuartzFrame(windowElement)
+            let targetScreen: NSScreen? = {
+                if NSScreen.screens.count > 1,
+                   let chosenID = selectedTargetDisplayID,
+                   let chosenScreen = screen(forDisplayID: chosenID) {
+                    return chosenScreen
+                }
+                return screenContainingQuartzRect(currentFrame) ?? NSScreen.main ?? NSScreen.screens.first
+            }()
+            guard let screen = targetScreen else {
+                return (false, "No screen available")
+            }
+
+            let visibleQuartz = convertAppKitScreenRectToQuartz(screen.visibleFrame)
 
             let desiredFrame: CGRect
             switch op {
@@ -526,34 +656,31 @@ public final class MacAccessibilityAndWindowService {
                     width: halfW,
                     height: visibleQuartz.height
                 )
-            case .center:
-                let w = min(currentFrame?.width ?? visibleQuartz.width * 0.72, visibleQuartz.width)
-                let h = min(currentFrame?.height ?? visibleQuartz.height * 0.78, visibleQuartz.height)
-                desiredFrame = CGRect(
-                    x: round(visibleQuartz.origin.x + (visibleQuartz.width - w) / 2.0),
-                    y: round(visibleQuartz.origin.y + (visibleQuartz.height - h) / 2.0),
-                    width: w,
-                    height: h
-                )
             default:
                 desiredFrame = visibleQuartz
             }
 
-            let ok = writeWindowQuartzFrame(windowElement, frame: desiredFrame)
-            if ok,
-               let cur = currentFrame,
-               (op == .maximizeOrRestore || op == .snapLeft || op == .snapRight) {
-                recordWindowMoveForUndo(
-                    windowKey: windowKey,
-                    pid: app.processIdentifier,
-                    windowElement: windowElement,
-                    appName: app.localizedName ?? "App",
-                    previousFrame: cur
-                )
+            let sizeSettable = isAttributeSettable(kAXSizeAttribute as String, on: windowElement)
+            switch writeWindowQuartzFrameResult(
+                windowElement,
+                frame: desiredFrame,
+                applySize: sizeSettable,
+                rollbackOrigin: currentFrame?.origin
+            ) {
+            case .success:
+                if let cur = currentFrame {
+                    recordWindowMoveForUndo(
+                        windowKey: windowKey,
+                        pid: app.processIdentifier,
+                        windowElement: windowElement,
+                        appName: appDisplayName,
+                        previousFrame: cur
+                    )
+                }
+                return (true, L10n.tr("已调整 \(app.localizedName ?? "") 窗口", "Adjusted \(app.localizedName ?? "") window"))
+            case .failure(let axErr):
+                return (false, WindowAXErrorFormatting.moveFailureMessage(rawCode: axErr.code))
             }
-            return ok
-                ? (true, L10n.tr("已调整 \(app.localizedName ?? "") 窗口", "Adjusted \(app.localizedName ?? "") window"))
-                : (false, L10n.tr("无法调整该窗口尺寸", "Unable to resize window"))
         }
     }
 
@@ -900,67 +1027,150 @@ public final class MacAccessibilityAndWindowService {
 
     // MARK: - AX Geometry Helpers
 
+    private enum ResolvedWindowOutcome {
+        case window(AXUIElement)
+        case noWindow
+        case axFailure(AXError)
+    }
+
     private func resolveTargetWindow(for appElement: AXUIElement) -> AXUIElement? {
-        var focusedWin: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedWin) == .success,
-           let fw = focusedWin,
-           CFGetTypeID(fw) == AXUIElementGetTypeID() {
-            return (fw as! AXUIElement)
+        if case .window(let element) = resolveTargetWindowResult(for: appElement) {
+            return element
         }
-
-        var mainWin: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWin) == .success,
-           let mw = mainWin,
-           CFGetTypeID(mw) == AXUIElementGetTypeID() {
-            return (mw as! AXUIElement)
-        }
-
-        var listRef: CFTypeRef?
-        if AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &listRef) == .success,
-           let windows = listRef as? [AXUIElement] {
-            return windows.first
-        }
-
         return nil
     }
 
+    private func resolveTargetWindowResult(for appElement: AXUIElement) -> ResolvedWindowOutcome {
+        var focusedWin: CFTypeRef?
+        let focusedErr = AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedWin)
+        if focusedErr == .success,
+           let fw = focusedWin,
+           CFGetTypeID(fw) == AXUIElementGetTypeID() {
+            return .window(fw as! AXUIElement)
+        }
+
+        var mainWin: CFTypeRef?
+        let mainErr = AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWin)
+        if mainErr == .success,
+           let mw = mainWin,
+           CFGetTypeID(mw) == AXUIElementGetTypeID() {
+            return .window(mw as! AXUIElement)
+        }
+
+        var listRef: CFTypeRef?
+        let winErr = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &listRef)
+        if winErr == .success,
+           let windows = listRef as? [AXUIElement] {
+            if let first = windows.first {
+                return .window(first)
+            }
+            return .noWindow
+        }
+
+        if winErr != .success && winErr != .noValue {
+            return .axFailure(winErr)
+        }
+        if focusedErr != .success && focusedErr != .noValue {
+            return .axFailure(focusedErr)
+        }
+        if mainErr != .success && mainErr != .noValue {
+            return .axFailure(mainErr)
+        }
+        return .noWindow
+    }
+
+    private func isAttributeSettable(_ attribute: String, on element: AXUIElement) -> Bool {
+        var settable = DarwinBoolean(false)
+        let status = AXUIElementIsAttributeSettable(element, attribute as CFString, &settable)
+        return status == .success && settable.boolValue
+    }
+
     private func readWindowQuartzFrame(_ window: AXUIElement) -> CGRect? {
+        if case .success(let frame) = readWindowQuartzFrameResult(window) {
+            return frame
+        }
+        return nil
+    }
+
+    private func readWindowQuartzFrameResult(_ window: AXUIElement) -> Result<CGRect, WindowAXStatusError> {
         var posRef: CFTypeRef?
+        let posErr = AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &posRef)
+        guard posErr == .success else {
+            return .failure(WindowAXStatusError(posErr.rawValue))
+        }
+
         var sizeRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &posRef) == .success,
-              AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef) == .success,
-              let posVal = posRef,
+        let sizeErr = AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeRef)
+        guard sizeErr == .success else {
+            return .failure(WindowAXStatusError(sizeErr.rawValue))
+        }
+
+        guard let posVal = posRef,
               let sizeVal = sizeRef,
               CFGetTypeID(posVal) == AXValueGetTypeID(),
               CFGetTypeID(sizeVal) == AXValueGetTypeID() else {
-            return nil
+            return .failure(WindowAXStatusError(AXError.illegalArgument.rawValue))
         }
 
         var point = CGPoint.zero
         var size = CGSize.zero
-        AXValueGetValue(posVal as! AXValue, .cgPoint, &point)
-        AXValueGetValue(sizeVal as! AXValue, .cgSize, &size)
-        return CGRect(origin: point, size: size)
+        guard AXValueGetValue(posVal as! AXValue, .cgPoint, &point),
+              AXValueGetValue(sizeVal as! AXValue, .cgSize, &size) else {
+            return .failure(WindowAXStatusError(AXError.illegalArgument.rawValue))
+        }
+        return .success(CGRect(origin: point, size: size))
     }
 
-    private func writeWindowQuartzFrame(_ window: AXUIElement, frame: CGRect) -> Bool {
+    private func writeWindowQuartzFrameResult(
+        _ window: AXUIElement,
+        frame: CGRect,
+        applySize: Bool = true,
+        rollbackOrigin: CGPoint? = nil
+    ) -> Result<Void, WindowAXStatusError> {
         var origin = frame.origin
         var size = frame.size
         guard let posVal = AXValueCreate(.cgPoint, &origin),
               let sizeVal = AXValueCreate(.cgSize, &size) else {
-            return false
+            return .failure(WindowAXStatusError(AXError.illegalArgument.rawValue))
         }
-        // Setting size -> position -> size handles multi-monitor clamping cleanly on macOS
-        _ = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeVal)
+
+        var posSettable = DarwinBoolean(false)
+        let posSettableStatus = AXUIElementIsAttributeSettable(
+            window,
+            kAXPositionAttribute as CFString,
+            &posSettable
+        )
+
+        // Position -> Size -> Position moves across displays cleanly in both large->small
+        // and small->large directions while immediately surfacing real AX move errors.
         let posErr = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, posVal)
-        let sizeErr = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeVal)
-        return posErr == .success || sizeErr == .success
+        guard posErr == .success else {
+            return .failure(WindowAXStatusError(posErr.rawValue))
+        }
+        if posSettableStatus == .success && !posSettable.boolValue {
+            return .failure(WindowAXStatusError(AXError.attributeUnsupported.rawValue))
+        }
+
+        if applySize {
+            let sizeErr = AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeVal)
+            guard sizeErr == .success else {
+                if var restore = rollbackOrigin,
+                   let restoreVal = AXValueCreate(.cgPoint, &restore) {
+                    _ = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, restoreVal)
+                }
+                return .failure(WindowAXStatusError(sizeErr.rawValue))
+            }
+            let finalPosErr = AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, posVal)
+            guard finalPosErr == .success else {
+                return .failure(WindowAXStatusError(finalPosErr.rawValue))
+            }
+        }
+        return .success(())
     }
 
     private func convertAppKitScreenRectToQuartz(_ rect: CGRect) -> CGRect {
         let primaryHeight = NSScreen.screens.first?.frame.height ?? NSScreen.main?.frame.height ?? 1080
-        let quartzY = primaryHeight - rect.maxY
-        return CGRect(x: rect.origin.x, y: quartzY, width: rect.width, height: rect.height)
+        return WindowDisplayGeometry.convertAppKitRectToQuartz(rect, primaryScreenHeight: primaryHeight)
     }
 
     private func screenContainingQuartzRect(_ quartzRect: CGRect?) -> NSScreen? {

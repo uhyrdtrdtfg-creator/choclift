@@ -782,24 +782,7 @@ public struct IOSSlotEditorSheet: View {
     }
 
     private var actionsGrid: some View {
-        let sections: [(String, [SystemQuickAction])] = [
-            (
-                L10n.tr("窗口分屏与布局", "Window Layout", language: lang),
-                [.maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen]
-            ),
-            (
-                L10n.tr("编辑与剪贴板", "Clipboard & Edit", language: lang),
-                [.copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction]
-            ),
-            (
-                L10n.tr("媒体与音量", "Media & Volume", language: lang),
-                [.mediaPlayPause, .mediaPrevious, .mediaNext, .volumeUp, .volumeDown, .volumeMute]
-            ),
-            (
-                L10n.tr("桌面与系统控制", "Workspace & System", language: lang),
-                [.missionControl, .showDesktop, .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp]
-            )
-        ]
+        let sections = SystemQuickAction.slotActionSections(in: lang, compactHeaders: true)
 
         return List {
             ForEach(sections, id: \.0) { header, actions in

@@ -938,24 +938,7 @@ public struct MacSlotItemPickerSheet: View {
     // MARK: - Tab 4: Categorized System Quick Actions
 
     private var actionsPickerBody: some View {
-        let groups: [(String, [SystemQuickAction])] = [
-            (
-                L10n.tr("窗口分屏与布局", "Window Layout & Sizing", language: lang),
-                [.maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen]
-            ),
-            (
-                L10n.tr("编辑与剪贴板", "Clipboard & Editing", language: lang),
-                [.copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction]
-            ),
-            (
-                L10n.tr("媒体与音量", "Media & Volume", language: lang),
-                [.mediaPlayPause, .mediaPrevious, .mediaNext, .volumeUp, .volumeDown, .volumeMute]
-            ),
-            (
-                L10n.tr("桌面与系统控制", "Workspace & System", language: lang),
-                [.missionControl, .showDesktop, .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp]
-            )
-        ]
+        let groups = SystemQuickAction.slotActionSections(in: lang, compactHeaders: false)
 
         return ScrollView {
             VStack(alignment: .leading, spacing: 16) {

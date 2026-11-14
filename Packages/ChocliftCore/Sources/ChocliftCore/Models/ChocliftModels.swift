@@ -92,6 +92,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case lockScreen = "lock_screen"
     case quitApp = "quit_app"
     case openEmojiPicker = "open_emoji_picker"
+    case moveWindowToNextDisplay = "move_window_to_next_display"
 
     public var id: String { rawValue }
 
@@ -123,12 +124,13 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .lockScreen: return "lock.display"
         case .quitApp: return "xmark.octagon.fill"
         case .openEmojiPicker: return "face.smiling.inverse"
+        case .moveWindowToNextDisplay: return "display.2"
         }
     }
 
     public var accentHex: String {
         switch self {
-        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow:
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow, .moveWindowToNextDisplay:
             return "#EDF6FF"
         case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
             return "#F3EEFF"
@@ -141,7 +143,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public var isWindowAction: Bool {
         switch self {
-        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen:
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay:
             return true
         default:
             return false
@@ -150,7 +152,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public var isUndoableWindowMove: Bool {
         switch self {
-        case .maximizeWindow, .snapWindowLeft, .snapWindowRight:
+        case .maximizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .moveWindowToNextDisplay:
             return true
         default:
             return false
@@ -201,7 +203,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
              .centerWindow, .toggleFullscreen, .missionControl, .showDesktop,
              .screenshotInteractive, .mediaPlayPause, .mediaNext, .mediaPrevious,
-             .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca:
+             .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca,
+             .moveWindowToNextDisplay:
             return nil
         }
     }
@@ -234,6 +237,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .lockScreen: return L10n.tr("锁定屏幕", "Lock Screen", language: lang)
         case .quitApp: return L10n.tr("退出当前应用", "Quit Application", language: lang)
         case .openEmojiPicker: return L10n.tr("系统表情面板", "macOS Emoji Panel", language: lang)
+        case .moveWindowToNextDisplay: return L10n.tr("窗口移至下一显示器", "Move Window to Next Display", language: lang)
         }
     }
 
@@ -265,7 +269,41 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .lockScreen: return L10n.tr("锁屏", "Lock", language: lang)
         case .quitApp: return L10n.tr("退出", "Quit", language: lang)
         case .openEmojiPicker: return L10n.tr("表情框", "Emoji", language: lang)
+        case .moveWindowToNextDisplay: return L10n.tr("下一屏幕", "Next Display", language: lang)
         }
+    }
+
+    public static let windowLayoutSlotActions: [SystemQuickAction] = [
+        .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
+        .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay
+    ]
+
+    public static func slotActionSections(
+        in lang: AppLanguage = .system,
+        compactHeaders: Bool = false
+    ) -> [(String, [SystemQuickAction])] {
+        [
+            (
+                compactHeaders
+                    ? L10n.tr("窗口分屏与布局", "Window Layout", language: lang)
+                    : L10n.tr("窗口分屏与布局", "Window Layout & Sizing", language: lang),
+                windowLayoutSlotActions
+            ),
+            (
+                compactHeaders
+                    ? L10n.tr("编辑与剪贴板", "Clipboard & Edit", language: lang)
+                    : L10n.tr("编辑与剪贴板", "Clipboard & Editing", language: lang),
+                [.copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction]
+            ),
+            (
+                L10n.tr("媒体与音量", "Media & Volume", language: lang),
+                [.mediaPlayPause, .mediaPrevious, .mediaNext, .volumeUp, .volumeDown, .volumeMute]
+            ),
+            (
+                L10n.tr("桌面与系统控制", "Workspace & System", language: lang),
+                [.missionControl, .showDesktop, .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp]
+            )
+        ]
     }
 
     /// Only `.volumeUp`, `.volumeDown`, and `.mediaNext` repeat while held down.
@@ -1058,6 +1096,19 @@ public struct GestureConfiguration: Codable, Equatable, Hashable, Sendable {
             return nil
         }
         return binding.action
+    }
+
+    public mutating func setAction(
+        _ action: SystemQuickAction,
+        for gesture: TouchGestureType,
+        isEnabled: Bool = true
+    ) {
+        if let index = bindings.firstIndex(where: { $0.gesture == gesture }) {
+            bindings[index].action = action
+            bindings[index].isEnabled = isEnabled
+        } else {
+            bindings.append(GestureBinding(gesture: gesture, action: action, isEnabled: isEnabled))
+        }
     }
 }
 

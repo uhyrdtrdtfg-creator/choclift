@@ -3763,6 +3763,16 @@ public final class CompanionClientEngine: ObservableObject {
         requestMissingIconsIfNeeded()
     }
 
+    public func setGestureBinding(
+        _ gesture: TouchGestureType,
+        action: SystemQuickAction,
+        isEnabled: Bool = true
+    ) {
+        var updated = profile
+        updated.gestureConfig.setAction(action, for: gesture, isEnabled: isEnabled)
+        pushUpdatedProfile(updated)
+    }
+
     public func requestMacCatalog() {
         send(.requestMacCatalog)
     }
