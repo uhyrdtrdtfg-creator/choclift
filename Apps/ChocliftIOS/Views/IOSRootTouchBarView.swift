@@ -473,6 +473,7 @@ public struct IOSRootTouchBarView: View {
                         toolsRow(action.title(in: lang), action.sfSymbol) { client.performQuickAction(action) }
                     }
                     toolsRow(L10n.tr("撤销窗口移动", "Undo Window Move", language: lang), "arrow.uturn.backward") { client.undoLastWindowMove() }
+                    companionActionRows()
                 }
                 toolsSection(L10n.tr("编辑与剪贴板", "Editing & Clipboard", language: lang)) {
                     toolsRow(SystemQuickAction.toggleDictation.title(in: lang), SystemQuickAction.toggleDictation.sfSymbol) {
@@ -485,6 +486,15 @@ public struct IOSRootTouchBarView: View {
                 }
             }
             .padding(16)
+        }
+    }
+
+    @ViewBuilder
+    private func companionActionRows() -> some View {
+        ForEach(CompanionActionCatalog.all) { action in
+            toolsRow(action.title(in: lang), action.sfSymbol) {
+                client.performCompanionAction(id: action.id)
+            }
         }
     }
 

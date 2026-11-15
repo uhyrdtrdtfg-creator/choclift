@@ -58,6 +58,7 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case setNowPlayingShuffle(enabled: Bool)
     case setNowPlayingRepeat(mode: NowPlayingRepeatMode)
     case proposeFlow(sentence: String)
+    case performCompanionAction(id: String)
     case unknownClientMessage
 }
 

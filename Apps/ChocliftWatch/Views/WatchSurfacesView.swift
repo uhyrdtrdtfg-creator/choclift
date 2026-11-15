@@ -1206,6 +1206,8 @@ public struct WatchQuickActionsView: View {
         .quitApp
     ]
 
+    private var catalogActions: [CompanionAction] { CompanionActionCatalog.all }
+
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
@@ -1216,6 +1218,30 @@ public struct WatchQuickActionsView: View {
                 WatchCalendarComplicationLine(client: client)
 
                 // Media & Volume Strip (Clean iconic transport buttons >= 46pt)
+                if !catalogActions.isEmpty {
+                    sectionHeader(L10n.tr("更多操作", "More Actions", language: lang), symbol: "square.grid.2x2")
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(catalogActions) { action in
+                            Button {
+                                client.performCompanionAction(id: action.id)
+                            } label: {
+                                VStack(spacing: 4) {
+                                    Image(systemName: action.sfSymbol)
+                                        .font(ChocType.body)
+                                    Text(action.title(in: lang))
+                                        .font(ChocType.micro)
+                                        .lineLimit(2)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 52)
+                                .foregroundStyle(palette.primaryText)
+                                .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
                 sectionHeader(L10n.tr("媒体与音量", "Media & Volume", language: lang), symbol: "speaker.wave.2.fill")
 
                 if client.connectionState.isConnected || client.controlStripState.nowPlaying != nil {

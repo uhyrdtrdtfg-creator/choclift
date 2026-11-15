@@ -871,6 +871,9 @@ public final class MacServerEngine: ObservableObject {
         case .ping(let timestamp):
             send(.pong(timestamp: timestamp), to: session)
 
+        case .performCompanionAction:
+            break
+
         case .unknownClientMessage:
             if !session.isAuthenticated {
                 send(
@@ -915,7 +918,8 @@ public final class MacServerEngine: ObservableObject {
                  .hideOtherApplications,
                  .seekNowPlaying,
                  .setNowPlayingShuffle,
-                 .setNowPlayingRepeat:
+                 .setNowPlayingRepeat,
+                 .performCompanionAction:
                 session.supportsControlStrip = true
             case .requestCompanionDashboard, .pasteMacClipboard, .captureMainDisplayScreenshot, .openCalendarApp:
                 session.supportsCompanionDashboard = true
