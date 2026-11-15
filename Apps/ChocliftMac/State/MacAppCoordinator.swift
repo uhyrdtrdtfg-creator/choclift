@@ -1005,15 +1005,39 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         let allowActivatePreferred = (deviceName == "Mac Studio") &&
             (NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier)
-        let res = inputService.executeSnippet(
+        let res = insertSnippet(
             snippet.body,
             mode: snippet.insertMode,
             preferredPID: timeTravel.lastExternalAppPID,
-            allowActivatingPreferredPID: allowActivatePreferred,
-            language: lang
+            allowActivatingPreferredPID: allowActivatePreferred
         )
         recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
         return (res.success, snippet.displayTitle(in: lang), res.message)
+    }
+
+    public func insertSnippet(
+        _ text: String,
+        mode: SnippetInsertMode,
+        preferredPID: pid_t? = nil,
+        allowActivatingPreferredPID: Bool = false
+    ) -> (expandedText: String, success: Bool, didPerformAction: Bool, message: String) {
+        let clipboardText: String? = text.contains(SnippetPlaceholderToken.clipboard.rawValue)
+            ? clipboardService.currentInsertablePlainText()
+            : nil
+        let expanded = SnippetPlaceholderExpander.expand(
+            text,
+            now: Date(),
+            calendar: .current,
+            clipboard: clipboardText
+        )
+        let res = inputService.executeSnippet(
+            expanded,
+            mode: mode,
+            preferredPID: preferredPID ?? timeTravel.lastExternalAppPID,
+            allowActivatingPreferredPID: allowActivatingPreferredPID,
+            language: lang
+        )
+        return (expanded, res.success, res.didPerformAction, res.message)
     }
 
     // MARK: - Quad Layouts
@@ -1857,16 +1881,15 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             ))
 
         case .insertSnippet(let text, let mode):
-            let res = inputService.executeSnippet(
+            let res = insertSnippet(
                 text,
                 mode: mode,
                 preferredPID: timeTravel.lastExternalAppPID,
-                allowActivatingPreferredPID: false,
-                language: lang
+                allowActivatingPreferredPID: false
             )
             guard res.didPerformAction || !res.message.isEmpty else { return }
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
-            let label = MacInputAndMediaService.previewLabel(for: text)
+            let label = MacInputAndMediaService.previewLabel(for: res.expandedText)
             reply(.actionFeedback(
                 success: res.success,
                 title: label.isEmpty ? L10n.tr("文本片段", "Snippet", language: lang) : label,
@@ -2484,12 +2507,11 @@ private final class MacCoordinatorFlowDriver: ActionFlowDriver {
             RunLoop.current.run(until: Date().addingTimeInterval(0.06))
         }
 
-        let res = coordinator.inputService.executeSnippet(
+        let res = coordinator.insertSnippet(
             snippet.body,
             mode: snippet.insertMode,
             preferredPID: effectivePID,
-            allowActivatingPreferredPID: chocliftIsFrontmost,
-            language: lang
+            allowActivatingPreferredPID: chocliftIsFrontmost
         )
         if res.success {
             return (true, res.message)
