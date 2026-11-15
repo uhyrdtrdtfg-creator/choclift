@@ -12,6 +12,7 @@ import IOKit
 import IOKit.graphics
 import IOKit.ps
 import Network
+import ObjectiveC
 
 @MainActor
 public final class MacSystemControlService {
@@ -72,6 +73,7 @@ public final class MacSystemControlService {
     private var latestMediaRemotePID: pid_t = 0
 
     private let displayBridge = DisplayBrightnessBridge()
+    private let nightShiftBridge = NightShiftBridge()
     private let mediaRemoteBridge = MediaRemoteBridge()
     private let airPlayRouteMonitor = MacAirPlayRouteMonitor()
 
@@ -580,6 +582,98 @@ public final class MacSystemControlService {
             ? L10n.tr("已显示桌面图标并重启 Finder", "Desktop icons shown (Finder restarted)", language: language)
             : L10n.tr("已隐藏桌面图标并重启 Finder", "Desktop icons hidden (Finder restarted)", language: language)
         return (true, title, detail)
+    }
+
+    // MARK: - Appearance & Night Shift Toggles
+
+    public func toggleAppearance(
+        language: AppLanguage = .system
+    ) -> (success: Bool, title: String, detail: String) {
+        Self.toggleGlobalAppearance(language: language)
+    }
+
+    public static func toggleGlobalAppearance(
+        language: AppLanguage = .system
+    ) -> (success: Bool, title: String, detail: String) {
+        let title = SystemQuickAction.toggleAppearance.title(in: language)
+        let outcome = MacAppearanceToggle.perform(
+            language: language,
+            readCurrent: { readGlobalInterfaceStyle() },
+            writeNext: { writeGlobalInterfaceStyle($0) },
+            postThemeChangedNotification: {
+                DistributedNotificationCenter.default().postNotificationName(
+                    Notification.Name(MacAppearanceToggle.themeChangedNotificationName),
+                    object: nil,
+                    userInfo: nil,
+                    deliverImmediately: true
+                )
+            },
+            readBack: { readGlobalInterfaceStyle() }
+        )
+        return (outcome.success, title, outcome.detail)
+    }
+
+    private static func readGlobalInterfaceStyle() -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+        process.arguments = ["read", "-g", MacAppearanceToggle.interfaceStyleKey]
+        let outPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            let data = outPipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            guard process.terminationStatus == 0,
+                  let text = String(data: data, encoding: .utf8) else {
+                return nil
+            }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        } catch {
+            return nil
+        }
+    }
+
+    private static func writeGlobalInterfaceStyle(_ nextValue: String?) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+        if let nextValue {
+            process.arguments = ["write", "-g", MacAppearanceToggle.interfaceStyleKey, "-string", nextValue]
+        } else {
+            process.arguments = ["delete", "-g", MacAppearanceToggle.interfaceStyleKey]
+        }
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return false
+        }
+
+        _ = CFPreferencesAppSynchronize(kCFPreferencesAnyApplication)
+        if process.terminationStatus == 0 {
+            return true
+        }
+        if nextValue == nil {
+            return readGlobalInterfaceStyle() == nil
+        }
+        return false
+    }
+
+    public func toggleNightShift(
+        language: AppLanguage = .system
+    ) -> (success: Bool, title: String, detail: String) {
+        let title = SystemQuickAction.toggleNightShift.title(in: language)
+        let outcome = MacNightShiftToggle.perform(
+            language: language,
+            isSupported: { nightShiftBridge.isSupported() },
+            readStatus: { nightShiftBridge.readStatus() },
+            writeEnabled: { nightShiftBridge.setEnabled($0) }
+        )
+        return (outcome.success, title, outcome.detail)
     }
 
     // MARK: - Round 8: Camera/Mic In Use, Wi-Fi SSID, Empty Trash & Eject External Disks
@@ -3105,6 +3199,103 @@ private final class DisplayBrightnessBridge {
             }
         }
         return succeeded
+    }
+}
+
+// MARK: - macOS 13+ Night Shift Bridge (CoreBrightness Dictionary Lookup + Read-Back)
+
+private final class NightShiftBridge {
+    private let blueLightClass: NSObject.Type?
+    private let brightnessSystemClass: NSObject.Type?
+    private var blueLightClient: NSObject?
+    private var brightnessSystemClient: NSObject?
+
+    init() {
+        guard dlopen("/System/Library/PrivateFrameworks/CoreBrightness.framework/CoreBrightness", RTLD_LAZY) != nil else {
+            self.blueLightClass = nil
+            self.brightnessSystemClass = nil
+            return
+        }
+        self.blueLightClass = NSClassFromString("CBBlueLightClient") as? NSObject.Type
+        self.brightnessSystemClass = NSClassFromString("BrightnessSystemClient") as? NSObject.Type
+    }
+
+    func isSupported() -> Bool {
+        guard let blueLightClass, brightnessSystemClass != nil else { return false }
+        let selector = NSSelectorFromString("supportsBlueLightReduction")
+        guard (blueLightClass as AnyObject).responds(to: selector),
+              let method = class_getClassMethod(blueLightClass, selector),
+              let rawEncoding = method_getTypeEncoding(method) else {
+            return false
+        }
+        let encoding = String(cString: rawEncoding)
+        let imp = method_getImplementation(method)
+        if encoding.hasPrefix("B") {
+            typealias SupportsBoolFn = @convention(c) (AnyClass, Selector) -> Bool
+            return unsafeBitCast(imp, to: SupportsBoolFn.self)(blueLightClass, selector)
+        }
+        if encoding.hasPrefix("c") {
+            typealias SupportsCharFn = @convention(c) (AnyClass, Selector) -> Int8
+            return unsafeBitCast(imp, to: SupportsCharFn.self)(blueLightClass, selector) != 0
+        }
+        return false
+    }
+
+    func readStatus() -> MacNightShiftToggle.StatusSnapshot? {
+        guard let brightnessSystemClass else { return nil }
+        let client: NSObject
+        if let existing = brightnessSystemClient {
+            client = existing
+        } else {
+            let created = brightnessSystemClass.init()
+            brightnessSystemClient = created
+            client = created
+        }
+
+        let selector = NSSelectorFromString("copyPropertyForKey:")
+        guard client.responds(to: selector),
+              let method = class_getInstanceMethod(brightnessSystemClass, selector),
+              let rawEncoding = method_getTypeEncoding(method),
+              String(cString: rawEncoding).hasPrefix("@") else {
+            return nil
+        }
+
+        typealias CopyPropertyFn = @convention(c) (AnyObject, Selector, CFString) -> Unmanaged<AnyObject>?
+        let fn = unsafeBitCast(method_getImplementation(method), to: CopyPropertyFn.self)
+        let dictionary = fn(client, selector, "CBBlueReductionStatus" as CFString)?
+            .takeRetainedValue() as? [String: Any]
+        return MacNightShiftToggle.parseStatusDictionary(dictionary)
+    }
+
+    func setEnabled(_ enabled: Bool) -> Bool {
+        guard let blueLightClass else { return false }
+        let client: NSObject
+        if let existing = blueLightClient {
+            client = existing
+        } else {
+            let created = blueLightClass.init()
+            blueLightClient = created
+            client = created
+        }
+
+        let selector = NSSelectorFromString("setEnabled:")
+        guard client.responds(to: selector),
+              let method = class_getInstanceMethod(blueLightClass, selector),
+              let rawEncoding = method_getTypeEncoding(method) else {
+            return false
+        }
+
+        let encoding = String(cString: rawEncoding)
+        let imp = method_getImplementation(method)
+        if encoding.hasPrefix("B"), encoding.contains("B16") {
+            typealias SetBoolFn = @convention(c) (AnyObject, Selector, Bool) -> Bool
+            return unsafeBitCast(imp, to: SetBoolFn.self)(client, selector, enabled)
+        }
+        if encoding.hasPrefix("c"), encoding.contains("c16") {
+            typealias SetCharFn = @convention(c) (AnyObject, Selector, Int8) -> Int8
+            return unsafeBitCast(imp, to: SetCharFn.self)(client, selector, enabled ? 1 : 0) != 0
+        }
+        return false
     }
 }
 

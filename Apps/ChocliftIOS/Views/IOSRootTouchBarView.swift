@@ -427,6 +427,8 @@ public struct IOSRootTouchBarView: View {
                     }
                     toolsRow(L10n.tr("降低亮度", "Brightness Down", language: lang), "sun.min") { client.setControlLevel(kind: .brightness, level: client.controlStripState.brightness - 0.1) }
                     toolsRow(L10n.tr("提高亮度", "Brightness Up", language: lang), "sun.max") { client.setControlLevel(kind: .brightness, level: client.controlStripState.brightness + 0.1) }
+                    toolsRow(SystemQuickAction.toggleAppearance.title(in: lang), SystemQuickAction.toggleAppearance.sfSymbol) { client.performQuickAction(.toggleAppearance) }
+                    toolsRow(SystemQuickAction.toggleNightShift.title(in: lang), SystemQuickAction.toggleNightShift.sfSymbol) { client.performQuickAction(.toggleNightShift) }
                     toolsRow(L10n.tr("麦克风静音", "Toggle Microphone Mute", language: lang), "mic.slash") { client.toggleMicMute() }
                 }
                 toolsSection(L10n.tr("日历与截屏", "Calendar & Screenshots", language: lang)) {
