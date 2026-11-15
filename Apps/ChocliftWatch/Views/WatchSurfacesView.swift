@@ -1189,11 +1189,13 @@ public struct WatchQuickActionsView: View {
         .maximizeWindow, .minimizeWindow,
         .snapWindowLeft, .snapWindowRight,
         .centerWindow, .toggleFullscreen,
-        .moveWindowToNextDisplay
+        .moveWindowToNextDisplay,
+        .closeFrontmostWindow, .newFrontmostWindow
     ]
 
     private let workspaceActions: [SystemQuickAction] = [
         .missionControl, .showDesktop,
+        .toggleLaunchpad, .toggleNotificationCenter,
         .copySelection, .pasteClipboard,
         .undoAction, .screenshotInteractive,
         .openEmojiPicker, .lockScreen,

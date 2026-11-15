@@ -93,6 +93,10 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case quitApp = "quit_app"
     case openEmojiPicker = "open_emoji_picker"
     case moveWindowToNextDisplay = "move_window_to_next_display"
+    case closeFrontmostWindow = "close_frontmost_window"
+    case newFrontmostWindow = "new_frontmost_window"
+    case toggleLaunchpad = "toggle_launchpad"
+    case toggleNotificationCenter = "toggle_notification_center"
 
     public var id: String { rawValue }
 
@@ -125,16 +129,20 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .quitApp: return "xmark.octagon.fill"
         case .openEmojiPicker: return "face.smiling.inverse"
         case .moveWindowToNextDisplay: return "display.2"
+        case .closeFrontmostWindow: return "xmark.square.fill"
+        case .newFrontmostWindow: return "macwindow.badge.plus"
+        case .toggleLaunchpad: return "square.grid.3x3.fill"
+        case .toggleNotificationCenter: return "bell.badge.fill"
         }
     }
 
     public var accentHex: String {
         switch self {
-        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow, .moveWindowToNextDisplay:
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow, .moveWindowToNextDisplay, .closeFrontmostWindow, .newFrontmostWindow:
             return "#EDF6FF"
         case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
             return "#F3EEFF"
-        case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker:
+        case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker, .toggleLaunchpad, .toggleNotificationCenter:
             return "#FFF1EC"
         case .mediaPlayPause, .mediaNext, .mediaPrevious, .volumeUp, .volumeDown, .volumeMute:
             return "#ECFAEE"
@@ -143,7 +151,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public var isWindowAction: Bool {
         switch self {
-        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay:
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay, .closeFrontmostWindow:
             return true
         default:
             return false
@@ -173,7 +181,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return true
         }
         switch self {
-        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp, .switchToNextWindow, .switchToPreviousWindow:
+        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp, .switchToNextWindow, .switchToPreviousWindow, .newFrontmostWindow:
             return true
         default:
             return false
@@ -186,6 +194,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         switch self {
         case .switchToNextWindow: return "⌘`"
         case .switchToPreviousWindow: return "⇧⌘`"
+        case .newFrontmostWindow:
+            return "⌘N"
         case .copySelection:
             return "⌘C"
         case .pasteClipboard:
@@ -204,7 +214,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
              .centerWindow, .toggleFullscreen, .missionControl, .showDesktop,
              .screenshotInteractive, .mediaPlayPause, .mediaNext, .mediaPrevious,
              .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca,
-             .moveWindowToNextDisplay:
+             .moveWindowToNextDisplay, .closeFrontmostWindow, .toggleLaunchpad,
+             .toggleNotificationCenter:
             return nil
         }
     }
@@ -238,6 +249,10 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .quitApp: return L10n.tr("退出当前应用", "Quit Application", language: lang)
         case .openEmojiPicker: return L10n.tr("系统表情面板", "macOS Emoji Panel", language: lang)
         case .moveWindowToNextDisplay: return L10n.tr("窗口移至下一显示器", "Move Window to Next Display", language: lang)
+        case .closeFrontmostWindow: return L10n.tr("关闭当前窗口", "Close Window", language: lang)
+        case .newFrontmostWindow: return L10n.tr("新建窗口", "New Window", language: lang)
+        case .toggleLaunchpad: return L10n.tr("启动台", "Launchpad", language: lang)
+        case .toggleNotificationCenter: return L10n.tr("通知中心", "Notification Center", language: lang)
         }
     }
 
@@ -270,12 +285,17 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .quitApp: return L10n.tr("退出", "Quit", language: lang)
         case .openEmojiPicker: return L10n.tr("表情框", "Emoji", language: lang)
         case .moveWindowToNextDisplay: return L10n.tr("下一屏幕", "Next Display", language: lang)
+        case .closeFrontmostWindow: return L10n.tr("关闭窗口", "Close Window", language: lang)
+        case .newFrontmostWindow: return L10n.tr("新建窗口", "New Window", language: lang)
+        case .toggleLaunchpad: return L10n.tr("启动台", "Launchpad", language: lang)
+        case .toggleNotificationCenter: return L10n.tr("通知中心", "Notifications", language: lang)
         }
     }
 
     public static let windowLayoutSlotActions: [SystemQuickAction] = [
         .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
-        .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay
+        .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay,
+        .closeFrontmostWindow, .newFrontmostWindow
     ]
 
     public static func slotActionSections(
@@ -301,7 +321,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             ),
             (
                 L10n.tr("桌面与系统控制", "Workspace & System", language: lang),
-                [.missionControl, .showDesktop, .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp]
+                [.missionControl, .showDesktop, .toggleLaunchpad, .toggleNotificationCenter, .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp]
             )
         ]
     }

@@ -468,7 +468,108 @@ public final class MacInputAndMediaService {
                 NSApp.orderFrontCharacterPalette(nil)
             }
             return (true, L10n.tr("已打开表情面板", "Opened Emoji Palette"))
+
+        case .closeFrontmostWindow:
+            return windowService.closeFrontmostWindow(preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+
+        case .newFrontmostWindow:
+            return openNewFrontmostWindow(preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+
+        case .toggleLaunchpad:
+            return toggleLaunchpad()
+
+        case .toggleNotificationCenter:
+            return toggleNotificationCenter()
         }
+    }
+
+    public func openNewFrontmostWindow(
+        preferredPID: pid_t?,
+        strictTargetPID: Bool = false
+    ) -> (success: Bool, message: String) {
+        guard ensureAccessibilityOrPrompt() else {
+            return accessibilityDeniedResult()
+        }
+        guard let targetApp = resolveNonSelfTargetForKeystroke(preferredPID, strict: strictTargetPID) else {
+            return strictTargetPID
+                ? missingStrictTargetResult()
+                : (false, L10n.tr("当前没有可新建窗口的前台应用", "No frontmost application available for New Window"))
+        }
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier != targetApp.processIdentifier {
+            targetApp.activate(options: [.activateAllWindows])
+            RunLoop.current.run(until: Date().addingTimeInterval(0.04))
+        }
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier != myPID else {
+            return (false, L10n.tr("当前没有可新建窗口的前台应用", "No frontmost application available for New Window"))
+        }
+        postKeyStroke(virtualKey: CGKeyCode(kVK_ANSI_N), flags: .maskCommand)
+        let name = targetApp.localizedName ?? targetApp.bundleIdentifier ?? "App"
+        return (true, L10n.tr("已在 \(name) 新建窗口 (⌘N)", "Opened new window in \(name) (⌘N)"))
+    }
+
+    public func toggleLaunchpad() -> (success: Bool, message: String) {
+        let candidatePaths = [
+            "/System/Applications/Launchpad.app",
+            "/System/Applications/Apps.app"
+        ]
+        for path in candidatePaths where FileManager.default.fileExists(atPath: path) {
+            let url = URL(fileURLWithPath: path)
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            return (true, L10n.tr("已切换启动台", "Toggled Launchpad"))
+        }
+        guard ensureAccessibilityOrPrompt() else {
+            return accessibilityDeniedResult()
+        }
+        postKeyStroke(virtualKey: CGKeyCode(0x83), flags: [])
+        return (true, L10n.tr("已切换启动台", "Toggled Launchpad"))
+    }
+
+    public func toggleNotificationCenter() -> (success: Bool, message: String) {
+        if windowService.pressNotificationCenterMenuBarClock() {
+            return (true, L10n.tr("已切换通知中心", "Toggled Notification Center"))
+        }
+        let notificationCenterPath = "/System/Library/CoreServices/NotificationCenter.app"
+        if FileManager.default.fileExists(atPath: notificationCenterPath) {
+            let url = URL(fileURLWithPath: notificationCenterPath)
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            return (true, L10n.tr("已切换通知中心", "Toggled Notification Center"))
+        }
+        _ = windowService.promptForAccessibilityPermission()
+        return accessibilityDeniedResult()
+    }
+
+    private func resolveNonSelfTargetForKeystroke(_ preferredPID: pid_t?, strict: Bool) -> NSRunningApplication? {
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let selfBundleID = Bundle.main.bundleIdentifier
+        func isEligible(_ app: NSRunningApplication) -> Bool {
+            guard !app.isTerminated,
+                  app.processIdentifier != myPID,
+                  app.bundleIdentifier != "com.apple.loginwindow" else {
+                return false
+            }
+            if let selfBundleID, app.bundleIdentifier == selfBundleID {
+                return false
+            }
+            return true
+        }
+        if strict {
+            guard let preferredPID,
+                  let app = NSRunningApplication(processIdentifier: preferredPID),
+                  isEligible(app) else {
+                return nil
+            }
+            return app
+        }
+        if let front = NSWorkspace.shared.frontmostApplication, isEligible(front) {
+            return front
+        }
+        if let preferredPID,
+           let app = NSRunningApplication(processIdentifier: preferredPID),
+           isEligible(app) {
+            return app
+        }
+        return nil
     }
 
     // MARK: - Compact Key Row (Arrows, Escape, Space — Existing Input Path)

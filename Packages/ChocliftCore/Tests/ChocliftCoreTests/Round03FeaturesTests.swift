@@ -220,6 +220,7 @@ final class Round03FeaturesTests: XCTestCase {
         let expectedShortcuts: [SystemQuickAction: String] = [
             .switchToNextWindow: "⌘`",
             .switchToPreviousWindow: "⇧⌘`",
+            .newFrontmostWindow: "⌘N",
             .copySelection: "⌘C",
             .pasteClipboard: "⌘V",
             .cutSelection: "⌘X",

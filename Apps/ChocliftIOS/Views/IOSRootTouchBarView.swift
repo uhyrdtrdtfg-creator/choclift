@@ -439,10 +439,22 @@ public struct IOSRootTouchBarView: View {
                     toolsRow(client.isLockMacScreenArmed() ? L10n.tr("再点一次锁定", "Tap Again to Lock", language: lang) : L10n.tr("锁定屏幕", "Lock Screen", language: lang), "lock") { _ = client.tapLockMacScreen() }
                 }
                 toolsSection(L10n.tr("桌面与窗口", "Desktop & Windows", language: lang)) {
+                    toolsRow(SystemQuickAction.closeFrontmostWindow.title(in: lang), SystemQuickAction.closeFrontmostWindow.sfSymbol) {
+                        client.performQuickAction(.closeFrontmostWindow)
+                    }
+                    toolsRow(SystemQuickAction.newFrontmostWindow.title(in: lang), SystemQuickAction.newFrontmostWindow.sfSymbol) {
+                        client.performQuickAction(.newFrontmostWindow)
+                    }
                     toolsRow(SystemQuickAction.quitApp.title(in: lang), SystemQuickAction.quitApp.sfSymbol) {
                         client.tapQuitFrontmostApp()
                     }
                     toolsRow(L10n.tr("显示桌面", "Show Desktop", language: lang), "macwindow") { client.performQuickAction(.showDesktop) }
+                    toolsRow(SystemQuickAction.toggleLaunchpad.title(in: lang), SystemQuickAction.toggleLaunchpad.sfSymbol) {
+                        client.performQuickAction(.toggleLaunchpad)
+                    }
+                    toolsRow(SystemQuickAction.toggleNotificationCenter.title(in: lang), SystemQuickAction.toggleNotificationCenter.sfSymbol) {
+                        client.performQuickAction(.toggleNotificationCenter)
+                    }
                     toolsRow(L10n.tr("桌面图标", "Toggle Desktop Icons", language: lang), "square.grid.2x2") { client.toggleFinderDesktopIcons() }
                     toolsRow(L10n.tr("隐藏其他窗口", "Hide Other Windows", language: lang), "rectangle.on.rectangle") { client.hideOtherWindows() }
                     toolsRow(L10n.tr("撤销窗口移动", "Undo Window Move", language: lang), "arrow.uturn.backward") { client.undoLastWindowMove() }

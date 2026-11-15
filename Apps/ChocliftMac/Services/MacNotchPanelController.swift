@@ -663,7 +663,7 @@ public final class MacNotchPanelController {
             }
             if case .systemAction(let action, _, _) = concreteItem.kind {
                 switch action {
-                case .screenshotInteractive, .missionControl, .showDesktop, .lockScreen, .toggleFullscreen:
+                case .screenshotInteractive, .missionControl, .showDesktop, .lockScreen, .toggleFullscreen, .toggleLaunchpad, .toggleNotificationCenter:
                     return true
                 default:
                     return false
