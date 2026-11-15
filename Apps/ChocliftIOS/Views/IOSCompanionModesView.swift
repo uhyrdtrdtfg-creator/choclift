@@ -1601,6 +1601,47 @@ private struct IOSSnippetEditorSheet: View {
                             .foregroundStyle(palette.primaryText)
                             .frame(minHeight: 150)
                         }
+
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(SnippetPlaceholderToken.allCases) { placeholder in
+                                    let canAppend = bodyText.count + placeholder.rawValue.count <= TextSnippet.maxBodyLength
+                                    Button {
+                                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                        bodyText = SnippetPlaceholderExpander.appendToken(placeholder, to: bodyText)
+                                    } label: {
+                                        Text(placeholder.rawValue)
+                                            .font(ChocType.micro.monospaced())
+                                            .foregroundStyle(canAppend ? palette.primaryText : palette.secondaryText.opacity(0.5))
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 6)
+                                            .background(palette.tileFillBottom, in: Capsule())
+                                            .overlay(
+                                                Capsule()
+                                                    .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                                            )
+                                            .contentShape(Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .disabled(!canAppend)
+                                    .accessibilityIdentifier("ios-snippet-token-\(placeholder.name)")
+                                }
+                            }
+                            .padding(.vertical, 2)
+                        }
+
+                        let previewLine = SnippetPlaceholderExpander.preview(bodyText)
+                        HStack(spacing: 6) {
+                            Text(L10n.tr("今日预览：", "Preview:", language: lang))
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.secondaryText)
+                            Text(previewLine.isEmpty ? "—" : previewLine)
+                                .font(ChocType.micro)
+                                .foregroundStyle(previewLine.isEmpty ? palette.secondaryText : palette.primaryText)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+                        .accessibilityIdentifier("ios-snippet-expansion-preview")
                     } header: {
                         HStack {
                             Text(L10n.tr("片段内容", "Snippet Body", language: lang))
