@@ -400,6 +400,8 @@ public struct DevicesAndSettingsView: View {
 
                         pairedDevicesCard
 
+                        MacCompanionHotkeysCard(coordinator: coordinator)
+
                         appearanceAndPreferencesCard
                     }
                     .frame(maxWidth: .infinity)
