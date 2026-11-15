@@ -528,6 +528,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
     public var ejectableExternalVolumeCount: Int
     /// Read-only display name of the frontmost Mac app (`nil` before sync or when none).
     public var frontmostAppName: String?
+    /// Shared desk countdown timer state synced from Mac to connected companions.
+    public var deskTimer: DeskTimerState
 
     private enum CodingKeys: String, CodingKey {
         case volume
@@ -553,6 +555,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         case wifiSSID
         case ejectableExternalVolumeCount
         case frontmostAppName
+        case deskTimer
     }
 
     public init(
@@ -578,7 +581,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         privacyCapture: MacPrivacyCaptureStatus = .inactive,
         wifiSSID: String? = nil,
         ejectableExternalVolumeCount: Int = 0,
-        frontmostAppName: String? = nil
+        frontmostAppName: String? = nil,
+        deskTimer: DeskTimerState = .idle
     ) {
         self.volume = ControlStripLevel.clamp(volume)
         self.isVolumeMuted = isVolumeMuted
@@ -611,7 +615,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.privacyCapture = privacyCapture
         self.wifiSSID = MacWiFiStatusFormatter.sanitizedSSID(wifiSSID)
         self.ejectableExternalVolumeCount = max(0, ejectableExternalVolumeCount)
-        self.frontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName)
+        self.deskTimer = deskTimer
+        self.frontmostAppName = FrontmostAppLabel.format(appName: frontmostAppName)
     }
 
     public init(from decoder: Decoder) throws {
@@ -660,9 +665,10 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         )
         let rawEjectableCount = try container.decodeIfPresent(Int.self, forKey: .ejectableExternalVolumeCount) ?? 0
         self.ejectableExternalVolumeCount = max(0, rawEjectableCount)
-        self.frontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(
-            try container.decodeIfPresent(String.self, forKey: .frontmostAppName)
+        self.frontmostAppName = FrontmostAppLabel.format(
+            appName: try container.decodeIfPresent(String.self, forKey: .frontmostAppName)
         )
+        self.deskTimer = try container.decodeIfPresent(DeskTimerState.self, forKey: .deskTimer) ?? .idle
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -713,7 +719,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         if ejectableExternalVolumeCount > 0 {
             try container.encode(max(0, ejectableExternalVolumeCount), forKey: .ejectableExternalVolumeCount)
         }
-        try container.encodeIfPresent(FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName), forKey: .frontmostAppName)
+        try container.encode(deskTimer, forKey: .deskTimer)
+        try container.encodeIfPresent(FrontmostAppLabel.format(appName: frontmostAppName), forKey: .frontmostAppName)
     }
 
     /// Current Wi-Fi SSID string, or `"Wi-Fi"` with no network name when unavailable.
@@ -839,7 +846,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             privacyCapture != other.privacyCapture ||
             MacWiFiStatusFormatter.sanitizedSSID(wifiSSID) != MacWiFiStatusFormatter.sanitizedSSID(other.wifiSSID) ||
             max(0, ejectableExternalVolumeCount) != max(0, other.ejectableExternalVolumeCount) ||
-            FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName) != FrontmostAppStripFormatter.sanitizedAppName(other.frontmostAppName) {
+            deskTimer != other.deskTimer ||
+            FrontmostAppLabel.format(appName: frontmostAppName) != FrontmostAppLabel.format(appName: other.frontmostAppName) {
             return true
         }
         if (volume <= 0.001) != (other.volume <= 0.001) ||

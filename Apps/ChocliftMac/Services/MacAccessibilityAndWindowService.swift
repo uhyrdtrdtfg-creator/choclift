@@ -24,7 +24,15 @@ public final class MacAccessibilityAndWindowService {
         let element: AXUIElement
     }
 
-    public var onUndoAvailabilityChanged: (() -> Void)?
+    public private(set) static weak var activeCoordinatorInstance: MacAccessibilityAndWindowService?
+
+    public var onUndoAvailabilityChanged: (() -> Void)? {
+        didSet {
+            if onUndoAvailabilityChanged != nil {
+                Self.activeCoordinatorInstance = self
+            }
+        }
+    }
     public var onDisplayConfigurationChanged: (() -> Void)?
     public private(set) var selectedTargetDisplayID: CGDirectDisplayID?
 
@@ -257,6 +265,130 @@ public final class MacAccessibilityAndWindowService {
         return OrcaSelection(text: text, appName: app.localizedName ?? "App")
     }
 
+    public enum FocusedSelectionPreviewError: Error, LocalizedError, Equatable {
+        case accessibilityDenied(String)
+        case secureElement(String)
+        case emptySelection(String)
+
+        public var errorDescription: String? {
+            switch self {
+            case .accessibilityDenied(let message),
+                 .secureElement(let message),
+                 .emptySelection(let message):
+                return message
+            }
+        }
+    }
+
+    /// Reads the focused element's AX selected text capped at 400 characters; never touches NSPasteboard,
+    /// never reads the full document value, and rejects secure password fields.
+    public func readFocusedSelectionPreview(
+        preferredPID: pid_t? = nil,
+        language: AppLanguage = .system
+    ) -> Result<String, FocusedSelectionPreviewError> {
+        guard AXIsProcessTrusted() else {
+            _ = promptForAccessibilityPermission()
+            return .failure(.accessibilityDenied(
+                L10n.tr("请在系统设置 → 辅助功能中授权 Choclift", "Grant Accessibility permission in System Settings", language: language)
+            ))
+        }
+
+        let noSelectionMessage = L10n.tr(
+            "当前没有选中的文本",
+            "No text selected in the focused element",
+            language: language
+        )
+        let secureFieldMessage = L10n.tr(
+            "出于安全保护，不支持复制密码或安全输入内容",
+            "Cannot copy passwords or secure input fields",
+            language: language
+        )
+
+        let selfPID = ProcessInfo.processInfo.processIdentifier
+        let targetApp: NSRunningApplication? = {
+            if let frontmost = NSWorkspace.shared.frontmostApplication,
+               frontmost.processIdentifier != selfPID,
+               !frontmost.isTerminated {
+                return frontmost
+            }
+            if let preferredPID,
+               preferredPID != selfPID,
+               let preferred = NSRunningApplication(processIdentifier: preferredPID),
+               !preferred.isTerminated {
+                return preferred
+            }
+            return nil
+        }()
+
+        guard let app = targetApp else {
+            return .failure(.emptySelection(noSelectionMessage))
+        }
+
+        if let bundleID = app.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+           bundleID == "com.choclift" || bundleID.hasPrefix("com.choclift.") {
+            return .failure(.emptySelection(noSelectionMessage))
+        }
+
+        if SelectionPreviewText.isSecureElement(role: nil, subrole: nil, bundleIdentifier: app.bundleIdentifier) {
+            return .failure(.secureElement(secureFieldMessage))
+        }
+
+        var focused: CFTypeRef?
+        let application = AXUIElementCreateApplication(app.processIdentifier)
+        guard AXUIElementCopyAttributeValue(application, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else {
+            return .failure(.emptySelection(noSelectionMessage))
+        }
+        let focusedElement = focused as! AXUIElement
+
+        if isSecureAXElement(focusedElement, bundleIdentifier: app.bundleIdentifier) {
+            return .failure(.secureElement(secureFieldMessage))
+        }
+
+        var selected: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(focusedElement, kAXSelectedTextAttribute as CFString, &selected) == .success,
+              let rawText = selected as? String,
+              let clamped = SelectionPreviewText.clamp(rawText) else {
+            return .failure(.emptySelection(noSelectionMessage))
+        }
+
+        return .success(clamped)
+    }
+
+    private func isSecureAXElement(_ element: AXUIElement, bundleIdentifier: String?) -> Bool {
+        var roleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef)
+        var subroleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subroleRef)
+
+        if SelectionPreviewText.isSecureElement(
+            role: roleRef as? String,
+            subrole: subroleRef as? String,
+            bundleIdentifier: bundleIdentifier
+        ) {
+            return true
+        }
+
+        var parentRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(element, kAXParentAttribute as CFString, &parentRef) == .success,
+           let parentRef, CFGetTypeID(parentRef) == AXUIElementGetTypeID() {
+            let parentElement = parentRef as! AXUIElement
+            var parentRoleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(parentElement, kAXRoleAttribute as CFString, &parentRoleRef)
+            var parentSubroleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(parentElement, kAXSubroleAttribute as CFString, &parentSubroleRef)
+            if SelectionPreviewText.isSecureElement(
+                role: parentRoleRef as? String,
+                subrole: parentSubroleRef as? String,
+                bundleIdentifier: nil
+            ) {
+                return true
+            }
+        }
+
+        return false
+    }
+
     // MARK: - Text Field Focus Detection & AX Direct Text Insertion
 
     public struct FocusedTextInputTarget {
@@ -423,6 +555,7 @@ public final class MacAccessibilityAndWindowService {
         case center
         case toggleFullscreen
         case moveToNextDisplay
+        case moveToPreviousDisplay
     }
 
     public func hasAdjustableWindow(forPID pid: pid_t) -> Bool {
@@ -615,6 +748,49 @@ public final class MacAccessibilityAndWindowService {
             case .failure(let err):
                 return (false, err.message())
             }
+
+        case .moveToPreviousDisplay:
+            let screens = NSScreen.screens
+            let screenDescriptors = screens.map {
+                WindowScreenDescriptor(frame: $0.frame, visibleFrame: $0.visibleFrame)
+            }
+            let currentFrame = readWindowQuartzFrame(windowElement)
+            let sizeSettable = isAttributeSettable(kAXSizeAttribute as String, on: windowElement)
+            let outcome = DisplayMoveCompanionExecution.execute(
+                id: DisplayMoveCompanionActionID.previousDisplay,
+                coordinator: &moveCoordinator,
+                windowID: windowKey,
+                appName: appDisplayName,
+                appKitScreens: screenDescriptors,
+                screenNames: screens.map(\.localizedName),
+                allowResize: sizeSettable,
+                readFrame: {
+                    readWindowQuartzFrameResult(windowElement)
+                },
+                writeFrame: { desiredFrame in
+                    switch writeWindowQuartzFrameResult(
+                        windowElement,
+                        frame: desiredFrame,
+                        applySize: sizeSettable,
+                        rollbackOrigin: currentFrame?.origin
+                    ) {
+                    case .success:
+                        return AXError.success.rawValue
+                    case .failure(let err):
+                        return err.code
+                    }
+                }
+            )
+            if outcome.success {
+                previousWindowFrames.removeValue(forKey: windowKey)
+                registerRetainedUndoTargetAfterMove(
+                    windowKey: windowKey,
+                    pid: app.processIdentifier,
+                    windowElement: windowElement,
+                    appName: appDisplayName
+                )
+            }
+            return (outcome.success, outcome.message)
 
         case .maximizeOrRestore, .snapLeft, .snapRight,
              .snapTopLeft, .snapTopRight, .snapBottomLeft, .snapBottomRight:

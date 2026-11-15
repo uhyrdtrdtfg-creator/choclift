@@ -121,6 +121,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     public let calendarService: MacCalendarEventService
     public let soundboardService: MacSoundboardService
     public let keepAwakeService: MacKeepAwakeService
+    public let deskTimerService: MacDeskTimerService
     public let updaterService: MacSparkleUpdaterService
     public private(set) var sentenceFlow: MacSentenceFlowController!
 
@@ -188,6 +189,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.calendarService = MacCalendarEventService()
         self.soundboardService = MacSoundboardService()
         self.keepAwakeService = MacKeepAwakeService()
+        self.deskTimerService = MacDeskTimerService()
         self.updaterService = MacSparkleUpdaterService()
         let loginSvc = MacLaunchAtLoginService()
         self.launchAtLoginService = loginSvc
@@ -208,6 +210,15 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.leftEdgePanelEnabled = UserDefaults.standard.object(forKey: Self.leftEdgePanelEnabledKey) as? Bool ?? false
 
         self.server.delegate = self
+        MacSelectionActionPack.configure(
+            windowService: winSvc,
+            languageProvider: { [weak self] in
+                self?.lang ?? .system
+            },
+            onSelectionPreviewCaptured: { [weak self] text, capturedAt in
+                self?.server.broadcast(.selectionPreview(text: text, capturedAt: capturedAt))
+            }
+        )
         self.sentenceFlow = MacSentenceFlowController(
             contextProvider: { [weak self] in
                 guard let self else { return ActionFlowProposalCatalogContext() }
@@ -266,8 +277,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         timeTravel.onFrontmostChanged = { [weak self] bundleID, appName in
             guard let self else { return }
-            self.systemControlService.syncFrontmostAppName(appName)
-            self.server.broadcast(.frontmostAppChanged(bundleIdentifier: bundleID, appName: appName))
+            let label = FrontmostAppLabel.format(appName: appName, bundleIdentifier: bundleID)
+            self.systemControlService.syncFrontmostAppName(label)
+            self.server.broadcast(.frontmostAppChanged(bundleIdentifier: bundleID, appName: label))
             self.refreshAndBroadcastFrontmostWindowsIfNeeded(force: true)
         }
 
@@ -277,7 +289,11 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         )
 
         systemControlService.frontmostAppNameProvider = { [weak self] in
-            self?.timeTravel.frontmostAppName
+            guard let self else { return nil }
+            return FrontmostAppLabel.format(
+                appName: self.timeTravel.frontmostAppName,
+                bundleIdentifier: self.timeTravel.frontmostBundleID
+            )
         }
 
         updaterService.languageProvider = { [weak self] in
@@ -320,6 +336,23 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         }
         systemControlService.keepMacAwakeProvider = { [weak self] in
             self?.keepAwakeService.isHoldingAssertion ?? false
+        }
+        deskTimerService.onStateChanged = { [weak self] timerState in
+            guard let self else { return }
+            self.systemControlService.syncDeskTimer(timerState)
+        }
+        deskTimerService.onCompleted = { [weak self] in
+            NSSound.beep()
+            guard let self else { return }
+            let minutes = max(1, self.deskTimerService.state.presetSeconds / 60)
+            self.recordActivity(
+                deviceName: "Mac",
+                summary: L10n.tr("计时器已到时（\(minutes) 分钟）", "Timer finished (\(minutes)m)", language: self.lang),
+                isSuccess: true
+            )
+        }
+        systemControlService.deskTimerProvider = { [weak self] in
+            self?.deskTimerService.state ?? .idle
         }
         systemControlService.canUndoWindowMoveProvider = { [weak self] in
             self?.windowService.canUndoLastWindowMove ?? false
@@ -391,6 +424,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
+                self?.timeTravel.handleSelfActivated()
                 self?.refreshLaunchAtLoginStatus()
             }
         }
@@ -611,7 +645,35 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         merged.sanitizePinnedClipboardItems(allowedTexts: allowedPinTexts)
         merged.hotkeys = CompanionHotkeyLibrary.sanitize(merged.hotkeys)
         merged.quadLayouts = QuadAppLayout.sanitize(merged.quadLayouts)
+        merged.watchPinnedBundleIDs = WatchPinnedApps.sanitize(merged.watchPinnedBundleIDs)
         return merged
+    }
+
+    @discardableResult
+    public func setWatchPinnedApps(
+        _ bundleIDs: [String],
+        triggeredBy deviceName: String = "Mac Studio"
+    ) -> (success: Bool, title: String, detail: String) {
+        let sectionTitle = L10n.tr("手表常用应用", "Watch Pinned Apps", language: lang)
+        let hasNonEmptyInput = bundleIDs.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let sanitized = WatchPinnedApps.sanitize(bundleIDs)
+        if hasNonEmptyInput && sanitized.isEmpty {
+            let detail = L10n.tr("不能固定 Choclift 自身", "Choclift itself cannot be pinned", language: lang)
+            recordActivity(deviceName: deviceName, summary: detail, isSuccess: false)
+            return (false, sectionTitle, detail)
+        }
+        mutateProfile({ draft in
+            draft.watchPinnedBundleIDs = sanitized
+        }, broadcastOriginDeviceID: nil)
+        let detail = sanitized.isEmpty
+            ? L10n.tr("已清空手表常用应用", "Cleared Watch pinned apps", language: lang)
+            : L10n.tr(
+                "已更新手表常用应用（\(sanitized.count)/\(WatchPinnedApps.maxCount)）",
+                "Updated Watch pinned apps (\(sanitized.count)/\(WatchPinnedApps.maxCount))",
+                language: lang
+            )
+        recordActivity(deviceName: deviceName, summary: detail, isSuccess: true)
+        return (true, sectionTitle, detail)
     }
 
     @discardableResult
@@ -641,7 +703,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             didSave = draft.hotkeys.contains(sanitized)
         }, broadcastOriginDeviceID: nil)
 
-        let resolvedTitle = sanitized.resolvedTitle(in: lang)
+        let resolvedTitle = sanitized.resolvedTitle(in: profile, language: lang)
         if didSave {
             let detail = L10n.tr(
                 "已保存 \(sanitized.displayLabel) → \(resolvedTitle)",
@@ -1005,15 +1067,39 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         let allowActivatePreferred = (deviceName == "Mac Studio") &&
             (NSWorkspace.shared.frontmostApplication?.processIdentifier == ProcessInfo.processInfo.processIdentifier)
-        let res = inputService.executeSnippet(
+        let res = insertSnippet(
             snippet.body,
             mode: snippet.insertMode,
             preferredPID: timeTravel.lastExternalAppPID,
-            allowActivatingPreferredPID: allowActivatePreferred,
-            language: lang
+            allowActivatingPreferredPID: allowActivatePreferred
         )
         recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
         return (res.success, snippet.displayTitle(in: lang), res.message)
+    }
+
+    public func insertSnippet(
+        _ text: String,
+        mode: SnippetInsertMode,
+        preferredPID: pid_t? = nil,
+        allowActivatingPreferredPID: Bool = false
+    ) -> (expandedText: String, success: Bool, didPerformAction: Bool, message: String) {
+        let clipboardText: String? = text.contains(SnippetPlaceholderToken.clipboard.rawValue)
+            ? clipboardService.currentInsertablePlainText()
+            : nil
+        let expanded = SnippetPlaceholderExpander.expand(
+            text,
+            now: Date(),
+            calendar: .current,
+            clipboard: clipboardText
+        )
+        let res = inputService.executeSnippet(
+            expanded,
+            mode: mode,
+            preferredPID: preferredPID ?? timeTravel.lastExternalAppPID,
+            allowActivatingPreferredPID: allowActivatingPreferredPID,
+            language: lang
+        )
+        return (expanded, res.success, res.didPerformAction, res.message)
     }
 
     // MARK: - Quad Layouts
@@ -1137,6 +1223,71 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         Task { @MainActor in
             let res = await runQuadLayout(id: id, triggeredBy: "Mac Studio")
             flashBanner(res.message)
+        }
+    }
+
+    // MARK: - Desk Timer
+
+    public func startDeskTimer(presetSeconds: Int, triggeredBy deviceName: String = "Mac Studio") {
+        deskTimerService.start(presetSeconds: presetSeconds)
+        systemControlService.syncDeskTimer(deskTimerService.state)
+        controlStripState = systemControlService.currentState
+        let formatted = DeskTimerState.formattedClock(seconds: deskTimerService.state.presetSeconds)
+        recordActivity(
+            deviceName: deviceName,
+            summary: L10n.tr("已启动计时器 \(formatted)", "Started timer \(formatted)", language: lang),
+            isSuccess: true
+        )
+    }
+
+    public func pauseDeskTimer(triggeredBy deviceName: String = "Mac Studio") {
+        guard deskTimerService.state.phase == .running else { return }
+        deskTimerService.pause()
+        systemControlService.syncDeskTimer(deskTimerService.state)
+        controlStripState = systemControlService.currentState
+        let formatted = DeskTimerState.formattedClock(seconds: deskTimerService.state.remainingSeconds)
+        recordActivity(
+            deviceName: deviceName,
+            summary: L10n.tr("已暂停计时器（剩余 \(formatted)）", "Paused timer (\(formatted) left)", language: lang),
+            isSuccess: true
+        )
+    }
+
+    public func resumeDeskTimer(triggeredBy deviceName: String = "Mac Studio") {
+        guard deskTimerService.state.phase == .paused else { return }
+        deskTimerService.resume()
+        systemControlService.syncDeskTimer(deskTimerService.state)
+        controlStripState = systemControlService.currentState
+        let formatted = DeskTimerState.formattedClock(seconds: deskTimerService.state.remainingSeconds)
+        recordActivity(
+            deviceName: deviceName,
+            summary: L10n.tr("已继续计时器（剩余 \(formatted)）", "Resumed timer (\(formatted) left)", language: lang),
+            isSuccess: true
+        )
+    }
+
+    public func resetDeskTimer(triggeredBy deviceName: String = "Mac Studio") {
+        let wasActive = deskTimerService.state.phase != .idle
+        deskTimerService.reset()
+        systemControlService.syncDeskTimer(deskTimerService.state)
+        controlStripState = systemControlService.currentState
+        if wasActive {
+            recordActivity(
+                deviceName: deviceName,
+                summary: L10n.tr("已重置计时器", "Reset timer", language: lang),
+                isSuccess: true
+            )
+        }
+    }
+
+    public func toggleDeskTimerRunPause(triggeredBy deviceName: String = "Mac Studio") {
+        switch deskTimerService.state.phase {
+        case .running:
+            pauseDeskTimer(triggeredBy: deviceName)
+        case .paused:
+            resumeDeskTimer(triggeredBy: deviceName)
+        case .idle:
+            startDeskTimer(presetSeconds: deskTimerService.state.presetSeconds, triggeredBy: deviceName)
         }
     }
 
@@ -1557,6 +1708,68 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         return result
     }
 
+    public func joinNextCalendarMeeting(
+        triggeredBy deviceName: String
+    ) -> (success: Bool, title: String, detail: String) {
+        let title = L10n.tr("加入会议", "Join Meeting", language: lang)
+        let expectedEvent = calendarSnapshot.nextEvent
+
+        guard let expectedEvent,
+              expectedEvent.hasJoinLink,
+              !calendarService.joinLinkCache.isEmpty else {
+            let detail = L10n.tr(
+                "当前日程没有可加入的会议链接",
+                "No meeting join link available for the next event",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: detail, isSuccess: false)
+            return (false, title, detail)
+        }
+
+        calendarService.refreshSnapshot(requestAccessIfUndetermined: false)
+        let refreshedEvent = calendarService.currentSnapshot.nextEvent
+
+        guard let currentEvent = refreshedEvent,
+              MeetingJoinEventKey(event: expectedEvent) == MeetingJoinEventKey(event: currentEvent) else {
+            let detail = L10n.tr(
+                "下一日程已变更，请确认后再试",
+                "Next calendar event changed — check your updated schedule",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: detail, isSuccess: false)
+            return (false, title, detail)
+        }
+
+        guard let url = calendarService.joinLinkCache.resolveJoinURL(
+            expectedEvent: expectedEvent,
+            currentEvent: currentEvent
+        ), url.scheme?.lowercased() == "https" else {
+            let detail = L10n.tr(
+                "会议链接已失效，请稍后重试",
+                "Meeting join link is no longer available",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: detail, isSuccess: false)
+            return (false, title, detail)
+        }
+
+        let opened = NSWorkspace.shared.open(url)
+        let providerLabel = currentEvent.joinProvider ?? "Link"
+        let detail = opened
+            ? L10n.tr(
+                "已在 Mac 打开 \(providerLabel) 会议",
+                "Joined \(providerLabel) meeting on Mac",
+                language: lang
+            )
+            : L10n.tr(
+                "无法在 Mac 打开 \(providerLabel) 会议链接",
+                "Could not open \(providerLabel) meeting link on Mac",
+                language: lang
+            )
+        recordActivity(deviceName: deviceName, summary: detail, isSuccess: opened)
+        return (opened, title, detail)
+    }
+
     private func scheduleControlStripRefreshIfRelevant(for action: SystemQuickAction, success: Bool) {
         guard success else { return }
         if action == .mediaPlayPause {
@@ -1857,16 +2070,15 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             ))
 
         case .insertSnippet(let text, let mode):
-            let res = inputService.executeSnippet(
+            let res = insertSnippet(
                 text,
                 mode: mode,
                 preferredPID: timeTravel.lastExternalAppPID,
-                allowActivatingPreferredPID: false,
-                language: lang
+                allowActivatingPreferredPID: false
             )
             guard res.didPerformAction || !res.message.isEmpty else { return }
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
-            let label = MacInputAndMediaService.previewLabel(for: text)
+            let label = MacInputAndMediaService.previewLabel(for: res.expandedText)
             reply(.actionFeedback(
                 success: res.success,
                 title: label.isEmpty ? L10n.tr("文本片段", "Snippet", language: lang) : label,
@@ -2015,6 +2227,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                     detail: result.message
                 ))
             }
+
+        case .joinNextCalendarMeeting:
+            let result = joinNextCalendarMeeting(triggeredBy: device.deviceName)
+            reply(.actionFeedback(
+                success: result.success,
+                title: result.title,
+                detail: result.detail
+            ))
 
         case .triggerSoundboardClip(let soundID):
             let result = playSoundClip(id: soundID, triggeredBy: device.deviceName)
@@ -2173,6 +2393,37 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: key.title(in: lang), detail: res.message))
 
+        case .pastePhoneClipboard(let text):
+            guard let clamped = PhoneClipboardPaste.clamp(text) else {
+                let emptyDetail = L10n.tr(
+                    "手机剪贴板为空",
+                    "iPhone clipboard is empty",
+                    language: lang
+                )
+                recordActivity(deviceName: device.deviceName, summary: emptyDetail, isSuccess: false)
+                reply(.actionFeedback(
+                    success: false,
+                    title: L10n.tr("粘贴手机剪贴板", "Paste iPhone Clipboard", language: lang),
+                    detail: emptyDetail
+                ))
+                return
+            }
+            let res = inputService.executeSnippet(
+                clamped,
+                mode: .focusedFieldInsert,
+                preferredPID: timeTravel.lastExternalAppPID,
+                allowActivatingPreferredPID: false,
+                language: lang
+            )
+            guard res.didPerformAction || !res.message.isEmpty else { return }
+            recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
+            let label = MacInputAndMediaService.previewLabel(for: clamped)
+            reply(.actionFeedback(
+                success: res.success,
+                title: label.isEmpty ? L10n.tr("粘贴手机剪贴板", "Paste iPhone Clipboard", language: lang) : label,
+                detail: res.message
+            ))
+
         case .performCompanionAction(let id):
             let action = CompanionActionCatalog.action(id: id)
             let res = MacCompanionActionRunner.run(id: id, preferredPID: timeTravel.lastExternalAppPID)
@@ -2204,6 +2455,37 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 let res = await runQuadLayout(id: id, triggeredBy: device.deviceName)
                 reply(.actionFeedback(success: res.success, title: res.title, detail: res.message))
             }
+
+        case .startDeskTimer(let presetSeconds):
+            let previousTimer = systemControlService.currentState.deskTimer
+            startDeskTimer(presetSeconds: presetSeconds, triggeredBy: device.deviceName)
+            if systemControlService.currentState.deskTimer == previousTimer {
+                reply(.controlStripStateUpdated(systemControlService.currentState))
+            }
+
+        case .pauseDeskTimer:
+            let previousTimer = systemControlService.currentState.deskTimer
+            pauseDeskTimer(triggeredBy: device.deviceName)
+            if systemControlService.currentState.deskTimer == previousTimer {
+                reply(.controlStripStateUpdated(systemControlService.currentState))
+            }
+
+        case .resumeDeskTimer:
+            let previousTimer = systemControlService.currentState.deskTimer
+            resumeDeskTimer(triggeredBy: device.deviceName)
+            if systemControlService.currentState.deskTimer == previousTimer {
+                reply(.controlStripStateUpdated(systemControlService.currentState))
+            }
+
+        case .resetDeskTimer:
+            let previousTimer = systemControlService.currentState.deskTimer
+            resetDeskTimer(triggeredBy: device.deviceName)
+            if systemControlService.currentState.deskTimer == previousTimer {
+                reply(.controlStripStateUpdated(systemControlService.currentState))
+            }
+        case .setWatchPinnedApps(let bundleIDs):
+            let res = setWatchPinnedApps(bundleIDs, triggeredBy: device.deviceName)
+            reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
 
         case .seekNowPlaying(let positionSeconds):
             let res = seekNowPlaying(
@@ -2256,7 +2538,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 (safeProfile.soundboardClips == updatedProfile.soundboardClips) &&
                 (safeProfile.pinnedClipboardItems == updatedProfile.pinnedClipboardItems) &&
                 (safeProfile.hotkeys == updatedProfile.hotkeys) &&
-                (safeProfile.quadLayouts == updatedProfile.quadLayouts)
+                (safeProfile.quadLayouts == updatedProfile.quadLayouts) &&
+                (safeProfile.watchPinnedBundleIDs == updatedProfile.watchPinnedBundleIDs)
             let originToExclude = isUnchangedBySanitizer ? device.deviceID : nil
             applyAndSaveProfile(safeProfile, broadcastOriginDeviceID: originToExclude)
             recordActivity(
@@ -2484,12 +2767,11 @@ private final class MacCoordinatorFlowDriver: ActionFlowDriver {
             RunLoop.current.run(until: Date().addingTimeInterval(0.06))
         }
 
-        let res = coordinator.inputService.executeSnippet(
+        let res = coordinator.insertSnippet(
             snippet.body,
             mode: snippet.insertMode,
             preferredPID: effectivePID,
-            allowActivatingPreferredPID: chocliftIsFrontmost,
-            language: lang
+            allowActivatingPreferredPID: chocliftIsFrontmost
         )
         if res.success {
             return (true, res.message)

@@ -921,9 +921,18 @@ public final class MacServerEngine: ObservableObject {
                  .deleteCompanionHotkey,
                  .upsertQuadLayout,
                  .deleteQuadLayout,
-                 .runQuadLayout:
+                 .runQuadLayout,
+                 .startDeskTimer,
+                 .pauseDeskTimer,
+                 .resumeDeskTimer,
+                 .resetDeskTimer,
+                 .setWatchPinnedApps:
                 session.supportsControlStrip = true
-            case .requestCompanionDashboard, .pasteMacClipboard, .captureMainDisplayScreenshot, .openCalendarApp:
+            case .requestCompanionDashboard,
+                 .pasteMacClipboard,
+                 .captureMainDisplayScreenshot,
+                 .openCalendarApp,
+                 .joinNextCalendarMeeting:
                 session.supportsCompanionDashboard = true
             case .requestFrontmostAppWindows, .raiseFrontmostWindow:
                 session.supportsFrontmostWindowList = true

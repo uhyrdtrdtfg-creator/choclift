@@ -23,7 +23,7 @@ final class CompanionHotkeyTests: XCTestCase {
         XCTAssertTrue(writtenArray.isEmpty)
     }
 
-    func testSanitizeDropsUnknownActionsModifierlessZeroKeyCodeDuplicatesAndCapsAtEight() {
+    func testSanitizeDropsUnknownActionsModifierlessDisallowedKeyCodeDuplicatesAndCapsAtEight() {
         let cmd = CompanionHotkeyModifiers.command
         let opt = CompanionHotkeyModifiers.option
         let ctrl = CompanionHotkeyModifiers.control
@@ -36,8 +36,9 @@ final class CompanionHotkeyTests: XCTestCase {
             CompanionHotkey(keyCode: 0x28, carbonModifiers: cmd, actionID: "unknown.not_real", title: "Bad"),
             // No modifier -> dropped
             CompanionHotkey(keyCode: 0x28, carbonModifiers: 0, actionID: SystemQuickAction.lockScreen.rawValue, title: "NoMod"),
-            // keyCode 0 -> dropped
-            CompanionHotkey(keyCode: 0, carbonModifiers: cmd, actionID: SystemQuickAction.lockScreen.rawValue, title: "ZeroKey"),
+            // Disallowed keyCode (modifier / out-of-range) -> dropped
+            CompanionHotkey(keyCode: 0x37, carbonModifiers: cmd, actionID: SystemQuickAction.lockScreen.rawValue, title: "ModifierKey"),
+            CompanionHotkey(keyCode: 0xFFFF, carbonModifiers: cmd, actionID: SystemQuickAction.lockScreen.rawValue, title: "InvalidKey"),
             // Valid #1 (kept first)
             CompanionHotkey(id: firstValidID, keyCode: 0x28, carbonModifiers: cmd | opt, actionID: SystemQuickAction.lockScreen.rawValue, title: "Lock First"),
             // Duplicate chord of Valid #1 -> dropped (first kept)
@@ -65,8 +66,157 @@ final class CompanionHotkeyTests: XCTestCase {
         XCTAssertEqual(sanitized.first?.id, firstValidID)
         XCTAssertEqual(sanitized.first?.title, "Lock First")
         XCTAssertFalse(sanitized.contains { $0.id == duplicateSecondID })
-        XCTAssertFalse(sanitized.contains { $0.keyCode == 0 })
+        XCTAssertFalse(sanitized.contains { $0.keyCode == 0x37 || $0.keyCode == 0xFFFF })
         XCTAssertEqual(sanitized.last?.keyCode, keyCodes[6])
+    }
+
+    func testKeyAWithCommandOptionIsAcceptedAndNoModifierOrShiftOnlyIsRejected() {
+        XCTAssertTrue(CompanionHotkeyLibrary.isAllowedKeyCode(0))
+        XCTAssertTrue(
+            CompanionHotkeyLibrary.pickerKeyOptions.contains(
+                CompanionHotkeyKeyOption(keyCode: 0x00, label: "A", category: .letters)
+            )
+        )
+        for option in CompanionHotkeyLibrary.pickerKeyOptions {
+            XCTAssertTrue(CompanionHotkeyLibrary.isAllowedKeyCode(option.keyCode))
+        }
+
+        let cmdOptA = CompanionHotkey(
+            keyCode: 0x00,
+            carbonModifiers: CompanionHotkeyModifiers.command | CompanionHotkeyModifiers.option,
+            actionID: SystemQuickAction.lockScreen.rawValue,
+            title: "Lock via A"
+        )
+        let bareA = CompanionHotkey(
+            keyCode: 0x00,
+            carbonModifiers: 0,
+            actionID: SystemQuickAction.lockScreen.rawValue,
+            title: "No Mod A"
+        )
+        let shiftOnlyA = CompanionHotkey(
+            keyCode: 0x00,
+            carbonModifiers: CompanionHotkeyModifiers.shift,
+            actionID: SystemQuickAction.lockScreen.rawValue,
+            title: "Shift Only A"
+        )
+
+        let sanitized = CompanionHotkeyLibrary.sanitize([bareA, shiftOnlyA, cmdOptA])
+        XCTAssertEqual(sanitized, [cmdOptA])
+        XCTAssertEqual(cmdOptA.displayLabel, "⌥⌘A")
+    }
+
+    func testFlowAndQuadActionIDsSurviveSanitizeMalformedPrefixesDroppedAndCatalogIDsStillWork() {
+        let cmdOpt = CompanionHotkeyModifiers.command | CompanionHotkeyModifiers.option
+        let flowUUID = UUID()
+        let quadUUID = UUID()
+
+        let validFlowHotkey = CompanionHotkey(
+            keyCode: 0x00,
+            carbonModifiers: cmdOpt,
+            actionID: "flow:\(flowUUID.uuidString)",
+            title: "Morning Flow"
+        )
+        let validQuadHotkey = CompanionHotkey(
+            keyCode: 0x0B,
+            carbonModifiers: cmdOpt,
+            actionID: "quad:\(quadUUID.uuidString.lowercased())",
+            title: "Dev Quad"
+        )
+        let validCatalogHotkey = CompanionHotkey(
+            keyCode: 0x08,
+            carbonModifiers: cmdOpt,
+            actionID: "files.open_desktop",
+            title: "Open Desktop"
+        )
+        let validQuickActionHotkey = CompanionHotkey(
+            keyCode: 0x02,
+            carbonModifiers: cmdOpt,
+            actionID: SystemQuickAction.maximizeWindow.rawValue,
+            title: "Maximize"
+        )
+
+        let badFlowUUID = CompanionHotkey(
+            keyCode: 0x0E,
+            carbonModifiers: cmdOpt,
+            actionID: "flow:not-a-uuid",
+            title: "Bad Flow"
+        )
+        let badQuadUUID = CompanionHotkey(
+            keyCode: 0x03,
+            carbonModifiers: cmdOpt,
+            actionID: "quad:not-a-uuid",
+            title: "Bad Quad"
+        )
+        let emptyFlowPrefix = CompanionHotkey(
+            keyCode: 0x05,
+            carbonModifiers: cmdOpt,
+            actionID: "flow:",
+            title: "Empty Flow"
+        )
+        let wrongCasePrefix = CompanionHotkey(
+            keyCode: 0x04,
+            carbonModifiers: cmdOpt,
+            actionID: "FLOW:\(UUID().uuidString)",
+            title: "Uppercase Prefix"
+        )
+
+        let sanitized = CompanionHotkeyLibrary.sanitize([
+            badFlowUUID,
+            badQuadUUID,
+            emptyFlowPrefix,
+            wrongCasePrefix,
+            validFlowHotkey,
+            validQuadHotkey,
+            validCatalogHotkey,
+            validQuickActionHotkey
+        ])
+
+        XCTAssertEqual(
+            sanitized,
+            [validFlowHotkey, validQuadHotkey, validCatalogHotkey, validQuickActionHotkey]
+        )
+        XCTAssertEqual(CompanionHotkeyLibrary.parsedFlowID(from: validFlowHotkey.actionID), flowUUID)
+        XCTAssertEqual(CompanionHotkeyLibrary.parsedQuadLayoutID(from: validQuadHotkey.actionID), quadUUID)
+        XCTAssertNil(CompanionHotkeyLibrary.parsedFlowID(from: "flow:not-a-uuid"))
+        XCTAssertNil(CompanionHotkeyLibrary.parsedQuadLayoutID(from: "quad:not-a-uuid"))
+    }
+
+    func testResolvedTitleShowsFlowAndQuadLayoutNamesAndFallsBackToIDWhenDeleted() {
+        var profile = ChocliftDefaults.makeDefaultProfile()
+        let flow = ActionFlow(name: "Morning Routine", steps: [])
+        let quad = QuadAppLayout(
+            name: "Coding Grid",
+            topLeft: QuadAppSlot(bundleIdentifier: "com.apple.Safari", appName: "Safari")
+        )
+        profile.upsertFlow(flow)
+        profile.quadLayouts = [quad]
+
+        let flowActionID = CompanionHotkeyLibrary.flowActionID(flow.id)
+        let quadActionID = CompanionHotkeyLibrary.quadActionID(quad.id)
+
+        let flowHotkey = CompanionHotkey(
+            keyCode: 0x00,
+            carbonModifiers: CompanionHotkeyModifiers.command | CompanionHotkeyModifiers.option,
+            actionID: flowActionID,
+            title: flow.name
+        )
+        let quadHotkey = CompanionHotkey(
+            keyCode: 0x0B,
+            carbonModifiers: CompanionHotkeyModifiers.command | CompanionHotkeyModifiers.option,
+            actionID: quadActionID,
+            title: quad.name
+        )
+
+        XCTAssertEqual(flowHotkey.resolvedTitle(in: profile, language: .english), "Morning Routine")
+        XCTAssertEqual(quadHotkey.resolvedTitle(in: profile, language: .english), "Coding Grid")
+
+        _ = profile.deleteFlow(id: flow.id)
+        profile.quadLayouts.removeAll()
+
+        XCTAssertEqual(flowHotkey.resolvedTitle(in: profile, language: .english), flowActionID)
+        XCTAssertEqual(quadHotkey.resolvedTitle(in: profile, language: .english), quadActionID)
+        XCTAssertNil(CompanionHotkeyLibrary.actionTitle(for: flowActionID, in: profile, language: .english))
+        XCTAssertNil(CompanionHotkeyLibrary.actionTitle(for: quadActionID, in: profile, language: .english))
     }
 
     func testCommandShiftLetterIsKeptShiftOnlyIsDroppedAndDisplayLabelUsesModifierGlyphs() {
@@ -174,6 +324,22 @@ final class CompanionHotkeyTests: XCTestCase {
         )
         phone.upsertCompanionHotkey(unknownHotkey)
 
+        let malformedFlowHotkey = CompanionHotkey(
+            keyCode: 0x00,
+            carbonModifiers: CompanionHotkeyModifiers.command | CompanionHotkeyModifiers.option,
+            actionID: "flow:not-a-uuid",
+            title: "Malformed Flow"
+        )
+        phone.upsertCompanionHotkey(malformedFlowHotkey)
+
+        let flowTargetID = UUID()
+        let validFlowOnKeyA = CompanionHotkey(
+            keyCode: 0x00,
+            carbonModifiers: CompanionHotkeyModifiers.command | CompanionHotkeyModifiers.option,
+            actionID: CompanionHotkeyLibrary.flowActionID(flowTargetID),
+            title: "Run Flow"
+        )
+
         let validHotkey = CompanionHotkey(
             keyCode: 0x28,
             carbonModifiers: CompanionHotkeyModifiers.command | CompanionHotkeyModifiers.shift,
@@ -181,10 +347,11 @@ final class CompanionHotkeyTests: XCTestCase {
             title: "Lock Screen"
         )
         phone.upsertCompanionHotkey(validHotkey)
-        for _ in 0..<60 where delegate.upsertedHotkeys.isEmpty {
+        phone.upsertCompanionHotkey(validFlowOnKeyA)
+        for _ in 0..<60 where delegate.upsertedHotkeys.count < 2 {
             await CancellableDelay.sleepUntilCancelled(seconds: 0.01)
         }
-        XCTAssertEqual(delegate.upsertedHotkeys, [validHotkey])
+        XCTAssertEqual(delegate.upsertedHotkeys, [validHotkey, validFlowOnKeyA])
 
         phone.deleteCompanionHotkey(id: validHotkey.id)
         for _ in 0..<60 where delegate.deletedIDs.isEmpty {

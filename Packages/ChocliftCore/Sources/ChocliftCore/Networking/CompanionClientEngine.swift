@@ -108,6 +108,7 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var clipboardPreview: ClipboardPreviewSnapshot = .empty
     @Published public private(set) var calendarSnapshot: NextCalendarEventSnapshot = .initial
     @Published public private(set) var latestScreenshotPreview: ScreenshotCaptureResult?
+    @Published public private(set) var latestSelectionPreview: SelectionPreviewSnapshot?
     @Published public private(set) var isCapturingScreenshot: Bool = false
     @Published public private(set) var frontmostWindows: FrontmostAppWindowSnapshot = .empty
     @Published public private(set) var activeTileFeedback: TileActionFeedbackBanner?
@@ -1104,21 +1105,20 @@ public final class CompanionClientEngine: ObservableObject {
             connectedClipboardMacID = macID
         }
         profile = serverProfile
+        let resolvedFrontmostName = Self.initialFrontmostAppName(
+            forBundleIdentifier: frontmost,
+            recentApps: serverRecents,
+            catalogApps: macCatalogApps
+        )
         var updatedStrip = controlStripState
         updatedStrip.soundboardVolume = serverProfile.soundboardVolume
+        if resolvedFrontmostName != nil || FrontmostAppLabel.isChocliftBundleIdentifier(frontmost) {
+            updatedStrip.frontmostAppName = resolvedFrontmostName
+        }
         controlStripState = updatedStrip
         recentApps = serverRecents
         frontmostBundleID = frontmost
-        frontmostAppName = frontmost.map { bid in
-            serverProfile.resolvedAppDisplayName(
-                forBundleIdentifier: bid,
-                preferredAppName: serverRecents.first(where: {
-                    $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame
-                })?.appName,
-                recentApps: serverRecents,
-                catalogApps: macCatalogApps
-            )
-        }
+        frontmostAppName = resolvedFrontmostName
         isEditingTextOnMac = editingText
         focusedMacAppName = focusedApp
         isMacAccessibilityGranted = axTrusted
@@ -2291,6 +2291,7 @@ public final class CompanionClientEngine: ObservableObject {
         calendarSnapshot = .initial
         frontmostWindows = .empty
         latestScreenshotPreview = nil
+        latestSelectionPreview = nil
         isCapturingScreenshot = false
         var disconnectedStrip = controlStripState
         disconnectedStrip.isKeepMacAwakeEnabled = false
@@ -2299,6 +2300,7 @@ public final class CompanionClientEngine: ObservableObject {
         disconnectedStrip.wifiSSID = nil
         disconnectedStrip.ejectableExternalVolumeCount = 0
         disconnectedStrip.frontmostAppName = nil
+        disconnectedStrip.deskTimer = .idle
         controlStripState = disconnectedStrip
         nowPlayingScrub.cancel()
         awaitingPlaybackModeFeedback = false
@@ -2434,6 +2436,7 @@ public final class CompanionClientEngine: ObservableObject {
             calendarSnapshot = .initial
             frontmostWindows = .empty
             latestScreenshotPreview = nil
+            latestSelectionPreview = nil
             isCapturingScreenshot = false
             var disconnectedStrip = controlStripState
             disconnectedStrip.isKeepMacAwakeEnabled = false
@@ -2441,6 +2444,7 @@ public final class CompanionClientEngine: ObservableObject {
             disconnectedStrip.privacyCapture = .inactive
             disconnectedStrip.wifiSSID = nil
             disconnectedStrip.ejectableExternalVolumeCount = 0
+            disconnectedStrip.deskTimer = .idle
             controlStripState = disconnectedStrip
             nowPlayingScrub.cancel()
             disarmMaintenanceConfirmation()
@@ -2510,6 +2514,7 @@ public final class CompanionClientEngine: ObservableObject {
         disconnectedStrip.wifiSSID = nil
         disconnectedStrip.ejectableExternalVolumeCount = 0
         disconnectedStrip.frontmostAppName = nil
+        disconnectedStrip.deskTimer = .idle
         controlStripState = disconnectedStrip
         nowPlayingScrub.cancel()
         awaitingPlaybackModeFeedback = false
@@ -2916,7 +2921,19 @@ public final class CompanionClientEngine: ObservableObject {
         let trimmed = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         guard connectionState.isConnected else {
-            let displayName = controlStripState.nowPlaying?.appName ?? trimmed
+            let nowPlayingName: String? = {
+                guard let np = controlStripState.nowPlaying,
+                      let npBundle = np.bundleIdentifier,
+                      npBundle.caseInsensitiveCompare(trimmed) == .orderedSame else {
+                    return nil
+                }
+                return np.appName
+            }()
+            let displayName = nowPlayingName ?? profile.resolvedAppDisplayName(
+                forBundleIdentifier: trimmed,
+                recentApps: recentApps,
+                catalogApps: macCatalogApps
+            )
             lastFeedback = CompanionFeedbackToast(
                 success: false,
                 title: displayName,
@@ -2924,8 +2941,11 @@ public final class CompanionClientEngine: ObservableObject {
             )
             return false
         }
+        let resolvedPath = appPath
+            ?? recentApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(trimmed) == .orderedSame })?.appPath
+            ?? macCatalogApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(trimmed) == .orderedSame })?.appPath
         tileFeedbackTracker.clearPendingWithoutFeedback()
-        send(.activateRecentApp(bundleIdentifier: trimmed, appPath: appPath))
+        send(.activateRecentApp(bundleIdentifier: trimmed, appPath: resolvedPath))
         return true
     }
 
@@ -2983,6 +3003,32 @@ public final class CompanionClientEngine: ObservableObject {
 
     public func insertEmoji(_ emoji: String) {
         insertText(emoji)
+    }
+
+    @discardableResult
+    public func pastePhoneClipboard(_ rawText: String?) -> Bool {
+        guard platform != .appleWatch else { return false }
+        let lang = profile.settings.language
+        let title = L10n.tr("粘贴手机剪贴板", "Paste iPhone Clipboard", language: lang)
+        guard let clamped = PhoneClipboardPaste.clamp(rawText) else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: title,
+                detail: L10n.tr("手机剪贴板为空", "iPhone clipboard is empty", language: lang)
+            )
+            return false
+        }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: title,
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return false
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.pastePhoneClipboard(text: clamped))
+        return true
     }
 
     public func performGesture(_ gesture: TouchGestureType) {
@@ -3047,6 +3093,32 @@ public final class CompanionClientEngine: ObservableObject {
         }
         tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.runQuadLayout(id: id))
+        return true
+    }
+
+    @discardableResult
+    public func setWatchPinnedApps(_ bundleIDs: [String]) -> Bool {
+        let lang = profile.settings.language
+        let hasNonEmptyInput = bundleIDs.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let sanitized = WatchPinnedApps.sanitize(bundleIDs)
+        if hasNonEmptyInput && sanitized.isEmpty {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("手表常用应用", "Watch Pinned Apps", language: lang),
+                detail: L10n.tr("不能固定 Choclift 自身", "Choclift itself cannot be pinned", language: lang)
+            )
+            return false
+        }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("手表常用应用", "Watch Pinned Apps", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return false
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.setWatchPinnedApps(bundleIDs: sanitized))
         return true
     }
 
@@ -3343,6 +3415,10 @@ public final class CompanionClientEngine: ObservableObject {
         latestScreenshotPreview = nil
     }
 
+    public func dismissSelectionPreview() {
+        latestSelectionPreview = nil
+    }
+
     public func setTargetDisplay(displayID: UInt32?) {
         var next = controlStripState
         next.selectedTargetDisplayID = DisplaySnapTargetResolver.resolvedTargetDisplayID(
@@ -3356,6 +3432,20 @@ public final class CompanionClientEngine: ObservableObject {
     public func openCalendarOnMac() {
         tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.openCalendarApp)
+    }
+
+    public func joinNextCalendarMeeting() {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("加入会议", "Join Meeting", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.joinNextCalendarMeeting)
     }
 
     public func triggerSoundboardClip(id: UUID) {
@@ -3399,6 +3489,85 @@ public final class CompanionClientEngine: ObservableObject {
 
     public func toggleKeepMacAwake() {
         setKeepMacAwake(!controlStripState.isKeepMacAwakeEnabled)
+    }
+
+    public func startDeskTimer(presetSeconds: Int) {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: DeskTimerState.cardTitle(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        var next = controlStripState
+        next.deskTimer = DeskTimerState.started(preset: presetSeconds)
+        controlStripState = next
+        send(.startDeskTimer(presetSeconds: next.deskTimer.presetSeconds))
+    }
+
+    public func pauseDeskTimer() {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: DeskTimerState.cardTitle(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        var next = controlStripState
+        next.deskTimer = controlStripState.deskTimer.paused()
+        controlStripState = next
+        send(.pauseDeskTimer)
+    }
+
+    public func resumeDeskTimer() {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: DeskTimerState.cardTitle(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        var next = controlStripState
+        next.deskTimer = controlStripState.deskTimer.resumed()
+        controlStripState = next
+        send(.resumeDeskTimer)
+    }
+
+    public func resetDeskTimer() {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: DeskTimerState.cardTitle(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        var next = controlStripState
+        next.deskTimer = controlStripState.deskTimer.reset()
+        controlStripState = next
+        send(.resetDeskTimer)
+    }
+
+    public func toggleDeskTimerRunPause() {
+        switch controlStripState.deskTimer.phase {
+        case .running:
+            pauseDeskTimer()
+        case .paused:
+            resumeDeskTimer()
+        case .idle:
+            startDeskTimer(presetSeconds: controlStripState.deskTimer.presetSeconds)
+        }
     }
 
     /// Requests switching the Mac's default CoreAudio output device without optimistically faking a switch locally.
@@ -3698,9 +3867,27 @@ public final class CompanionClientEngine: ObservableObject {
         send(.hideOtherApplications)
     }
 
+    /// Single-line label for the frontmost external Mac app (`nil` when disconnected, unknown, or Choclift).
+    public var activeFrontmostAppLabel: String? {
+        guard connectionState.isConnected else { return nil }
+        if FrontmostAppLabel.isChocliftBundleIdentifier(frontmostBundleID) {
+            return nil
+        }
+        if let live = FrontmostAppLabel.format(appName: frontmostAppName, bundleIdentifier: frontmostBundleID) {
+            return live
+        }
+        return FrontmostAppLabel.format(
+            appName: controlStripState.frontmostAppName,
+            bundleIdentifier: frontmostBundleID
+        )
+    }
+
     /// Read-only frontmost Mac app name for the persistent strip badge (`nil` when disconnected).
     public var resolvedStripFrontmostAppName: String? {
         guard connectionState.isConnected else { return nil }
+        if FrontmostAppLabel.isChocliftBundleIdentifier(frontmostBundleID) {
+            return nil
+        }
         if let live = FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName) {
             return live
         }
@@ -3715,6 +3902,25 @@ public final class CompanionClientEngine: ObservableObject {
                 catalogApps: macCatalogApps
             )
             return FrontmostAppStripFormatter.sanitizedAppName(resolved)
+        }
+        return nil
+    }
+
+    private static func initialFrontmostAppName(
+        forBundleIdentifier bundleIdentifier: String?,
+        recentApps: [RecentAppEntry],
+        catalogApps: [InstalledAppSummary]
+    ) -> String? {
+        guard let bid = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !bid.isEmpty,
+              !FrontmostAppLabel.isChocliftBundleIdentifier(bid) else {
+            return nil
+        }
+        if let recent = recentApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame }) {
+            return FrontmostAppLabel.format(appName: recent.appName, bundleIdentifier: bid)
+        }
+        if let catalog = catalogApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame }) {
+            return FrontmostAppLabel.format(appName: catalog.appName, bundleIdentifier: bid)
         }
         return nil
     }
@@ -4119,24 +4325,22 @@ public final class CompanionClientEngine: ObservableObject {
             )
             if connectedClipboardMacID != macID {
                 observedClipboardPreviewTexts.removeAll()
+                latestSelectionPreview = nil
                 connectedClipboardMacID = macID
             }
             profile = serverProfile
+            let resolvedFrontmostName = Self.initialFrontmostAppName(
+                forBundleIdentifier: frontmost,
+                recentApps: serverRecents,
+                catalogApps: macCatalogApps
+            )
             var initialStrip = controlStripState
             initialStrip.soundboardVolume = serverProfile.soundboardVolume
+            initialStrip.frontmostAppName = resolvedFrontmostName
             controlStripState = initialStrip
             recentApps = serverRecents
             frontmostBundleID = frontmost
-            frontmostAppName = frontmost.map { bid in
-                serverProfile.resolvedAppDisplayName(
-                    forBundleIdentifier: bid,
-                    preferredAppName: serverRecents.first(where: {
-                        $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame
-                    })?.appName,
-                    recentApps: serverRecents,
-                    catalogApps: macCatalogApps
-                )
-            }
+            frontmostAppName = resolvedFrontmostName
             isEditingTextOnMac = editingText
             focusedMacAppName = focusedApp
             isMacAccessibilityGranted = axTrusted
@@ -4182,8 +4386,14 @@ public final class CompanionClientEngine: ObservableObject {
             requestMissingIconsIfNeeded()
 
         case .frontmostAppChanged(let bundleID, let appName):
+            let formatted = FrontmostAppLabel.format(appName: appName, bundleIdentifier: bundleID)
             frontmostBundleID = bundleID
-            frontmostAppName = appName
+            frontmostAppName = formatted
+            if controlStripState.frontmostAppName != formatted {
+                var nextStrip = controlStripState
+                nextStrip.frontmostAppName = formatted
+                controlStripState = nextStrip
+            }
 
         case .textFieldFocusChanged(let isEditingText, let appName):
             isEditingTextOnMac = isEditingText
@@ -4232,6 +4442,7 @@ public final class CompanionClientEngine: ObservableObject {
 
         case .controlStripStateUpdated(let state):
             let previousNowPlaying = controlStripState.nowPlaying
+            let previousDeskTimer = controlStripState.deskTimer
             var mergedState = state
             if awaitingPostUpgradeControlStripRefresh {
                 awaitingPostUpgradeControlStripRefresh = false
@@ -4247,6 +4458,14 @@ public final class CompanionClientEngine: ObservableObject {
                 }
             }
             controlStripState = mergedState
+            if previousDeskTimer.phase == .running,
+               mergedState.deskTimer.phase == .idle,
+               let endsAt = previousDeskTimer.endsAt {
+                let elapsedPastEnd = Date().timeIntervalSince(endsAt)
+                if elapsedPastEnd >= -1.5 && elapsedPastEnd <= 10.0 {
+                    CompanionFeedbackHaptics.notify(enabled: shouldPlayOutcomeHaptics(), kind: .success)
+                }
+            }
             nowPlayingScrub.reconcile(with: mergedState.nowPlaying)
             profile.soundboardVolume = mergedState.soundboardVolume
             if previousNowPlaying?.bundleIdentifier != mergedState.nowPlaying?.bundleIdentifier {
@@ -4301,6 +4520,11 @@ public final class CompanionClientEngine: ObservableObject {
 
         case .frontmostWindowsUpdated(let snapshot):
             frontmostWindows = snapshot
+
+        case .selectionPreview(let text, let capturedAt):
+            if let clamped = SelectionPreviewText.clamp(text) {
+                latestSelectionPreview = SelectionPreviewSnapshot(text: clamped, capturedAt: capturedAt)
+            }
 
         case .unknownServerMessage:
             if !connectionState.isConnected {

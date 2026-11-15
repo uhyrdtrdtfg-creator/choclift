@@ -96,6 +96,25 @@ public struct MacCompanionHotkeysCard: View {
                         Text(action.title(in: lang)).tag(action.id)
                     }
                 }
+                if !coordinator.profile.flows.isEmpty {
+                    Section(L10n.tr("动作流", "Action Flows", language: lang)) {
+                        ForEach(coordinator.profile.flows) { flow in
+                            let actionID = CompanionHotkeyLibrary.flowActionID(flow.id)
+                            Text(pickerItemTitle(flow.name, fallbackID: actionID)).tag(actionID)
+                        }
+                    }
+                }
+                if !coordinator.profile.quadLayouts.isEmpty {
+                    Section(L10n.tr("四宫格", "Quad Layouts", language: lang)) {
+                        ForEach(coordinator.profile.quadLayouts) { layout in
+                            let actionID = CompanionHotkeyLibrary.quadActionID(layout.id)
+                            Text(pickerItemTitle(layout.name, fallbackID: actionID)).tag(actionID)
+                        }
+                    }
+                }
+                if !isPickerSelectionPresent {
+                    Text(selectedActionID).tag(selectedActionID)
+                }
             }
             .labelsHidden()
             .frame(maxWidth: 240)
@@ -149,10 +168,29 @@ public struct MacCompanionHotkeysCard: View {
         return L10n.tr("录制快捷键", "Record Shortcut", language: lang)
     }
 
+    private var isPickerSelectionPresent: Bool {
+        if CompanionHotkeyLibrary.isKnownActionID(selectedActionID) {
+            return true
+        }
+        if coordinator.profile.flows.contains(where: { CompanionHotkeyLibrary.flowActionID($0.id) == selectedActionID }) {
+            return true
+        }
+        if coordinator.profile.quadLayouts.contains(where: { CompanionHotkeyLibrary.quadActionID($0.id) == selectedActionID }) {
+            return true
+        }
+        return false
+    }
+
+    private func pickerItemTitle(_ rawName: String, fallbackID: String) -> String {
+        let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? fallbackID : trimmed
+    }
+
     private var canSaveRecordedHotkey: Bool {
         guard !isAtLimit,
               let keyCode = recordedKeyCode,
-              keyCode != 0 else {
+              CompanionHotkeyLibrary.isAllowedKeyCode(keyCode),
+              CompanionHotkeyLibrary.isValidActionID(selectedActionID) else {
             return false
         }
         return CompanionHotkeyLibrary.hasRequiredModifiers(recordedCarbonModifiers)
@@ -167,7 +205,7 @@ public struct MacCompanionHotkeysCard: View {
                 .frame(width: 22)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(hotkey.resolvedTitle(in: lang))
+                Text(hotkey.resolvedTitle(in: coordinator.profile, language: lang))
                     .font(ChocType.body)
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
@@ -237,10 +275,10 @@ public struct MacCompanionHotkeysCard: View {
                 return nil
             }
 
-            guard event.keyCode != 0 else {
+            guard CompanionHotkeyLibrary.isAllowedKeyCode(event.keyCode) else {
                 validationMessage = L10n.tr(
-                    "不支持该按键（keyCode 0），请换用其他按键。",
-                    "Key code 0 is reserved; choose another key.",
+                    "不支持该按键，请换用其他按键。",
+                    "This key cannot be used as a shortcut; choose another key.",
                     language: lang
                 )
                 return nil
@@ -267,7 +305,7 @@ public struct MacCompanionHotkeysCard: View {
 
     private func saveRecordedHotkey() {
         guard let keyCode = recordedKeyCode else { return }
-        let title = CompanionHotkeyLibrary.actionTitle(for: selectedActionID, in: lang) ?? selectedActionID
+        let title = CompanionHotkeyLibrary.actionTitle(for: selectedActionID, in: coordinator.profile, language: lang) ?? selectedActionID
         let hotkey = CompanionHotkey(
             keyCode: keyCode,
             carbonModifiers: recordedCarbonModifiers,

@@ -64,6 +64,13 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case upsertQuadLayout(QuadAppLayout)
     case deleteQuadLayout(id: UUID)
     case runQuadLayout(id: UUID)
+    case joinNextCalendarMeeting
+    case startDeskTimer(presetSeconds: Int)
+    case pauseDeskTimer
+    case resumeDeskTimer
+    case resetDeskTimer
+    case pastePhoneClipboard(text: String)
+    case setWatchPinnedApps(bundleIDs: [String])
     case unknownClientMessage
 }
 
@@ -108,6 +115,7 @@ public enum ServerMessage: Codable, Equatable, Sendable {
     case screenshotCaptured(ScreenshotCaptureResult)
     case calendarStatusUpdated(NextCalendarEventSnapshot)
     case frontmostWindowsUpdated(FrontmostAppWindowSnapshot)
+    case selectionPreview(text: String, capturedAt: Date)
     case unknownServerMessage
 }
 

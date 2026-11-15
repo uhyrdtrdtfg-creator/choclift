@@ -46,8 +46,52 @@ enum MacWindowActionPack {
             return zoomFrontmostWindow(preferredPID: preferredPID)
         case WindowCompanionActionID.centerHorizontally:
             return centerHorizontally(preferredPID: preferredPID)
+        case WindowCompanionActionID.twoThirdsLeft:
+            return snapTwoThirds(.left, preferredPID: preferredPID)
+        case WindowCompanionActionID.twoThirdsRight:
+            return snapTwoThirds(.right, preferredPID: preferredPID)
+        case WindowCompanionActionID.topHalf:
+            return snapVerticalHalf(.top, preferredPID: preferredPID)
+        case WindowCompanionActionID.bottomHalf:
+            return snapVerticalHalf(.bottom, preferredPID: preferredPID)
         default:
             return (false, L10n.tr("不支持此窗口操作：\(id)", "Unsupported window action: \(id)"))
+        }
+    }
+
+    @MainActor
+    private static func snapTwoThirds(
+        _ side: WindowTwoThirdsSide,
+        preferredPID: pid_t?
+    ) -> (success: Bool, message: String) {
+        applySnapSavingPreviousFrame(preferredPID: preferredPID) { _, _, appName, _, visibleQuartz, _, _, _ in
+            let target = WindowPackGeometry.twoThirdsFrame(for: side, visibleQuartz: visibleQuartz)
+            let summary: String
+            switch side {
+            case .left:
+                summary = L10n.tr("已将 \(appName) 贴靠左三分之二", "Snapped \(appName) to left two-thirds")
+            case .right:
+                summary = L10n.tr("已将 \(appName) 贴靠右三分之二", "Snapped \(appName) to right two-thirds")
+            }
+            return .success((frame: target, message: summary))
+        }
+    }
+
+    @MainActor
+    private static func snapVerticalHalf(
+        _ half: WindowVerticalHalf,
+        preferredPID: pid_t?
+    ) -> (success: Bool, message: String) {
+        applySnapSavingPreviousFrame(preferredPID: preferredPID) { _, _, appName, _, visibleQuartz, _, _, _ in
+            let target = WindowPackGeometry.halfFrame(for: half, visibleQuartz: visibleQuartz)
+            let summary: String
+            switch half {
+            case .top:
+                summary = L10n.tr("已将 \(appName) 贴靠上半屏", "Snapped \(appName) to top half")
+            case .bottom:
+                summary = L10n.tr("已将 \(appName) 贴靠下半屏", "Snapped \(appName) to bottom half")
+            }
+            return .success((frame: target, message: summary))
         }
     }
 

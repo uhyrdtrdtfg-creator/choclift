@@ -400,7 +400,11 @@ public struct DevicesAndSettingsView: View {
 
                         MacQuadLayoutsSectionCard(coordinator: coordinator)
 
+                        MacDeskTimerCard(coordinator: coordinator)
+
                         pairedDevicesCard
+
+                        MacWatchPinnedAppsCard(coordinator: coordinator)
 
                         MacCompanionHotkeysCard(coordinator: coordinator)
 

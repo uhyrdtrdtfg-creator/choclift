@@ -512,6 +512,87 @@ public enum WindowDisplayGeometry {
             allowResize: allowResize
         )
     }
+
+    public static func previousDisplayTargetFrame(
+        windowQuartzFrame: CGRect,
+        quartzScreens: [QuartzScreenBounds],
+        allowResize: Bool = true
+    ) -> NextDisplayTargetPlan? {
+        guard quartzScreens.count >= 2,
+              let sourceIndex = sourceScreenIndex(for: windowQuartzFrame, in: quartzScreens) else {
+            return nil
+        }
+
+        let targetIndex = (sourceIndex - 1 + quartzScreens.count) % quartzScreens.count
+        let sourceVisible = quartzScreens[sourceIndex].visibleFrame
+        let targetVisible = quartzScreens[targetIndex].visibleFrame
+
+        let width: CGFloat = allowResize
+            ? min(max(1, windowQuartzFrame.width), targetVisible.width)
+            : max(1, windowQuartzFrame.width)
+        let height: CGFloat = allowResize
+            ? min(max(1, windowQuartzFrame.height), targetVisible.height)
+            : max(1, windowQuartzFrame.height)
+
+        let sourceSlackX = sourceVisible.width - windowQuartzFrame.width
+        let sourceSlackY = sourceVisible.height - windowQuartzFrame.height
+        let ratioX: CGFloat = sourceSlackX > 0
+            ? min(max((windowQuartzFrame.minX - sourceVisible.minX) / sourceSlackX, 0), 1)
+            : 0.5
+        let ratioY: CGFloat = sourceSlackY > 0
+            ? min(max((windowQuartzFrame.minY - sourceVisible.minY) / sourceSlackY, 0), 1)
+            : 0.5
+
+        let targetSlackX = targetVisible.width - width
+        let targetSlackY = targetVisible.height - height
+
+        let x: CGFloat
+        if targetSlackX >= 0 {
+            let rawX = round(targetVisible.minX + ratioX * targetSlackX)
+            x = min(max(rawX, targetVisible.minX), targetVisible.maxX - width)
+        } else {
+            x = round(targetVisible.minX + targetSlackX / 2.0)
+        }
+
+        let y: CGFloat
+        if targetSlackY >= 0 {
+            let rawY = round(targetVisible.minY + ratioY * targetSlackY)
+            y = min(max(rawY, targetVisible.minY), targetVisible.maxY - height)
+        } else {
+            y = round(targetVisible.minY + targetSlackY / 2.0)
+        }
+
+        return NextDisplayTargetPlan(
+            sourceScreenIndex: sourceIndex,
+            targetScreenIndex: targetIndex,
+            targetFrame: CGRect(x: x, y: y, width: width, height: height)
+        )
+    }
+
+    public static func previousDisplayTargetFrame(
+        windowQuartzFrame: CGRect,
+        quartzVisibleFrames: [CGRect],
+        allowResize: Bool = true
+    ) -> NextDisplayTargetPlan? {
+        let screens = quartzVisibleFrames.map { QuartzScreenBounds(frame: $0, visibleFrame: $0) }
+        return previousDisplayTargetFrame(
+            windowQuartzFrame: windowQuartzFrame,
+            quartzScreens: screens,
+            allowResize: allowResize
+        )
+    }
+
+    public static func previousDisplayTargetFrame(
+        windowQuartzFrame: CGRect,
+        appKitScreens: [WindowScreenDescriptor],
+        allowResize: Bool = true
+    ) -> NextDisplayTargetPlan? {
+        previousDisplayTargetFrame(
+            windowQuartzFrame: windowQuartzFrame,
+            quartzScreens: quartzScreens(from: appKitScreens),
+            allowResize: allowResize
+        )
+    }
 }
 
 public enum WindowAXErrorFormatting {
@@ -734,6 +815,80 @@ public struct WindowMoveCoordinator<WindowID: Hashable & Sendable>: Equatable, S
         writeFrame: (CGRect) -> Int32
     ) -> Result<NextDisplayTargetPlan, WindowMoveExecutionError> {
         performMoveToNextDisplay(
+            windowID: windowID,
+            appName: appName,
+            quartzScreens: WindowDisplayGeometry.quartzScreens(from: appKitScreens),
+            allowResize: allowResize,
+            readFrame: readFrame,
+            writeFrame: writeFrame
+        )
+    }
+
+    public mutating func performMoveToPreviousDisplay(
+        windowID: WindowID,
+        appName: String,
+        quartzScreens: [QuartzScreenBounds],
+        allowResize: Bool = true,
+        readFrame: () -> Result<CGRect, WindowAXStatusError>,
+        writeFrame: (CGRect) -> Int32
+    ) -> Result<NextDisplayTargetPlan, WindowMoveExecutionError> {
+        let currentFrame: CGRect
+        switch readFrame() {
+        case .success(let rect):
+            currentFrame = rect
+        case .failure(let axStatus):
+            return .failure(.axError(code: axStatus.code))
+        }
+
+        guard let plan = WindowDisplayGeometry.previousDisplayTargetFrame(
+            windowQuartzFrame: currentFrame,
+            quartzScreens: quartzScreens,
+            allowResize: allowResize
+        ) else {
+            return .failure(.noSecondaryDisplay)
+        }
+
+        let writeCode = writeFrame(plan.targetFrame)
+        guard writeCode == 0 else {
+            return .failure(.axError(code: writeCode))
+        }
+
+        recordMove(
+            windowID: windowID,
+            appName: appName,
+            previousFrame: WindowQuartzRect(currentFrame)
+        )
+        return .success(plan)
+    }
+
+    public mutating func performMoveToPreviousDisplay(
+        windowID: WindowID,
+        appName: String,
+        quartzVisibleFrames: [CGRect],
+        allowResize: Bool = true,
+        readFrame: () -> Result<CGRect, WindowAXStatusError>,
+        writeFrame: (CGRect) -> Int32
+    ) -> Result<NextDisplayTargetPlan, WindowMoveExecutionError> {
+        let screens = quartzVisibleFrames.map { QuartzScreenBounds(frame: $0, visibleFrame: $0) }
+        return performMoveToPreviousDisplay(
+            windowID: windowID,
+            appName: appName,
+            quartzScreens: screens,
+            allowResize: allowResize,
+            readFrame: readFrame,
+            writeFrame: writeFrame
+        )
+    }
+
+    public mutating func performMoveToPreviousDisplay(
+        windowID: WindowID,
+        appName: String,
+        appKitScreens: [WindowScreenDescriptor],
+        allowResize: Bool = true,
+        readFrame: () -> Result<CGRect, WindowAXStatusError>,
+        writeFrame: (CGRect) -> Int32
+    ) -> Result<NextDisplayTargetPlan, WindowMoveExecutionError> {
+        performMoveToPreviousDisplay(
             windowID: windowID,
             appName: appName,
             quartzScreens: WindowDisplayGeometry.quartzScreens(from: appKitScreens),

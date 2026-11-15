@@ -125,49 +125,7 @@ public struct IOSRootTouchBarView: View {
 
                 // Non-interactive HUD Toast
                 if let hud = hudToast {
-                    let cornerRadius: CGFloat = hud.secondaryText == nil ? 20 : 14
-                    VStack {
-                        HStack(spacing: 7) {
-                            Image(systemName: hud.isFailure ? "exclamationmark.triangle.fill" : "sparkles")
-                                .font(ChocType.caption)
-                                .foregroundStyle(hud.isFailure ? palette.statusFailure : palette.accent)
-
-                            VStack(alignment: .leading, spacing: 1.5) {
-                                Text(hud.primaryText)
-                                    .font(ChocType.caption)
-                                    .foregroundStyle(palette.primaryText)
-                                    .lineLimit(hud.secondaryText == nil ? 2 : 1)
-
-                                if let secondary = hud.secondaryText {
-                                    Text(secondary)
-                                        .font(ChocType.micro)
-                                        .foregroundStyle(hud.isFailure ? palette.statusFailure : palette.secondaryText)
-                                        .lineLimit(2)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(
-                            palette.barSurface.opacity(0.97),
-                            in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                                .strokeBorder(
-                                    hud.isFailure ? palette.statusFailure.opacity(0.75) : palette.subtleCardStroke,
-                                    lineWidth: hud.isFailure ? 1.3 : 1
-                                )
-                        )
-                        .shadow(color: palette.primaryText.opacity(0.08), radius: 8, x: 0, y: 4)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 10)
-                        Spacer()
-                    }
-                    .zIndex(10)
-                    .allowsHitTesting(false)
-                    .accessibilityIdentifier("ios-feedback-toast")
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                    hudToastBannerView(hud)
                 }
             }
             .overlay(alignment: .topTrailing) {
@@ -184,7 +142,17 @@ public struct IOSRootTouchBarView: View {
         .sheet(isPresented: $showToolsSheet) {
             NavigationStack {
                 toolsList
+                .overlay(alignment: .top) {
+                    toolsSheetFeedbackOverlay
+                }
+                .animation(.easeInOut(duration: 0.2), value: hudToast)
                 .background(palette.backgroundTop)
+                .overlay {
+                    if let hud = hudToast {
+                        hudToastBannerView(hud)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.2), value: hudToast)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .principal) {
@@ -350,6 +318,7 @@ public struct IOSRootTouchBarView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    frontmostAppHeaderLabel
                     Button { showNowPlaying.toggle() } label: {
                         Image(systemName: "play.circle.fill")
                             .font(.system(size: 24))
@@ -381,6 +350,16 @@ public struct IOSRootTouchBarView: View {
     private var toolsList: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                if let preview = client.latestSelectionPreview {
+                    IOSSelectionPreviewCard(
+                        client: client,
+                        preview: preview,
+                        onCopied: { message in
+                            flashHUD(message)
+                        }
+                    )
+                }
+
                 HStack(spacing: 10) {
                     Image(systemName: "magnifyingglass").foregroundStyle(palette.secondaryText)
                     TextField(L10n.tr("搜索控制", "Search controls", language: lang), text: $toolsQuery)
@@ -391,7 +370,9 @@ public struct IOSRootTouchBarView: View {
                 .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
+                IOSDeskTimerSection(client: client, toolsQuery: toolsQuery)
                 IOSCompanionHotkeysSection(client: client, toolsQuery: toolsQuery)
+                IOSWatchPinnedAppsSection(client: client, toolsQuery: toolsQuery)
                 IOSQuadLayoutsToolsSection(client: client, searchQuery: toolsQuery)
 
                 toolsSection(L10n.tr("页面与工作区", "Pages & Workspace", language: lang)) {
@@ -437,7 +418,7 @@ public struct IOSRootTouchBarView: View {
                     toolsRow(L10n.tr("麦克风静音", "Toggle Microphone Mute", language: lang), "mic.slash") { client.toggleMicMute() }
                 }
                 toolsSection(L10n.tr("日历与截屏", "Calendar & Screenshots", language: lang)) {
-                    toolsRow(L10n.tr("下个日程", "Next Event", language: lang), "calendar") { client.openCalendarOnMac() }
+                    IOSNextCalendarEventToolsRow(client: client, searchQuery: toolsQuery)
                     toolsRow(L10n.tr("截屏", "Screenshot", language: lang), "camera.viewfinder") { client.captureMainDisplayScreenshot() }
                 }
                 toolsSection(L10n.tr("电源与安全", "Power & Security", language: lang)) {
@@ -483,6 +464,11 @@ public struct IOSRootTouchBarView: View {
                         client.performQuickAction(.toggleDictation)
                     }
                     toolsRow(L10n.tr("粘贴 Mac 剪贴板", "Paste Mac Clipboard", language: lang), "doc.on.clipboard") { client.pasteMacClipboard() }
+                    toolsRow(L10n.tr("粘贴手机剪贴板", "Paste iPhone Clipboard", language: lang), "iphone.and.arrow.forward") {
+                        if client.pastePhoneClipboard(UIPasteboard.general.string) {
+                            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                        }
+                    }
                     ForEach(CompanionCompactKey.allCases) { key in
                         toolsRow(key.title(in: lang), key.sfSymbol) { client.sendCompactKey(key) }
                     }
@@ -650,6 +636,8 @@ public struct IOSRootTouchBarView: View {
             .lineLimit(1)
             .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            frontmostAppHeaderLabel
 
             Button {
                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
@@ -1115,6 +1103,19 @@ public struct IOSRootTouchBarView: View {
             return name
         default:
             return client.savedMacs.first?.macName ?? L10n.tr("连接 Mac", "Connect Mac", language: lang)
+        }
+    }
+
+    @ViewBuilder
+    private var frontmostAppHeaderLabel: some View {
+        if activeMode == .chocolateBar && !showNowPlaying,
+           let frontmostAppName = client.activeFrontmostAppLabel {
+            Text(frontmostAppName)
+                .font(ChocType.caption)
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .accessibilityIdentifier("ios-frontmost-app-label")
         }
     }
 
@@ -1649,9 +1650,125 @@ public struct IOSRootTouchBarView: View {
         }
     }
 
+    @ViewBuilder
+    private var toolsSheetFeedbackOverlay: some View {
+        if let hud = hudToast {
+            hudToastBannerView(hud)
+        }
+    }
+
+    private func hudToastBannerView(_ hud: HUDToastBanner) -> some View {
+        let cornerRadius: CGFloat = hud.secondaryText == nil ? 20 : 14
+        return VStack {
+            HStack(spacing: 7) {
+                Image(systemName: hud.isFailure ? "exclamationmark.triangle.fill" : "sparkles")
+                    .font(ChocType.caption)
+                    .foregroundStyle(hud.isFailure ? palette.statusFailure : palette.accent)
+
+                VStack(alignment: .leading, spacing: 1.5) {
+                    Text(hud.primaryText)
+                        .font(ChocType.caption)
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(hud.secondaryText == nil ? 2 : 1)
+
+                    if let secondary = hud.secondaryText {
+                        Text(secondary)
+                            .font(ChocType.micro)
+                            .foregroundStyle(hud.isFailure ? palette.statusFailure : palette.secondaryText)
+                            .lineLimit(2)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                palette.barSurface.opacity(0.97),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        hud.isFailure ? palette.statusFailure.opacity(0.75) : palette.subtleCardStroke,
+                        lineWidth: hud.isFailure ? 1.3 : 1
+                    )
+            )
+            .shadow(color: palette.primaryText.opacity(0.08), radius: 8, x: 0, y: 4)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .allowsHitTesting(false)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            Spacer()
+        }
+        .zIndex(10)
+        .allowsHitTesting(false)
+        .accessibilityIdentifier("ios-feedback-toast")
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
     private func updateIdleTimer() {
         UIApplication.shared.isIdleTimerDisabled =
             client.connectionState.isConnected && client.profile.settings.keepCompanionScreenAwake
+    }
+}
+
+private struct IOSSelectionPreviewCard: View {
+    @ObservedObject var client: CompanionClientEngine
+    let preview: SelectionPreviewSnapshot
+    let onCopied: (String) -> Void
+
+    @State private var copiedPreview: SelectionPreviewSnapshot?
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+    private var isCopied: Bool { copiedPreview == preview }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Label(
+                    L10n.tr("选中预览", "Selection Preview", language: lang),
+                    systemImage: "iphone.and.arrow.forward"
+                )
+                .font(ChocType.caption)
+                .foregroundStyle(palette.secondaryText)
+
+                Spacer(minLength: 8)
+
+                Button {
+                    UIPasteboard.general.string = preview.text
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    copiedPreview = preview
+                    onCopied(L10n.tr("已复制到 iPhone 剪贴板", "Copied to iPhone Clipboard", language: lang))
+                } label: {
+                    Label(
+                        isCopied ? L10n.tr("已复制", "Copied", language: lang) : L10n.tr("复制", "Copy", language: lang),
+                        systemImage: isCopied ? "checkmark" : "doc.on.doc"
+                    )
+                    .font(ChocType.caption)
+                    .foregroundStyle(palette.accentForeground)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 34)
+                    .background(palette.accent, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ios-selection-preview-copy-button")
+            }
+
+            Text(preview.text)
+                .font(ChocType.body)
+                .foregroundStyle(palette.primaryText)
+                .lineLimit(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("ios-selection-preview-text")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+        .accessibilityIdentifier("ios-selection-preview-card")
     }
 }
 

@@ -1437,6 +1437,11 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     public var pinnedClipboardItems: [PinnedClipboardItem]
     public var hotkeys: [CompanionHotkey]
     public var quadLayouts: [QuadAppLayout]
+    private var _watchPinnedBundleIDs: [String]
+    public var watchPinnedBundleIDs: [String] {
+        get { _watchPinnedBundleIDs }
+        set { _watchPinnedBundleIDs = WatchPinnedApps.sanitize(newValue) }
+    }
 
     private enum CodingKeys: String, CodingKey {
         case revision
@@ -1455,6 +1460,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         case pinnedClipboardItems
         case hotkeys
         case quadLayouts
+        case watchPinnedBundleIDs
     }
 
     public init(
@@ -1473,7 +1479,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         pinnedStripSlots: [SlotCoordinate] = [],
         pinnedClipboardItems: [PinnedClipboardItem] = [],
         hotkeys: [CompanionHotkey] = [],
-        quadLayouts: [QuadAppLayout] = []
+        quadLayouts: [QuadAppLayout] = [],
+        watchPinnedBundleIDs: [String] = []
     ) {
         self.revision = revision
         self.updatedAt = updatedAt
@@ -1491,6 +1498,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.pinnedClipboardItems = PinnedClipboardShelf.sanitize(pinnedClipboardItems)
         self.hotkeys = CompanionHotkeyLibrary.sanitize(hotkeys)
         self.quadLayouts = QuadAppLayout.sanitize(quadLayouts)
+        self._watchPinnedBundleIDs = WatchPinnedApps.sanitize(watchPinnedBundleIDs)
     }
 
     public init(from decoder: Decoder) throws {
@@ -1540,6 +1548,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.hotkeys = CompanionHotkeyLibrary.sanitize(decodedHotkeys)
         let decodedQuadLayouts = try container.decodeIfPresent([QuadAppLayout].self, forKey: .quadLayouts) ?? []
         self.quadLayouts = QuadAppLayout.sanitize(decodedQuadLayouts)
+        let decodedWatchPinned = try container.decodeIfPresent([String].self, forKey: .watchPinnedBundleIDs) ?? []
+        self._watchPinnedBundleIDs = WatchPinnedApps.sanitize(decodedWatchPinned)
     }
 
     private struct IgnoredJSONElement: Decodable {}
@@ -1565,6 +1575,7 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         }
         try container.encode(CompanionHotkeyLibrary.sanitize(hotkeys), forKey: .hotkeys)
         try container.encode(QuadAppLayout.sanitize(quadLayouts), forKey: .quadLayouts)
+        try container.encode(WatchPinnedApps.sanitize(watchPinnedBundleIDs), forKey: .watchPinnedBundleIDs)
     }
 
     private static func sanitizeAppDeckBindings(_ bindings: [String: UUID]) -> [String: UUID] {
@@ -1730,6 +1741,14 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                     }
                 case .delay, .unsupported, .openWebsite, .runShortcut, .insertSnippet:
                     break
+                }
+            }
+        }
+        for layout in quadLayouts {
+            for (_, slot) in layout.occupiedCorners {
+                if slot.bundleIdentifier.caseInsensitiveCompare(trimmed) == .orderedSame,
+                   !slot.appName.isEmpty {
+                    return slot.appName
                 }
             }
         }
@@ -2504,6 +2523,12 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                 if !trimmed.isEmpty {
                     result.insert(trimmed)
                 }
+            }
+        }
+        for bundleID in watchPinnedBundleIDs {
+            let trimmed = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                result.insert(trimmed)
             }
         }
         return result

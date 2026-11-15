@@ -176,46 +176,129 @@ private struct WatchCalendarComplicationLine: View {
         let snapshot = client.calendarSnapshot
         if let event = snapshot.nextEvent {
             let key = "watch-calendar-next"
+            let joinKey = "watch-calendar-join"
             let isPressed = (pressedKey == key)
+            let isJoinPressed = (pressedKey == joinKey)
             TimelineView(.periodic(from: .now, by: 30.0)) { context in
-                Button {
-                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
-                    ChocPressFeedback.completeTap(key: key, pressedKey: $pressedKey)
-                    client.openCalendarOnMac()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "calendar")
-                            .font(ChocType.micro)
-                            .foregroundStyle(palette.accent)
-                        Text(event.title)
-                            .font(ChocType.micro)
-                            .foregroundStyle(palette.primaryText)
-                            .lineLimit(1)
-                        Spacer(minLength: 2)
-                        Text(
-                            NextCalendarEventSnapshot.formattedStartTime(
-                                for: event,
-                                referenceDate: context.date,
-                                language: lang
-                            )
-                        )
-                        .font(ChocType.micro)
-                        .monospacedDigit()
-                        .foregroundStyle(palette.secondaryText)
-                        .lineLimit(1)
-                    }
-                    .padding(.horizontal, 9)
-                    .frame(minHeight: 32)
-                    .background(isPressed ? palette.tileFillBottom : palette.barSurface, in: Capsule())
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(isPressed ? palette.accent : palette.subtleCardStroke, lineWidth: isPressed ? 1.5 : 1)
+                if event.hasJoinLink {
+                    let provider = event.joinProvider ?? "Link"
+                    let countdown = NextCalendarEventSnapshot.formattedCountdown(
+                        for: event,
+                        referenceDate: context.date,
+                        language: lang
                     )
-                    .contentShape(Capsule())
-                    .scaleEffect(isPressed ? 0.96 : 1.0)
+
+                    HStack(spacing: 6) {
+                        Button {
+                            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                            ChocPressFeedback.completeTap(key: key, pressedKey: $pressedKey)
+                            client.openCalendarOnMac()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "calendar")
+                                        .font(ChocType.micro)
+                                        .foregroundStyle(palette.accent)
+                                    Text(event.title)
+                                        .font(ChocType.micro)
+                                        .foregroundStyle(palette.primaryText)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 2)
+                                    Text(
+                                        NextCalendarEventSnapshot.formattedStartTime(
+                                            for: event,
+                                            referenceDate: context.date,
+                                            language: lang
+                                        )
+                                    )
+                                    .font(ChocType.micro)
+                                    .monospacedDigit()
+                                    .foregroundStyle(palette.secondaryText)
+                                    .lineLimit(1)
+                                }
+
+                                Text("\(provider) · \(countdown)")
+                                    .font(ChocType.micro)
+                                    .monospacedDigit()
+                                    .foregroundStyle(palette.accent)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                            .background(
+                                isPressed ? palette.tileFillBottom : palette.barSurface,
+                                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                    .strokeBorder(isPressed ? palette.accent : palette.subtleCardStroke, lineWidth: isPressed ? 1.5 : 1)
+                            )
+                            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                            .scaleEffect(isPressed ? 0.96 : 1.0)
+                        }
+                        .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: key))
+                        .accessibilityIdentifier("watch-calendar-event-button")
+
+                        Button {
+                            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                            ChocPressFeedback.completeTap(key: joinKey, pressedKey: $pressedKey)
+                            client.joinNextCalendarMeeting()
+                        } label: {
+                            Text(L10n.tr("加入", "Join", language: lang))
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.accentForeground)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 10)
+                                .frame(minHeight: 38)
+                                .background(palette.accent, in: Capsule())
+                                .contentShape(Capsule())
+                                .scaleEffect(isJoinPressed ? 0.94 : 1.0)
+                        }
+                        .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: joinKey))
+                        .accessibilityIdentifier("watch-join-calendar-meeting-button")
+                    }
+                } else {
+                    Button {
+                        CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                        ChocPressFeedback.completeTap(key: key, pressedKey: $pressedKey)
+                        client.openCalendarOnMac()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "calendar")
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.accent)
+                            Text(event.title)
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.primaryText)
+                                .lineLimit(1)
+                            Spacer(minLength: 2)
+                            Text(
+                                NextCalendarEventSnapshot.formattedStartTime(
+                                    for: event,
+                                    referenceDate: context.date,
+                                    language: lang
+                                )
+                            )
+                            .font(ChocType.micro)
+                            .monospacedDigit()
+                            .foregroundStyle(palette.secondaryText)
+                            .lineLimit(1)
+                        }
+                        .padding(.horizontal, 9)
+                        .frame(minHeight: 32)
+                        .background(isPressed ? palette.tileFillBottom : palette.barSurface, in: Capsule())
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(isPressed ? palette.accent : palette.subtleCardStroke, lineWidth: isPressed ? 1.5 : 1)
+                        )
+                        .contentShape(Capsule())
+                        .scaleEffect(isPressed ? 0.96 : 1.0)
+                    }
+                    .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: key))
+                    .accessibilityIdentifier("watch-calendar-event-button")
                 }
-                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: key))
-                .accessibilityIdentifier("watch-calendar-event-button")
             }
         } else if snapshot.permission == .denied {
             Button {
@@ -1178,6 +1261,7 @@ public struct WatchQuickActionsView: View {
     @State private var repeatPressedKey: String?
     @State private var repeatReleaseKey: String?
     @State private var pressedAction: SystemQuickAction?
+    @State private var pressedPinnedBundleID: String?
     @State private var confirmGate = DestructiveActionConfirmGate()
     @State private var showDisplayPickerSheet: Bool = false
     @State private var showAudioOutputSheet: Bool = false
@@ -1207,6 +1291,7 @@ public struct WatchQuickActionsView: View {
     ]
 
     private var catalogActions: [CompanionAction] { CompanionActionCatalog.all }
+    private var pinnedWatchBundleIDs: [String] { WatchPinnedApps.sanitize(client.profile.watchPinnedBundleIDs) }
 
     public var body: some View {
         ScrollView {
@@ -1215,11 +1300,45 @@ public struct WatchQuickActionsView: View {
                     WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
                 }
 
+                if let frontmostAppName = client.activeFrontmostAppLabel {
+                    Text(frontmostAppName)
+                        .font(ChocType.caption)
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("watch-frontmost-app-label")
+                }
+
                 WatchCalendarComplicationLine(client: client)
+
+                WatchDeskTimerCard(client: client)
+                if !pinnedWatchBundleIDs.isEmpty {
+                    watchPinnedAppsSection
+                }
 
                 // Media & Volume Strip (Clean iconic transport buttons >= 46pt)
                 if !catalogActions.isEmpty {
                     sectionHeader(L10n.tr("更多操作", "More Actions", language: lang), symbol: "square.grid.2x2")
+                    if let preview = client.latestSelectionPreview {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(
+                                L10n.tr("选中预览", "Selection Preview", language: lang),
+                                systemImage: "iphone.and.arrow.forward"
+                            )
+                            .font(ChocType.micro)
+                            .foregroundStyle(palette.accent)
+
+                            Text(preview.watchPreviewText)
+                                .font(ChocType.caption)
+                                .foregroundStyle(palette.primaryText)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(8)
+                        .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .accessibilityIdentifier("watch-selection-preview-card")
+                    }
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                         ForEach(catalogActions) { action in
                             Button {
@@ -1284,6 +1403,83 @@ public struct WatchQuickActionsView: View {
         .sheet(isPresented: $showAudioOutputSheet) {
             WatchAudioOutputPickerSheet(client: client)
         }
+    }
+
+    private var watchPinnedAppsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionHeader(
+                L10n.tr("手表常用应用", "Watch Pinned Apps", language: lang),
+                symbol: "pin.fill"
+            )
+
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
+                spacing: 8
+            ) {
+                ForEach(pinnedWatchBundleIDs, id: \.self) { bundleID in
+                    watchPinnedAppButton(bundleID)
+                }
+            }
+        }
+    }
+
+    private func watchPinnedAppButton(_ bundleID: String) -> some View {
+        let appName = client.profile.resolvedAppDisplayName(
+            forBundleIdentifier: bundleID,
+            recentApps: client.recentApps,
+            catalogApps: client.macCatalogApps
+        )
+        let icon = client.cachedAppIconData(forBundleIdentifier: bundleID)
+            ?? BundledAppIcons.pngData(for: bundleID)
+        let isFrontmost = client.recentApps.contains {
+            $0.isFrontmost && $0.bundleIdentifier.caseInsensitiveCompare(bundleID) == .orderedSame
+        }
+        let isPressed = (pressedPinnedBundleID == bundleID)
+
+        return Button {
+            ChocPressFeedback.completeTap(key: bundleID, pressedKey: $pressedPinnedBundleID)
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+            _ = client.activateMacApp(bundleIdentifier: bundleID)
+        } label: {
+            VStack(spacing: 5) {
+                DataImageView(pngData: icon, fallbackSymbol: "app.fill", tint: palette.primaryText)
+                    .frame(width: 28, height: 28)
+
+                Text(appName)
+                    .font(ChocType.caption.weight(.semibold))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 62)
+            .background(
+                LinearGradient(
+                    colors: [
+                        isPressed ? palette.tileFillBottom : palette.tileFillTop,
+                        palette.tileFillBottom
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(
+                        isPressed
+                            ? palette.accent
+                            : (isFrontmost ? palette.accent.opacity(0.65) : palette.subtleCardStroke),
+                        lineWidth: isPressed ? 1.8 : 1
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .scaleEffect(isPressed ? 0.94 : 1.0)
+        }
+        .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedPinnedBundleID, key: bundleID))
+        .accessibilityLabel(appName)
+        .accessibilityIdentifier("watch-pinned-app-\(bundleID)")
     }
 
     private var watchAudioOutputButton: some View {
