@@ -621,8 +621,6 @@ public struct IOSTimeTravelSurfaceView: View {
     var onRequestPairing: (() -> Void)?
     var onPromptHUD: ((String) -> Void)?
 
-    @State private var quitConfirmGate = DestructiveActionConfirmGate()
-
     private var lang: AppLanguage { client.profile.settings.language }
     private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
 
@@ -710,26 +708,8 @@ public struct IOSTimeTravelSurfaceView: View {
 
     private func recentAppCard(_ entry: RecentAppEntry) -> some View {
         let icon = client.appIconsByBundleID[entry.bundleIdentifier] ?? BundledAppIcons.pngData(for: entry.bundleIdentifier)
-        let quitKey = "quit-\(entry.bundleIdentifier)"
-        let isAwaitingQuitConfirm = quitConfirmGate.isArmed(
-            targetID: quitKey,
-            at: ProcessInfo.processInfo.systemUptime
-        )
 
         return Button {
-            if isAwaitingQuitConfirm {
-                let decision = quitConfirmGate.registerTap(
-                    targetID: quitKey,
-                    isDestructive: true,
-                    at: ProcessInfo.processInfo.systemUptime
-                )
-                if decision == .confirmedRun {
-                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                    client.quitOrHideApp(bundleIdentifier: entry.bundleIdentifier, shouldQuit: true)
-                }
-                return
-            }
-            quitConfirmGate.disarm()
             CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
             client.activateRecentApp(entry)
         } label: {
@@ -753,26 +733,17 @@ public struct IOSTimeTravelSurfaceView: View {
                     .foregroundStyle(palette.primaryText)
                     .lineLimit(1)
 
-                if isAwaitingQuitConfirm {
-                    Text(L10n.tr("再点确认退出", "Tap Again to Quit", language: lang))
-                        .font(ChocType.micro)
-                        .foregroundStyle(palette.emphasisForeground)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(palette.statusFailure, in: Capsule())
-                } else {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(entry.isFrontmost ? palette.accent : (entry.isRunning ? palette.statusConnected : palette.secondaryText.opacity(0.5)))
-                            .frame(width: 5.5, height: 5.5)
-                        Text(
-                            entry.isFrontmost
-                                ? L10n.tr("当前窗口", "Active", language: lang)
-                                : (entry.isRunning ? L10n.tr("运行中", "Running", language: lang) : L10n.tr("已固定", "Pinned", language: lang))
-                        )
-                        .font(ChocType.micro)
-                        .foregroundStyle(palette.secondaryText)
-                    }
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(entry.isFrontmost ? palette.accent : (entry.isRunning ? palette.statusConnected : palette.secondaryText.opacity(0.5)))
+                        .frame(width: 5.5, height: 5.5)
+                    Text(
+                        entry.isFrontmost
+                            ? L10n.tr("当前窗口", "Active", language: lang)
+                            : (entry.isRunning ? L10n.tr("运行中", "Running", language: lang) : L10n.tr("已固定", "Pinned", language: lang))
+                    )
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.secondaryText)
                 }
             }
             .padding(.vertical, 12)
@@ -784,10 +755,8 @@ public struct IOSTimeTravelSurfaceView: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .strokeBorder(
-                                isAwaitingQuitConfirm
-                                    ? palette.statusFailure
-                                    : (entry.isFrontmost ? palette.accent : palette.tileBorderHighlight.opacity(0.45)),
-                                lineWidth: (isAwaitingQuitConfirm || entry.isFrontmost) ? 2 : 1
+                                entry.isFrontmost ? palette.accent : palette.tileBorderHighlight.opacity(0.45),
+                                lineWidth: entry.isFrontmost ? 2 : 1
                             )
                     )
             )
@@ -819,7 +788,7 @@ public struct IOSTimeTravelSurfaceView: View {
                 }
 
                 Button(role: .destructive) {
-                    handleQuitRecentApp(entry)
+                    quitRecentApp(entry)
                 } label: {
                     Label(L10n.tr("退出应用", "Quit App on Mac", language: lang), systemImage: "xmark.octagon")
                 }
@@ -827,34 +796,9 @@ public struct IOSTimeTravelSurfaceView: View {
         }
     }
 
-    private func handleQuitRecentApp(_ entry: RecentAppEntry) {
-        let quitKey = "quit-\(entry.bundleIdentifier)"
-        let decision = quitConfirmGate.registerTap(
-            targetID: quitKey,
-            isDestructive: true,
-            at: ProcessInfo.processInfo.systemUptime
-        )
-        switch decision {
-        case .requireSecondTap:
-            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-            onPromptHUD?(
-                L10n.tr(
-                    "3 秒内点按 \(entry.appName) 确认退出",
-                    "Tap \(entry.appName) within 3s to confirm Quit",
-                    language: lang
-                )
-            )
-            let delay = CompanionInteractionPolicy.destructiveConfirmWindowSeconds + 0.05
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(delay))
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    quitConfirmGate.expireIfNeeded(at: ProcessInfo.processInfo.systemUptime)
-                }
-            }
-        case .runImmediately, .confirmedRun:
-            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-            client.quitOrHideApp(bundleIdentifier: entry.bundleIdentifier, shouldQuit: true)
-        }
+    private func quitRecentApp(_ entry: RecentAppEntry) {
+        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+        client.quitOrHideApp(bundleIdentifier: entry.bundleIdentifier, shouldQuit: true)
     }
 
     private func addRecentAppToBar(_ entry: RecentAppEntry) {
