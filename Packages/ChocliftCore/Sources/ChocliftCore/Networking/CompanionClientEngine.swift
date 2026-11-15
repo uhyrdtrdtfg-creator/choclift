@@ -3003,6 +3003,53 @@ public final class CompanionClientEngine: ObservableObject {
         send(.performCompanionAction(id: trimmed))
     }
 
+    public func upsertCompanionHotkey(_ hotkey: CompanionHotkey) {
+        guard let sanitized = CompanionHotkeyLibrary.sanitize([hotkey]).first else { return }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.upsertCompanionHotkey(sanitized))
+    }
+
+    public func deleteCompanionHotkey(id: UUID) {
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.deleteCompanionHotkey(id: id))
+    }
+
+    @discardableResult
+    public func upsertQuadLayout(_ layout: QuadAppLayout) -> Bool {
+        guard !layout.containsChocliftBundle,
+              let sanitized = QuadAppLayout.sanitized(layout) else {
+            return false
+        }
+        let isExisting = profile.quadLayouts.contains { $0.id == sanitized.id }
+        if !isExisting && profile.quadLayouts.count >= QuadAppLayout.maxLibraryCount {
+            return false
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.upsertQuadLayout(sanitized))
+        return true
+    }
+
+    @discardableResult
+    public func deleteQuadLayout(id: UUID) -> Bool {
+        guard profile.quadLayouts.contains(where: { $0.id == id }) else {
+            return false
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.deleteQuadLayout(id: id))
+        return true
+    }
+
+    @discardableResult
+    public func runQuadLayout(id: UUID) -> Bool {
+        guard let existing = profile.quadLayouts.first(where: { $0.id == id }),
+              QuadAppLayout.sanitized(existing) != nil else {
+            return false
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.runQuadLayout(id: id))
+        return true
+    }
+
     public func performQuickAction(_ action: SystemQuickAction) {
         tileFeedbackTracker.clearPendingWithoutFeedback()
         if action == .switchToNextWindow || action == .switchToPreviousWindow {

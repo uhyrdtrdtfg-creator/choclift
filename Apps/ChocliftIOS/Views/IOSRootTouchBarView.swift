@@ -391,6 +391,9 @@ public struct IOSRootTouchBarView: View {
                 .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
+                IOSCompanionHotkeysSection(client: client, toolsQuery: toolsQuery)
+                IOSQuadLayoutsToolsSection(client: client, searchQuery: toolsQuery)
+
                 toolsSection(L10n.tr("页面与工作区", "Pages & Workspace", language: lang)) {
                     HStack(spacing: 0) {
                         ForEach([PageReorderDirection.left, .right], id: \.self) { direction in
@@ -1649,5 +1652,304 @@ public struct IOSRootTouchBarView: View {
     private func updateIdleTimer() {
         UIApplication.shared.isIdleTimerDisabled =
             client.connectionState.isConnected && client.profile.settings.keepCompanionScreenAwake
+    }
+}
+
+private struct IOSQuadLayoutsToolsSection: View {
+    @ObservedObject var client: CompanionClientEngine
+    let searchQuery: String
+
+    @State private var isAdding: Bool = false
+    @State private var draftName: String = ""
+    @State private var topLeftText: String = ""
+    @State private var topRightText: String = ""
+    @State private var bottomLeftText: String = ""
+    @State private var bottomRightText: String = ""
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+    private var sectionTitle: String { L10n.tr("四宫格", "Quad Layouts", language: lang) }
+
+    private var recentAppChoices: [RecentAppEntry] {
+        client.recentApps.filter { !QuadAppSlot.isChocliftBundleIdentifier($0.bundleIdentifier) }
+    }
+
+    private var filteredLayouts: [QuadAppLayout] {
+        let trimmedQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return client.profile.quadLayouts }
+        if sectionTitle.localizedCaseInsensitiveContains(trimmedQuery) {
+            return client.profile.quadLayouts
+        }
+        return client.profile.quadLayouts.filter { layout in
+            layout.name.localizedCaseInsensitiveContains(trimmedQuery) ||
+            layout.summaryLine(in: lang).localizedCaseInsensitiveContains(trimmedQuery)
+        }
+    }
+
+    private var shouldShowSection: Bool {
+        let trimmedQuery = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else { return true }
+        return sectionTitle.localizedCaseInsensitiveContains(trimmedQuery) || !filteredLayouts.isEmpty
+    }
+
+    private var canAddMore: Bool {
+        client.profile.quadLayouts.count < QuadAppLayout.maxLibraryCount
+    }
+
+    private func textBinding(for corner: QuadCorner) -> Binding<String> {
+        switch corner {
+        case .topLeft: return $topLeftText
+        case .topRight: return $topRightText
+        case .bottomLeft: return $bottomLeftText
+        case .bottomRight: return $bottomRightText
+        }
+    }
+
+    private func rawText(for corner: QuadCorner) -> String {
+        switch corner {
+        case .topLeft: return topLeftText
+        case .topRight: return topRightText
+        case .bottomLeft: return bottomLeftText
+        case .bottomRight: return bottomRightText
+        }
+    }
+
+    private var candidateDraft: QuadAppLayout {
+        QuadAppLayout(
+            name: draftName,
+            topLeft: QuadAppSlot.resolveCompanionInput(topLeftText, recentApps: client.recentApps),
+            topRight: QuadAppSlot.resolveCompanionInput(topRightText, recentApps: client.recentApps),
+            bottomLeft: QuadAppSlot.resolveCompanionInput(bottomLeftText, recentApps: client.recentApps),
+            bottomRight: QuadAppSlot.resolveCompanionInput(bottomRightText, recentApps: client.recentApps)
+        )
+    }
+
+    private var canSaveDraft: Bool {
+        canAddMore && !candidateDraft.containsChocliftBundle && QuadAppLayout.sanitized(candidateDraft) != nil
+    }
+
+    var body: some View {
+        if shouldShowSection {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(sectionTitle)
+                        .font(ChocType.caption)
+                        .foregroundStyle(palette.secondaryText)
+                    Spacer()
+                    Text("\(client.profile.quadLayouts.count)/\(QuadAppLayout.maxLibraryCount)")
+                        .font(ChocType.micro.monospacedDigit())
+                        .foregroundStyle(palette.secondaryText)
+                }
+
+                VStack(spacing: 0) {
+                    ForEach(filteredLayouts) { layout in
+                        savedLayoutRow(layout)
+                    }
+
+                    if searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && canAddMore {
+                        if isAdding {
+                            addLayoutForm
+                        } else {
+                            Button {
+                                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                isAdding = true
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "plus.square.on.square")
+                                        .foregroundStyle(palette.accent)
+                                        .frame(width: 22)
+                                    Text(L10n.tr("新建四宫格", "New Quad Layout", language: lang))
+                                        .foregroundStyle(palette.primaryText)
+                                    Spacer(minLength: 0)
+                                }
+                                .font(ChocType.body)
+                                .padding(.horizontal, 16)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+            }
+        }
+    }
+
+    private func savedLayoutRow(_ layout: QuadAppLayout) -> some View {
+        HStack(spacing: 0) {
+            Button {
+                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                guard client.connectionState.isConnected else {
+                    client.lastFeedback = CompanionFeedbackToast(
+                        success: false,
+                        title: layout.name,
+                        detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                    )
+                    return
+                }
+                _ = client.runQuadLayout(id: layout.id)
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "square.grid.2x2.fill")
+                        .foregroundStyle(palette.accent)
+                        .frame(width: 22)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(layout.name)
+                            .font(ChocType.body)
+                            .foregroundStyle(palette.primaryText)
+                            .lineLimit(1)
+                        Text(layout.summaryLine(in: lang))
+                            .font(ChocType.micro)
+                            .foregroundStyle(palette.secondaryText)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                }
+                .padding(.leading, 16)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button(role: .destructive) {
+                deleteLayout(layout)
+            } label: {
+                Image(systemName: "trash")
+                    .font(ChocType.caption)
+                    .foregroundStyle(palette.statusFailure)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.tr("删除 \(layout.name)", "Delete \(layout.name)", language: lang))
+        }
+        .contextMenu {
+            Button(role: .destructive) {
+                deleteLayout(layout)
+            } label: {
+                Label(L10n.tr("删除", "Delete", language: lang), systemImage: "trash")
+            }
+        }
+    }
+
+    private var addLayoutForm: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextField(L10n.tr("布局名称", "Layout name", language: lang), text: $draftName)
+                .font(ChocType.body)
+                .padding(.horizontal, 12)
+                .frame(height: 40)
+                .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+
+            ForEach(QuadCorner.allCases, id: \.rawValue) { corner in
+                HStack(spacing: 8) {
+                    Label(corner.title(in: lang), systemImage: corner.sfSymbol)
+                        .font(ChocType.caption)
+                        .foregroundStyle(palette.secondaryText)
+                        .frame(width: 78, alignment: .leading)
+
+                    TextField(
+                        L10n.tr("应用名称（可留空）", "App name (optional)", language: lang),
+                        text: textBinding(for: corner)
+                    )
+                    .font(ChocType.body)
+                    .textInputAutocapitalization(.words)
+                    .disableAutocorrection(true)
+
+                    if !recentAppChoices.isEmpty {
+                        Menu {
+                            Button(L10n.tr("留空", "Clear", language: lang)) {
+                                textBinding(for: corner).wrappedValue = ""
+                            }
+                            ForEach(recentAppChoices) { app in
+                                Button(app.appName) {
+                                    textBinding(for: corner).wrappedValue = app.appName
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(ChocType.caption)
+                                .foregroundStyle(palette.accent)
+                                .frame(width: 32, height: 32)
+                                .contentShape(Rectangle())
+                        }
+                    }
+                }
+                .padding(.horizontal, 10)
+                .frame(minHeight: 40)
+                .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+            }
+
+            HStack(spacing: 10) {
+                Button {
+                    resetDraft()
+                } label: {
+                    Text(L10n.tr("取消", "Cancel", language: lang))
+                        .font(ChocType.caption)
+                        .foregroundStyle(palette.secondaryText)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    saveDraft()
+                } label: {
+                    Text(L10n.tr("保存", "Save", language: lang))
+                        .font(ChocType.caption)
+                        .foregroundStyle(canSaveDraft ? palette.accentForeground : palette.secondaryText)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .background(
+                            canSaveDraft ? palette.accent : palette.tileFillBottom,
+                            in: RoundedRectangle(cornerRadius: 10)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSaveDraft)
+            }
+        }
+        .padding(14)
+    }
+
+    private func deleteLayout(_ layout: QuadAppLayout) {
+        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+        guard client.connectionState.isConnected else {
+            client.lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: layout.name,
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        _ = client.deleteQuadLayout(id: layout.id)
+    }
+
+    private func saveDraft() {
+        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+        guard client.connectionState.isConnected else {
+            client.lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: sectionTitle,
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        if client.upsertQuadLayout(candidateDraft) {
+            resetDraft()
+        }
+    }
+
+    private func resetDraft() {
+        isAdding = false
+        draftName = ""
+        topLeftText = ""
+        topRightText = ""
+        bottomLeftText = ""
+        bottomRightText = ""
     }
 }

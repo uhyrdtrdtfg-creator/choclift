@@ -1435,6 +1435,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
     public var soundboardVolume: Double
     public var pinnedStripSlots: [SlotCoordinate]
     public var pinnedClipboardItems: [PinnedClipboardItem]
+    public var hotkeys: [CompanionHotkey]
+    public var quadLayouts: [QuadAppLayout]
 
     private enum CodingKeys: String, CodingKey {
         case revision
@@ -1451,6 +1453,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         case soundboardVolume
         case pinnedStripSlots
         case pinnedClipboardItems
+        case hotkeys
+        case quadLayouts
     }
 
     public init(
@@ -1467,7 +1471,9 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         soundboardClips: [SoundboardClip] = [],
         soundboardVolume: Double = SoundboardClip.defaultVolume,
         pinnedStripSlots: [SlotCoordinate] = [],
-        pinnedClipboardItems: [PinnedClipboardItem] = []
+        pinnedClipboardItems: [PinnedClipboardItem] = [],
+        hotkeys: [CompanionHotkey] = [],
+        quadLayouts: [QuadAppLayout] = []
     ) {
         self.revision = revision
         self.updatedAt = updatedAt
@@ -1483,6 +1489,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         self.soundboardVolume = ControlStripLevel.clamp(soundboardVolume)
         self.pinnedStripSlots = PinnedStripSlots.sanitize(pinnedStripSlots, in: pages)
         self.pinnedClipboardItems = PinnedClipboardShelf.sanitize(pinnedClipboardItems)
+        self.hotkeys = CompanionHotkeyLibrary.sanitize(hotkeys)
+        self.quadLayouts = QuadAppLayout.sanitize(quadLayouts)
     }
 
     public init(from decoder: Decoder) throws {
@@ -1528,6 +1536,10 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         } else {
             self.pinnedClipboardItems = []
         }
+        let decodedHotkeys = try container.decodeIfPresent([CompanionHotkey].self, forKey: .hotkeys) ?? []
+        self.hotkeys = CompanionHotkeyLibrary.sanitize(decodedHotkeys)
+        let decodedQuadLayouts = try container.decodeIfPresent([QuadAppLayout].self, forKey: .quadLayouts) ?? []
+        self.quadLayouts = QuadAppLayout.sanitize(decodedQuadLayouts)
     }
 
     private struct IgnoredJSONElement: Decodable {}
@@ -1551,6 +1563,8 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
         if !sanitizedClipboardPins.isEmpty {
             try container.encode(sanitizedClipboardPins, forKey: .pinnedClipboardItems)
         }
+        try container.encode(CompanionHotkeyLibrary.sanitize(hotkeys), forKey: .hotkeys)
+        try container.encode(QuadAppLayout.sanitize(quadLayouts), forKey: .quadLayouts)
     }
 
     private static func sanitizeAppDeckBindings(_ bindings: [String: UUID]) -> [String: UUID] {
@@ -2482,6 +2496,14 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
             let trimmed = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
                 result.insert(trimmed)
+            }
+        }
+        for layout in quadLayouts {
+            for (_, slot) in layout.occupiedCorners {
+                let trimmed = slot.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    result.insert(trimmed)
+                }
             }
         }
         return result

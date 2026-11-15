@@ -700,7 +700,7 @@ enum WebsiteMark {
 struct GitHubMark: Shape {
     func path(in rect: CGRect) -> Path {
         let scale = min(rect.width, rect.height) / 24
-        var transform = CGAffineTransform(translationX: rect.midX, y: rect.midY)
+        let transform = CGAffineTransform(translationX: rect.midX, y: rect.midY)
             .scaledBy(x: scale, y: scale)
             .translatedBy(x: -12, y: -12)
         return GitHubMarkPath.source.applying(transform)
