@@ -275,11 +275,17 @@ public final class MacServerEngine: ObservableObject {
         syncPairingState()
     }
 
-    /// `Task.sleep(for:)` cancellation is an escaping error on the CI Swift runtime.
+    /// CI's XCTest records `CancellationError` from `Task.sleep` even after `try?`.
     static func sleepUntilCancelled(seconds: TimeInterval) async {
-        let clamped = max(0, seconds)
-        let nanos = UInt64((clamped * 1_000_000_000).rounded())
-        try? await Task.sleep(nanoseconds: nanos)
+        let delay = max(0, seconds)
+        let gate = NonThrowingSleepGate()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                gate.arm(delay: delay, continuation: continuation)
+            }
+        } onCancel: {
+            gate.cancel()
+        }
     }
 
     private func ensureHeartbeatMonitorRunning() {
@@ -821,7 +827,55 @@ public final class MacServerEngine: ObservableObject {
             cleanupSession(sessionID: sessionID)
         }
     }
+}
 
+private final class NonThrowingSleepGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var work: DispatchWorkItem?
+    private var cancelled = false
+    private var finished = false
+
+    func arm(delay: TimeInterval, continuation: CheckedContinuation<Void, Never>) {
+        let item = DispatchWorkItem { [weak self] in
+            self?.finish()
+        }
+        lock.lock()
+        if cancelled || finished {
+            lock.unlock()
+            continuation.resume()
+            return
+        }
+        self.continuation = continuation
+        work = item
+        lock.unlock()
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        work?.cancel()
+        work = nil
+        lock.unlock()
+        finish()
+    }
+
+    private func finish() {
+        lock.lock()
+        guard !finished else {
+            lock.unlock()
+            return
+        }
+        finished = true
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume()
+    }
+}
+
+extension MacServerEngine {
     private func handleIncomingMessage(_ message: ClientMessage, session: ClientSessionContext) {
         switch message {
         case .hello(let clientProtocolVersion, let deviceID, let deviceName, let platform, let savedAuthToken):
