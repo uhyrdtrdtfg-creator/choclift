@@ -404,6 +404,8 @@ public struct DevicesAndSettingsView: View {
 
                         pairedDevicesCard
 
+                        MacWatchPinnedAppsCard(coordinator: coordinator)
+
                         MacCompanionHotkeysCard(coordinator: coordinator)
 
                         appearanceAndPreferencesCard

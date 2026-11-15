@@ -926,6 +926,7 @@ public final class MacServerEngine: ObservableObject {
                  .pauseDeskTimer,
                  .resumeDeskTimer,
                  .resetDeskTimer:
+                 .setWatchPinnedApps:
                 session.supportsControlStrip = true
             case .requestCompanionDashboard,
                  .pasteMacClipboard,

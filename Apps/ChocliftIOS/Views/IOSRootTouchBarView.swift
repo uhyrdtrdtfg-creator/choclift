@@ -372,6 +372,7 @@ public struct IOSRootTouchBarView: View {
 
                 IOSDeskTimerSection(client: client, toolsQuery: toolsQuery)
                 IOSCompanionHotkeysSection(client: client, toolsQuery: toolsQuery)
+                IOSWatchPinnedAppsSection(client: client, toolsQuery: toolsQuery)
                 IOSQuadLayoutsToolsSection(client: client, searchQuery: toolsQuery)
 
                 toolsSection(L10n.tr("页面与工作区", "Pages & Workspace", language: lang)) {

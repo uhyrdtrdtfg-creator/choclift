@@ -2921,7 +2921,19 @@ public final class CompanionClientEngine: ObservableObject {
         let trimmed = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         guard connectionState.isConnected else {
-            let displayName = controlStripState.nowPlaying?.appName ?? trimmed
+            let nowPlayingName: String? = {
+                guard let np = controlStripState.nowPlaying,
+                      let npBundle = np.bundleIdentifier,
+                      npBundle.caseInsensitiveCompare(trimmed) == .orderedSame else {
+                    return nil
+                }
+                return np.appName
+            }()
+            let displayName = nowPlayingName ?? profile.resolvedAppDisplayName(
+                forBundleIdentifier: trimmed,
+                recentApps: recentApps,
+                catalogApps: macCatalogApps
+            )
             lastFeedback = CompanionFeedbackToast(
                 success: false,
                 title: displayName,
@@ -2929,8 +2941,11 @@ public final class CompanionClientEngine: ObservableObject {
             )
             return false
         }
+        let resolvedPath = appPath
+            ?? recentApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(trimmed) == .orderedSame })?.appPath
+            ?? macCatalogApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(trimmed) == .orderedSame })?.appPath
         tileFeedbackTracker.clearPendingWithoutFeedback()
-        send(.activateRecentApp(bundleIdentifier: trimmed, appPath: appPath))
+        send(.activateRecentApp(bundleIdentifier: trimmed, appPath: resolvedPath))
         return true
     }
 
@@ -3078,6 +3093,32 @@ public final class CompanionClientEngine: ObservableObject {
         }
         tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.runQuadLayout(id: id))
+        return true
+    }
+
+    @discardableResult
+    public func setWatchPinnedApps(_ bundleIDs: [String]) -> Bool {
+        let lang = profile.settings.language
+        let hasNonEmptyInput = bundleIDs.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let sanitized = WatchPinnedApps.sanitize(bundleIDs)
+        if hasNonEmptyInput && sanitized.isEmpty {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("手表常用应用", "Watch Pinned Apps", language: lang),
+                detail: L10n.tr("不能固定 Choclift 自身", "Choclift itself cannot be pinned", language: lang)
+            )
+            return false
+        }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("手表常用应用", "Watch Pinned Apps", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return false
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.setWatchPinnedApps(bundleIDs: sanitized))
         return true
     }
 

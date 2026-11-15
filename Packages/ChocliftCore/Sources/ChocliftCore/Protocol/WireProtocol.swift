@@ -70,6 +70,7 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case resumeDeskTimer
     case resetDeskTimer
     case pastePhoneClipboard(text: String)
+    case setWatchPinnedApps(bundleIDs: [String])
     case unknownClientMessage
 }
 
