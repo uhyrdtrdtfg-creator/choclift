@@ -698,6 +698,140 @@ public final class MacAccessibilityAndWindowService {
     }
 
     @discardableResult
+    public func applyCompanionWindowFrame(
+        preferredPID: pid_t?,
+        strictTargetPID: Bool = false,
+        targetWindowKey: String? = nil,
+        resolveFrame: (
+            _ pid: pid_t,
+            _ windowKey: String,
+            _ appName: String,
+            _ currentFrame: CGRect,
+            _ visibleQuartz: CGRect,
+            _ quartzScreens: [QuartzScreenBounds],
+            _ screenNames: [String],
+            _ allowResize: Bool
+        ) -> Result<(frame: CGRect, message: String), WindowPackFrameError>
+    ) -> (success: Bool, message: String) {
+        guard AXIsProcessTrusted() else {
+            _ = promptForAccessibilityPermission()
+            return (false, L10n.tr("请在系统设置 → 辅助功能中授权 Choclift 控制窗口", "Grant Accessibility permission in System Settings to control windows"))
+        }
+
+        guard let app = resolveNonSelfWindowTargetApp(
+            preferredPID: preferredPID,
+            strictTargetPID: strictTargetPID,
+            selfPID: ProcessInfo.processInfo.processIdentifier
+        ) else {
+            if strictTargetPID {
+                return (false, L10n.tr("目标应用未运行，已停止窗口操作", "Target application is not running; aborted window operation"))
+            }
+            return (false, L10n.tr("未找到活动窗口", "No active application found"))
+        }
+
+        let appDisplayName = app.localizedName ?? "App"
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        let windowElement: AXUIElement
+        if let targetWindowKey {
+            var listRef: CFTypeRef?
+            let candidates: [AXUIElement] = {
+                if AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &listRef) == .success,
+                   let list = listRef as? [AXUIElement] {
+                    return list
+                }
+                if let fallback = resolveTargetWindow(for: appElement) {
+                    return [fallback]
+                }
+                return []
+            }()
+            guard let matched = candidates.first(where: { "\(app.processIdentifier)-\(CFHash($0))" == targetWindowKey }) else {
+                return (false, L10n.tr("已保存的窗口已关闭或不可用", "Saved window was closed or is no longer available"))
+            }
+            var minRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(matched, kAXMinimizedAttribute as CFString, &minRef) == .success,
+               let isMin = minRef as? Bool, isMin {
+                _ = AXUIElementSetAttributeValue(matched, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
+            }
+            windowElement = matched
+        } else {
+            switch resolveTargetWindowResult(for: appElement) {
+            case .window(let resolved):
+                windowElement = resolved
+            case .axFailure(let axErr):
+                return (false, WindowAXErrorFormatting.moveFailureMessage(rawCode: axErr.rawValue))
+            case .noWindow:
+                return (false, L10n.tr("\(appDisplayName) 当前没有可调整的窗口", "No adjustable window in \(appDisplayName)"))
+            }
+        }
+
+        let currentFrame: CGRect
+        switch readWindowQuartzFrameResult(windowElement) {
+        case .success(let rect):
+            currentFrame = rect
+        case .failure(let axErr):
+            return (false, WindowAXErrorFormatting.moveFailureMessage(rawCode: axErr.code))
+        }
+
+        let screens = NSScreen.screens
+        let targetScreen: NSScreen? = {
+            if screens.count > 1,
+               let chosenID = selectedTargetDisplayID,
+               let chosenScreen = screen(forDisplayID: chosenID) {
+                return chosenScreen
+            }
+            return screenContainingQuartzRect(currentFrame) ?? NSScreen.main ?? screens.first
+        }()
+        guard let screen = targetScreen else {
+            return (false, L10n.tr("未检测到可用显示器", "No screen available"))
+        }
+
+        let visibleQuartz = convertAppKitScreenRectToQuartz(screen.visibleFrame)
+        let quartzScreens = WindowDisplayGeometry.quartzScreens(
+            from: screens.map { WindowScreenDescriptor(frame: $0.frame, visibleFrame: $0.visibleFrame) }
+        )
+        let screenNames = screens.map(\.localizedName)
+        let windowKey = "\(app.processIdentifier)-\(CFHash(windowElement))"
+        let sizeSettable = isAttributeSettable(kAXSizeAttribute as String, on: windowElement)
+
+        let resolved: (frame: CGRect, message: String)
+        switch resolveFrame(
+            app.processIdentifier,
+            windowKey,
+            appDisplayName,
+            currentFrame,
+            visibleQuartz,
+            quartzScreens,
+            screenNames,
+            sizeSettable
+        ) {
+        case .success(let plan):
+            resolved = plan
+        case .failure(let reason):
+            return (false, reason.message)
+        }
+
+        let shouldApplySize = sizeSettable && resolved.frame.size != currentFrame.size
+        switch writeWindowQuartzFrameResult(
+            windowElement,
+            frame: resolved.frame,
+            applySize: shouldApplySize,
+            rollbackOrigin: currentFrame.origin
+        ) {
+        case .success:
+            recordWindowMoveForUndo(
+                windowKey: windowKey,
+                pid: app.processIdentifier,
+                windowElement: windowElement,
+                appName: appDisplayName,
+                previousFrame: currentFrame
+            )
+            return (true, resolved.message)
+        case .failure(let axErr):
+            return (false, WindowAXErrorFormatting.moveFailureMessage(rawCode: axErr.code))
+        }
+    }
+
+    @discardableResult
     public func closeFrontmostWindow(
         preferredPID: pid_t?,
         strictTargetPID: Bool = false,
