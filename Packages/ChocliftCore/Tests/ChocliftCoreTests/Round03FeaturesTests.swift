@@ -228,8 +228,6 @@ final class Round03FeaturesTests: XCTestCase {
             .redoAction: "⇧⌘Z",
             .lockScreen: "⌃⌘Q",
             .openEmojiPicker: "⌃⌘Space",
-            .switchToNextSpace: "⌃→",
-            .switchToPreviousSpace: "⌃←",
             .toggleAppSwitcher: "⌘Tab"
         ]
 

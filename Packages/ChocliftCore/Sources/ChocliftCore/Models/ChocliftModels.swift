@@ -240,10 +240,6 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return "⌃⌘Q"
         case .openEmojiPicker:
             return "⌃⌘Space"
-        case .switchToNextSpace:
-            return "⌃→"
-        case .switchToPreviousSpace:
-            return "⌃←"
         case .toggleAppSwitcher:
             return "⌘Tab"
         case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
@@ -252,6 +248,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
              .screenshotInteractive, .mediaPlayPause, .mediaNext, .mediaPrevious,
              .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca,
              .moveWindowToNextDisplay, .toggleAppearance, .toggleNightShift,
+             .switchToNextSpace, .switchToPreviousSpace,
              .closeFrontmostWindow, .toggleLaunchpad, .toggleNotificationCenter, .toggleDictation:
             return nil
         }
@@ -2821,8 +2818,6 @@ public enum WindowCycleKeystrokeRouting {
 public enum WorkspaceShortcutKeystrokeRouting {
     public static func keystroke(for action: SystemQuickAction) -> (virtualKey: CGKeyCode, flags: CGEventFlags)? {
         switch action {
-        case .switchToNextSpace: return (CGKeyCode(kVK_RightArrow), .maskControl)
-        case .switchToPreviousSpace: return (CGKeyCode(kVK_LeftArrow), .maskControl)
         case .toggleAppSwitcher: return (CGKeyCode(kVK_Tab), .maskCommand)
         default: return nil
         }
