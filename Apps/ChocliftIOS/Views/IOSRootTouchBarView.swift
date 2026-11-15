@@ -391,6 +391,7 @@ public struct IOSRootTouchBarView: View {
                 .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
+                IOSDeskTimerSection(client: client, toolsQuery: toolsQuery)
                 IOSCompanionHotkeysSection(client: client, toolsQuery: toolsQuery)
                 IOSQuadLayoutsToolsSection(client: client, searchQuery: toolsQuery)
 

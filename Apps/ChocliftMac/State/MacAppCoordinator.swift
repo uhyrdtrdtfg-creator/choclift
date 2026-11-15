@@ -121,6 +121,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
     public let calendarService: MacCalendarEventService
     public let soundboardService: MacSoundboardService
     public let keepAwakeService: MacKeepAwakeService
+    public let deskTimerService: MacDeskTimerService
     public let updaterService: MacSparkleUpdaterService
     public private(set) var sentenceFlow: MacSentenceFlowController!
 
@@ -188,6 +189,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.calendarService = MacCalendarEventService()
         self.soundboardService = MacSoundboardService()
         self.keepAwakeService = MacKeepAwakeService()
+        self.deskTimerService = MacDeskTimerService()
         self.updaterService = MacSparkleUpdaterService()
         let loginSvc = MacLaunchAtLoginService()
         self.launchAtLoginService = loginSvc
@@ -320,6 +322,23 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         }
         systemControlService.keepMacAwakeProvider = { [weak self] in
             self?.keepAwakeService.isHoldingAssertion ?? false
+        }
+        deskTimerService.onStateChanged = { [weak self] timerState in
+            guard let self else { return }
+            self.systemControlService.syncDeskTimer(timerState)
+        }
+        deskTimerService.onCompleted = { [weak self] in
+            NSSound.beep()
+            guard let self else { return }
+            let minutes = max(1, self.deskTimerService.state.presetSeconds / 60)
+            self.recordActivity(
+                deviceName: "Mac",
+                summary: L10n.tr("计时器已到时（\(minutes) 分钟）", "Timer finished (\(minutes)m)", language: self.lang),
+                isSuccess: true
+            )
+        }
+        systemControlService.deskTimerProvider = { [weak self] in
+            self?.deskTimerService.state ?? .idle
         }
         systemControlService.canUndoWindowMoveProvider = { [weak self] in
             self?.windowService.canUndoLastWindowMove ?? false
@@ -1137,6 +1156,71 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         Task { @MainActor in
             let res = await runQuadLayout(id: id, triggeredBy: "Mac Studio")
             flashBanner(res.message)
+        }
+    }
+
+    // MARK: - Desk Timer
+
+    public func startDeskTimer(presetSeconds: Int, triggeredBy deviceName: String = "Mac Studio") {
+        deskTimerService.start(presetSeconds: presetSeconds)
+        systemControlService.syncDeskTimer(deskTimerService.state)
+        controlStripState = systemControlService.currentState
+        let formatted = DeskTimerState.formattedClock(seconds: deskTimerService.state.presetSeconds)
+        recordActivity(
+            deviceName: deviceName,
+            summary: L10n.tr("已启动计时器 \(formatted)", "Started timer \(formatted)", language: lang),
+            isSuccess: true
+        )
+    }
+
+    public func pauseDeskTimer(triggeredBy deviceName: String = "Mac Studio") {
+        guard deskTimerService.state.phase == .running else { return }
+        deskTimerService.pause()
+        systemControlService.syncDeskTimer(deskTimerService.state)
+        controlStripState = systemControlService.currentState
+        let formatted = DeskTimerState.formattedClock(seconds: deskTimerService.state.remainingSeconds)
+        recordActivity(
+            deviceName: deviceName,
+            summary: L10n.tr("已暂停计时器（剩余 \(formatted)）", "Paused timer (\(formatted) left)", language: lang),
+            isSuccess: true
+        )
+    }
+
+    public func resumeDeskTimer(triggeredBy deviceName: String = "Mac Studio") {
+        guard deskTimerService.state.phase == .paused else { return }
+        deskTimerService.resume()
+        systemControlService.syncDeskTimer(deskTimerService.state)
+        controlStripState = systemControlService.currentState
+        let formatted = DeskTimerState.formattedClock(seconds: deskTimerService.state.remainingSeconds)
+        recordActivity(
+            deviceName: deviceName,
+            summary: L10n.tr("已继续计时器（剩余 \(formatted)）", "Resumed timer (\(formatted) left)", language: lang),
+            isSuccess: true
+        )
+    }
+
+    public func resetDeskTimer(triggeredBy deviceName: String = "Mac Studio") {
+        let wasActive = deskTimerService.state.phase != .idle
+        deskTimerService.reset()
+        systemControlService.syncDeskTimer(deskTimerService.state)
+        controlStripState = systemControlService.currentState
+        if wasActive {
+            recordActivity(
+                deviceName: deviceName,
+                summary: L10n.tr("已重置计时器", "Reset timer", language: lang),
+                isSuccess: true
+            )
+        }
+    }
+
+    public func toggleDeskTimerRunPause(triggeredBy deviceName: String = "Mac Studio") {
+        switch deskTimerService.state.phase {
+        case .running:
+            pauseDeskTimer(triggeredBy: deviceName)
+        case .paused:
+            resumeDeskTimer(triggeredBy: deviceName)
+        case .idle:
+            startDeskTimer(presetSeconds: deskTimerService.state.presetSeconds, triggeredBy: deviceName)
         }
     }
 
@@ -2203,6 +2287,34 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             Task { @MainActor in
                 let res = await runQuadLayout(id: id, triggeredBy: device.deviceName)
                 reply(.actionFeedback(success: res.success, title: res.title, detail: res.message))
+            }
+
+        case .startDeskTimer(let presetSeconds):
+            let previousTimer = systemControlService.currentState.deskTimer
+            startDeskTimer(presetSeconds: presetSeconds, triggeredBy: device.deviceName)
+            if systemControlService.currentState.deskTimer == previousTimer {
+                reply(.controlStripStateUpdated(systemControlService.currentState))
+            }
+
+        case .pauseDeskTimer:
+            let previousTimer = systemControlService.currentState.deskTimer
+            pauseDeskTimer(triggeredBy: device.deviceName)
+            if systemControlService.currentState.deskTimer == previousTimer {
+                reply(.controlStripStateUpdated(systemControlService.currentState))
+            }
+
+        case .resumeDeskTimer:
+            let previousTimer = systemControlService.currentState.deskTimer
+            resumeDeskTimer(triggeredBy: device.deviceName)
+            if systemControlService.currentState.deskTimer == previousTimer {
+                reply(.controlStripStateUpdated(systemControlService.currentState))
+            }
+
+        case .resetDeskTimer:
+            let previousTimer = systemControlService.currentState.deskTimer
+            resetDeskTimer(triggeredBy: device.deviceName)
+            if systemControlService.currentState.deskTimer == previousTimer {
+                reply(.controlStripStateUpdated(systemControlService.currentState))
             }
 
         case .seekNowPlaying(let positionSeconds):

@@ -921,7 +921,11 @@ public final class MacServerEngine: ObservableObject {
                  .deleteCompanionHotkey,
                  .upsertQuadLayout,
                  .deleteQuadLayout,
-                 .runQuadLayout:
+                 .runQuadLayout,
+                 .startDeskTimer,
+                 .pauseDeskTimer,
+                 .resumeDeskTimer,
+                 .resetDeskTimer:
                 session.supportsControlStrip = true
             case .requestCompanionDashboard, .pasteMacClipboard, .captureMainDisplayScreenshot, .openCalendarApp:
                 session.supportsCompanionDashboard = true
