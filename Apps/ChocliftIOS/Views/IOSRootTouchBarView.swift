@@ -184,6 +184,10 @@ public struct IOSRootTouchBarView: View {
         .sheet(isPresented: $showToolsSheet) {
             NavigationStack {
                 toolsList
+                .overlay(alignment: .top) {
+                    toolsSheetFeedbackOverlay
+                }
+                .animation(.easeInOut(duration: 0.2), value: hudToast)
                 .background(palette.backgroundTop)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -483,6 +487,11 @@ public struct IOSRootTouchBarView: View {
                         client.performQuickAction(.toggleDictation)
                     }
                     toolsRow(L10n.tr("粘贴 Mac 剪贴板", "Paste Mac Clipboard", language: lang), "doc.on.clipboard") { client.pasteMacClipboard() }
+                    toolsRow(L10n.tr("粘贴手机剪贴板", "Paste iPhone Clipboard", language: lang), "iphone.and.arrow.forward") {
+                        if client.pastePhoneClipboard(UIPasteboard.general.string) {
+                            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                        }
+                    }
                     ForEach(CompanionCompactKey.allCases) { key in
                         toolsRow(key.title(in: lang), key.sfSymbol) { client.sendCompactKey(key) }
                     }
@@ -1646,6 +1655,50 @@ public struct IOSRootTouchBarView: View {
             if hudToast?.id == banner.id {
                 hudToast = nil
             }
+        }
+    }
+
+    @ViewBuilder
+    private var toolsSheetFeedbackOverlay: some View {
+        if let hud = hudToast {
+            let cornerRadius: CGFloat = hud.secondaryText == nil ? 20 : 14
+            HStack(spacing: 7) {
+                Image(systemName: hud.isFailure ? "exclamationmark.triangle.fill" : "sparkles")
+                    .font(ChocType.caption)
+                    .foregroundStyle(hud.isFailure ? palette.statusFailure : palette.accent)
+
+                VStack(alignment: .leading, spacing: 1.5) {
+                    Text(hud.primaryText)
+                        .font(ChocType.caption)
+                        .foregroundStyle(palette.primaryText)
+                        .lineLimit(hud.secondaryText == nil ? 2 : 1)
+
+                    if let secondary = hud.secondaryText {
+                        Text(secondary)
+                            .font(ChocType.micro)
+                            .foregroundStyle(hud.isFailure ? palette.statusFailure : palette.secondaryText)
+                            .lineLimit(2)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                palette.barSurface.opacity(0.97),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        hud.isFailure ? palette.statusFailure.opacity(0.75) : palette.subtleCardStroke,
+                        lineWidth: hud.isFailure ? 1.3 : 1
+                    )
+            )
+            .shadow(color: palette.primaryText.opacity(0.08), radius: 8, x: 0, y: 4)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .allowsHitTesting(false)
+            .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
 

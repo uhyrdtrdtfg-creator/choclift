@@ -2173,6 +2173,37 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: key.title(in: lang), detail: res.message))
 
+        case .pastePhoneClipboard(let text):
+            guard let clamped = PhoneClipboardPaste.clamp(text) else {
+                let emptyDetail = L10n.tr(
+                    "手机剪贴板为空",
+                    "iPhone clipboard is empty",
+                    language: lang
+                )
+                recordActivity(deviceName: device.deviceName, summary: emptyDetail, isSuccess: false)
+                reply(.actionFeedback(
+                    success: false,
+                    title: L10n.tr("粘贴手机剪贴板", "Paste iPhone Clipboard", language: lang),
+                    detail: emptyDetail
+                ))
+                return
+            }
+            let res = inputService.executeSnippet(
+                clamped,
+                mode: .focusedFieldInsert,
+                preferredPID: timeTravel.lastExternalAppPID,
+                allowActivatingPreferredPID: false,
+                language: lang
+            )
+            guard res.didPerformAction || !res.message.isEmpty else { return }
+            recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
+            let label = MacInputAndMediaService.previewLabel(for: clamped)
+            reply(.actionFeedback(
+                success: res.success,
+                title: label.isEmpty ? L10n.tr("粘贴手机剪贴板", "Paste iPhone Clipboard", language: lang) : label,
+                detail: res.message
+            ))
+
         case .performCompanionAction(let id):
             let action = CompanionActionCatalog.action(id: id)
             let res = MacCompanionActionRunner.run(id: id, preferredPID: timeTravel.lastExternalAppPID)

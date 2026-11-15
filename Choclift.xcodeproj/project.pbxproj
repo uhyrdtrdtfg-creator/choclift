@@ -53,6 +53,7 @@
 		33878859FBF852A76234D4F2 /* Round05Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */; };
 		3398DF62B62B53105D05AD43 /* ActionFlowsStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A0A827A172B80AEAD41CB0 /* ActionFlowsStudioView.swift */; };
 		345F6C0A12D26C40FDB51738 /* IOSRootTouchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C6F35B1BB29CD96ADCDCAA /* IOSRootTouchBarView.swift */; };
+		357ED7DA0E5086E421268A14 /* PhoneClipboardPaste.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7480A0037C05E926D6761C /* PhoneClipboardPaste.swift */; };
 		3695A85ECA5D017250793BC3 /* notes.png in Resources */ = {isa = PBXBuildFile; fileRef = BE2646C17F6B581FF2D9A9FC /* notes.png */; };
 		3923DE033DA8CB55EBCDE31D /* CompanionActionPack+Display.swift in Sources */ = {isa = PBXBuildFile; fileRef = 718D4FBEB597E4E68A91BCF6 /* CompanionActionPack+Display.swift */; };
 		397EC37A53C4C6D011658F1E /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
@@ -130,8 +131,8 @@
 		834C7CBB907FCECE0FDA0022 /* CompanionActionPack+FilesRecent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3BD2E09E1BAA8964BA95CA /* CompanionActionPack+FilesRecent.swift */; };
 		83A2B79E6AA4B0064DCB8D8B /* messages.png in Resources */ = {isa = PBXBuildFile; fileRef = D2F04CF28043E06EA8DB3BE5 /* messages.png */; };
 		856C0A656C5370A2B44A5DE2 /* MacNotchPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116CCCD57CF0CF405584EA0E /* MacNotchPanelController.swift */; };
-		86DE51B51BDB96523BCE17DE /* MacDisplayActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D073AD8485E312AC5F89228E /* MacDisplayActionPack.swift */; };
 		85DD112C6A09F80CC0D40639 /* CompanionActionPack+SessionShow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07882DEC72AC9EBD97806FE /* CompanionActionPack+SessionShow.swift */; };
+		86DE51B51BDB96523BCE17DE /* MacDisplayActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D073AD8485E312AC5F89228E /* MacDisplayActionPack.swift */; };
 		8BD28D289A0F06AB4ABD0E89 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 7F966FF90CB5DBD1DB68339B /* Sparkle */; };
 		8C918E3285A15566849F6612 /* CompanionActionCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBAB69B3EFD755C9C6D81036 /* CompanionActionCatalog.swift */; };
 		8CDA41C0F0FFD2D11986AFD0 /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
@@ -173,6 +174,7 @@
 		B87ED18F694827573BF6F5AF /* OrcaSelectionDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457684FD77B5477F24FC5F8D /* OrcaSelectionDispatch.swift */; };
 		B8F2F788A18171EF3C6425D7 /* Round08Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472B24341B0AAB1760F49B87 /* Round08Models.swift */; };
 		B94603986FDB8C63A5EFA896 /* Round03Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BECCE6B737BB090769DC143 /* Round03Models.swift */; };
+		BA2E65F88991897EE6F760A9 /* PhoneClipboardPaste.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7480A0037C05E926D6761C /* PhoneClipboardPaste.swift */; };
 		BC94FCFFD6ABE26E0CAEC587 /* CompanionActionPack+Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BF56E643510A055FB8F95C1 /* CompanionActionPack+Session.swift */; };
 		BDAB74CDC0F57501EA16D86C /* CompanionActionPack+Edit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */; };
 		BFB77175E5EBCA7CC882CF59 /* CompanionActionPack+SessionShow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07882DEC72AC9EBD97806FE /* CompanionActionPack+SessionShow.swift */; };
@@ -198,6 +200,7 @@
 		D7FCC2E5110CA56C5725F6DA /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
 		D83C8556667C1E95D19A2B99 /* MacFilesActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = A42F0F5A0680F0FDE17F7C0D /* MacFilesActionPack.swift */; };
 		D8847B5706C5AEE2867F3B24 /* OrcaSelectionDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457684FD77B5477F24FC5F8D /* OrcaSelectionDispatch.swift */; };
+		D8A40657921D272B3A7D4D41 /* PhoneClipboardPaste.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7480A0037C05E926D6761C /* PhoneClipboardPaste.swift */; };
 		D98C8883FC0A69798C9BE591 /* music.png in Resources */ = {isa = PBXBuildFile; fileRef = 8215F8844882FF09DD4D19AC /* music.png */; };
 		DAB4CBDFA2B7DA671F50C2C0 /* MacServerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3371CFFF20B9E1134EDB3E8 /* MacServerEngine.swift */; };
 		DE2BB25340B0E35ECACB71AF /* reminders.png in Resources */ = {isa = PBXBuildFile; fileRef = 213217E3E0ADB61F84B88238 /* reminders.png */; };
@@ -276,6 +279,7 @@
 		0455E6A3BEB8E8030DFB5547 /* ChocliftMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChocliftMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0637814C808EC6900262C681 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		07212AF17DB6353FA2039C3E /* IOSRound02CompanionControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound02CompanionControls.swift; sourceTree = "<group>"; };
+		0B7480A0037C05E926D6761C /* PhoneClipboardPaste.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneClipboardPaste.swift; sourceTree = "<group>"; };
 		0D64F1BC1A63A04202433DEB /* ChocliftIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ChocliftIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0F2E71FEEB8D3806C6759ADB /* CompanionActionPack+Apps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Apps.swift"; sourceTree = "<group>"; };
 		116CCCD57CF0CF405584EA0E /* MacNotchPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNotchPanelController.swift; sourceTree = "<group>"; };
@@ -704,6 +708,7 @@
 				A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */,
 				457684FD77B5477F24FC5F8D /* OrcaSelectionDispatch.swift */,
 				4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */,
+				0B7480A0037C05E926D6761C /* PhoneClipboardPaste.swift */,
 				6C79254C7D1D99229CFFA4BB /* QuadAppLayout.swift */,
 				8BECCE6B737BB090769DC143 /* Round03Models.swift */,
 				26FF0695A991380B3FB28853 /* Round04Models.swift */,
@@ -1048,6 +1053,7 @@
 				94A271287C3D5FB9DC454029 /* NotchPanelGeometry.swift in Sources */,
 				B87ED18F694827573BF6F5AF /* OrcaSelectionDispatch.swift in Sources */,
 				C8FC5F6E229B84BD0B158814 /* OrcaTaskStatus.swift in Sources */,
+				357ED7DA0E5086E421268A14 /* PhoneClipboardPaste.swift in Sources */,
 				82612B4144EDA160119CA96E /* PlatformCompanionSupport.swift in Sources */,
 				71638B109DA174CC1A449AD7 /* QuadAppLayout.swift in Sources */,
 				B94603986FDB8C63A5EFA896 /* Round03Models.swift in Sources */,
@@ -1095,6 +1101,7 @@
 				7873292E1BA2830A6AC412E9 /* NotchPanelGeometry.swift in Sources */,
 				2D717D29F44736CCFF71E4EC /* OrcaSelectionDispatch.swift in Sources */,
 				A5374FE85744A7334FEE033E /* OrcaTaskStatus.swift in Sources */,
+				BA2E65F88991897EE6F760A9 /* PhoneClipboardPaste.swift in Sources */,
 				73A50ADF2E84DCAC91075CA4 /* PlatformCompanionSupport.swift in Sources */,
 				F36544C088A44A5AF7B346C2 /* QuadAppLayout.swift in Sources */,
 				45FACC28CE3788D20748324C /* Round03Models.swift in Sources */,
@@ -1186,6 +1193,7 @@
 				CD2ABCE216981DECA9C23D63 /* NotchPanelGeometry.swift in Sources */,
 				D8847B5706C5AEE2867F3B24 /* OrcaSelectionDispatch.swift in Sources */,
 				28AAE9E440B4B1A1D394BF4B /* OrcaTaskStatus.swift in Sources */,
+				D8A40657921D272B3A7D4D41 /* PhoneClipboardPaste.swift in Sources */,
 				6C90D70E5CDF89187DB9B236 /* PlatformCompanionSupport.swift in Sources */,
 				3A4D4F0B472779B5B93BB736 /* QuadAppLayout.swift in Sources */,
 				04CC39CE219884E5399BC74D /* Round03Models.swift in Sources */,
