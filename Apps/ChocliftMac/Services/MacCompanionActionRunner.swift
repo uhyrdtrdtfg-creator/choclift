@@ -19,6 +19,9 @@ enum MacCompanionActionRunner {
         if CompanionActionCatalog.systemPack.contains(where: { $0.id == id }) {
             return MacSystemActionPack.run(id: id)
         }
+        if id.hasPrefix("session.") {
+            return MacSessionActionPack.run(id: id, preferredPID: preferredPID)
+        }
         return (false, L10n.tr("不支持此操作", "Unsupported action"))
     }
 }
