@@ -54,6 +54,7 @@
 		397EC37A53C4C6D011658F1E /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
 		39B7BF35A2DCA3748B9CCD32 /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
 		39C7A34BF45F7854FE2A8AA4 /* Round05Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */; };
+		3A4D4F0B472779B5B93BB736 /* QuadAppLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C79254C7D1D99229CFFA4BB /* QuadAppLayout.swift */; };
 		3AE70F44F2814BCF59DB9948 /* MacCompanionActionRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47AD940D8025DB63EA4C41E1 /* MacCompanionActionRunner.swift */; };
 		3C4C52891835C63359ED3EF3 /* IOSSlotEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 992E3238F727E1244DEB62AA /* IOSSlotEditorSheet.swift */; };
 		3C6CD3F09A85957E235FC292 /* IOSRound05CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9242FC5069DD70073C7079D2 /* IOSRound05CompanionFeatures.swift */; };
@@ -70,6 +71,7 @@
 		45BF1BD57308D700E5E11D3E /* SentenceActionFlowProposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA86D7ED48F9DCB7113CBAA8 /* SentenceActionFlowProposer.swift */; };
 		45FACC28CE3788D20748324C /* Round03Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BECCE6B737BB090769DC143 /* Round03Models.swift */; };
 		46B439371362CCD4D5EA02D7 /* CompanionActionPack+Files.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B997305863F5C700F00C218 /* CompanionActionPack+Files.swift */; };
+		4834E91B9EA3E33E51B5009E /* MacQuadLayoutRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B451EA8D2F5C131A3E42F8 /* MacQuadLayoutRunner.swift */; };
 		48A6D98FD3240276622D68B8 /* SentenceActionFlowProposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA86D7ED48F9DCB7113CBAA8 /* SentenceActionFlowProposer.swift */; };
 		4946D8F47BBA0A5DCD8BC7FF /* Round06Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5516ABBE3BED08F5C3A200D3 /* Round06Models.swift */; };
 		4D8E5D7770C2D29F32B9E1B7 /* CompanionActionCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBAB69B3EFD755C9C6D81036 /* CompanionActionCatalog.swift */; };
@@ -94,6 +96,7 @@
 		6BF1273A3B22B05D9D291B58 /* safari.png in Resources */ = {isa = PBXBuildFile; fileRef = D6A84CEE75CB8D687A708F81 /* safari.png */; };
 		6C90D70E5CDF89187DB9B236 /* PlatformCompanionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */; };
 		6FBAEDF0A09B6179B14A661B /* CompanionHotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0B189405B590A056914BC80 /* CompanionHotkey.swift */; };
+		71638B109DA174CC1A449AD7 /* QuadAppLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C79254C7D1D99229CFFA4BB /* QuadAppLayout.swift */; };
 		73A50ADF2E84DCAC91075CA4 /* PlatformCompanionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */; };
 		744EB2EA1DB278ECCE40EAF0 /* MacAppAndShortcutCatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B459D461CDBACF99B6F99A8E /* MacAppAndShortcutCatalogService.swift */; };
 		75412A9C9B26A552680AFD2D /* MacServerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3371CFFF20B9E1134EDB3E8 /* MacServerEngine.swift */; };
@@ -192,6 +195,7 @@
 		F1287122DF85975EC3734CA1 /* CompanionActionPack+Edit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */; };
 		F1464D08A4FB2C4F40B6036C /* CompanionActionPack+Window.swift in Sources */ = {isa = PBXBuildFile; fileRef = 700D598F2F561B74E776B14B /* CompanionActionPack+Window.swift */; };
 		F179169D873243EE590DC3CC /* TimeTravelAndGestureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9A7BFF5A52FBC825E5EC0A6 /* TimeTravelAndGestureViews.swift */; };
+		F36544C088A44A5AF7B346C2 /* QuadAppLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C79254C7D1D99229CFFA4BB /* QuadAppLayout.swift */; };
 		F67EF010677977FC8A1792D1 /* finder.png in Resources */ = {isa = PBXBuildFile; fileRef = 289E4D12B0F6E3F188113079 /* finder.png */; };
 		F8688F658607938931989B76 /* MacSystemControlService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A4EBD8AF7B0252DB6BBA48 /* MacSystemControlService.swift */; };
 		F9A2071D485ADDE2BBE5E965 /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378D57F87F9075FB787AF62B /* WireProtocol.swift */; };
@@ -276,6 +280,7 @@
 		474A9F9ACA07FF105EED7A00 /* CompanionActionPack+System.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+System.swift"; sourceTree = "<group>"; };
 		4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrcaTaskStatus.swift; sourceTree = "<group>"; };
 		47AD940D8025DB63EA4C41E1 /* MacCompanionActionRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCompanionActionRunner.swift; sourceTree = "<group>"; };
+		47B451EA8D2F5C131A3E42F8 /* MacQuadLayoutRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacQuadLayoutRunner.swift; sourceTree = "<group>"; };
 		47C1280B27AE8610D9B62192 /* IOSRound03CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound03CompanionFeatures.swift; sourceTree = "<group>"; };
 		4B996B2D0F3955B3B154BA5E /* Round10Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round10Models.swift; sourceTree = "<group>"; };
 		54B9623F42577CE556571F6E /* MacMenuBarStatusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMenuBarStatusController.swift; sourceTree = "<group>"; };
@@ -291,6 +296,7 @@
 		66E4E8891AFD6F4FABAFF271 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		692D15C11392D1C31F797CDF /* IOSCompanionHotkeysSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSCompanionHotkeysSection.swift; sourceTree = "<group>"; };
 		6B997305863F5C700F00C218 /* CompanionActionPack+Files.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Files.swift"; sourceTree = "<group>"; };
+		6C79254C7D1D99229CFFA4BB /* QuadAppLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuadAppLayout.swift; sourceTree = "<group>"; };
 		6CB4B777F556BB9F5483D0A8 /* terminal.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = terminal.png; sourceTree = "<group>"; };
 		6FC7D3375FFAED79D1CB7DE7 /* libChocliftCoreWatch.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libChocliftCoreWatch.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		700D598F2F561B74E776B14B /* CompanionActionPack+Window.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Window.swift"; sourceTree = "<group>"; };
@@ -407,6 +413,7 @@
 				54B9623F42577CE556571F6E /* MacMenuBarStatusController.swift */,
 				116CCCD57CF0CF405584EA0E /* MacNotchPanelController.swift */,
 				9F4B0BF41FA187CA0429E197 /* MacOrcaStatusService.swift */,
+				47B451EA8D2F5C131A3E42F8 /* MacQuadLayoutRunner.swift */,
 				AC01A4B0509B5E43B8CA5A46 /* MacSoundboardService.swift */,
 				D277EA17E3D6784BA5FEC76D /* MacSpaceSwipe.swift */,
 				9BC943E32E3BCE780C9AFB69 /* MacSparkleUpdaterService.swift */,
@@ -657,6 +664,7 @@
 				A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */,
 				457684FD77B5477F24FC5F8D /* OrcaSelectionDispatch.swift */,
 				4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */,
+				6C79254C7D1D99229CFFA4BB /* QuadAppLayout.swift */,
 				8BECCE6B737BB090769DC143 /* Round03Models.swift */,
 				26FF0695A991380B3FB28853 /* Round04Models.swift */,
 				A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */,
@@ -996,6 +1004,7 @@
 				B87ED18F694827573BF6F5AF /* OrcaSelectionDispatch.swift in Sources */,
 				C8FC5F6E229B84BD0B158814 /* OrcaTaskStatus.swift in Sources */,
 				82612B4144EDA160119CA96E /* PlatformCompanionSupport.swift in Sources */,
+				71638B109DA174CC1A449AD7 /* QuadAppLayout.swift in Sources */,
 				B94603986FDB8C63A5EFA896 /* Round03Models.swift in Sources */,
 				4EA5261FA6CE532A4BC78C1D /* Round04Models.swift in Sources */,
 				39C7A34BF45F7854FE2A8AA4 /* Round05Models.swift in Sources */,
@@ -1037,6 +1046,7 @@
 				2D717D29F44736CCFF71E4EC /* OrcaSelectionDispatch.swift in Sources */,
 				A5374FE85744A7334FEE033E /* OrcaTaskStatus.swift in Sources */,
 				73A50ADF2E84DCAC91075CA4 /* PlatformCompanionSupport.swift in Sources */,
+				F36544C088A44A5AF7B346C2 /* QuadAppLayout.swift in Sources */,
 				45FACC28CE3788D20748324C /* Round03Models.swift in Sources */,
 				B83501BAFE40DC2395AE3251 /* Round04Models.swift in Sources */,
 				33878859FBF852A76234D4F2 /* Round05Models.swift in Sources */,
@@ -1075,6 +1085,7 @@
 				856C0A656C5370A2B44A5DE2 /* MacNotchPanelController.swift in Sources */,
 				5BA1BD1B00D6643627022CBD /* MacNotchPanelView.swift in Sources */,
 				C8D3D57C7B3C8E9637DB941D /* MacOrcaStatusService.swift in Sources */,
+				4834E91B9EA3E33E51B5009E /* MacQuadLayoutRunner.swift in Sources */,
 				11514719064CA3F4324F0633 /* MacSlotItemPickerSheet.swift in Sources */,
 				01D8AD4835F55C0BDD6CC9D2 /* MacSoundboardService.swift in Sources */,
 				038B4B95F44C70C1836C9519 /* MacSpaceSwipe.swift in Sources */,
@@ -1116,6 +1127,7 @@
 				D8847B5706C5AEE2867F3B24 /* OrcaSelectionDispatch.swift in Sources */,
 				28AAE9E440B4B1A1D394BF4B /* OrcaTaskStatus.swift in Sources */,
 				6C90D70E5CDF89187DB9B236 /* PlatformCompanionSupport.swift in Sources */,
+				3A4D4F0B472779B5B93BB736 /* QuadAppLayout.swift in Sources */,
 				04CC39CE219884E5399BC74D /* Round03Models.swift in Sources */,
 				2E8768794A140A931D4159E5 /* Round04Models.swift in Sources */,
 				DF54945FD6A26594125CA46B /* Round05Models.swift in Sources */,

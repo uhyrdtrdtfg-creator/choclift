@@ -610,6 +610,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         }
         merged.sanitizePinnedClipboardItems(allowedTexts: allowedPinTexts)
         merged.hotkeys = CompanionHotkeyLibrary.sanitize(merged.hotkeys)
+        merged.quadLayouts = QuadAppLayout.sanitize(merged.quadLayouts)
         return merged
     }
 
@@ -1013,6 +1014,130 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         )
         recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
         return (res.success, snippet.displayTitle(in: lang), res.message)
+    }
+
+    // MARK: - Quad Layouts
+
+    private func resolveInstalledAppSlotsIfNeeded(_ layout: QuadAppLayout) -> QuadAppLayout {
+        var resolved = layout
+        for corner in QuadCorner.allCases {
+            guard let slot = resolved.slot(for: corner) else { continue }
+            let trimmedBundle = slot.bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedBundle.isEmpty,
+                  !trimmedBundle.contains("."),
+                  NSWorkspace.shared.urlForApplication(withBundleIdentifier: trimmedBundle) == nil else {
+                continue
+            }
+            let targetName = slot.appName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? trimmedBundle
+                : slot.appName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let matched = installedApps.first(where: {
+                $0.appName.caseInsensitiveCompare(targetName) == .orderedSame
+            }) {
+                resolved.setSlot(
+                    QuadAppSlot(bundleIdentifier: matched.bundleIdentifier, appName: matched.appName),
+                    for: corner
+                )
+            }
+        }
+        return resolved
+    }
+
+    @discardableResult
+    public func upsertQuadLayout(
+        _ candidate: QuadAppLayout,
+        triggeredBy deviceName: String = "Mac Studio"
+    ) -> (success: Bool, title: String, message: String) {
+        let sectionTitle = L10n.tr("四宫格", "Quad Layouts", language: lang)
+        let resolved = resolveInstalledAppSlotsIfNeeded(candidate)
+        if candidate.containsChocliftBundle || resolved.containsChocliftBundle {
+            let msg = L10n.tr(
+                "四宫格不能包含 Choclift 自身",
+                "Quad layout cannot include Choclift itself",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: msg, isSuccess: false)
+            return (false, sectionTitle, msg)
+        }
+        guard let sanitized = QuadAppLayout.sanitized(resolved) else {
+            let msg = L10n.tr(
+                "请填写布局名称并至少选择一个应用",
+                "Enter a layout name and choose at least one app",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: msg, isSuccess: false)
+            return (false, sectionTitle, msg)
+        }
+        let existingIndex = profile.quadLayouts.firstIndex { $0.id == sanitized.id }
+        if existingIndex == nil && profile.quadLayouts.count >= QuadAppLayout.maxLibraryCount {
+            let msg = L10n.tr(
+                "最多可保存 \(QuadAppLayout.maxLibraryCount) 个四宫格布局",
+                "Up to \(QuadAppLayout.maxLibraryCount) quad layouts can be saved",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: msg, isSuccess: false)
+            return (false, sectionTitle, msg)
+        }
+        mutateProfile { draft in
+            if let idx = draft.quadLayouts.firstIndex(where: { $0.id == sanitized.id }) {
+                draft.quadLayouts[idx] = sanitized
+            } else {
+                draft.quadLayouts.append(sanitized)
+            }
+            draft.quadLayouts = QuadAppLayout.sanitize(draft.quadLayouts)
+        }
+        let msg = L10n.tr(
+            "已保存四宫格「\(sanitized.name)」",
+            "Saved quad layout \"\(sanitized.name)\"",
+            language: lang
+        )
+        recordActivity(deviceName: deviceName, summary: msg, isSuccess: true)
+        return (true, sanitized.name, msg)
+    }
+
+    @discardableResult
+    public func deleteQuadLayout(
+        id: UUID,
+        triggeredBy deviceName: String = "Mac Studio"
+    ) -> (success: Bool, title: String, message: String) {
+        let sectionTitle = L10n.tr("四宫格", "Quad Layouts", language: lang)
+        guard let existing = profile.quadLayouts.first(where: { $0.id == id }) else {
+            let msg = L10n.tr("未找到该四宫格布局", "Quad layout not found", language: lang)
+            recordActivity(deviceName: deviceName, summary: msg, isSuccess: false)
+            return (false, sectionTitle, msg)
+        }
+        mutateProfile { draft in
+            draft.quadLayouts.removeAll { $0.id == id }
+        }
+        let msg = L10n.tr(
+            "已删除四宫格「\(existing.name)」",
+            "Deleted quad layout \"\(existing.name)\"",
+            language: lang
+        )
+        recordActivity(deviceName: deviceName, summary: msg, isSuccess: true)
+        return (true, existing.name, msg)
+    }
+
+    public func runQuadLayout(
+        id: UUID,
+        triggeredBy deviceName: String = "Mac Studio"
+    ) async -> (success: Bool, title: String, message: String) {
+        let sectionTitle = L10n.tr("四宫格", "Quad Layouts", language: lang)
+        guard let layout = profile.quadLayouts.first(where: { $0.id == id }) else {
+            let msg = L10n.tr("未找到该四宫格布局", "Quad layout not found", language: lang)
+            recordActivity(deviceName: deviceName, summary: msg, isSuccess: false)
+            return (false, sectionTitle, msg)
+        }
+        let res = await MacQuadLayoutRunner.run(layout, windowService: windowService, language: lang)
+        recordActivity(deviceName: deviceName, summary: res.message, isSuccess: res.success)
+        return (res.success, layout.name, res.message)
+    }
+
+    public func triggerQuadLayoutFromStudio(id: UUID) {
+        Task { @MainActor in
+            let res = await runQuadLayout(id: id, triggeredBy: "Mac Studio")
+            flashBanner(res.message)
+        }
     }
 
     public func setSlotItem(_ item: BarItem?, pageIndex: Int, slotIndex: Int) {
@@ -2066,6 +2191,20 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             let res = deleteCompanionHotkey(id: id, triggeredBy: device.deviceName)
             reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
 
+        case .upsertQuadLayout(let layout):
+            let res = upsertQuadLayout(layout, triggeredBy: device.deviceName)
+            reply(.actionFeedback(success: res.success, title: res.title, detail: res.message))
+
+        case .deleteQuadLayout(let id):
+            let res = deleteQuadLayout(id: id, triggeredBy: device.deviceName)
+            reply(.actionFeedback(success: res.success, title: res.title, detail: res.message))
+
+        case .runQuadLayout(let id):
+            Task { @MainActor in
+                let res = await runQuadLayout(id: id, triggeredBy: device.deviceName)
+                reply(.actionFeedback(success: res.success, title: res.title, detail: res.message))
+            }
+
         case .seekNowPlaying(let positionSeconds):
             let res = seekNowPlaying(
                 to: positionSeconds,
@@ -2116,7 +2255,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             let isUnchangedBySanitizer =
                 (safeProfile.soundboardClips == updatedProfile.soundboardClips) &&
                 (safeProfile.pinnedClipboardItems == updatedProfile.pinnedClipboardItems) &&
-                (safeProfile.hotkeys == updatedProfile.hotkeys)
+                (safeProfile.hotkeys == updatedProfile.hotkeys) &&
+                (safeProfile.quadLayouts == updatedProfile.quadLayouts)
             let originToExclude = isUnchangedBySanitizer ? device.deviceID : nil
             applyAndSaveProfile(safeProfile, broadcastOriginDeviceID: originToExclude)
             recordActivity(

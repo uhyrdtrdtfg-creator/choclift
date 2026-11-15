@@ -61,6 +61,9 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case performCompanionAction(id: String)
     case upsertCompanionHotkey(CompanionHotkey)
     case deleteCompanionHotkey(id: UUID)
+    case upsertQuadLayout(QuadAppLayout)
+    case deleteQuadLayout(id: UUID)
+    case runQuadLayout(id: UUID)
     case unknownClientMessage
 }
 
