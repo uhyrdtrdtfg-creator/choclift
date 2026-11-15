@@ -2988,6 +2988,32 @@ public final class CompanionClientEngine: ObservableObject {
         insertText(emoji)
     }
 
+    @discardableResult
+    public func pastePhoneClipboard(_ rawText: String?) -> Bool {
+        guard platform != .appleWatch else { return false }
+        let lang = profile.settings.language
+        let title = L10n.tr("粘贴手机剪贴板", "Paste iPhone Clipboard", language: lang)
+        guard let clamped = PhoneClipboardPaste.clamp(rawText) else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: title,
+                detail: L10n.tr("手机剪贴板为空", "iPhone clipboard is empty", language: lang)
+            )
+            return false
+        }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: title,
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return false
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.pastePhoneClipboard(text: clamped))
+        return true
+    }
+
     public func performGesture(_ gesture: TouchGestureType) {
         tileFeedbackTracker.clearPendingWithoutFeedback()
         let action = profile.gestureConfig.action(for: gesture)

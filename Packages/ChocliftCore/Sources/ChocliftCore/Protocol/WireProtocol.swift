@@ -69,6 +69,7 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case pauseDeskTimer
     case resumeDeskTimer
     case resetDeskTimer
+    case pastePhoneClipboard(text: String)
     case unknownClientMessage
 }
 
