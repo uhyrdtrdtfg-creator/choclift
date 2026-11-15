@@ -98,6 +98,10 @@ final class ChocliftCoreTests: XCTestCase {
             .insertEmoji("🍫"),
             .performGesture(.twoFingerSwipeUp),
             .performQuickAction(.mediaPlayPause),
+            .performQuickAction(.snapWindowTopLeft),
+            .performQuickAction(.snapWindowTopRight),
+            .performQuickAction(.snapWindowBottomLeft),
+            .performQuickAction(.snapWindowBottomRight),
             .setRecentAppPinned(bundleIdentifier: "com.apple.Safari", isPinned: true)
         ]
 
@@ -1098,6 +1102,38 @@ final class ChocliftCoreTests: XCTestCase {
                 { item in
                     XCTAssertEqual(item.displayTitle(in: .english), SystemQuickAction.maximizeWindow.title(in: .english))
                     XCTAssertNil(item.snippetID)
+                }
+            ),
+            (
+                """
+                {"id":"\(UUID().uuidString)","kind":{"systemAction":{"action":"snap_window_top_left"}}}
+                """,
+                { item in
+                    XCTAssertEqual(item.displayTitle(in: .english), SystemQuickAction.snapWindowTopLeft.title(in: .english))
+                }
+            ),
+            (
+                """
+                {"id":"\(UUID().uuidString)","kind":{"systemAction":{"action":"snap_window_top_right"}}}
+                """,
+                { item in
+                    XCTAssertEqual(item.displayTitle(in: .english), SystemQuickAction.snapWindowTopRight.title(in: .english))
+                }
+            ),
+            (
+                """
+                {"id":"\(UUID().uuidString)","kind":{"systemAction":{"action":"snap_window_bottom_left"}}}
+                """,
+                { item in
+                    XCTAssertEqual(item.displayTitle(in: .english), SystemQuickAction.snapWindowBottomLeft.title(in: .english))
+                }
+            ),
+            (
+                """
+                {"id":"\(UUID().uuidString)","kind":{"systemAction":{"action":"snap_window_bottom_right"}}}
+                """,
+                { item in
+                    XCTAssertEqual(item.displayTitle(in: .english), SystemQuickAction.snapWindowBottomRight.title(in: .english))
                 }
             ),
             (

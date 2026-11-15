@@ -93,6 +93,10 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case quitApp = "quit_app"
     case openEmojiPicker = "open_emoji_picker"
     case moveWindowToNextDisplay = "move_window_to_next_display"
+    case snapWindowTopLeft = "snap_window_top_left"
+    case snapWindowTopRight = "snap_window_top_right"
+    case snapWindowBottomLeft = "snap_window_bottom_left"
+    case snapWindowBottomRight = "snap_window_bottom_right"
 
     public var id: String { rawValue }
 
@@ -102,6 +106,10 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .minimizeWindow: return "minus.square.fill"
         case .snapWindowLeft: return "rectangle.lefthalf.inset.filled"
         case .snapWindowRight: return "rectangle.righthalf.inset.filled"
+        case .snapWindowTopLeft: return "rectangle.inset.topleft.filled"
+        case .snapWindowTopRight: return "rectangle.inset.topright.filled"
+        case .snapWindowBottomLeft: return "rectangle.inset.bottomleft.filled"
+        case .snapWindowBottomRight: return "rectangle.inset.bottomright.filled"
         case .switchToNextWindow: return "arrow.right.square"
         case .switchToPreviousWindow: return "arrow.left.square"
         case .centerWindow: return "rectangle.center.inset.filled"
@@ -130,7 +138,9 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public var accentHex: String {
         switch self {
-        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow, .moveWindowToNextDisplay:
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
+             .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
+             .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow, .moveWindowToNextDisplay:
             return "#EDF6FF"
         case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
             return "#F3EEFF"
@@ -143,7 +153,9 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public var isWindowAction: Bool {
         switch self {
-        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay:
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
+             .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
+             .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay:
             return true
         default:
             return false
@@ -152,7 +164,9 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public var isUndoableWindowMove: Bool {
         switch self {
-        case .maximizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .moveWindowToNextDisplay:
+        case .maximizeWindow, .snapWindowLeft, .snapWindowRight,
+             .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
+             .centerWindow, .moveWindowToNextDisplay:
             return true
         default:
             return false
@@ -201,6 +215,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .openEmojiPicker:
             return "⌃⌘Space"
         case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
+             .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
              .centerWindow, .toggleFullscreen, .missionControl, .showDesktop,
              .screenshotInteractive, .mediaPlayPause, .mediaNext, .mediaPrevious,
              .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca,
@@ -215,6 +230,10 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .minimizeWindow: return L10n.tr("最小化窗口", "Minimize Window", language: lang)
         case .snapWindowLeft: return L10n.tr("窗口贴靠左半屏", "Snap Window Left", language: lang)
         case .snapWindowRight: return L10n.tr("窗口贴靠右半屏", "Snap Window Right", language: lang)
+        case .snapWindowTopLeft: return L10n.tr("窗口贴靠左上角", "Snap Window Top Left", language: lang)
+        case .snapWindowTopRight: return L10n.tr("窗口贴靠右上角", "Snap Window Top Right", language: lang)
+        case .snapWindowBottomLeft: return L10n.tr("窗口贴靠左下角", "Snap Window Bottom Left", language: lang)
+        case .snapWindowBottomRight: return L10n.tr("窗口贴靠右下角", "Snap Window Bottom Right", language: lang)
         case .switchToNextWindow: return L10n.tr("下一个窗口", "Next Window", language: lang)
         case .switchToPreviousWindow: return L10n.tr("上一个窗口", "Previous Window", language: lang)
         case .centerWindow: return L10n.tr("窗口居中", "Center Window", language: lang)
@@ -247,6 +266,10 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .minimizeWindow: return L10n.tr("最小化", "Minimize", language: lang)
         case .snapWindowLeft: return L10n.tr("左半屏", "Snap Left", language: lang)
         case .snapWindowRight: return L10n.tr("右半屏", "Snap Right", language: lang)
+        case .snapWindowTopLeft: return L10n.tr("左上角", "Top Left", language: lang)
+        case .snapWindowTopRight: return L10n.tr("右上角", "Top Right", language: lang)
+        case .snapWindowBottomLeft: return L10n.tr("左下角", "Bottom Left", language: lang)
+        case .snapWindowBottomRight: return L10n.tr("右下角", "Bottom Right", language: lang)
         case .switchToNextWindow: return L10n.tr("下一个窗口", "Next Window", language: lang)
         case .switchToPreviousWindow: return L10n.tr("上一个窗口", "Previous Window", language: lang)
         case .centerWindow: return L10n.tr("居中", "Center", language: lang)
@@ -275,6 +298,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public static let windowLayoutSlotActions: [SystemQuickAction] = [
         .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
+        .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
         .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay
     ]
 

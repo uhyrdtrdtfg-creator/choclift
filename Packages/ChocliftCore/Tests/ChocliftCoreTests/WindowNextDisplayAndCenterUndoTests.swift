@@ -36,8 +36,8 @@ final class WindowNextDisplayAndCenterUndoTests: XCTestCase {
             .openEmojiPicker
         ]
 
-        XCTAssertEqual(Array(SystemQuickAction.allCases.dropLast()), expectedExistingOrder)
-        XCTAssertEqual(SystemQuickAction.allCases.last, .moveWindowToNextDisplay)
+        XCTAssertEqual(Array(SystemQuickAction.allCases.prefix(expectedExistingOrder.count)), expectedExistingOrder)
+        XCTAssertEqual(SystemQuickAction.allCases[expectedExistingOrder.count], .moveWindowToNextDisplay)
         XCTAssertEqual(SystemQuickAction.moveWindowToNextDisplay.rawValue, "move_window_to_next_display")
         XCTAssertTrue(SystemQuickAction.moveWindowToNextDisplay.isWindowAction)
         XCTAssertTrue(SystemQuickAction.moveWindowToNextDisplay.isUndoableWindowMove)

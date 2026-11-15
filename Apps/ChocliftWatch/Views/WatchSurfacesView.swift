@@ -1188,6 +1188,8 @@ public struct WatchQuickActionsView: View {
     private let windowActions: [SystemQuickAction] = [
         .maximizeWindow, .minimizeWindow,
         .snapWindowLeft, .snapWindowRight,
+        .snapWindowTopLeft, .snapWindowTopRight,
+        .snapWindowBottomLeft, .snapWindowBottomRight,
         .centerWindow, .toggleFullscreen,
         .moveWindowToNextDisplay
     ]

@@ -416,6 +416,10 @@ public final class MacAccessibilityAndWindowService {
         case minimize
         case snapLeft
         case snapRight
+        case snapTopLeft
+        case snapTopRight
+        case snapBottomLeft
+        case snapBottomRight
         case center
         case toggleFullscreen
         case moveToNextDisplay
@@ -612,7 +616,8 @@ public final class MacAccessibilityAndWindowService {
                 return (false, err.message())
             }
 
-        case .maximizeOrRestore, .snapLeft, .snapRight:
+        case .maximizeOrRestore, .snapLeft, .snapRight,
+             .snapTopLeft, .snapTopRight, .snapBottomLeft, .snapBottomRight:
             let currentFrame = readWindowQuartzFrame(windowElement)
             let targetScreen: NSScreen? = {
                 if NSScreen.screens.count > 1,
@@ -656,6 +661,14 @@ public final class MacAccessibilityAndWindowService {
                     width: halfW,
                     height: visibleQuartz.height
                 )
+            case .snapTopLeft:
+                desiredFrame = WindowDisplayGeometry.quarterFrame(for: .topLeft, visibleQuartz: visibleQuartz)
+            case .snapTopRight:
+                desiredFrame = WindowDisplayGeometry.quarterFrame(for: .topRight, visibleQuartz: visibleQuartz)
+            case .snapBottomLeft:
+                desiredFrame = WindowDisplayGeometry.quarterFrame(for: .bottomLeft, visibleQuartz: visibleQuartz)
+            case .snapBottomRight:
+                desiredFrame = WindowDisplayGeometry.quarterFrame(for: .bottomRight, visibleQuartz: visibleQuartz)
             default:
                 desiredFrame = visibleQuartz
             }

@@ -312,6 +312,14 @@ public final class MacInputAndMediaService {
             return windowService.performWindowOperation(.snapLeft, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .snapWindowRight:
             return windowService.performWindowOperation(.snapRight, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+        case .snapWindowTopLeft:
+            return windowService.performWindowOperation(.snapTopLeft, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+        case .snapWindowTopRight:
+            return windowService.performWindowOperation(.snapTopRight, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+        case .snapWindowBottomLeft:
+            return windowService.performWindowOperation(.snapBottomLeft, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+        case .snapWindowBottomRight:
+            return windowService.performWindowOperation(.snapBottomRight, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .centerWindow:
             return windowService.performWindowOperation(.center, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .toggleFullscreen:
