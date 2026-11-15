@@ -2248,6 +2248,22 @@ public struct IOSNowPlayingPage: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
 
+                        HStack(spacing: 12) {
+                            relativeSeekButton(
+                                isForward: false,
+                                symbol: "gobackward.15",
+                                label: L10n.tr("快退 15 秒", "Back 15s", language: lang),
+                                identifier: "ios-player-seek-back-15"
+                            )
+                            relativeSeekButton(
+                                isForward: true,
+                                symbol: "goforward.15",
+                                label: L10n.tr("快进 15 秒", "Forward 15s", language: lang),
+                                identifier: "ios-player-seek-forward-15"
+                            )
+                        }
+                        .frame(maxWidth: .infinity)
+
                         if let modeError = client.lastNowPlayingModeError {
                             Label(modeError, systemImage: "exclamationmark.triangle.fill")
                                 .font(ChocType.caption)
@@ -2419,6 +2435,42 @@ public struct IOSNowPlayingPage: View {
         .accessibilityValue(mode.accessibilityValueText(in: lang))
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .accessibilityIdentifier("ios-player-repeat")
+    }
+
+    private func relativeSeekButton(
+        isForward: Bool,
+        symbol: String,
+        label: String,
+        identifier: String
+    ) -> some View {
+        let canSeekNow = state.nowPlaying?.isSeekable == true && state.nowPlaying?.elapsedSeconds != nil
+        return Button {
+            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+            if isForward {
+                _ = client.seekNowPlayingForward15()
+            } else {
+                _ = client.seekNowPlayingBackward15()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 18, weight: .semibold))
+                Text(label)
+                    .font(ChocType.caption)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(canSeekNow ? palette.accent : palette.secondaryText)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
     }
 
     private func transport(_ action: SystemQuickAction, symbol: String) -> some View {

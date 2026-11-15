@@ -106,6 +106,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case newFrontmostWindow = "new_frontmost_window"
     case toggleLaunchpad = "toggle_launchpad"
     case toggleNotificationCenter = "toggle_notification_center"
+    case toggleDictation = "toggle_dictation"
 
     public var id: String { rawValue }
 
@@ -151,6 +152,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .newFrontmostWindow: return "macwindow.badge.plus"
         case .toggleLaunchpad: return "square.grid.3x3.fill"
         case .toggleNotificationCenter: return "bell.badge.fill"
+        case .toggleDictation: return "mic.fill"
         }
     }
 
@@ -161,7 +163,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
              .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow,
              .moveWindowToNextDisplay, .closeFrontmostWindow, .newFrontmostWindow:
             return "#EDF6FF"
-        case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
+        case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .toggleDictation:
             return "#F3EEFF"
         case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker,
              .switchToNextSpace, .switchToPreviousSpace, .toggleAppSwitcher, .toggleAppearance, .toggleNightShift,
@@ -208,7 +210,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return true
         }
         switch self {
-        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp, .switchToNextWindow, .switchToPreviousWindow, .newFrontmostWindow:
+        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp,
+             .switchToNextWindow, .switchToPreviousWindow, .newFrontmostWindow, .toggleDictation:
             return true
         default:
             return false
@@ -249,7 +252,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
              .screenshotInteractive, .mediaPlayPause, .mediaNext, .mediaPrevious,
              .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca,
              .moveWindowToNextDisplay, .toggleAppearance, .toggleNightShift,
-             .closeFrontmostWindow, .newFrontmostWindow, .toggleLaunchpad, .toggleNotificationCenter:
+             .closeFrontmostWindow, .toggleLaunchpad, .toggleNotificationCenter, .toggleDictation:
             return nil
         }
     }
@@ -296,6 +299,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .newFrontmostWindow: return L10n.tr("新建窗口", "New Window", language: lang)
         case .toggleLaunchpad: return L10n.tr("启动台", "Launchpad", language: lang)
         case .toggleNotificationCenter: return L10n.tr("通知中心", "Notification Center", language: lang)
+        case .toggleDictation: return L10n.tr("切换听写", "Toggle Dictation", language: lang)
         }
     }
 
@@ -341,6 +345,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .newFrontmostWindow: return L10n.tr("新建窗口", "New Window", language: lang)
         case .toggleLaunchpad: return L10n.tr("启动台", "Launchpad", language: lang)
         case .toggleNotificationCenter: return L10n.tr("通知中心", "Notifications", language: lang)
+        case .toggleDictation: return L10n.tr("听写", "Dictation", language: lang)
         }
     }
 
@@ -366,7 +371,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
                 compactHeaders
                     ? L10n.tr("编辑与剪贴板", "Clipboard & Edit", language: lang)
                     : L10n.tr("编辑与剪贴板", "Clipboard & Editing", language: lang),
-                [.copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction]
+                [.copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .toggleDictation]
             ),
             (
                 L10n.tr("媒体与音量", "Media & Volume", language: lang),

@@ -1151,6 +1151,35 @@ public enum MacMediaSeekRejectionReason: Equatable, Hashable, Sendable {
     }
 }
 
+public enum NowPlayingRelativeSeekFailure: Error, Equatable, Hashable, Sendable {
+    case missingPosition
+    case missingDuration
+    case invalidDelta
+
+    public func message(in language: AppLanguage = .system) -> String {
+        switch self {
+        case .missingPosition:
+            return L10n.tr(
+                "当前播放位置未知，无法快进或快退",
+                "Current playback position is unknown",
+                language: language
+            )
+        case .missingDuration:
+            return L10n.tr(
+                "当前曲目未提供总时长，无法跳转进度",
+                "Track duration is unavailable for seeking",
+                language: language
+            )
+        case .invalidDelta:
+            return L10n.tr(
+                "无效的跳转秒数",
+                "Invalid seek offset",
+                language: language
+            )
+        }
+    }
+}
+
 public enum MacMediaSeekRoute: Equatable, Hashable, Sendable {
     case spotifyScript(positionSeconds: Double)
     case musicScript(positionSeconds: Double)
@@ -1188,9 +1217,35 @@ public struct MacMediaSeekContext: Equatable, Hashable, Sendable {
 public enum MacMediaSeekRouter {
     public static let spotifyBundleIdentifier = MacMediaTransportRouter.spotifyBundleIdentifier
     public static let musicBundleIdentifier = MacMediaTransportRouter.musicBundleIdentifier
+    public static let defaultRelativeStepSeconds: Double = 15.0
 
     public static func isSupportedSeekBundleIdentifier(_ raw: String?) -> Bool {
         MacMediaSeekTargetPlayer(bundleIdentifier: raw) != nil
+    }
+
+    /// Computes `positionSeconds + deltaSeconds` clamped to `0...durationSeconds`, failing clearly if position or duration is unknown.
+    public static func relativeTargetPosition(
+        positionSeconds: Double?,
+        durationSeconds: Double?,
+        deltaSeconds: Double
+    ) -> Result<Double, NowPlayingRelativeSeekFailure> {
+        guard deltaSeconds.isFinite, !deltaSeconds.isNaN else {
+            return .failure(.invalidDelta)
+        }
+        guard let durationSeconds,
+              durationSeconds.isFinite,
+              !durationSeconds.isNaN,
+              durationSeconds > 0 else {
+            return .failure(.missingDuration)
+        }
+        guard let positionSeconds,
+              positionSeconds.isFinite,
+              !positionSeconds.isNaN,
+              positionSeconds >= 0 else {
+            return .failure(.missingPosition)
+        }
+        let clampedCurrent = clampPosition(positionSeconds, durationSeconds: durationSeconds)
+        return .success(clampPosition(clampedCurrent + deltaSeconds, durationSeconds: durationSeconds))
     }
 
     /// Clamps any requested playback position in seconds to `0...durationSeconds`

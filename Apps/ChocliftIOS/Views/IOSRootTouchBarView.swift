@@ -425,6 +425,8 @@ public struct IOSRootTouchBarView: View {
                     ForEach([SystemQuickAction.mediaPlayPause, .mediaPrevious, .mediaNext, .volumeDown, .volumeUp]) { action in
                         toolsRow(action.title(in: lang), action.sfSymbol) { client.performQuickAction(action) }
                     }
+                    toolsRow(L10n.tr("快退 15 秒", "Back 15s", language: lang), "gobackward.15") { _ = client.seekNowPlayingBackward15() }
+                    toolsRow(L10n.tr("快进 15 秒", "Forward 15s", language: lang), "goforward.15") { _ = client.seekNowPlayingForward15() }
                     toolsRow(L10n.tr("降低亮度", "Brightness Down", language: lang), "sun.min") { client.setControlLevel(kind: .brightness, level: client.controlStripState.brightness - 0.1) }
                     toolsRow(L10n.tr("提高亮度", "Brightness Up", language: lang), "sun.max") { client.setControlLevel(kind: .brightness, level: client.controlStripState.brightness + 0.1) }
                     toolsRow(SystemQuickAction.toggleAppearance.title(in: lang), SystemQuickAction.toggleAppearance.sfSymbol) { client.performQuickAction(.toggleAppearance) }
@@ -473,6 +475,9 @@ public struct IOSRootTouchBarView: View {
                     toolsRow(L10n.tr("撤销窗口移动", "Undo Window Move", language: lang), "arrow.uturn.backward") { client.undoLastWindowMove() }
                 }
                 toolsSection(L10n.tr("编辑与剪贴板", "Editing & Clipboard", language: lang)) {
+                    toolsRow(SystemQuickAction.toggleDictation.title(in: lang), SystemQuickAction.toggleDictation.sfSymbol) {
+                        client.performQuickAction(.toggleDictation)
+                    }
                     toolsRow(L10n.tr("粘贴 Mac 剪贴板", "Paste Mac Clipboard", language: lang), "doc.on.clipboard") { client.pasteMacClipboard() }
                     ForEach(CompanionCompactKey.allCases) { key in
                         toolsRow(key.title(in: lang), key.sfSymbol) { client.sendCompactKey(key) }

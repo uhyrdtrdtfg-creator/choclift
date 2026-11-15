@@ -18,6 +18,7 @@ public final class MacClipboardMonitorService {
     public private(set) var observedSafePreviewTexts: Set<String> = []
 
     private var observedPreviewOrder: [String] = []
+    private var recentHistoryRing = ClipboardHistoryRing()
     private var lastObservedChangeCount: Int?
 
     public init() {
@@ -52,12 +53,14 @@ public final class MacClipboardMonitorService {
             pasteboardTypes: types,
             string: rawText
         )
+        let recentEntries = recentHistoryRing.record(evaluated)
+        let snapshot = evaluated.withRecentEntries(recentEntries)
         if let safeText = PinnedClipboardItem.sanitizedText(evaluated.previewText) {
             recordObservedSafePreviewText(safeText)
         }
-        if evaluated != currentPreview {
-            currentPreview = evaluated
-            onPreviewChanged?(evaluated)
+        if snapshot != currentPreview {
+            currentPreview = snapshot
+            onPreviewChanged?(snapshot)
         }
     }
 

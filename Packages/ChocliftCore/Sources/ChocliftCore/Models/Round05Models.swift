@@ -14,23 +14,29 @@ import Foundation
 // - `CoreHID.framework` (`HIDUsage.ConsumerUsage.keyboardBacklightSetLevel`) is `@available(macOS 15.0, *)`
 //   and only defines USB HID usage constants rather than a macOS system backlight controller.
 
-// MARK: - 1. Compact Key Row Model (Arrows, Escape, Space Only — No Letter Keys)
+// MARK: - 1. Compact Key Row Model (Escape, Tab, Arrows, Space, Return, Delete — Not a Full Keyboard)
 
 public enum CompanionCompactKey: String, Codable, CaseIterable, Equatable, Hashable, Sendable, Identifiable {
     case escape
+    case tab
     case leftArrow
     case upArrow
     case downArrow
     case rightArrow
     case space
+    case returnKey = "return"
+    case delete
 
     public static let compactRowOrder: [CompanionCompactKey] = [
         .escape,
+        .tab,
         .leftArrow,
         .upArrow,
         .downArrow,
         .rightArrow,
-        .space
+        .space,
+        .returnKey,
+        .delete
     ]
 
     public var id: String { rawValue }
@@ -39,7 +45,7 @@ public enum CompanionCompactKey: String, Codable, CaseIterable, Equatable, Hasha
         switch self {
         case .leftArrow, .upArrow, .downArrow, .rightArrow:
             return true
-        case .escape, .space:
+        case .escape, .tab, .space, .returnKey, .delete:
             return false
         }
     }
@@ -48,6 +54,8 @@ public enum CompanionCompactKey: String, Codable, CaseIterable, Equatable, Hasha
         switch self {
         case .escape:
             return "escape"
+        case .tab:
+            return "arrow.right.to.line"
         case .leftArrow:
             return "arrow.left"
         case .upArrow:
@@ -58,6 +66,10 @@ public enum CompanionCompactKey: String, Codable, CaseIterable, Equatable, Hasha
             return "arrow.right"
         case .space:
             return "space"
+        case .returnKey:
+            return "return"
+        case .delete:
+            return "delete.left"
         }
     }
 
@@ -65,6 +77,8 @@ public enum CompanionCompactKey: String, Codable, CaseIterable, Equatable, Hasha
         switch self {
         case .escape:
             return "Esc"
+        case .tab:
+            return "Tab"
         case .leftArrow:
             return "←"
         case .upArrow:
@@ -75,6 +89,10 @@ public enum CompanionCompactKey: String, Codable, CaseIterable, Equatable, Hasha
             return "→"
         case .space:
             return L10n.tr("空格", "Space", language: lang)
+        case .returnKey:
+            return L10n.tr("回车", "Return", language: lang)
+        case .delete:
+            return L10n.tr("删除", "Del", language: lang)
         }
     }
 
@@ -82,6 +100,8 @@ public enum CompanionCompactKey: String, Codable, CaseIterable, Equatable, Hasha
         switch self {
         case .escape:
             return "Esc"
+        case .tab:
+            return L10n.tr("制表键 Tab", "Tab", language: lang)
         case .leftArrow:
             return L10n.tr("左方向键 ←", "Left Arrow ←", language: lang)
         case .upArrow:
@@ -92,6 +112,10 @@ public enum CompanionCompactKey: String, Codable, CaseIterable, Equatable, Hasha
             return L10n.tr("右方向键 →", "Right Arrow →", language: lang)
         case .space:
             return L10n.tr("空格键", "Space", language: lang)
+        case .returnKey:
+            return L10n.tr("回车键", "Return", language: lang)
+        case .delete:
+            return L10n.tr("退格删除", "Delete", language: lang)
         }
     }
 }
