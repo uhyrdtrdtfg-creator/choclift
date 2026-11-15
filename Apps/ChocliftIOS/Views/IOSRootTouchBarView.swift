@@ -391,6 +391,8 @@ public struct IOSRootTouchBarView: View {
                 .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
+                IOSCompanionHotkeysSection(client: client, toolsQuery: toolsQuery)
+
                 toolsSection(L10n.tr("页面与工作区", "Pages & Workspace", language: lang)) {
                     HStack(spacing: 0) {
                         ForEach([PageReorderDirection.left, .right], id: \.self) { direction in
