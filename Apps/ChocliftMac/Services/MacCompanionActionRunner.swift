@@ -35,6 +35,9 @@ enum MacCompanionActionRunner {
         if id.hasPrefix("session.") {
             return MacSessionActionPack.run(id: id, preferredPID: preferredPID)
         }
+        if id == SelectionCompanionAction.copyToPhone.rawValue {
+            return MacSelectionActionPack.run(id: id, preferredPID: preferredPID)
+        }
         return (false, L10n.tr("不支持此操作", "Unsupported action"))
     }
 }
