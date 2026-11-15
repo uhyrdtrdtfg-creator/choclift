@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0151A116C09C4D23AB6EE9F7 /* ControlStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB259C3541C52B0FDAF4888C /* ControlStrip.swift */; };
 		01D8AD4835F55C0BDD6CC9D2 /* MacSoundboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC01A4B0509B5E43B8CA5A46 /* MacSoundboardService.swift */; };
+		038B4B95F44C70C1836C9519 /* MacSpaceSwipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = D277EA17E3D6784BA5FEC76D /* MacSpaceSwipe.swift */; };
 		04CC39CE219884E5399BC74D /* Round03Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BECCE6B737BB090769DC143 /* Round03Models.swift */; };
 		0624C0097D3B262E2C4E78F0 /* CompanionActionPack+Files.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B997305863F5C700F00C218 /* CompanionActionPack+Files.swift */; };
 		06F0B9426723A90AD500110C /* MacUpdateConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3751C53D210CAF7803AF45E /* MacUpdateConfiguration.swift */; };
@@ -326,6 +327,7 @@
 		BE2646C17F6B581FF2D9A9FC /* notes.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = notes.png; sourceTree = "<group>"; };
 		C2A4EBD8AF7B0252DB6BBA48 /* MacSystemControlService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSystemControlService.swift; sourceTree = "<group>"; };
 		C5756FAFC7277A62567E747E /* ChocliftModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftModels.swift; sourceTree = "<group>"; };
+		D277EA17E3D6784BA5FEC76D /* MacSpaceSwipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSpaceSwipe.swift; sourceTree = "<group>"; };
 		D2F04CF28043E06EA8DB3BE5 /* messages.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = messages.png; sourceTree = "<group>"; };
 		D3751C53D210CAF7803AF45E /* MacUpdateConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUpdateConfiguration.swift; sourceTree = "<group>"; };
 		D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSFlowEditorViews.swift; sourceTree = "<group>"; };
@@ -395,6 +397,7 @@
 				116CCCD57CF0CF405584EA0E /* MacNotchPanelController.swift */,
 				9F4B0BF41FA187CA0429E197 /* MacOrcaStatusService.swift */,
 				AC01A4B0509B5E43B8CA5A46 /* MacSoundboardService.swift */,
+				D277EA17E3D6784BA5FEC76D /* MacSpaceSwipe.swift */,
 				9BC943E32E3BCE780C9AFB69 /* MacSparkleUpdaterService.swift */,
 				941C1550D6929E3B9C9B55B7 /* MacSystemActionPack.swift */,
 				C2A4EBD8AF7B0252DB6BBA48 /* MacSystemControlService.swift */,
@@ -1056,6 +1059,7 @@
 				C8D3D57C7B3C8E9637DB941D /* MacOrcaStatusService.swift in Sources */,
 				11514719064CA3F4324F0633 /* MacSlotItemPickerSheet.swift in Sources */,
 				01D8AD4835F55C0BDD6CC9D2 /* MacSoundboardService.swift in Sources */,
+				038B4B95F44C70C1836C9519 /* MacSpaceSwipe.swift in Sources */,
 				8FECADEBC2036A257A7875F6 /* MacSparkleUpdaterService.swift in Sources */,
 				A3BE69B57FD7B452B20CB0EB /* MacSystemActionPack.swift in Sources */,
 				F8688F658607938931989B76 /* MacSystemControlService.swift in Sources */,

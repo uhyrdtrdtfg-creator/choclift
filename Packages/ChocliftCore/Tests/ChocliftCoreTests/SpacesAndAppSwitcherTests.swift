@@ -31,8 +31,8 @@ final class SpacesAndAppSwitcherTests: XCTestCase {
             XCTAssertFalse(NotchPanelLayout.keepsPanelOpenAfterAction(action))
         }
 
-        XCTAssertEqual(SystemQuickAction.switchToNextSpace.sentKeyboardShortcut, "⌃→")
-        XCTAssertEqual(SystemQuickAction.switchToPreviousSpace.sentKeyboardShortcut, "⌃←")
+        XCTAssertNil(SystemQuickAction.switchToNextSpace.sentKeyboardShortcut)
+        XCTAssertNil(SystemQuickAction.switchToPreviousSpace.sentKeyboardShortcut)
         XCTAssertEqual(SystemQuickAction.toggleAppSwitcher.sentKeyboardShortcut, "⌘Tab")
 
         for compact in [false, true] {
@@ -102,13 +102,8 @@ final class SpacesAndAppSwitcherTests: XCTestCase {
 
     #if os(macOS)
     func testMacWorkspaceShortcutKeystrokeRoutingAndAccessibilityGate() throws {
-        let next = try XCTUnwrap(WorkspaceShortcutKeystrokeRouting.keystroke(for: .switchToNextSpace))
-        XCTAssertEqual(next.virtualKey, CGKeyCode(kVK_RightArrow))
-        XCTAssertEqual(next.flags, .maskControl)
-
-        let previous = try XCTUnwrap(WorkspaceShortcutKeystrokeRouting.keystroke(for: .switchToPreviousSpace))
-        XCTAssertEqual(previous.virtualKey, CGKeyCode(kVK_LeftArrow))
-        XCTAssertEqual(previous.flags, .maskControl)
+        XCTAssertNil(WorkspaceShortcutKeystrokeRouting.keystroke(for: .switchToNextSpace))
+        XCTAssertNil(WorkspaceShortcutKeystrokeRouting.keystroke(for: .switchToPreviousSpace))
 
         let switcher = try XCTUnwrap(WorkspaceShortcutKeystrokeRouting.keystroke(for: .toggleAppSwitcher))
         XCTAssertEqual(switcher.virtualKey, CGKeyCode(kVK_Tab))
@@ -130,23 +125,26 @@ final class SpacesAndAppSwitcherTests: XCTestCase {
         }
         XCTAssertTrue(posted.isEmpty)
 
-        for action in [SystemQuickAction.switchToNextSpace, .switchToPreviousSpace, .toggleAppSwitcher] {
-            let ok = WorkspaceShortcutKeystrokeRouting.execute(
+        for action in [SystemQuickAction.switchToNextSpace, .switchToPreviousSpace] {
+            let skipped = WorkspaceShortcutKeystrokeRouting.execute(
                 action,
                 ensureAccessibility: { true },
                 deniedResult: { (false, "Denied") },
                 postKeyStroke: { posted.append(($0, $1)) }
             )
-            XCTAssertTrue(ok.success)
+            XCTAssertFalse(skipped.success)
         }
+        let switcherResult = WorkspaceShortcutKeystrokeRouting.execute(
+            .toggleAppSwitcher,
+            ensureAccessibility: { true },
+            deniedResult: { (false, "Denied") },
+            postKeyStroke: { posted.append(($0, $1)) }
+        )
+        XCTAssertTrue(switcherResult.success)
 
-        XCTAssertEqual(posted.count, 3, "Each action including toggleAppSwitcher must post exactly one synthetic keystroke")
-        XCTAssertEqual(posted[0].0, CGKeyCode(kVK_RightArrow))
-        XCTAssertEqual(posted[0].1, .maskControl)
-        XCTAssertEqual(posted[1].0, CGKeyCode(kVK_LeftArrow))
-        XCTAssertEqual(posted[1].1, .maskControl)
-        XCTAssertEqual(posted[2].0, CGKeyCode(kVK_Tab))
-        XCTAssertEqual(posted[2].1, .maskCommand)
+        XCTAssertEqual(posted.count, 1, "Only the app switcher still posts a keystroke")
+        XCTAssertEqual(posted[0].0, CGKeyCode(kVK_Tab))
+        XCTAssertEqual(posted[0].1, .maskCommand)
     }
 
     func testCompanionPerformQuickActionDeliversSpacesAndAppSwitcherOverPipe() async throws {
