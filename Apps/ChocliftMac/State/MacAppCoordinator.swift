@@ -277,8 +277,9 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
 
         timeTravel.onFrontmostChanged = { [weak self] bundleID, appName in
             guard let self else { return }
-            self.systemControlService.syncFrontmostAppName(appName)
-            self.server.broadcast(.frontmostAppChanged(bundleIdentifier: bundleID, appName: appName))
+            let label = FrontmostAppLabel.format(appName: appName, bundleIdentifier: bundleID)
+            self.systemControlService.syncFrontmostAppName(label)
+            self.server.broadcast(.frontmostAppChanged(bundleIdentifier: bundleID, appName: label))
             self.refreshAndBroadcastFrontmostWindowsIfNeeded(force: true)
         }
 
@@ -288,7 +289,11 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         )
 
         systemControlService.frontmostAppNameProvider = { [weak self] in
-            self?.timeTravel.frontmostAppName
+            guard let self else { return nil }
+            return FrontmostAppLabel.format(
+                appName: self.timeTravel.frontmostAppName,
+                bundleIdentifier: self.timeTravel.frontmostBundleID
+            )
         }
 
         updaterService.languageProvider = { [weak self] in
@@ -419,6 +424,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
+                self?.timeTravel.handleSelfActivated()
                 self?.refreshLaunchAtLoginStatus()
             }
         }

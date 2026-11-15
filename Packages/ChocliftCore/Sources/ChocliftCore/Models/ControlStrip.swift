@@ -617,6 +617,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.ejectableExternalVolumeCount = max(0, ejectableExternalVolumeCount)
         self.frontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName)
         self.deskTimer = deskTimer
+        self.frontmostAppName = FrontmostAppLabel.format(appName: frontmostAppName)
     }
 
     public init(from decoder: Decoder) throws {
@@ -665,8 +666,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         )
         let rawEjectableCount = try container.decodeIfPresent(Int.self, forKey: .ejectableExternalVolumeCount) ?? 0
         self.ejectableExternalVolumeCount = max(0, rawEjectableCount)
-        self.frontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(
-            try container.decodeIfPresent(String.self, forKey: .frontmostAppName)
+        self.frontmostAppName = FrontmostAppLabel.format(
+            appName: try container.decodeIfPresent(String.self, forKey: .frontmostAppName)
         )
         self.deskTimer = try container.decodeIfPresent(DeskTimerState.self, forKey: .deskTimer) ?? .idle
     }
@@ -721,6 +722,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         }
         try container.encodeIfPresent(FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName), forKey: .frontmostAppName)
         try container.encode(deskTimer, forKey: .deskTimer)
+        try container.encodeIfPresent(FrontmostAppLabel.format(appName: frontmostAppName), forKey: .frontmostAppName)
     }
 
     /// Current Wi-Fi SSID string, or `"Wi-Fi"` with no network name when unavailable.
@@ -848,6 +850,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             max(0, ejectableExternalVolumeCount) != max(0, other.ejectableExternalVolumeCount) ||
             FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName) != FrontmostAppStripFormatter.sanitizedAppName(other.frontmostAppName) ||
             deskTimer != other.deskTimer {
+            FrontmostAppLabel.format(appName: frontmostAppName) != FrontmostAppLabel.format(appName: other.frontmostAppName) {
             return true
         }
         if (volume <= 0.001) != (other.volume <= 0.001) ||

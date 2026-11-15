@@ -318,6 +318,7 @@ public struct IOSRootTouchBarView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    frontmostAppHeaderLabel
                     Button { showNowPlaying.toggle() } label: {
                         Image(systemName: "play.circle.fill")
                             .font(.system(size: 24))
@@ -634,6 +635,8 @@ public struct IOSRootTouchBarView: View {
             .lineLimit(1)
             .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            frontmostAppHeaderLabel
 
             Button {
                 CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
@@ -1099,6 +1102,19 @@ public struct IOSRootTouchBarView: View {
             return name
         default:
             return client.savedMacs.first?.macName ?? L10n.tr("连接 Mac", "Connect Mac", language: lang)
+        }
+    }
+
+    @ViewBuilder
+    private var frontmostAppHeaderLabel: some View {
+        if activeMode == .chocolateBar && !showNowPlaying,
+           let frontmostAppName = client.activeFrontmostAppLabel {
+            Text(frontmostAppName)
+                .font(ChocType.caption)
+                .foregroundStyle(palette.secondaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .accessibilityIdentifier("ios-frontmost-app-label")
         }
     }
 

@@ -382,6 +382,16 @@ public final class MacSystemControlService {
             frontmostAppNameProvider?() ?? NSWorkspace.shared.frontmostApplication?.localizedName
         )
         let deskTimer = deskTimerProvider?() ?? currentState.deskTimer
+        let resolvedFrontmostAppName: String? = {
+            if let frontmostAppNameProvider {
+                return FrontmostAppLabel.format(appName: frontmostAppNameProvider())
+            }
+            let frontApp = NSWorkspace.shared.frontmostApplication
+            return FrontmostAppLabel.format(
+                appName: frontApp?.localizedName,
+                bundleIdentifier: frontApp?.bundleIdentifier
+            )
+        }()
 
         return ControlStripState(
             volume: volume,
@@ -412,7 +422,7 @@ public final class MacSystemControlService {
     }
 
     public func syncFrontmostAppName(_ appName: String?) {
-        let sanitized = FrontmostAppStripFormatter.sanitizedAppName(appName)
+        let sanitized = FrontmostAppLabel.format(appName: appName)
         guard currentState.frontmostAppName != sanitized else { return }
         var updated = currentState
         updated.frontmostAppName = sanitized
