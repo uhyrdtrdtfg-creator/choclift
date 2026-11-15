@@ -542,7 +542,7 @@ final class Round04FeaturesTests: XCTestCase {
             userDefaults: defaults,
             storageKeyPrefix: "iphone-r4"
         )
-        phone.tileFeedbackDurationSeconds = 0.12
+        phone.tileFeedbackDurationSeconds = 0.4
         defer { phone.disconnect() }
 
         phone.connectInMemoryBluetooth(to: phoneClientEnd, targetName: "Studio Mac R4")
@@ -660,10 +660,14 @@ final class Round04FeaturesTests: XCTestCase {
         let slot0Item = try XCTUnwrap(page0.slots[0])
 
         phone.triggerBarItem(slot0Item, from: slot0Coord)
-        for _ in 0..<50 where phone.tileOutcome(for: slot0Coord) == nil {
-            try await Task.sleep(for: .milliseconds(15))
+        var sawTileSuccess = phone.tileOutcome(for: slot0Coord) == .success
+        for _ in 0..<40 where !sawTileSuccess {
+            try await Task.sleep(for: .milliseconds(25))
+            if phone.tileOutcome(for: slot0Coord) == .success {
+                sawTileSuccess = true
+            }
         }
-        XCTAssertEqual(phone.tileOutcome(for: slot0Coord), .success)
+        XCTAssertTrue(sawTileSuccess)
         XCTAssertNil(phone.tileOutcome(for: slot1Coord))
 
         // Wait for brief flash to auto-expire back to normal

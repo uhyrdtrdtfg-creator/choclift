@@ -275,12 +275,19 @@ public final class MacServerEngine: ObservableObject {
         syncPairingState()
     }
 
+    /// `Task.sleep(for:)` cancellation is an escaping error on the CI Swift runtime.
+    static func sleepUntilCancelled(seconds: TimeInterval) async {
+        let clamped = max(0, seconds)
+        let nanos = UInt64((clamped * 1_000_000_000).rounded())
+        try? await Task.sleep(nanoseconds: nanos)
+    }
+
     private func ensureHeartbeatMonitorRunning() {
         guard heartbeatMonitorTask == nil else { return }
         heartbeatMonitorTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 let interval = max(0.02, self?.heartbeatSweepIntervalSeconds ?? 2.0)
-                try? await Task.sleep(for: .seconds(interval))
+                await Self.sleepUntilCancelled(seconds: interval)
                 guard let self, !Task.isCancelled else { break }
                 self.sweepExpiredBluetoothSessions()
             }
@@ -701,7 +708,7 @@ public final class MacServerEngine: ObservableObject {
                 self.sendHTTPResponse(status: status, body: payload, keepAlive: req.keepAlive, on: connection, connID: connID, completion: completion)
             }
             session.pendingHTTPPollTimeoutTask = Task { @MainActor [weak self, weak session] in
-                try? await Task.sleep(for: .seconds(holdSeconds))
+                await Self.sleepUntilCancelled(seconds: holdSeconds)
                 guard let self, !Task.isCancelled, let session, self.sessions[session.id] != nil else { return }
                 guard let responder = session.pendingHTTPPollResponder else { return }
                 session.pendingHTTPPollResponder = nil
