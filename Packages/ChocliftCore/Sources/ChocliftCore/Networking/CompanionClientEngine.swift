@@ -2996,6 +2996,13 @@ public final class CompanionClientEngine: ObservableObject {
         send(.performGesture(gesture))
     }
 
+    public func performCompanionAction(id: String) {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard CompanionActionCatalog.isKnown(trimmed) else { return }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.performCompanionAction(id: trimmed))
+    }
+
     public func performQuickAction(_ action: SystemQuickAction) {
         tileFeedbackTracker.clearPendingWithoutFeedback()
         if action == .switchToNextWindow || action == .switchToPreviousWindow {

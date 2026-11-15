@@ -839,6 +839,51 @@ public final class MacInputAndMediaService {
         return (true, L10n.tr("已发送 \(label)", "Sent \(label)", language: language))
     }
 
+    public func sendCompanionKeystroke(
+        virtualKey: CGKeyCode,
+        flags: CGEventFlags,
+        preferredPID: pid_t? = nil
+    ) -> (success: Bool, message: String) {
+        guard ensureAccessibilityOrPrompt() else {
+            return accessibilityDeniedResult()
+        }
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let selfBundleID = Bundle.main.bundleIdentifier
+        let isEligible: (NSRunningApplication) -> Bool = { app in
+            !app.isTerminated
+                && app.processIdentifier != myPID
+                && EditCompanionActionRouting.isAllowedTargetBundle(
+                    app.bundleIdentifier,
+                    selfBundleIdentifier: selfBundleID
+                )
+        }
+        let targetApp: NSRunningApplication? = {
+            if let front = NSWorkspace.shared.frontmostApplication, isEligible(front) {
+                return front
+            }
+            if let preferredPID,
+               let preferred = NSRunningApplication(processIdentifier: preferredPID),
+               isEligible(preferred) {
+                return preferred
+            }
+            return nil
+        }()
+        guard let targetApp else {
+            return (false, L10n.tr("当前没有可接收快捷键的前台应用", "No frontmost application available for shortcut"))
+        }
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier != targetApp.processIdentifier {
+            targetApp.activate(options: [.activateAllWindows])
+            RunLoop.current.run(until: Date().addingTimeInterval(0.04))
+        }
+        guard let activeFrontmost = NSWorkspace.shared.frontmostApplication,
+              isEligible(activeFrontmost) else {
+            return (false, L10n.tr("当前没有可接收快捷键的前台应用", "No frontmost application available for shortcut"))
+        }
+        postKeyStroke(virtualKey: virtualKey, flags: flags)
+        let name = activeFrontmost.localizedName ?? activeFrontmost.bundleIdentifier ?? "App"
+        return (true, L10n.tr("已在 \(name) 执行快捷键", "Sent shortcut to \(name)"))
+    }
+
     // MARK: - Low-Level CGEvent & Pasteboard Helpers
 
     private func ensureAccessibilityOrPrompt() -> Bool {

@@ -1964,6 +1964,16 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
             reply(.actionFeedback(success: res.success, title: key.title(in: lang), detail: res.message))
 
+        case .performCompanionAction(let id):
+            let action = CompanionActionCatalog.action(id: id)
+            let res = MacCompanionActionRunner.run(id: id, preferredPID: timeTravel.lastExternalAppPID)
+            recordActivity(deviceName: device.deviceName, summary: res.message, isSuccess: res.success)
+            reply(.actionFeedback(
+                success: res.success,
+                title: action?.title(in: lang) ?? L10n.tr("更多操作", "More Actions", language: lang),
+                detail: res.message
+            ))
+
         case .seekNowPlaying(let positionSeconds):
             let res = seekNowPlaying(
                 to: positionSeconds,
