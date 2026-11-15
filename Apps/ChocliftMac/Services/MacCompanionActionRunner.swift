@@ -35,6 +35,9 @@ enum MacCompanionActionRunner {
         if id.hasPrefix("session.") {
             return MacSessionActionPack.run(id: id, preferredPID: preferredPID)
         }
+        if CompanionActionCatalog.capturePack.contains(where: { $0.id == id }) || id.hasPrefix("capture.") {
+            return MacCaptureActionPack.run(id: id, preferredPID: preferredPID)
+        }
         return (false, L10n.tr("不支持此操作", "Unsupported action"))
     }
 }
