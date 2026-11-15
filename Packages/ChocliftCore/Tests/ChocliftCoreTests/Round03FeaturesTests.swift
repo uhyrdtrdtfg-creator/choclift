@@ -226,7 +226,10 @@ final class Round03FeaturesTests: XCTestCase {
             .undoAction: "⌘Z",
             .redoAction: "⇧⌘Z",
             .lockScreen: "⌃⌘Q",
-            .openEmojiPicker: "⌃⌘Space"
+            .openEmojiPicker: "⌃⌘Space",
+            .switchToNextSpace: "⌃→",
+            .switchToPreviousSpace: "⌃←",
+            .toggleAppSwitcher: "⌘Tab"
         ]
 
         for action in SystemQuickAction.allCases {

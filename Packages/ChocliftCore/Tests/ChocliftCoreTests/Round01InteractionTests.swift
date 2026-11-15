@@ -63,6 +63,9 @@ final class Round01InteractionTests: XCTestCase {
         XCTAssertTrue(BarItem(kind: .systemAction(action: .lockScreen)).requiresDestructiveConfirmation(in: profile))
         XCTAssertFalse(BarItem(kind: .systemAction(action: .quitApp)).requiresDestructiveConfirmation(in: profile))
         XCTAssertFalse(BarItem(kind: .systemAction(action: .maximizeWindow)).requiresDestructiveConfirmation(in: profile))
+        XCTAssertFalse(BarItem(kind: .systemAction(action: .switchToNextSpace)).requiresDestructiveConfirmation(in: profile))
+        XCTAssertFalse(BarItem(kind: .systemAction(action: .switchToPreviousSpace)).requiresDestructiveConfirmation(in: profile))
+        XCTAssertFalse(BarItem(kind: .systemAction(action: .toggleAppSwitcher)).requiresDestructiveConfirmation(in: profile))
         XCTAssertFalse(
             BarItem(kind: .macApp(bundleIdentifier: "com.apple.Safari", appName: "Safari"))
                 .requiresDestructiveConfirmation(in: profile)

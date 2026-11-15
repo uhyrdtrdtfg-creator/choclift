@@ -97,6 +97,9 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case snapWindowTopRight = "snap_window_top_right"
     case snapWindowBottomLeft = "snap_window_bottom_left"
     case snapWindowBottomRight = "snap_window_bottom_right"
+    case switchToNextSpace = "switch_to_next_space"
+    case switchToPreviousSpace = "switch_to_previous_space"
+    case toggleAppSwitcher = "toggle_app_switcher"
 
     public var id: String { rawValue }
 
@@ -133,6 +136,9 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .quitApp: return "xmark.octagon.fill"
         case .openEmojiPicker: return "face.smiling.inverse"
         case .moveWindowToNextDisplay: return "display.2"
+        case .switchToNextSpace: return "chevron.right.square.fill"
+        case .switchToPreviousSpace: return "chevron.left.square.fill"
+        case .toggleAppSwitcher: return "squares.below.rectangle"
         }
     }
 
@@ -144,7 +150,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return "#EDF6FF"
         case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
             return "#F3EEFF"
-        case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker:
+        case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker, .switchToNextSpace, .switchToPreviousSpace, .toggleAppSwitcher:
             return "#FFF1EC"
         case .mediaPlayPause, .mediaNext, .mediaPrevious, .volumeUp, .volumeDown, .volumeMute:
             return "#ECFAEE"
@@ -214,6 +220,12 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return "⌃⌘Q"
         case .openEmojiPicker:
             return "⌃⌘Space"
+        case .switchToNextSpace:
+            return "⌃→"
+        case .switchToPreviousSpace:
+            return "⌃←"
+        case .toggleAppSwitcher:
+            return "⌘Tab"
         case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
              .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
              .centerWindow, .toggleFullscreen, .missionControl, .showDesktop,
@@ -257,6 +269,9 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .quitApp: return L10n.tr("退出当前应用", "Quit Application", language: lang)
         case .openEmojiPicker: return L10n.tr("系统表情面板", "macOS Emoji Panel", language: lang)
         case .moveWindowToNextDisplay: return L10n.tr("窗口移至下一显示器", "Move Window to Next Display", language: lang)
+        case .switchToNextSpace: return L10n.tr("下一个桌面空间", "Next Space", language: lang)
+        case .switchToPreviousSpace: return L10n.tr("上一个桌面空间", "Previous Space", language: lang)
+        case .toggleAppSwitcher: return L10n.tr("应用切换器", "App Switcher", language: lang)
         }
     }
 
@@ -293,6 +308,9 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .quitApp: return L10n.tr("退出", "Quit", language: lang)
         case .openEmojiPicker: return L10n.tr("表情框", "Emoji", language: lang)
         case .moveWindowToNextDisplay: return L10n.tr("下一屏幕", "Next Display", language: lang)
+        case .switchToNextSpace: return L10n.tr("下一空间", "Next Space", language: lang)
+        case .switchToPreviousSpace: return L10n.tr("上一空间", "Prev Space", language: lang)
+        case .toggleAppSwitcher: return L10n.tr("应用切换", "App Switcher", language: lang)
         }
     }
 
@@ -325,7 +343,11 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             ),
             (
                 L10n.tr("桌面与系统控制", "Workspace & System", language: lang),
-                [.missionControl, .showDesktop, .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp]
+                [
+                    .missionControl, .showDesktop,
+                    .switchToPreviousSpace, .switchToNextSpace, .toggleAppSwitcher,
+                    .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp
+                ]
             )
         ]
     }
@@ -2607,6 +2629,31 @@ public enum WindowCycleKeystrokeRouting {
         case .switchToPreviousWindow: return (CGKeyCode(kVK_ANSI_Grave), [.maskCommand, .maskShift])
         default: return nil
         }
+    }
+}
+
+public enum WorkspaceShortcutKeystrokeRouting {
+    public static func keystroke(for action: SystemQuickAction) -> (virtualKey: CGKeyCode, flags: CGEventFlags)? {
+        switch action {
+        case .switchToNextSpace: return (CGKeyCode(kVK_RightArrow), .maskControl)
+        case .switchToPreviousSpace: return (CGKeyCode(kVK_LeftArrow), .maskControl)
+        case .toggleAppSwitcher: return (CGKeyCode(kVK_Tab), .maskCommand)
+        default: return nil
+        }
+    }
+
+    public static func execute(
+        _ action: SystemQuickAction,
+        ensureAccessibility: () -> Bool,
+        deniedResult: () -> (success: Bool, message: String),
+        postKeyStroke: (CGKeyCode, CGEventFlags) -> Void
+    ) -> (success: Bool, message: String) {
+        guard ensureAccessibility() else { return deniedResult() }
+        guard let stroke = keystroke(for: action) else {
+            return (false, action.title())
+        }
+        postKeyStroke(stroke.virtualKey, stroke.flags)
+        return (true, action.title())
     }
 }
 #endif

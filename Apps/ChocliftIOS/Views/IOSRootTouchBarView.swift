@@ -443,6 +443,9 @@ public struct IOSRootTouchBarView: View {
                         client.tapQuitFrontmostApp()
                     }
                     toolsRow(L10n.tr("显示桌面", "Show Desktop", language: lang), "macwindow") { client.performQuickAction(.showDesktop) }
+                    ForEach([SystemQuickAction.switchToPreviousSpace, .switchToNextSpace, .toggleAppSwitcher]) { action in
+                        toolsRow(action.title(in: lang), action.sfSymbol) { client.performQuickAction(action) }
+                    }
                     toolsRow(L10n.tr("桌面图标", "Toggle Desktop Icons", language: lang), "square.grid.2x2") { client.toggleFinderDesktopIcons() }
                     toolsRow(L10n.tr("隐藏其他窗口", "Hide Other Windows", language: lang), "rectangle.on.rectangle") { client.hideOtherWindows() }
                     ForEach([

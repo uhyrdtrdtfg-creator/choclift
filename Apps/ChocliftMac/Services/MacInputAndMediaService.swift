@@ -335,6 +335,14 @@ public final class MacInputAndMediaService {
             postKeyStroke(virtualKey: stroke.virtualKey, flags: stroke.flags)
             return (true, action.title())
 
+        case .switchToNextSpace, .switchToPreviousSpace, .toggleAppSwitcher:
+            return WorkspaceShortcutKeystrokeRouting.execute(
+                action,
+                ensureAccessibility: ensureAccessibilityOrPrompt,
+                deniedResult: accessibilityDeniedResult,
+                postKeyStroke: postKeyStroke(virtualKey:flags:)
+            )
+
         case .copySelection:
             guard ensureAccessibilityOrPrompt() else {
                 return accessibilityDeniedResult()
