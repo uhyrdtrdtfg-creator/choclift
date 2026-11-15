@@ -25,7 +25,9 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
     case openWebsite(
         url: String,
         title: String? = nil,
-        switchExistingTab: Bool = true
+        switchExistingTab: Bool = true,
+        browserBundleIdentifier: String? = nil,
+        browserAppName: String? = nil
     )
     case runShortcut(
         shortcutName: String
@@ -33,6 +35,19 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
     case insertSnippet(
         snippetID: UUID,
         titleSnapshot: String? = nil
+    )
+    /// Quit a chosen other app. Never targets Choclift itself.
+    case quitApp(
+        bundleIdentifier: String,
+        appName: String,
+        appPath: String? = nil
+    )
+    /// Open a chosen directory in an app that accepts folders (IDEs, Finder, editors).
+    case openFolderInApp(
+        folderPath: String,
+        bundleIdentifier: String,
+        appName: String,
+        appPath: String? = nil
     )
 
     private enum CodingKeys: String, CodingKey {
@@ -51,6 +66,9 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
         case shortcutName
         case snippetID
         case titleSnapshot
+        case folderPath
+        case browserBundleIdentifier
+        case browserAppName
     }
 
     private enum StepTypeTag: String {
@@ -61,6 +79,8 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
         case openWebsite = "open_website"
         case runShortcut = "run_shortcut"
         case insertSnippet = "insert_snippet"
+        case quitApp = "quit_app"
+        case openFolderInApp = "open_folder_in_app"
     }
 
     public init(from decoder: Decoder) throws {
@@ -109,7 +129,15 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
             let url = try container.decodeIfPresent(String.self, forKey: .url) ?? ""
             let title = try container.decodeIfPresent(String.self, forKey: .title)
             let switchExistingTab = try container.decodeIfPresent(Bool.self, forKey: .switchExistingTab) ?? true
-            self = .openWebsite(url: url, title: title, switchExistingTab: switchExistingTab)
+            let browserBundle = try container.decodeIfPresent(String.self, forKey: .browserBundleIdentifier)
+            let browserName = try container.decodeIfPresent(String.self, forKey: .browserAppName)
+            self = .openWebsite(
+                url: url,
+                title: title,
+                switchExistingTab: switchExistingTab,
+                browserBundleIdentifier: browserBundle,
+                browserAppName: browserName
+            )
 
         case StepTypeTag.runShortcut.rawValue:
             let shortcutName = try container.decodeIfPresent(String.self, forKey: .shortcutName) ?? ""
@@ -122,6 +150,24 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
             }
             let titleSnapshot = try container.decodeIfPresent(String.self, forKey: .titleSnapshot)
             self = .insertSnippet(snippetID: snippetID, titleSnapshot: titleSnapshot)
+
+        case StepTypeTag.quitApp.rawValue:
+            let bundleID = try container.decodeIfPresent(String.self, forKey: .bundleIdentifier) ?? ""
+            let appName = try container.decodeIfPresent(String.self, forKey: .appName) ?? bundleID
+            let appPath = try container.decodeIfPresent(String.self, forKey: .appPath)
+            self = .quitApp(bundleIdentifier: bundleID, appName: appName, appPath: appPath)
+
+        case StepTypeTag.openFolderInApp.rawValue:
+            let folderPath = try container.decodeIfPresent(String.self, forKey: .folderPath) ?? ""
+            let bundleID = try container.decodeIfPresent(String.self, forKey: .bundleIdentifier) ?? ""
+            let appName = try container.decodeIfPresent(String.self, forKey: .appName) ?? bundleID
+            let appPath = try container.decodeIfPresent(String.self, forKey: .appPath)
+            self = .openFolderInApp(
+                folderPath: folderPath,
+                bundleIdentifier: bundleID,
+                appName: appName,
+                appPath: appPath
+            )
 
         default:
             self = .unsupported(rawType: rawType)
@@ -156,11 +202,13 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
         case .unsupported(let rawType):
             try container.encode(rawType, forKey: .type)
 
-        case .openWebsite(let url, let title, let switchExistingTab):
+        case .openWebsite(let url, let title, let switchExistingTab, let browserBundleIdentifier, let browserAppName):
             try container.encode(StepTypeTag.openWebsite.rawValue, forKey: .type)
             try container.encode(url, forKey: .url)
             try container.encodeIfPresent(title, forKey: .title)
             try container.encode(switchExistingTab, forKey: .switchExistingTab)
+            try container.encodeIfPresent(browserBundleIdentifier, forKey: .browserBundleIdentifier)
+            try container.encodeIfPresent(browserAppName, forKey: .browserAppName)
 
         case .runShortcut(let shortcutName):
             try container.encode(StepTypeTag.runShortcut.rawValue, forKey: .type)
@@ -170,6 +218,19 @@ public enum ActionFlowStepKind: Codable, Equatable, Hashable, Sendable {
             try container.encode(StepTypeTag.insertSnippet.rawValue, forKey: .type)
             try container.encode(snippetID, forKey: .snippetID)
             try container.encodeIfPresent(titleSnapshot, forKey: .titleSnapshot)
+
+        case .quitApp(let bundleIdentifier, let appName, let appPath):
+            try container.encode(StepTypeTag.quitApp.rawValue, forKey: .type)
+            try container.encode(bundleIdentifier, forKey: .bundleIdentifier)
+            try container.encode(appName, forKey: .appName)
+            try container.encodeIfPresent(appPath, forKey: .appPath)
+
+        case .openFolderInApp(let folderPath, let bundleIdentifier, let appName, let appPath):
+            try container.encode(StepTypeTag.openFolderInApp.rawValue, forKey: .type)
+            try container.encode(folderPath, forKey: .folderPath)
+            try container.encode(bundleIdentifier, forKey: .bundleIdentifier)
+            try container.encode(appName, forKey: .appName)
+            try container.encodeIfPresent(appPath, forKey: .appPath)
         }
     }
 }
@@ -244,6 +305,25 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
         return clean.contains("://") ? clean : "https://\(clean)"
     }
 
+    /// Absolute local directory, not a file and not a remote path.
+    public static func isValidWorkingDirectoryPath(_ raw: String) -> Bool {
+        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.hasPrefix("/"), !clean.contains("\0") else { return false }
+        return !clean.hasSuffix(".app")
+    }
+
+    public static func normalizedWorkingDirectoryPath(_ raw: String) -> String {
+        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.count > 1 else { return clean }
+        return clean.hasSuffix("/") ? String(clean.dropLast()) : clean
+    }
+
+    /// Choclift must never quit itself from a flow step.
+    public static func isChocliftBundleIdentifier(_ raw: String) -> Bool {
+        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return clean == "com.choclift.mac" || clean.hasPrefix("com.choclift.")
+    }
+
     private static func normalizedKind(_ kind: ActionFlowStepKind) -> ActionFlowStepKind {
         switch kind {
         case .delay(let seconds):
@@ -254,13 +334,17 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
                 appName: appName,
                 timeoutSeconds: clampTimeout(timeout)
             )
-        case .openWebsite(let url, let title, let switchExistingTab):
+        case .openWebsite(let url, let title, let switchExistingTab, let browserBundle, let browserName):
             let cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
             let cleanTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanBrowser = browserBundle?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanBrowserName = browserName?.trimmingCharacters(in: .whitespacesAndNewlines)
             return .openWebsite(
                 url: cleanURL,
                 title: (cleanTitle?.isEmpty == false) ? cleanTitle : nil,
-                switchExistingTab: switchExistingTab
+                switchExistingTab: switchExistingTab,
+                browserBundleIdentifier: (cleanBrowser?.isEmpty == false) ? cleanBrowser : nil,
+                browserAppName: (cleanBrowserName?.isEmpty == false) ? cleanBrowserName : nil
             )
         case .runShortcut(let shortcutName):
             return .runShortcut(shortcutName: shortcutName.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -270,9 +354,27 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
                 snippetID: snippetID,
                 titleSnapshot: (cleanSnapshot?.isEmpty == false) ? cleanSnapshot : nil
             )
+        case .quitApp(let bundleID, let appName, let appPath):
+            return .quitApp(
+                bundleIdentifier: bundleID.trimmingCharacters(in: .whitespacesAndNewlines),
+                appName: appName.trimmingCharacters(in: .whitespacesAndNewlines),
+                appPath: trimmedOptional(appPath)
+            )
+        case .openFolderInApp(let folderPath, let bundleID, let appName, let appPath):
+            return .openFolderInApp(
+                folderPath: normalizedWorkingDirectoryPath(folderPath),
+                bundleIdentifier: bundleID.trimmingCharacters(in: .whitespacesAndNewlines),
+                appName: appName.trimmingCharacters(in: .whitespacesAndNewlines),
+                appPath: trimmedOptional(appPath)
+            )
         default:
             return kind
         }
+    }
+
+    private static func trimmedOptional(_ raw: String?) -> String? {
+        let clean = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return clean.isEmpty ? nil : clean
     }
 
     public var sfSymbol: String {
@@ -293,6 +395,10 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
             return "sparkles.rectangle.stack"
         case .insertSnippet:
             return "text.quote"
+        case .quitApp:
+            return "xmark.octagon.fill"
+        case .openFolderInApp:
+            return "folder.badge.plus"
         }
     }
 
@@ -314,6 +420,10 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
             return "#EC4899"
         case .insertSnippet:
             return "#D97706"
+        case .quitApp:
+            return "#E5484D"
+        case .openFolderInApp:
+            return "#12B981"
         }
     }
 
@@ -328,6 +438,9 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
         case .systemAction(_, let targetBundleID, _):
             let trimmed = targetBundleID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             return trimmed.isEmpty ? nil : trimmed
+        case .quitApp(let bundleID, _, _), .openFolderInApp(_, let bundleID, _, _):
+            let trimmed = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
         case .delay, .unsupported, .openWebsite, .runShortcut, .insertSnippet:
             return nil
         }
@@ -335,10 +448,12 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
 
     public var requiresDestructiveConfirmation: Bool {
         guard isEnabled else { return false }
-        if case .systemAction(let action, _, _) = kind {
+        switch kind {
+        case .systemAction(let action, _, _):
             return action.requiresDestructiveConfirmation
+        default:
+            return false
         }
-        return false
     }
 
     public func displayTitle(in lang: AppLanguage = .system) -> String {
@@ -380,7 +495,7 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
         case .unsupported(let rawType):
             return L10n.tr("不支持的步骤 (\(rawType))", "Unsupported Step (\(rawType))", language: lang)
 
-        case .openWebsite(let url, let title, _):
+        case .openWebsite(let url, let title, _, _, _):
             let cleanTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             let cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
             let derivedHost: String = {
@@ -410,6 +525,18 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
                 return L10n.tr("插入文本片段", "Insert Snippet", language: lang)
             }
             return L10n.tr("插入片段「\(cleanTitle)」", "Insert Snippet \"\(cleanTitle)\"", language: lang)
+
+        case .quitApp(let bundleID, let appName, _):
+            let label = Self.appLabel(name: appName, bundleID: bundleID, fallback: L10n.tr("应用", "App", language: lang))
+            return L10n.tr("退出 \(label)", "Quit \(label)", language: lang)
+
+        case .openFolderInApp(let folderPath, let bundleID, let appName, _):
+            let appLabel = Self.appLabel(name: appName, bundleID: bundleID, fallback: L10n.tr("应用", "App", language: lang))
+            let folder = Self.folderDisplayName(folderPath)
+            if folder.isEmpty {
+                return L10n.tr("用 \(appLabel) 打开工作目录", "Open Folder in \(appLabel)", language: lang)
+            }
+            return L10n.tr("用 \(appLabel) 打开 \(folder)", "Open \(folder) in \(appLabel)", language: lang)
         }
     }
 
@@ -437,12 +564,16 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
             return L10n.tr("系统全局快捷操作", "System-wide Mac action", language: lang)
         case .unsupported(let rawType):
             return rawType
-        case .openWebsite(let url, _, let switchExistingTab):
+        case .openWebsite(let url, _, let switchExistingTab, let browserBundle, let browserName):
             let cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
             let shownURL = cleanURL.isEmpty ? "https://" : cleanURL
+            let browser = Self.appLabel(name: browserName ?? "", bundleID: browserBundle ?? "", fallback: "")
+            let browserSuffix = browser.isEmpty
+                ? ""
+                : L10n.tr(" · \(browser)", " · \(browser)", language: lang)
             return switchExistingTab
-                ? L10n.tr("\(shownURL) · 优先切换已打开标签页", "\(shownURL) · Switch existing tab", language: lang)
-                : L10n.tr("\(shownURL) · 在浏览器中打开", "\(shownURL) · Open in browser", language: lang)
+                ? L10n.tr("\(shownURL) · 优先切换已打开标签页\(browserSuffix)", "\(shownURL) · Switch existing tab\(browserSuffix)", language: lang)
+                : L10n.tr("\(shownURL) · 在浏览器中打开\(browserSuffix)", "\(shownURL) · Open in browser\(browserSuffix)", language: lang)
         case .runShortcut(let shortcutName):
             let cleanName = shortcutName.trimmingCharacters(in: .whitespacesAndNewlines)
             return cleanName.isEmpty
@@ -453,7 +584,32 @@ public struct ActionFlowStep: Codable, Equatable, Hashable, Identifiable, Sendab
             return cleanTitle.isEmpty
                 ? L10n.tr("已保存文本片段 (\(snippetID.uuidString.prefix(8)))", "Saved Snippet (\(snippetID.uuidString.prefix(8)))", language: lang)
                 : L10n.tr("已保存文本片段 · \(cleanTitle)", "Saved Snippet · \(cleanTitle)", language: lang)
+        case .quitApp(let bundleID, _, _):
+            let target = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+            return target.isEmpty
+                ? L10n.tr("退出指定的其它应用，不会退出 Choclift", "Quits another app, never Choclift", language: lang)
+                : L10n.tr("退出 \(target)，不会退出 Choclift", "Quits \(target), never Choclift", language: lang)
+        case .openFolderInApp(let folderPath, let bundleID, _, _):
+            let folder = folderPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            let app = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+            if folder.isEmpty {
+                return L10n.tr("选择工作目录后用应用打开", "Choose a folder, then open it in an app", language: lang)
+            }
+            return app.isEmpty ? folder : "\(folder) · \(app)"
         }
+    }
+
+    private static func appLabel(name: String, bundleID: String, fallback: String) -> String {
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanName.isEmpty { return cleanName }
+        let cleanBundle = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleanBundle.isEmpty ? fallback : cleanBundle
+    }
+
+    private static func folderDisplayName(_ raw: String) -> String {
+        let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, clean != "/" else { return clean == "/" ? "/" : "" }
+        return URL(fileURLWithPath: clean).lastPathComponent
     }
 
     public static func formatSeconds(_ value: Double) -> String {
@@ -645,7 +801,19 @@ public protocol ActionFlowDriver: AnyObject {
 
     func openWebsite(
         url: String,
-        switchExistingTab: Bool
+        switchExistingTab: Bool,
+        browserBundleIdentifier: String?
+    ) async -> (success: Bool, message: String)
+
+    func quitApp(
+        bundleIdentifier: String,
+        appPath: String?
+    ) -> (success: Bool, message: String)
+
+    func openFolderInApp(
+        folderPath: String,
+        bundleIdentifier: String,
+        appPath: String?
     ) async -> (success: Bool, message: String)
 
     func runShortcut(
@@ -872,7 +1040,7 @@ public enum ActionFlowRunner {
                     )
                 )
 
-            case .openWebsite(let url, _, let switchExistingTab):
+            case .openWebsite(let url, _, let switchExistingTab, let browserBundle, _):
                 let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmedURL.isEmpty else {
                     return fail(L10n.tr("网址为空", "Website URL is empty", language: language))
@@ -881,7 +1049,12 @@ public enum ActionFlowRunner {
                     return fail(L10n.tr("无效的网址：\(trimmedURL)", "Invalid URL: \(trimmedURL)", language: language))
                 }
                 let normalizedURL = ActionFlowStep.normalizedWebsiteURL(trimmedURL)
-                let res = await driver.openWebsite(url: normalizedURL, switchExistingTab: switchExistingTab)
+                let cleanBrowser = browserBundle?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let res = await driver.openWebsite(
+                    url: normalizedURL,
+                    switchExistingTab: switchExistingTab,
+                    browserBundleIdentifier: (cleanBrowser?.isEmpty == false) ? cleanBrowser : nil
+                )
                 guard res.success else {
                     return fail(res.message)
                 }
@@ -914,6 +1087,49 @@ public enum ActionFlowRunner {
                 guard res.success else {
                     return fail(res.message)
                 }
+                executedCount += 1
+
+            case .quitApp(let bundleID, let appName, let appPath):
+                let trimmedBundle = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedBundle.isEmpty else {
+                    return fail(L10n.tr("未选择要退出的应用", "No app selected to quit", language: language))
+                }
+                guard !ActionFlowStep.isChocliftBundleIdentifier(trimmedBundle) else {
+                    return fail(L10n.tr("不能通过动作流退出 Choclift", "Action flows cannot quit Choclift", language: language))
+                }
+                let res = driver.quitApp(bundleIdentifier: trimmedBundle, appPath: appPath)
+                guard res.success else {
+                    return fail(res.message)
+                }
+                if currentTargetBundleID?.caseInsensitiveCompare(trimmedBundle) == .orderedSame {
+                    currentTargetBundleID = nil
+                    currentTargetAppName = nil
+                    currentTargetApp = nil
+                }
+                _ = appName
+                executedCount += 1
+
+            case .openFolderInApp(let folderPath, let bundleID, let appName, let appPath):
+                let trimmedFolder = ActionFlowStep.normalizedWorkingDirectoryPath(folderPath)
+                guard ActionFlowStep.isValidWorkingDirectoryPath(trimmedFolder) else {
+                    return fail(L10n.tr("工作目录无效", "Working directory is invalid", language: language))
+                }
+                let trimmedBundle = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmedBundle.isEmpty else {
+                    return fail(L10n.tr("未选择用来打开目录的应用", "No app selected to open the folder", language: language))
+                }
+                let res = await driver.openFolderInApp(
+                    folderPath: trimmedFolder,
+                    bundleIdentifier: trimmedBundle,
+                    appPath: appPath
+                )
+                guard res.success else {
+                    return fail(res.message)
+                }
+                currentTargetBundleID = trimmedBundle
+                let cleanName = appName.trimmingCharacters(in: .whitespacesAndNewlines)
+                currentTargetAppName = cleanName.isEmpty ? trimmedBundle : cleanName
+                currentTargetApp = driver.runningApp(forBundleIdentifier: trimmedBundle)
                 executedCount += 1
             }
         }

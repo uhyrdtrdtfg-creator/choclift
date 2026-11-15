@@ -114,6 +114,7 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var recentlyTriggeredTiles: [RecentlyTriggeredTileEntry] = []
     @Published public private(set) var maintenanceConfirmController = Round08MaintenanceConfirmController()
     @Published public private(set) var lockScreenConfirmController = Round09LockScreenConfirmController()
+    @Published public private(set) var quitFrontmostConfirmGate = DestructiveActionConfirmGate()
     @Published public private(set) var nowPlayingScrub = NowPlayingScrubController()
     @Published public private(set) var hapticQuietHours: HapticQuietHoursSettings = .disabled
     @Published public private(set) var observedClipboardPreviewTexts: Set<String> = []
@@ -196,6 +197,7 @@ public final class CompanionClientEngine: ObservableObject {
     private var tileFeedbackExpiryTask: Task<Void, Never>?
     private var maintenanceConfirmExpiryTask: Task<Void, Never>?
     private var lockScreenConfirmExpiryTask: Task<Void, Never>?
+    private var quitFrontmostConfirmExpiryTask: Task<Void, Never>?
     private var connectedClipboardMacID: String?
     private var awaitingPlaybackModeFeedback = false
     private var requestedNowPlayingIconBundleIDs: Set<String> = []
@@ -501,7 +503,7 @@ public final class CompanionClientEngine: ObservableObject {
         } else if wifiPreferenceTask == nil {
             let remaining = max(0.05, 0.65 - elapsed)
             wifiPreferenceTask = Task { @MainActor [weak self] in
-                await MacServerEngine.sleepUntilCancelled(seconds: remaining)
+                await CancellableDelay.sleepUntilCancelled(seconds: remaining)
                 guard let self, !Task.isCancelled else { return }
                 self.wifiPreferenceTask = nil
                 self.autoConnectIfAppropriate(allowBluetoothNow: true)
@@ -837,7 +839,7 @@ public final class CompanionClientEngine: ObservableObject {
         let bounded = max(0.1, timeoutSeconds)
         let upgradeSessionID = upgrade.sessionID
         upgrade.watchdogTask = Task { @MainActor [weak self] in
-            await MacServerEngine.sleepUntilCancelled(seconds: bounded)
+            await CancellableDelay.sleepUntilCancelled(seconds: bounded)
             guard let self,
                   !Task.isCancelled,
                   let activeUpgrade = self.backgroundWiFiUpgrade,
@@ -2234,7 +2236,7 @@ public final class CompanionClientEngine: ObservableObject {
         connectWatchdogTask?.cancel()
         let bounded = max(0.2, timeoutSeconds)
         connectWatchdogTask = Task { @MainActor [weak self] in
-            await MacServerEngine.sleepUntilCancelled(seconds: bounded)
+            await CancellableDelay.sleepUntilCancelled(seconds: bounded)
             guard let self, !Task.isCancelled, self.currentSessionID == sessionID else { return }
             let stillWaitingForHandshake: Bool = {
                 if case .connecting = self.connectionState {
@@ -2333,7 +2335,7 @@ public final class CompanionClientEngine: ObservableObject {
         heartbeatTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 let interval = max(0.05, self?.heartbeatIntervalSeconds ?? 5.0)
-                await MacServerEngine.sleepUntilCancelled(seconds: interval)
+                await CancellableDelay.sleepUntilCancelled(seconds: interval)
                 guard let self,
                       !Task.isCancelled,
                       self.currentSessionID == sessionID,
@@ -2456,7 +2458,7 @@ public final class CompanionClientEngine: ObservableObject {
                 if pinGlitchExpiryTask == nil {
                     let remaining = max(0.05, deadline.timeIntervalSince(now))
                     pinGlitchExpiryTask = Task { @MainActor [weak self] in
-                        await MacServerEngine.sleepUntilCancelled(seconds: remaining)
+                        await CancellableDelay.sleepUntilCancelled(seconds: remaining)
                         guard let self, !Task.isCancelled, self.pinGlitchState != nil else { return }
                         let lang = self.profile.settings.language
                         let target = self.activeTargetName
@@ -2597,7 +2599,7 @@ public final class CompanionClientEngine: ObservableObject {
 
         reconnectTask?.cancel()
         reconnectTask = Task { @MainActor [weak self] in
-            await MacServerEngine.sleepUntilCancelled(seconds: max(0.02, delaySeconds))
+            await CancellableDelay.sleepUntilCancelled(seconds: max(0.02, delaySeconds))
             guard let self, !Task.isCancelled, !self.intentionalDisconnect else { return }
             if preservePINState {
                 guard self.pinGlitchState != nil else { return }
@@ -2701,7 +2703,7 @@ public final class CompanionClientEngine: ObservableObject {
         let submittedSessionID = currentSessionID
         let pinTimeout = max(0.3, connectTimeoutSeconds)
         pinSubmissionWatchdogTask = Task { @MainActor [weak self] in
-            await MacServerEngine.sleepUntilCancelled(seconds: pinTimeout)
+            await CancellableDelay.sleepUntilCancelled(seconds: pinTimeout)
             guard let self, !Task.isCancelled, self.currentSessionID == submittedSessionID else { return }
             guard case .awaitingPIN(let macID, let macName, let currentErr) = self.connectionState,
                   currentErr == nil else {
@@ -3005,7 +3007,7 @@ public final class CompanionClientEngine: ObservableObject {
     private func beginWindowCycleFeedbackTimeout() {
         windowCycleFeedbackTask?.cancel()
         windowCycleFeedbackTask = Task { @MainActor [weak self] in
-            await MacServerEngine.sleepUntilCancelled(seconds: 2)
+            await CancellableDelay.sleepUntilCancelled(seconds: 2)
             guard let self, !Task.isCancelled else { return }
             self.lastFeedback = CompanionFeedbackToast(
                 success: false,
@@ -3463,7 +3465,7 @@ public final class CompanionClientEngine: ObservableObject {
         case .requireSecondTap(let expiresAt):
             let delay = maintenanceConfirmController.confirmationWindowSeconds + 0.05
             maintenanceConfirmExpiryTask = Task { @MainActor [weak self] in
-                await MacServerEngine.sleepUntilCancelled(seconds: delay)
+                await CancellableDelay.sleepUntilCancelled(seconds: delay)
                 guard let self, !Task.isCancelled else { return }
                 self.maintenanceConfirmController.expireIfNeeded(at: expiresAt + 0.01)
             }
@@ -3491,6 +3493,36 @@ public final class CompanionClientEngine: ObservableObject {
     }
 
     // MARK: - Round 9: Lock Screen (Two-Tap 3s Confirm), Hide Other Windows, Pinned Clipboard & Strip Frontmost App
+
+    public func isQuitFrontmostAppArmed(
+        at now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> Bool {
+        quitFrontmostConfirmGate.isArmed(targetID: "quit-frontmost-app", at: now)
+    }
+
+    /// Quits the Mac's frontmost app on the first tap.
+    @discardableResult
+    public func tapQuitFrontmostApp(
+        at now: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> DestructiveTapDecision {
+        disarmLockMacScreenConfirmation()
+        quitFrontmostConfirmExpiryTask?.cancel()
+        quitFrontmostConfirmExpiryTask = nil
+        quitFrontmostConfirmGate.disarm()
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: SystemQuickAction.quitApp.title(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return .runImmediately
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.performQuickAction(.quitApp))
+        _ = now
+        return .runImmediately
+    }
 
     public func isLockMacScreenArmed(
         at now: TimeInterval = ProcessInfo.processInfo.systemUptime
@@ -3521,7 +3553,7 @@ public final class CompanionClientEngine: ObservableObject {
         case .requireSecondTap(let expiresAt):
             let delay = lockScreenConfirmController.confirmationWindowSeconds + 0.05
             lockScreenConfirmExpiryTask = Task { @MainActor [weak self] in
-                await MacServerEngine.sleepUntilCancelled(seconds: delay)
+                await CancellableDelay.sleepUntilCancelled(seconds: delay)
                 guard let self, !Task.isCancelled else { return }
                 self.lockScreenConfirmController.expireIfNeeded(at: expiresAt + 0.01)
             }
@@ -4172,7 +4204,7 @@ public final class CompanionClientEngine: ObservableObject {
         let token = banner.token
         let duration = max(0.05, tileFeedbackDurationSeconds)
         tileFeedbackExpiryTask = Task { @MainActor [weak self] in
-            await MacServerEngine.sleepUntilCancelled(seconds: duration)
+            await CancellableDelay.sleepUntilCancelled(seconds: duration)
             guard let self, !Task.isCancelled else { return }
             if self.tileFeedbackTracker.expireFeedback(matchingToken: token) {
                 self.activeTileFeedback = nil

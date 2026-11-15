@@ -275,25 +275,12 @@ public final class MacServerEngine: ObservableObject {
         syncPairingState()
     }
 
-    /// CI's XCTest records `CancellationError` from `Task.sleep` even after `try?`.
-    static func sleepUntilCancelled(seconds: TimeInterval) async {
-        let delay = max(0, seconds)
-        let gate = NonThrowingSleepGate()
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                gate.arm(delay: delay, continuation: continuation)
-            }
-        } onCancel: {
-            gate.cancel()
-        }
-    }
-
     private func ensureHeartbeatMonitorRunning() {
         guard heartbeatMonitorTask == nil else { return }
         heartbeatMonitorTask = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 let interval = max(0.02, self?.heartbeatSweepIntervalSeconds ?? 2.0)
-                await Self.sleepUntilCancelled(seconds: interval)
+                await CancellableDelay.sleepUntilCancelled(seconds: interval)
                 guard let self, !Task.isCancelled else { break }
                 self.sweepExpiredBluetoothSessions()
             }
@@ -714,7 +701,7 @@ public final class MacServerEngine: ObservableObject {
                 self.sendHTTPResponse(status: status, body: payload, keepAlive: req.keepAlive, on: connection, connID: connID, completion: completion)
             }
             session.pendingHTTPPollTimeoutTask = Task { @MainActor [weak self, weak session] in
-                await Self.sleepUntilCancelled(seconds: holdSeconds)
+                await CancellableDelay.sleepUntilCancelled(seconds: holdSeconds)
                 guard let self, !Task.isCancelled, let session, self.sessions[session.id] != nil else { return }
                 guard let responder = session.pendingHTTPPollResponder else { return }
                 session.pendingHTTPPollResponder = nil
@@ -827,55 +814,6 @@ public final class MacServerEngine: ObservableObject {
             cleanupSession(sessionID: sessionID)
         }
     }
-}
-
-private final class NonThrowingSleepGate: @unchecked Sendable {
-    private let lock = NSLock()
-    private var continuation: CheckedContinuation<Void, Never>?
-    private var work: DispatchWorkItem?
-    private var cancelled = false
-    private var finished = false
-
-    func arm(delay: TimeInterval, continuation: CheckedContinuation<Void, Never>) {
-        let item = DispatchWorkItem { [weak self] in
-            self?.finish()
-        }
-        lock.lock()
-        if cancelled || finished {
-            lock.unlock()
-            continuation.resume()
-            return
-        }
-        self.continuation = continuation
-        work = item
-        lock.unlock()
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: item)
-    }
-
-    func cancel() {
-        lock.lock()
-        cancelled = true
-        work?.cancel()
-        work = nil
-        lock.unlock()
-        finish()
-    }
-
-    private func finish() {
-        lock.lock()
-        guard !finished else {
-            lock.unlock()
-            return
-        }
-        finished = true
-        let pending = continuation
-        continuation = nil
-        lock.unlock()
-        pending?.resume()
-    }
-}
-
-extension MacServerEngine {
     private func handleIncomingMessage(_ message: ClientMessage, session: ClientSessionContext) {
         switch message {
         case .hello(let clientProtocolVersion, let deviceID, let deviceName, let platform, let savedAuthToken):

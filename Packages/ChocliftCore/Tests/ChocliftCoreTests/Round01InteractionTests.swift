@@ -10,7 +10,7 @@ final class Round01InteractionTests: XCTestCase {
 
     func testDestructiveActionClassificationCoversQuitLockAndFlowsContainingThem() {
         for action in SystemQuickAction.allCases {
-            if action == .lockScreen || action == .quitApp {
+            if action == .lockScreen {
                 XCTAssertTrue(action.requiresDestructiveConfirmation, "\(action) must require confirmation")
             } else {
                 XCTAssertFalse(action.requiresDestructiveConfirmation, "\(action) must stay one-tap")
@@ -45,7 +45,7 @@ final class Round01InteractionTests: XCTestCase {
                 ActionFlowStep(kind: .systemAction(action: .quitApp))
             ]
         )
-        XCTAssertTrue(quitFlow.requiresDestructiveConfirmation)
+        XCTAssertFalse(quitFlow.requiresDestructiveConfirmation)
 
         let disabledLockFlow = ActionFlow(
             name: "Disabled Lock Step",
@@ -61,7 +61,7 @@ final class Round01InteractionTests: XCTestCase {
         profile.flows = [safeFlow, lockFlow, quitFlow, disabledLockFlow]
 
         XCTAssertTrue(BarItem(kind: .systemAction(action: .lockScreen)).requiresDestructiveConfirmation(in: profile))
-        XCTAssertTrue(BarItem(kind: .systemAction(action: .quitApp)).requiresDestructiveConfirmation(in: profile))
+        XCTAssertFalse(BarItem(kind: .systemAction(action: .quitApp)).requiresDestructiveConfirmation(in: profile))
         XCTAssertFalse(BarItem(kind: .systemAction(action: .maximizeWindow)).requiresDestructiveConfirmation(in: profile))
         XCTAssertFalse(
             BarItem(kind: .macApp(bundleIdentifier: "com.apple.Safari", appName: "Safari"))
@@ -70,7 +70,7 @@ final class Round01InteractionTests: XCTestCase {
 
         XCTAssertFalse(profile.makeBarItem(for: safeFlow).requiresDestructiveConfirmation(in: profile))
         XCTAssertTrue(profile.makeBarItem(for: lockFlow).requiresDestructiveConfirmation(in: profile))
-        XCTAssertTrue(profile.makeBarItem(for: quitFlow).requiresDestructiveConfirmation(in: profile))
+        XCTAssertFalse(profile.makeBarItem(for: quitFlow).requiresDestructiveConfirmation(in: profile))
         XCTAssertFalse(profile.makeBarItem(for: disabledLockFlow).requiresDestructiveConfirmation(in: profile))
     }
 
@@ -122,6 +122,18 @@ final class Round01InteractionTests: XCTestCase {
             .runImmediately
         )
         XCTAssertNil(gate.armedTargetID)
+    }
+
+    func testQuitFrontmostAppRunsOnFirstTap() {
+        let client = CompanionClientEngine(
+            deviceID: "quit-phone",
+            deviceName: "Phone",
+            platform: .iPhone
+        )
+        XCTAssertFalse(client.isQuitFrontmostAppArmed(at: 10))
+        XCTAssertEqual(client.tapQuitFrontmostApp(at: 10), .runImmediately)
+        XCTAssertFalse(client.isQuitFrontmostAppArmed(at: 12))
+        XCTAssertEqual(client.lastFeedback?.success, false)
     }
 
     // MARK: - 2. 8pt Tap vs 40pt Page Swipe vs 0.45s Long-Press & Slider Exclusion

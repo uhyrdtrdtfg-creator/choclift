@@ -2138,14 +2138,44 @@ private final class MacCoordinatorFlowDriver: ActionFlowDriver {
 
     func openWebsite(
         url: String,
-        switchExistingTab: Bool
+        switchExistingTab: Bool,
+        browserBundleIdentifier: String?
     ) async -> (success: Bool, message: String) {
         guard let coordinator else {
             return (false, "Mac coordinator unavailable")
         }
         return await coordinator.catalogService.openWebsite(
             rawURL: url,
-            switchExistingTab: switchExistingTab
+            switchExistingTab: switchExistingTab,
+            browserBundleIdentifier: browserBundleIdentifier
+        )
+    }
+
+    func quitApp(
+        bundleIdentifier: String,
+        appPath: String?
+    ) -> (success: Bool, message: String) {
+        guard let coordinator else {
+            return (false, "Mac coordinator unavailable")
+        }
+        return coordinator.catalogService.quitRunningApp(
+            bundleIdentifier: bundleIdentifier,
+            appPath: appPath
+        )
+    }
+
+    func openFolderInApp(
+        folderPath: String,
+        bundleIdentifier: String,
+        appPath: String?
+    ) async -> (success: Bool, message: String) {
+        guard let coordinator else {
+            return (false, "Mac coordinator unavailable")
+        }
+        return await coordinator.catalogService.openFolderInApp(
+            folderPath: folderPath,
+            bundleIdentifier: bundleIdentifier,
+            appPath: appPath
         )
     }
 

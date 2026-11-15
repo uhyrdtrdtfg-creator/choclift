@@ -917,10 +917,38 @@ private struct MacFlowDetailWorkspaceView: View {
             Divider()
 
             Button {
+                let step = ActionFlowStep(
+                    kind: .quitApp(
+                        bundleIdentifier: lastApp?.bundleID ?? "",
+                        appName: lastApp?.appName ?? "",
+                        appPath: nil
+                    )
+                )
+                stepEditorTarget = StepSheetTarget(step: step, defaultFollowBundleID: lastApp?.bundleID)
+            } label: {
+                Label(L10n.tr("退出 App…", "Quit App…", language: lang), systemImage: "xmark.octagon.fill")
+            }
+
+            Button {
                 let step = ActionFlowStep(kind: .openWebsite(url: "", title: nil, switchExistingTab: true))
                 stepEditorTarget = StepSheetTarget(step: step, defaultFollowBundleID: lastApp?.bundleID)
             } label: {
-                Label(L10n.tr("打开网页…", "Open Website…", language: lang), systemImage: "globe")
+                Label(L10n.tr("打开浏览器到站点…", "Open Browser to a Site…", language: lang), systemImage: "globe")
+            }
+
+            Button {
+                let opener = folderCapableApp(preferred: lastApp) ?? coordinator.installedApps.first
+                let step = ActionFlowStep(
+                    kind: .openFolderInApp(
+                        folderPath: "",
+                        bundleIdentifier: opener?.bundleIdentifier ?? "com.apple.finder",
+                        appName: opener?.appName ?? "Finder",
+                        appPath: opener?.appPath
+                    )
+                )
+                stepEditorTarget = StepSheetTarget(step: step, defaultFollowBundleID: lastApp?.bundleID)
+            } label: {
+                Label(L10n.tr("用应用打开工作目录…", "Open Working Directory in App…", language: lang), systemImage: "folder.badge.plus")
             }
 
             Button {
@@ -1084,8 +1112,29 @@ private struct MacFlowDetailWorkspaceView: View {
                 if !bid.isEmpty { return (bid, name) }
             case .waitForAppFrontmost(let bid, let name, _):
                 if !bid.isEmpty { return (bid, name ?? bid) }
+            case .quitApp(let bid, let name, _), .openFolderInApp(_, let bid, let name, _):
+                if !bid.isEmpty { return (bid, name.isEmpty ? bid : name) }
             default:
                 continue
+            }
+        }
+        return nil
+    }
+
+    private func folderCapableApp(preferred: (bundleID: String, appName: String)?) -> InstalledAppSummary? {
+        if let preferred,
+           let match = coordinator.installedApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(preferred.bundleID) == .orderedSame }) {
+            return match
+        }
+        let preferredIDs = [
+            "com.apple.dt.Xcode",
+            "com.microsoft.VSCode",
+            "com.todesktop.230313mzl4w4u92",
+            "com.apple.finder"
+        ]
+        for bid in preferredIDs {
+            if let match = coordinator.installedApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame }) {
+                return match
             }
         }
         return nil
@@ -1484,10 +1533,38 @@ public struct MacFlowEditorSheet: View {
             Divider()
 
             Button {
+                let step = ActionFlowStep(
+                    kind: .quitApp(
+                        bundleIdentifier: followBundle ?? "",
+                        appName: followName ?? "",
+                        appPath: nil
+                    )
+                )
+                stepEditorTargetSheet(step, followBundle: followBundle)
+            } label: {
+                Label(L10n.tr("退出 App…", "Quit App…", language: lang), systemImage: "xmark.octagon.fill")
+            }
+
+            Button {
                 let step = ActionFlowStep(kind: .openWebsite(url: "", title: nil, switchExistingTab: true))
                 stepEditorTargetSheet(step, followBundle: followBundle)
             } label: {
-                Label(L10n.tr("打开网页…", "Open Website…", language: lang), systemImage: "globe")
+                Label(L10n.tr("打开浏览器到站点…", "Open Browser to a Site…", language: lang), systemImage: "globe")
+            }
+
+            Button {
+                let opener = coordinator.installedApps.first { $0.bundleIdentifier == "com.apple.finder" } ?? coordinator.installedApps.first
+                let step = ActionFlowStep(
+                    kind: .openFolderInApp(
+                        folderPath: "",
+                        bundleIdentifier: opener?.bundleIdentifier ?? "com.apple.finder",
+                        appName: opener?.appName ?? "Finder",
+                        appPath: opener?.appPath
+                    )
+                )
+                stepEditorTargetSheet(step, followBundle: followBundle)
+            } label: {
+                Label(L10n.tr("用应用打开工作目录…", "Open Working Directory in App…", language: lang), systemImage: "folder.badge.plus")
             }
 
             Button {
@@ -1558,6 +1635,8 @@ public struct MacFlowEditorSheet: View {
                 return name
             case .waitForAppFrontmost(_, let name, _):
                 if let name, !name.isEmpty { return name }
+            case .quitApp(_, let name, _), .openFolderInApp(_, _, let name, _):
+                if !name.isEmpty { return name }
             default:
                 continue
             }
@@ -1575,6 +1654,8 @@ public struct MacFlowStepEditorSheet: View {
         case systemAction
         case delay
         case openWebsite
+        case quitApp
+        case openFolder
         case runShortcut
         case insertSnippet
 
@@ -1591,7 +1672,11 @@ public struct MacFlowStepEditorSheet: View {
             case .delay:
                 return L10n.tr("延时", "Delay", language: lang)
             case .openWebsite:
-                return L10n.tr("打开网页", "Open Website", language: lang)
+                return L10n.tr("打开站点", "Open Site", language: lang)
+            case .quitApp:
+                return L10n.tr("退出 App", "Quit App", language: lang)
+            case .openFolder:
+                return L10n.tr("打开工作目录", "Open Folder", language: lang)
             case .runShortcut:
                 return L10n.tr("运行快捷指令", "Run Shortcut", language: lang)
             case .insertSnippet:
@@ -1611,6 +1696,10 @@ public struct MacFlowStepEditorSheet: View {
                 return "timer"
             case .openWebsite:
                 return "globe"
+            case .quitApp:
+                return "xmark.octagon.fill"
+            case .openFolder:
+                return "folder.badge.plus"
             case .runShortcut:
                 return "sparkles.rectangle.stack"
             case .insertSnippet:
@@ -1642,6 +1731,11 @@ public struct MacFlowStepEditorSheet: View {
     @State private var websiteURL: String = ""
     @State private var websiteTitle: String = ""
     @State private var websiteSwitchTab: Bool = true
+    @State private var useSpecificBrowser: Bool = false
+    @State private var browserBundleID: String = ""
+    @State private var browserAppName: String = ""
+
+    @State private var folderPath: String = ""
 
     @State private var shortcutSearch: String = ""
     @State private var shortcutName: String = ""
@@ -1718,11 +1812,28 @@ public struct MacFlowStepEditorSheet: View {
             _selectedTag = State(initialValue: .delay)
             _delaySeconds = State(initialValue: ActionFlowStep.clampDelay(secs))
 
-        case .openWebsite(let url, let title, let switchExistingTab):
+        case .openWebsite(let url, let title, let switchExistingTab, let browserBundle, let browserName):
             _selectedTag = State(initialValue: .openWebsite)
             _websiteURL = State(initialValue: url)
             _websiteTitle = State(initialValue: title ?? "")
             _websiteSwitchTab = State(initialValue: switchExistingTab)
+            let cleanBrowser = browserBundle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            _useSpecificBrowser = State(initialValue: !cleanBrowser.isEmpty)
+            _browserBundleID = State(initialValue: cleanBrowser)
+            _browserAppName = State(initialValue: browserName ?? "")
+
+        case .quitApp(let bid, let name, let path):
+            _selectedTag = State(initialValue: .quitApp)
+            _bundleID = State(initialValue: bid)
+            _appName = State(initialValue: name)
+            _appPath = State(initialValue: path)
+
+        case .openFolderInApp(let path, let bid, let name, let appPath):
+            _selectedTag = State(initialValue: .openFolder)
+            _folderPath = State(initialValue: path)
+            _bundleID = State(initialValue: bid)
+            _appName = State(initialValue: name)
+            _appPath = State(initialValue: appPath)
 
         case .runShortcut(let name):
             _selectedTag = State(initialValue: .runShortcut)
@@ -1774,6 +1885,10 @@ public struct MacFlowStepEditorSheet: View {
                     delayConfigBody
                 case .openWebsite:
                     openWebsiteConfigBody
+                case .quitApp:
+                    quitAppConfigBody
+                case .openFolder:
+                    openFolderConfigBody
                 case .runShortcut:
                     runShortcutConfigBody
                 case .insertSnippet:
@@ -1807,7 +1922,7 @@ public struct MacFlowStepEditorSheet: View {
             }
             .padding(14)
         }
-        .frame(width: 560, height: 460)
+        .frame(width: 560, height: 520)
         .background(
             LinearGradient(
                 colors: [palette.backgroundTop, palette.backgroundBottom],
@@ -1846,7 +1961,17 @@ public struct MacFlowStepEditorSheet: View {
         case .delay:
             return delaySeconds >= ActionFlowStep.minDelaySeconds
         case .openWebsite:
-            return ActionFlowStep.isValidWebsiteURL(websiteURL)
+            guard ActionFlowStep.isValidWebsiteURL(websiteURL) else { return false }
+            if useSpecificBrowser {
+                return !browserBundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            return true
+        case .quitApp:
+            let bid = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !bid.isEmpty && !ActionFlowStep.isChocliftBundleIdentifier(bid)
+        case .openFolder:
+            return ActionFlowStep.isValidWorkingDirectoryPath(folderPath)
+                && !bundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .runShortcut:
             return !shortcutName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .insertSnippet:
@@ -2158,6 +2283,16 @@ public struct MacFlowStepEditorSheet: View {
             }
 
             Toggle(
+                L10n.tr("指定浏览器", "Choose a Browser", language: lang),
+                isOn: $useSpecificBrowser
+            )
+            .tint(palette.accent)
+
+            if useSpecificBrowser {
+                browserPicker
+            }
+
+            Toggle(
                 L10n.tr("智能切换到已打开的浏览器标签页", "Switch to Already-Open Browser Tab When Found", language: lang),
                 isOn: $websiteSwitchTab
             )
@@ -2174,6 +2309,129 @@ public struct MacFlowStepEditorSheet: View {
             .foregroundStyle(palette.secondaryText)
 
             Spacer()
+        }
+    }
+
+    private var browserCandidates: [InstalledAppSummary] {
+        let known = [
+            "com.apple.Safari",
+            "com.google.Chrome",
+            "company.thebrowser.Browser",
+            "com.brave.Browser",
+            "com.microsoft.edgemac",
+            "org.mozilla.firefox",
+            "com.operasoftware.Opera"
+        ]
+        let installed = coordinator.installedApps.filter { app in
+            known.contains { $0.caseInsensitiveCompare(app.bundleIdentifier) == .orderedSame }
+        }
+        return installed.isEmpty ? coordinator.installedApps : installed
+    }
+
+    private var browserPicker: some View {
+        List(browserCandidates.prefix(12)) { app in
+            Button {
+                browserBundleID = app.bundleIdentifier
+                browserAppName = app.appName
+            } label: {
+                HStack {
+                    Text(app.appName)
+                        .font(ChocType.body)
+                        .foregroundStyle(palette.primaryText)
+                    Spacer()
+                    if browserBundleID.caseInsensitiveCompare(app.bundleIdentifier) == .orderedSame {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(palette.statusConnected)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .listRowBackground(palette.barSurface)
+        }
+        .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+        .frame(height: 120)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+    }
+
+    private var quitAppConfigBody: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(L10n.tr("选择要退出的其它 App。不会退出 Choclift。目标没在运行时，这一步会失败并停止工作流。", "Choose another app to quit. This never quits Choclift. The step fails if that app is not running.", language: lang))
+                .font(ChocType.caption)
+                .foregroundStyle(palette.secondaryText)
+            appPickerList(assignPath: true)
+            if ActionFlowStep.isChocliftBundleIdentifier(bundleID) {
+                Label(L10n.tr("不能选择 Choclift", "Choclift cannot be selected", language: lang), systemImage: "exclamationmark.triangle.fill")
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.statusFailure)
+            }
+        }
+    }
+
+    private var openFolderConfigBody: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                TextField(L10n.tr("工作目录，例如 /Users/me/Projects/app", "Working directory, e.g. /Users/me/Projects/app", language: lang), text: $folderPath)
+                    .textFieldStyle(.roundedBorder)
+                Button {
+                    pickWorkingDirectory()
+                } label: {
+                    Label(L10n.tr("选择目录…", "Choose Folder…", language: lang), systemImage: "folder")
+                }
+                .buttonStyle(.bordered)
+            }
+            Text(L10n.tr("用下面的应用打开这个文件夹。Xcode、VS Code、Cursor、Finder 这类能打开目录的应用都可以。", "Opens this folder in the app below. Works with apps that accept folders, such as Xcode, VS Code, Cursor, and Finder.", language: lang))
+                .font(ChocType.caption)
+                .foregroundStyle(palette.secondaryText)
+            appPickerList(assignPath: true)
+        }
+    }
+
+    private func appPickerList(assignPath: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField(L10n.tr("搜索本机应用…", "Search installed Mac apps…", language: lang), text: $appSearch)
+                .textFieldStyle(.roundedBorder)
+            List(filteredApps.prefix(40)) { app in
+                Button {
+                    bundleID = app.bundleIdentifier
+                    appName = app.appName
+                    if assignPath { appPath = app.appPath }
+                } label: {
+                    HStack {
+                        Text(app.appName)
+                            .font(ChocType.body)
+                            .foregroundStyle(palette.primaryText)
+                        Text(app.bundleIdentifier)
+                            .font(ChocType.micro)
+                            .foregroundStyle(palette.secondaryText)
+                        Spacer()
+                        if bundleID.caseInsensitiveCompare(app.bundleIdentifier) == .orderedSame {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(palette.statusConnected)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(palette.barSurface)
+            }
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+            .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
+        }
+    }
+
+    private func pickWorkingDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        if panel.runModal() == .OK, let url = panel.url {
+            folderPath = url.path
         }
     }
 
@@ -2449,12 +2707,41 @@ public struct MacFlowStepEditorSheet: View {
             guard ActionFlowStep.isValidWebsiteURL(websiteURL) else { return nil }
             let cleanURL = ActionFlowStep.normalizedWebsiteURL(websiteURL)
             let cleanTitle = websiteTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanBrowser = browserBundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanBrowserName = browserAppName.trimmingCharacters(in: .whitespacesAndNewlines)
             return ActionFlowStep(
                 id: stepID,
                 kind: .openWebsite(
                     url: cleanURL,
                     title: cleanTitle.isEmpty ? nil : cleanTitle,
-                    switchExistingTab: websiteSwitchTab
+                    switchExistingTab: websiteSwitchTab,
+                    browserBundleIdentifier: useSpecificBrowser && !cleanBrowser.isEmpty ? cleanBrowser : nil,
+                    browserAppName: useSpecificBrowser && !cleanBrowserName.isEmpty ? cleanBrowserName : nil
+                ),
+                isEnabled: isEnabled
+            )
+
+        case .quitApp:
+            guard !trimmedBundle.isEmpty, !ActionFlowStep.isChocliftBundleIdentifier(trimmedBundle) else { return nil }
+            return ActionFlowStep(
+                id: stepID,
+                kind: .quitApp(
+                    bundleIdentifier: trimmedBundle,
+                    appName: trimmedName.isEmpty ? trimmedBundle : trimmedName,
+                    appPath: appPath
+                ),
+                isEnabled: isEnabled
+            )
+
+        case .openFolder:
+            guard ActionFlowStep.isValidWorkingDirectoryPath(folderPath), !trimmedBundle.isEmpty else { return nil }
+            return ActionFlowStep(
+                id: stepID,
+                kind: .openFolderInApp(
+                    folderPath: ActionFlowStep.normalizedWorkingDirectoryPath(folderPath),
+                    bundleIdentifier: trimmedBundle,
+                    appName: trimmedName.isEmpty ? trimmedBundle : trimmedName,
+                    appPath: appPath
                 ),
                 isEnabled: isEnabled
             )

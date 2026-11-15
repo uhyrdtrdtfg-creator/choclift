@@ -11,9 +11,11 @@ private final class RecordingFlowDriver: ActionFlowDriver {
         case launch(bundleID: String, appPath: String?)
         case waitWindow(bundleID: String, pid: Int32, action: SystemQuickAction)
         case systemAction(action: SystemQuickAction, target: FlowSystemActionTarget)
-        case openWebsite(url: String, switchExistingTab: Bool)
+        case openWebsite(url: String, switchExistingTab: Bool, browserBundleIdentifier: String?)
         case runShortcut(name: String)
         case insertSnippet(snippetID: UUID, titleSnapshot: String?, preferredPID: Int32?)
+        case quitApp(bundleID: String, appPath: String?)
+        case openFolder(folderPath: String, bundleID: String, appPath: String?)
         case sleep(seconds: Double)
     }
 
@@ -30,7 +32,9 @@ private final class RecordingFlowDriver: ActionFlowDriver {
     /// Custom hook invoked on `executeSystemAction`.
     var onSystemAction: ((SystemQuickAction, FlowSystemActionTarget) -> (success: Bool, message: String))?
     /// Custom hook invoked on `openWebsite`.
-    var onOpenWebsite: ((String, Bool) -> (success: Bool, message: String))?
+    var onOpenWebsite: ((String, Bool, String?) -> (success: Bool, message: String))?
+    var onQuitApp: ((String, String?) -> (success: Bool, message: String))?
+    var onOpenFolder: ((String, String, String?) -> (success: Bool, message: String))?
     /// Custom hook invoked on `runShortcut`.
     var onRunShortcut: ((String) -> (success: Bool, message: String))?
     /// Custom hook invoked on `insertSnippet`.
@@ -92,13 +96,42 @@ private final class RecordingFlowDriver: ActionFlowDriver {
 
     func openWebsite(
         url: String,
-        switchExistingTab: Bool
+        switchExistingTab: Bool,
+        browserBundleIdentifier: String?
     ) async -> (success: Bool, message: String) {
-        recordedCalls.append(.openWebsite(url: url, switchExistingTab: switchExistingTab))
+        recordedCalls.append(.openWebsite(url: url, switchExistingTab: switchExistingTab, browserBundleIdentifier: browserBundleIdentifier))
         if let onOpenWebsite {
-            return onOpenWebsite(url, switchExistingTab)
+            return onOpenWebsite(url, switchExistingTab, browserBundleIdentifier)
         }
         return (true, "Opened \(url)")
+    }
+
+    func quitApp(
+        bundleIdentifier: String,
+        appPath: String?
+    ) -> (success: Bool, message: String) {
+        recordedCalls.append(.quitApp(bundleID: bundleIdentifier, appPath: appPath))
+        if let onQuitApp {
+            return onQuitApp(bundleIdentifier, appPath)
+        }
+        runningAppsByBundleID.removeValue(forKey: bundleIdentifier)
+        return (true, "Quit \(bundleIdentifier)")
+    }
+
+    func openFolderInApp(
+        folderPath: String,
+        bundleIdentifier: String,
+        appPath: String?
+    ) async -> (success: Bool, message: String) {
+        recordedCalls.append(.openFolder(folderPath: folderPath, bundleID: bundleIdentifier, appPath: appPath))
+        if let onOpenFolder {
+            return onOpenFolder(folderPath, bundleIdentifier, appPath)
+        }
+        nextPID += 1
+        let handle = FlowAppHandle(bundleIdentifier: bundleIdentifier, appName: bundleIdentifier, processIdentifier: nextPID)
+        runningAppsByBundleID[bundleIdentifier] = handle
+        frontmostApp = handle
+        return (true, "Opened \(folderPath)")
     }
 
     func runShortcut(
@@ -835,6 +868,66 @@ final class ActionFlowsTests: XCTestCase {
         XCTAssertEqual(minimalSteps[3].kind, .unsupported(rawType: "insert_snippet:missing_snippet_id"))
     }
 
+    func testQuitAppAndOpenFolderStepsRoundTripAndRunInOrder() async throws {
+        let flow = ActionFlow(
+            name: "Close Slack, Open Repo",
+            steps: [
+                ActionFlowStep(kind: .quitApp(bundleIdentifier: "com.tinyspeck.slackmacgap", appName: "Slack")),
+                ActionFlowStep(kind: .openWebsite(
+                    url: "github.com/apple/swift",
+                    title: "Swift",
+                    switchExistingTab: false,
+                    browserBundleIdentifier: "com.google.Chrome",
+                    browserAppName: "Google Chrome"
+                )),
+                ActionFlowStep(kind: .openFolderInApp(
+                    folderPath: "/Users/me/Projects/app/",
+                    bundleIdentifier: "com.microsoft.VSCode",
+                    appName: "Visual Studio Code"
+                ))
+            ]
+        )
+        let data = try JSONEncoder().encode(flow)
+        let decoded = try JSONDecoder().decode(ActionFlow.self, from: data)
+        XCTAssertEqual(decoded, flow)
+        XCTAssertFalse(decoded.requiresDestructiveConfirmation)
+        XCTAssertEqual(
+            decoded.steps[2].kind,
+            .openFolderInApp(
+                folderPath: "/Users/me/Projects/app",
+                bundleIdentifier: "com.microsoft.VSCode",
+                appName: "Visual Studio Code",
+                appPath: nil
+            )
+        )
+
+        let driver = RecordingFlowDriver()
+        let result = await ActionFlowRunner.run(decoded, driver: driver, language: .english)
+        XCTAssertTrue(result.success)
+        XCTAssertEqual(driver.recordedCalls, [
+            .quitApp(bundleID: "com.tinyspeck.slackmacgap", appPath: nil),
+            .openWebsite(url: "https://github.com/apple/swift", switchExistingTab: false, browserBundleIdentifier: "com.google.Chrome"),
+            .openFolder(folderPath: "/Users/me/Projects/app", bundleID: "com.microsoft.VSCode", appPath: nil)
+        ])
+
+        let blocked = ActionFlow(
+            name: "Do Not Quit Self",
+            steps: [ActionFlowStep(kind: .quitApp(bundleIdentifier: "com.choclift.mac", appName: "Choclift"))]
+        )
+        driver.recordedCalls.removeAll()
+        let blockedResult = await ActionFlowRunner.run(blocked, driver: driver, language: .english)
+        XCTAssertFalse(blockedResult.success)
+        XCTAssertTrue(driver.recordedCalls.isEmpty)
+
+        let missingFolder = ActionFlow(
+            name: "Bad Folder",
+            steps: [ActionFlowStep(kind: .openFolderInApp(folderPath: "relative/path", bundleIdentifier: "com.apple.finder", appName: "Finder"))]
+        )
+        let missingResult = await ActionFlowRunner.run(missingFolder, driver: driver, language: .english)
+        XCTAssertFalse(missingResult.success)
+        XCTAssertTrue(driver.recordedCalls.isEmpty)
+    }
+
     func testFlowRunsWebsiteShortcutAndSnippetSequentiallyAndPassesPreferredPID() async {
         let driver = RecordingFlowDriver()
         driver.fallbackExternalAppPID = 4242
@@ -866,7 +959,7 @@ final class ActionFlowsTests: XCTestCase {
             driver.recordedCalls,
             [
                 .insertSnippet(snippetID: snippetA, titleSnapshot: "Header", preferredPID: 4242),
-                .openWebsite(url: "https://github.com/apple/swift", switchExistingTab: true),
+                .openWebsite(url: "https://github.com/apple/swift", switchExistingTab: true, browserBundleIdentifier: nil),
                 .runShortcut(name: "Prepare Scratchpad"),
                 .launch(bundleID: "com.apple.Notes", appPath: nil),
                 .insertSnippet(snippetID: snippetB, titleSnapshot: "Review Checklist", preferredPID: notesPID)
@@ -925,7 +1018,7 @@ final class ActionFlowsTests: XCTestCase {
             XCTAssertEqual(
                 driver.recordedCalls,
                 [
-                    .openWebsite(url: "https://example.com", switchExistingTab: false),
+                    .openWebsite(url: "https://example.com", switchExistingTab: false, browserBundleIdentifier: nil),
                     .runShortcut(name: "Missing Shortcut")
                 ]
             )
@@ -1056,7 +1149,7 @@ final class ActionFlowsTests: XCTestCase {
         XCTAssertEqual(
             driver.recordedCalls,
             [
-                .openWebsite(url: "https://github.com/pulls", switchExistingTab: true),
+                .openWebsite(url: "https://github.com/pulls", switchExistingTab: true, browserBundleIdentifier: nil),
                 .runShortcut(name: "Copy Branch Ticket"),
                 .insertSnippet(snippetID: snippet.id, titleSnapshot: "PR Template", preferredPID: 999)
             ]
@@ -1079,7 +1172,7 @@ final class ActionFlowsTests: XCTestCase {
         XCTAssertEqual(
             driver.recordedCalls,
             [
-                .openWebsite(url: "https://github.com/pulls", switchExistingTab: true),
+                .openWebsite(url: "https://github.com/pulls", switchExistingTab: true, browserBundleIdentifier: nil),
                 .runShortcut(name: "Copy Branch Ticket")
             ]
         )

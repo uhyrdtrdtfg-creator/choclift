@@ -9,9 +9,11 @@ private final class SentenceFlowRecordingDriver: ActionFlowDriver {
         case launch(bundleID: String, appPath: String?)
         case waitWindow(bundleID: String, pid: Int32, action: SystemQuickAction)
         case systemAction(action: SystemQuickAction, target: FlowSystemActionTarget)
-        case openWebsite(url: String, switchExistingTab: Bool)
+        case openWebsite(url: String, switchExistingTab: Bool, browserBundleIdentifier: String?)
         case runShortcut(name: String)
         case insertSnippet(snippetID: UUID, titleSnapshot: String?, preferredPID: Int32?)
+        case quitApp(bundleID: String, appPath: String?)
+        case openFolder(folderPath: String, bundleID: String, appPath: String?)
         case sleep(seconds: Double)
     }
 
@@ -67,10 +69,28 @@ private final class SentenceFlowRecordingDriver: ActionFlowDriver {
 
     func openWebsite(
         url: String,
-        switchExistingTab: Bool
+        switchExistingTab: Bool,
+        browserBundleIdentifier: String?
     ) async -> (success: Bool, message: String) {
-        recordedCalls.append(.openWebsite(url: url, switchExistingTab: switchExistingTab))
+        recordedCalls.append(.openWebsite(url: url, switchExistingTab: switchExistingTab, browserBundleIdentifier: browserBundleIdentifier))
         return (true, "Opened \(url)")
+    }
+
+    func quitApp(
+        bundleIdentifier: String,
+        appPath: String?
+    ) -> (success: Bool, message: String) {
+        recordedCalls.append(.quitApp(bundleID: bundleIdentifier, appPath: appPath))
+        return (true, "Quit \(bundleIdentifier)")
+    }
+
+    func openFolderInApp(
+        folderPath: String,
+        bundleIdentifier: String,
+        appPath: String?
+    ) async -> (success: Bool, message: String) {
+        recordedCalls.append(.openFolder(folderPath: folderPath, bundleID: bundleIdentifier, appPath: appPath))
+        return (true, "Opened \(folderPath)")
     }
 
     func runShortcut(
@@ -446,7 +466,7 @@ final class SentenceFlowProposalTests: XCTestCase {
         for allowedTag in ActionFlowSystemPromptBuilder.allowedStepTypeTags {
             XCTAssertTrue(systemPrompt.contains("\"\(allowedTag)\""), "System prompt must list \(allowedTag)")
         }
-        XCTAssertEqual(ActionFlowSystemPromptBuilder.allowedStepTypeTags.count, 7)
+        XCTAssertEqual(ActionFlowSystemPromptBuilder.allowedStepTypeTags.count, 9)
 
         // 2. Cancel discards the draft without saving or executing; subsequent confirm is a no-op.
         controller.cancelDraft()

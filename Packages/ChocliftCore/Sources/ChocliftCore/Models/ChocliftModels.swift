@@ -161,7 +161,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public var requiresDestructiveConfirmation: Bool {
         switch self {
-        case .lockScreen, .quitApp:
+        case .lockScreen:
             return true
         default:
             return false
@@ -1480,6 +1480,10 @@ public struct ChocliftWorkspaceProfile: Codable, Equatable, Hashable, Sendable {
                     if let targetBid, targetBid.caseInsensitiveCompare(trimmed) == .orderedSame,
                        let targetAppName, !targetAppName.isEmpty {
                         return targetAppName
+                    }
+                case .quitApp(let bid, let appName, _), .openFolderInApp(_, let bid, let appName, _):
+                    if bid.caseInsensitiveCompare(trimmed) == .orderedSame, !appName.isEmpty {
+                        return appName
                     }
                 case .delay, .unsupported, .openWebsite, .runShortcut, .insertSnippet:
                     break
