@@ -392,6 +392,7 @@ public struct IOSRootTouchBarView: View {
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
                 IOSCompanionHotkeysSection(client: client, toolsQuery: toolsQuery)
+                IOSWatchPinnedAppsSection(client: client, toolsQuery: toolsQuery)
                 IOSQuadLayoutsToolsSection(client: client, searchQuery: toolsQuery)
 
                 toolsSection(L10n.tr("页面与工作区", "Pages & Workspace", language: lang)) {

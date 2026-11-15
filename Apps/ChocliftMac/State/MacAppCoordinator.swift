@@ -611,7 +611,35 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         merged.sanitizePinnedClipboardItems(allowedTexts: allowedPinTexts)
         merged.hotkeys = CompanionHotkeyLibrary.sanitize(merged.hotkeys)
         merged.quadLayouts = QuadAppLayout.sanitize(merged.quadLayouts)
+        merged.watchPinnedBundleIDs = WatchPinnedApps.sanitize(merged.watchPinnedBundleIDs)
         return merged
+    }
+
+    @discardableResult
+    public func setWatchPinnedApps(
+        _ bundleIDs: [String],
+        triggeredBy deviceName: String = "Mac Studio"
+    ) -> (success: Bool, title: String, detail: String) {
+        let sectionTitle = L10n.tr("手表常用应用", "Watch Pinned Apps", language: lang)
+        let hasNonEmptyInput = bundleIDs.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let sanitized = WatchPinnedApps.sanitize(bundleIDs)
+        if hasNonEmptyInput && sanitized.isEmpty {
+            let detail = L10n.tr("不能固定 Choclift 自身", "Choclift itself cannot be pinned", language: lang)
+            recordActivity(deviceName: deviceName, summary: detail, isSuccess: false)
+            return (false, sectionTitle, detail)
+        }
+        mutateProfile({ draft in
+            draft.watchPinnedBundleIDs = sanitized
+        }, broadcastOriginDeviceID: nil)
+        let detail = sanitized.isEmpty
+            ? L10n.tr("已清空手表常用应用", "Cleared Watch pinned apps", language: lang)
+            : L10n.tr(
+                "已更新手表常用应用（\(sanitized.count)/\(WatchPinnedApps.maxCount)）",
+                "Updated Watch pinned apps (\(sanitized.count)/\(WatchPinnedApps.maxCount))",
+                language: lang
+            )
+        recordActivity(deviceName: deviceName, summary: detail, isSuccess: true)
+        return (true, sectionTitle, detail)
     }
 
     @discardableResult
@@ -2205,6 +2233,10 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 reply(.actionFeedback(success: res.success, title: res.title, detail: res.message))
             }
 
+        case .setWatchPinnedApps(let bundleIDs):
+            let res = setWatchPinnedApps(bundleIDs, triggeredBy: device.deviceName)
+            reply(.actionFeedback(success: res.success, title: res.title, detail: res.detail))
+
         case .seekNowPlaying(let positionSeconds):
             let res = seekNowPlaying(
                 to: positionSeconds,
@@ -2256,7 +2288,8 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                 (safeProfile.soundboardClips == updatedProfile.soundboardClips) &&
                 (safeProfile.pinnedClipboardItems == updatedProfile.pinnedClipboardItems) &&
                 (safeProfile.hotkeys == updatedProfile.hotkeys) &&
-                (safeProfile.quadLayouts == updatedProfile.quadLayouts)
+                (safeProfile.quadLayouts == updatedProfile.quadLayouts) &&
+                (safeProfile.watchPinnedBundleIDs == updatedProfile.watchPinnedBundleIDs)
             let originToExclude = isUnchangedBySanitizer ? device.deviceID : nil
             applyAndSaveProfile(safeProfile, broadcastOriginDeviceID: originToExclude)
             recordActivity(

@@ -1178,6 +1178,7 @@ public struct WatchQuickActionsView: View {
     @State private var repeatPressedKey: String?
     @State private var repeatReleaseKey: String?
     @State private var pressedAction: SystemQuickAction?
+    @State private var pressedPinnedBundleID: String?
     @State private var confirmGate = DestructiveActionConfirmGate()
     @State private var showDisplayPickerSheet: Bool = false
     @State private var showAudioOutputSheet: Bool = false
@@ -1207,6 +1208,7 @@ public struct WatchQuickActionsView: View {
     ]
 
     private var catalogActions: [CompanionAction] { CompanionActionCatalog.all }
+    private var pinnedWatchBundleIDs: [String] { WatchPinnedApps.sanitize(client.profile.watchPinnedBundleIDs) }
 
     public var body: some View {
         ScrollView {
@@ -1216,6 +1218,10 @@ public struct WatchQuickActionsView: View {
                 }
 
                 WatchCalendarComplicationLine(client: client)
+
+                if !pinnedWatchBundleIDs.isEmpty {
+                    watchPinnedAppsSection
+                }
 
                 // Media & Volume Strip (Clean iconic transport buttons >= 46pt)
                 if !catalogActions.isEmpty {
@@ -1284,6 +1290,83 @@ public struct WatchQuickActionsView: View {
         .sheet(isPresented: $showAudioOutputSheet) {
             WatchAudioOutputPickerSheet(client: client)
         }
+    }
+
+    private var watchPinnedAppsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionHeader(
+                L10n.tr("手表常用应用", "Watch Pinned Apps", language: lang),
+                symbol: "pin.fill"
+            )
+
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)],
+                spacing: 8
+            ) {
+                ForEach(pinnedWatchBundleIDs, id: \.self) { bundleID in
+                    watchPinnedAppButton(bundleID)
+                }
+            }
+        }
+    }
+
+    private func watchPinnedAppButton(_ bundleID: String) -> some View {
+        let appName = client.profile.resolvedAppDisplayName(
+            forBundleIdentifier: bundleID,
+            recentApps: client.recentApps,
+            catalogApps: client.macCatalogApps
+        )
+        let icon = client.cachedAppIconData(forBundleIdentifier: bundleID)
+            ?? BundledAppIcons.pngData(for: bundleID)
+        let isFrontmost = client.recentApps.contains {
+            $0.isFrontmost && $0.bundleIdentifier.caseInsensitiveCompare(bundleID) == .orderedSame
+        }
+        let isPressed = (pressedPinnedBundleID == bundleID)
+
+        return Button {
+            ChocPressFeedback.completeTap(key: bundleID, pressedKey: $pressedPinnedBundleID)
+            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+            _ = client.activateMacApp(bundleIdentifier: bundleID)
+        } label: {
+            VStack(spacing: 5) {
+                DataImageView(pngData: icon, fallbackSymbol: "app.fill", tint: palette.primaryText)
+                    .frame(width: 28, height: 28)
+
+                Text(appName)
+                    .font(ChocType.caption.weight(.semibold))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 62)
+            .background(
+                LinearGradient(
+                    colors: [
+                        isPressed ? palette.tileFillBottom : palette.tileFillTop,
+                        palette.tileFillBottom
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(
+                        isPressed
+                            ? palette.accent
+                            : (isFrontmost ? palette.accent.opacity(0.65) : palette.subtleCardStroke),
+                        lineWidth: isPressed ? 1.8 : 1
+                    )
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .scaleEffect(isPressed ? 0.94 : 1.0)
+        }
+        .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedPinnedBundleID, key: bundleID))
+        .accessibilityLabel(appName)
+        .accessibilityIdentifier("watch-pinned-app-\(bundleID)")
     }
 
     private var watchAudioOutputButton: some View {
