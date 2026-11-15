@@ -102,6 +102,10 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case toggleAppSwitcher = "toggle_app_switcher"
     case toggleAppearance = "toggle_appearance"
     case toggleNightShift = "toggle_night_shift"
+    case closeFrontmostWindow = "close_frontmost_window"
+    case newFrontmostWindow = "new_frontmost_window"
+    case toggleLaunchpad = "toggle_launchpad"
+    case toggleNotificationCenter = "toggle_notification_center"
 
     public var id: String { rawValue }
 
@@ -143,6 +147,10 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .toggleAppSwitcher: return "squares.below.rectangle"
         case .toggleAppearance: return "circle.lefthalf.filled"
         case .toggleNightShift: return "sunset.fill"
+        case .closeFrontmostWindow: return "xmark.square.fill"
+        case .newFrontmostWindow: return "macwindow.badge.plus"
+        case .toggleLaunchpad: return "square.grid.3x3.fill"
+        case .toggleNotificationCenter: return "bell.badge.fill"
         }
     }
 
@@ -150,12 +158,14 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         switch self {
         case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
              .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
-             .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow, .moveWindowToNextDisplay:
+             .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow,
+             .moveWindowToNextDisplay, .closeFrontmostWindow, .newFrontmostWindow:
             return "#EDF6FF"
         case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
             return "#F3EEFF"
         case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker,
-             .switchToNextSpace, .switchToPreviousSpace, .toggleAppSwitcher, .toggleAppearance, .toggleNightShift:
+             .switchToNextSpace, .switchToPreviousSpace, .toggleAppSwitcher, .toggleAppearance, .toggleNightShift,
+             .toggleLaunchpad, .toggleNotificationCenter:
             return "#FFF1EC"
         case .mediaPlayPause, .mediaNext, .mediaPrevious, .volumeUp, .volumeDown, .volumeMute:
             return "#ECFAEE"
@@ -166,7 +176,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         switch self {
         case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
              .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
-             .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay:
+             .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay, .closeFrontmostWindow:
             return true
         default:
             return false
@@ -198,7 +208,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return true
         }
         switch self {
-        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp, .switchToNextWindow, .switchToPreviousWindow:
+        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp, .switchToNextWindow, .switchToPreviousWindow, .newFrontmostWindow:
             return true
         default:
             return false
@@ -211,6 +221,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         switch self {
         case .switchToNextWindow: return "⌘`"
         case .switchToPreviousWindow: return "⇧⌘`"
+        case .newFrontmostWindow:
+            return "⌘N"
         case .copySelection:
             return "⌘C"
         case .pasteClipboard:
@@ -236,7 +248,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
              .centerWindow, .toggleFullscreen, .missionControl, .showDesktop,
              .screenshotInteractive, .mediaPlayPause, .mediaNext, .mediaPrevious,
              .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca,
-             .moveWindowToNextDisplay, .toggleAppearance, .toggleNightShift:
+             .moveWindowToNextDisplay, .toggleAppearance, .toggleNightShift,
+             .closeFrontmostWindow, .newFrontmostWindow, .toggleLaunchpad, .toggleNotificationCenter:
             return nil
         }
     }
@@ -279,6 +292,10 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .toggleAppSwitcher: return L10n.tr("应用切换器", "App Switcher", language: lang)
         case .toggleAppearance: return L10n.tr("切换外观", "Toggle Appearance", language: lang)
         case .toggleNightShift: return L10n.tr("切换夜览", "Toggle Night Shift", language: lang)
+        case .closeFrontmostWindow: return L10n.tr("关闭当前窗口", "Close Window", language: lang)
+        case .newFrontmostWindow: return L10n.tr("新建窗口", "New Window", language: lang)
+        case .toggleLaunchpad: return L10n.tr("启动台", "Launchpad", language: lang)
+        case .toggleNotificationCenter: return L10n.tr("通知中心", "Notification Center", language: lang)
         }
     }
 
@@ -320,13 +337,18 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .toggleAppSwitcher: return L10n.tr("应用切换", "App Switcher", language: lang)
         case .toggleAppearance: return L10n.tr("外观", "Appearance", language: lang)
         case .toggleNightShift: return L10n.tr("夜览", "Night Shift", language: lang)
+        case .closeFrontmostWindow: return L10n.tr("关闭窗口", "Close Window", language: lang)
+        case .newFrontmostWindow: return L10n.tr("新建窗口", "New Window", language: lang)
+        case .toggleLaunchpad: return L10n.tr("启动台", "Launchpad", language: lang)
+        case .toggleNotificationCenter: return L10n.tr("通知中心", "Notifications", language: lang)
         }
     }
 
     public static let windowLayoutSlotActions: [SystemQuickAction] = [
         .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
         .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
-        .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay
+        .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay,
+        .closeFrontmostWindow, .newFrontmostWindow
     ]
 
     public static func slotActionSections(
@@ -355,6 +377,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
                 [
                     .missionControl, .showDesktop,
                     .switchToPreviousSpace, .switchToNextSpace, .toggleAppSwitcher,
+                    .toggleLaunchpad, .toggleNotificationCenter,
                     .screenshotInteractive, .openEmojiPicker,
                     .toggleAppearance, .toggleNightShift,
                     .lockScreen, .quitApp
