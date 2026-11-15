@@ -22,7 +22,7 @@ public struct CompanionAction: Equatable, Hashable, Sendable, Identifiable, Coda
 
 public enum CompanionActionCatalog {
     /// Stable ids. Workers append only inside `CompanionActionPack+<Group>.swift`.
-    public static let all: [CompanionAction] = windowPack + mediaPack + filesPack + editPack + systemPack + appsPack + displayPack + sessionPack + sessionShowPack + filesRecentPack + finderDockPack
+    public static let all: [CompanionAction] = windowPack + mediaPack + filesPack + editPack + systemPack + appsPack + displayPack + sessionPack + sessionShowPack + filesRecentPack + finderDockPack + speechPack
 
     public static func action(id: String) -> CompanionAction? {
         all.first { $0.id == id }

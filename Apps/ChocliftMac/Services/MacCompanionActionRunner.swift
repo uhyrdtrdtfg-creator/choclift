@@ -38,6 +38,9 @@ enum MacCompanionActionRunner {
         if id.hasPrefix("session.") {
             return MacSessionActionPack.run(id: id, preferredPID: preferredPID)
         }
+        if CompanionActionCatalog.speechPack.contains(where: { $0.id == id }) {
+            return MacSpeechActionPack.run(id: id)
+        }
         return (false, L10n.tr("不支持此操作", "Unsupported action"))
     }
 }
