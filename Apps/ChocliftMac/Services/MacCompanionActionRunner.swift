@@ -26,6 +26,9 @@ enum MacCompanionActionRunner {
         if CompanionActionCatalog.systemPack.contains(where: { $0.id == id }) {
             return MacSystemActionPack.run(id: id)
         }
+        if id == AppSettingsCompanionActionID.openSettings {
+            return MacAppSettingsActionPack.run(id: id, preferredPID: preferredPID)
+        }
         if id.hasPrefix("apps.") {
             return MacAppsActionPack.run(id: id)
         }
