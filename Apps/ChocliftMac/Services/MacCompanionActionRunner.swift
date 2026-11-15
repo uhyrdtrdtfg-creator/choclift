@@ -4,6 +4,9 @@ import ChocliftCore
 /// Dispatches extra companion actions by id. Each group file owns its own ids.
 enum MacCompanionActionRunner {
     static func run(id: String, preferredPID: pid_t?) -> (success: Bool, message: String) {
+        if id == SessionShowCompanionAction.showAllApps.rawValue {
+            return MacSessionShowActionPack.run(id: id)
+        }
         if CompanionActionCatalog.windowPack.contains(where: { $0.id == id }) {
             return MacWindowActionPack.run(id: id, preferredPID: preferredPID)
         }

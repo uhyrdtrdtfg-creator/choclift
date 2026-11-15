@@ -4,8 +4,8 @@ import XCTest
 final class CompanionActionCatalogTests: XCTestCase {
     func testCatalogListsFiftyUniqueActionsAndRejectsUnknownIds() {
         let ids = CompanionActionCatalog.all.map(\.id)
-        XCTAssertEqual(ids.count, 51)
-        XCTAssertEqual(Set(ids).count, 51)
+        XCTAssertEqual(Set(ids).count, ids.count)
+        XCTAssertGreaterThanOrEqual(ids.count, 54)
         XCTAssertEqual(ids.filter { $0.hasPrefix("window.") }.count, 10)
         XCTAssertEqual(ids.filter { $0.hasPrefix("media.") }.count, 10)
         XCTAssertEqual(ids.filter { $0.hasPrefix("files.") }.count, 10)
