@@ -3100,6 +3100,59 @@ public final class CompanionClientEngine: ObservableObject {
         return clampedSeconds
     }
 
+    /// Seeks relative to the current Now Playing position (`-15s` / `+15s`) using `.seekNowPlaying(positionSeconds:)`.
+    /// Fails clearly if playback position or duration is unknown or the current player cannot seek.
+    @discardableResult
+    public func seekNowPlaying(byDeltaSeconds deltaSeconds: Double) -> Double? {
+        let lang = profile.settings.language
+        let actionTitle = deltaSeconds < 0
+            ? L10n.tr("快退 15 秒", "Back 15s", language: lang)
+            : L10n.tr("快进 15 秒", "Forward 15s", language: lang)
+        guard connectionState.isConnected else {
+            let detail = L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            lastFeedback = CompanionFeedbackToast(success: false, title: actionTitle, detail: detail)
+            return nil
+        }
+        guard let nowPlaying = controlStripState.nowPlaying else {
+            let detail = MacMediaSeekRejectionReason.noActiveMediaPlayer.message(in: lang)
+            lastNowPlayingModeError = detail
+            lastFeedback = CompanionFeedbackToast(success: false, title: actionTitle, detail: detail)
+            return nil
+        }
+        switch MacMediaSeekRouter.relativeTargetPosition(
+            positionSeconds: nowPlaying.elapsedSeconds,
+            durationSeconds: nowPlaying.durationSeconds,
+            deltaSeconds: deltaSeconds
+        ) {
+        case .failure(let failure):
+            let detail = failure.message(in: lang)
+            lastNowPlayingModeError = detail
+            lastFeedback = CompanionFeedbackToast(success: false, title: actionTitle, detail: detail)
+            return nil
+        case .success(let targetSeconds):
+            guard nowPlaying.isSeekable else {
+                let bundle = nowPlaying.bundleIdentifier ?? nowPlaying.appName ?? "Player"
+                let detail = MacMediaSeekRejectionReason.unsupportedPlayer(bundleID: bundle).message(in: lang)
+                lastNowPlayingModeError = detail
+                lastFeedback = CompanionFeedbackToast(success: false, title: actionTitle, detail: detail)
+                return nil
+            }
+            cancelNowPlayingScrub()
+            lastNowPlayingModeError = nil
+            return sendClampedNowPlayingSeek(targetSeconds)
+        }
+    }
+
+    @discardableResult
+    public func seekNowPlayingBackward15() -> Double? {
+        seekNowPlaying(byDeltaSeconds: -MacMediaSeekRouter.defaultRelativeStepSeconds)
+    }
+
+    @discardableResult
+    public func seekNowPlayingForward15() -> Double? {
+        seekNowPlaying(byDeltaSeconds: MacMediaSeekRouter.defaultRelativeStepSeconds)
+    }
+
     /// Requests setting the public AppleEvent shuffle property on the Mac (`com.apple.Music` or `com.spotify.client`).
     /// Never optimistically flips `controlStripState.nowPlaying?.shuffleEnabled` locally.
     @discardableResult
@@ -3688,6 +3741,24 @@ public final class CompanionClientEngine: ObservableObject {
         return pinCurrentClipboardPreview()
     }
 
+    /// Pastes a tapped recent clipboard history entry on the Mac via the existing focused-field insert/paste path.
+    @discardableResult
+    public func pasteClipboardHistoryEntry(_ text: String) -> Bool {
+        let lang = profile.settings.language
+        guard let safeText = PinnedClipboardItem.sanitizedText(text) else {
+            return false
+        }
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("剪贴板", "Clipboard", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return false
+        }
+        return insertSnippet(safeText, mode: .focusedFieldInsert)
+    }
+
     /// Inserts a pinned clipboard item on the Mac using the existing focused-field insertion path.
     @discardableResult
     public func insertPinnedClipboardItem(_ item: PinnedClipboardItem) -> Bool {
@@ -4146,6 +4217,9 @@ public final class CompanionClientEngine: ObservableObject {
             }
             clipboardPreview = snapshot
             recordObservedClipboardPreviewText(snapshot.previewText)
+            for entry in snapshot.effectiveRecentEntries {
+                recordObservedClipboardPreviewText(entry.text)
+            }
 
         case .screenshotCaptured(let result):
             isCapturingScreenshot = false

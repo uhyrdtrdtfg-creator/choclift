@@ -319,7 +319,34 @@ public struct NextDisplayTargetPlan: Equatable, Sendable {
     }
 }
 
+public enum WindowQuarterCorner: String, CaseIterable, Equatable, Sendable {
+    case topLeft
+    case topRight
+    case bottomLeft
+    case bottomRight
+}
+
 public enum WindowDisplayGeometry {
+    public static func quarterFrame(
+        for corner: WindowQuarterCorner,
+        visibleQuartz: CGRect
+    ) -> CGRect {
+        let halfW = floor(visibleQuartz.width / 2.0)
+        let halfH = floor(visibleQuartz.height / 2.0)
+        let rightX = visibleQuartz.origin.x + (visibleQuartz.width - halfW)
+        let bottomY = visibleQuartz.origin.y + (visibleQuartz.height - halfH)
+        switch corner {
+        case .topLeft:
+            return CGRect(x: visibleQuartz.origin.x, y: visibleQuartz.origin.y, width: halfW, height: halfH)
+        case .topRight:
+            return CGRect(x: rightX, y: visibleQuartz.origin.y, width: halfW, height: halfH)
+        case .bottomLeft:
+            return CGRect(x: visibleQuartz.origin.x, y: bottomY, width: halfW, height: halfH)
+        case .bottomRight:
+            return CGRect(x: rightX, y: bottomY, width: halfW, height: halfH)
+        }
+    }
+
     public static func convertAppKitRectToQuartz(
         _ appKitRect: CGRect,
         primaryScreenHeight: CGFloat

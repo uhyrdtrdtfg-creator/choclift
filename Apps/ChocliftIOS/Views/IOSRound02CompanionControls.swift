@@ -435,13 +435,32 @@ public struct IOSClipboardPreviewCard: View {
             }
 
             if expanded {
+                if isConnected {
+                    let recentEntries = Array(preview.effectiveRecentEntries.prefix(ClipboardHistoryRing.maxEntries))
+                    if !recentEntries.isEmpty {
+                        Rectangle()
+                            .fill(palette.subtleCardStroke)
+                            .frame(height: 1)
+
+                        recentClipboardEntriesSection(recentEntries)
+                    }
+                }
+
                 Rectangle()
                     .fill(palette.subtleCardStroke)
                     .frame(height: 1)
 
                 IOSPinnedClipboardShelfView(client: client)
-            } else if !client.profile.activePinnedClipboardItems.isEmpty {
-                IOSPinnedClipboardCompactStrip(client: client)
+            } else {
+                if isConnected {
+                    let recentEntries = Array(preview.effectiveRecentEntries.prefix(ClipboardHistoryRing.maxEntries))
+                    if !recentEntries.isEmpty {
+                        compactRecentClipboardStrip(recentEntries)
+                    }
+                }
+                if !client.profile.activePinnedClipboardItems.isEmpty {
+                    IOSPinnedClipboardCompactStrip(client: client)
+                }
             }
         }
         .padding(.horizontal, 12)
@@ -456,6 +475,122 @@ public struct IOSClipboardPreviewCard: View {
         )
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("ios-clipboard-preview-card")
+    }
+
+    private func recentClipboardEntriesSection(_ entries: [ClipboardHistoryEntry]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.accent)
+
+                Text(L10n.tr("最近剪贴板", "Recent Clipboard", language: lang))
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.primaryText)
+
+                Text("\(entries.count)/\(ClipboardHistoryRing.maxEntries)")
+                    .font(ChocType.micro)
+                    .monospacedDigit()
+                    .foregroundStyle(palette.secondaryText)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1.5)
+                    .background(palette.tileFillBottom, in: Capsule())
+
+                Spacer(minLength: 4)
+            }
+
+            ScrollView {
+                VStack(spacing: 6) {
+                    ForEach(Array(entries.enumerated()), id: \.element.text) { index, entry in
+                        let rowKey = "clipboard-history-\(index)"
+                        let isRowPressed = (pressedKey == rowKey)
+
+                        Button {
+                            CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                            ChocPressFeedback.completeTap(key: rowKey, pressedKey: $pressedKey)
+                            _ = client.pasteClipboardHistoryEntry(entry.text)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(entry.singleLinePreview)
+                                    .font(ChocType.caption)
+                                    .foregroundStyle(palette.primaryText)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                                Image(systemName: "doc.on.clipboard")
+                                    .font(ChocType.micro)
+                                    .foregroundStyle(palette.accent)
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .background(
+                                isRowPressed ? palette.tileFillBottom : palette.tileFillTop,
+                                in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                    .strokeBorder(
+                                        isRowPressed ? palette.accent : palette.subtleCardStroke,
+                                        lineWidth: 1
+                                    )
+                            )
+                            .contentShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                            .scaleEffect(isRowPressed ? 0.98 : 1.0)
+                        }
+                        .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: rowKey))
+                        .accessibilityIdentifier("ios-clipboard-history-item-\(index)")
+                    }
+                }
+            }
+            .frame(maxHeight: 220)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("ios-clipboard-history-section")
+    }
+
+    private func compactRecentClipboardStrip(_ entries: [ClipboardHistoryEntry]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(Array(entries.enumerated()), id: \.element.text) { index, entry in
+                    let chipKey = "compact-clipboard-history-\(index)"
+                    let isPressed = (pressedKey == chipKey)
+
+                    Button {
+                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                        ChocPressFeedback.completeTap(key: chipKey, pressedKey: $pressedKey)
+                        _ = client.pasteClipboardHistoryEntry(entry.text)
+                    } label: {
+                        Text(entry.singleLinePreview)
+                            .font(ChocType.micro)
+                            .foregroundStyle(palette.primaryText)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 150, alignment: .leading)
+                            .padding(.horizontal, 9)
+                            .frame(minHeight: 32)
+                            .background(
+                                isPressed ? palette.tileFillBottom : palette.tileFillTop,
+                                in: Capsule()
+                            )
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(
+                                        isPressed ? palette.accent : palette.subtleCardStroke,
+                                        lineWidth: 1
+                                    )
+                            )
+                            .contentShape(Capsule())
+                            .scaleEffect(isPressed ? 0.95 : 1.0)
+                    }
+                    .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: chipKey))
+                    .accessibilityIdentifier("ios-compact-clipboard-history-item-\(index)")
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("ios-compact-clipboard-history-strip")
     }
 }
 

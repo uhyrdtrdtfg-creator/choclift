@@ -416,6 +416,10 @@ public final class MacAccessibilityAndWindowService {
         case minimize
         case snapLeft
         case snapRight
+        case snapTopLeft
+        case snapTopRight
+        case snapBottomLeft
+        case snapBottomRight
         case center
         case toggleFullscreen
         case moveToNextDisplay
@@ -612,7 +616,8 @@ public final class MacAccessibilityAndWindowService {
                 return (false, err.message())
             }
 
-        case .maximizeOrRestore, .snapLeft, .snapRight:
+        case .maximizeOrRestore, .snapLeft, .snapRight,
+             .snapTopLeft, .snapTopRight, .snapBottomLeft, .snapBottomRight:
             let currentFrame = readWindowQuartzFrame(windowElement)
             let targetScreen: NSScreen? = {
                 if NSScreen.screens.count > 1,
@@ -656,6 +661,14 @@ public final class MacAccessibilityAndWindowService {
                     width: halfW,
                     height: visibleQuartz.height
                 )
+            case .snapTopLeft:
+                desiredFrame = WindowDisplayGeometry.quarterFrame(for: .topLeft, visibleQuartz: visibleQuartz)
+            case .snapTopRight:
+                desiredFrame = WindowDisplayGeometry.quarterFrame(for: .topRight, visibleQuartz: visibleQuartz)
+            case .snapBottomLeft:
+                desiredFrame = WindowDisplayGeometry.quarterFrame(for: .bottomLeft, visibleQuartz: visibleQuartz)
+            case .snapBottomRight:
+                desiredFrame = WindowDisplayGeometry.quarterFrame(for: .bottomRight, visibleQuartz: visibleQuartz)
             default:
                 desiredFrame = visibleQuartz
             }
@@ -682,6 +695,186 @@ public final class MacAccessibilityAndWindowService {
                 return (false, WindowAXErrorFormatting.moveFailureMessage(rawCode: axErr.code))
             }
         }
+    }
+
+    @discardableResult
+    public func closeFrontmostWindow(
+        preferredPID: pid_t?,
+        strictTargetPID: Bool = false,
+        selfPID: pid_t = ProcessInfo.processInfo.processIdentifier
+    ) -> (success: Bool, message: String) {
+        guard AXIsProcessTrusted() else {
+            _ = promptForAccessibilityPermission()
+            return (false, L10n.tr("请在系统设置 → 辅助功能中授权 Choclift 控制窗口", "Grant Accessibility permission in System Settings to control windows"))
+        }
+
+        guard let app = resolveNonSelfWindowTargetApp(
+            preferredPID: preferredPID,
+            strictTargetPID: strictTargetPID,
+            selfPID: selfPID
+        ) else {
+            if strictTargetPID {
+                return (false, L10n.tr("目标应用未运行，已停止窗口操作", "Target application is not running; aborted window operation"))
+            }
+            return (false, L10n.tr("当前没有可关闭的前台窗口", "No frontmost window to close"))
+        }
+
+        let appDisplayName = app.localizedName ?? app.bundleIdentifier ?? "App"
+        let appElement = AXUIElementCreateApplication(app.processIdentifier)
+        let windowElement: AXUIElement
+        switch resolveClosableWindowResult(for: appElement) {
+        case .window(let resolved):
+            windowElement = resolved
+        case .axFailure(let axErr):
+            return (false, WindowAXErrorFormatting.moveFailureMessage(rawCode: axErr.rawValue))
+        case .noWindow:
+            return (false, L10n.tr("\(appDisplayName) 当前没有可关闭的窗口", "No open window to close in \(appDisplayName)"))
+        }
+
+        var closeButtonRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(windowElement, kAXCloseButtonAttribute as CFString, &closeButtonRef) == .success,
+              let closeButtonRef,
+              CFGetTypeID(closeButtonRef) == AXUIElementGetTypeID() else {
+            return (false, L10n.tr("当前窗口不支持关闭", "Window does not support closing"))
+        }
+        let closeButton = closeButtonRef as! AXUIElement
+
+        var enabledRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(closeButton, kAXEnabledAttribute as CFString, &enabledRef) == .success,
+           let isEnabled = enabledRef as? Bool,
+           !isEnabled {
+            return (false, L10n.tr("当前窗口关闭按钮不可用", "Window close button is disabled"))
+        }
+
+        let pressErr = AXUIElementPerformAction(closeButton, kAXPressAction as CFString)
+        return pressErr == .success
+            ? (true, L10n.tr("已关闭 \(appDisplayName) 窗口", "Closed \(appDisplayName) window"))
+            : (false, L10n.tr("无法关闭 \(appDisplayName) 窗口", "Could not close \(appDisplayName) window"))
+    }
+
+    public func pressNotificationCenterMenuBarClock() -> Bool {
+        guard AXIsProcessTrusted(),
+              let controlCenter = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.controlcenter").first,
+              !controlCenter.isTerminated else {
+            return false
+        }
+        let appElement = AXUIElementCreateApplication(controlCenter.processIdentifier)
+        var menuBarRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXExtrasMenuBarAttribute as CFString, &menuBarRef) == .success,
+              let menuBarRef,
+              CFGetTypeID(menuBarRef) == AXUIElementGetTypeID() else {
+            return false
+        }
+        var childrenRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(menuBarRef as! AXUIElement, kAXChildrenAttribute as CFString, &childrenRef) == .success,
+              let children = childrenRef as? [AXUIElement],
+              !children.isEmpty else {
+            return false
+        }
+        guard let clockItem = children.first(where: { item in
+            var idRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(item, kAXIdentifierAttribute as CFString, &idRef) == .success,
+                  let identifier = idRef as? String else {
+                return false
+            }
+            return identifier == "com.apple.menuextra.clock"
+        }) else {
+            return false
+        }
+        return AXUIElementPerformAction(clockItem, kAXPressAction as CFString) == .success
+    }
+
+    private func resolveNonSelfWindowTargetApp(
+        preferredPID: pid_t?,
+        strictTargetPID: Bool,
+        selfPID: pid_t
+    ) -> NSRunningApplication? {
+        let selfBundleID = Bundle.main.bundleIdentifier
+        func isEligible(_ app: NSRunningApplication) -> Bool {
+            guard !app.isTerminated,
+                  app.processIdentifier != selfPID,
+                  app.bundleIdentifier != "com.apple.loginwindow" else {
+                return false
+            }
+            if let selfBundleID, app.bundleIdentifier == selfBundleID {
+                return false
+            }
+            return true
+        }
+
+        if strictTargetPID {
+            guard let preferredPID,
+                  let app = NSRunningApplication(processIdentifier: preferredPID),
+                  isEligible(app) else {
+                return nil
+            }
+            return app
+        }
+        if let front = NSWorkspace.shared.frontmostApplication, isEligible(front) {
+            return front
+        }
+        if let preferredPID,
+           let app = NSRunningApplication(processIdentifier: preferredPID),
+           isEligible(app) {
+            return app
+        }
+        return nil
+    }
+
+    private func resolveClosableWindowResult(for appElement: AXUIElement) -> ResolvedWindowOutcome {
+        func isOpenWindow(_ win: AXUIElement) -> Bool {
+            var minRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(win, kAXMinimizedAttribute as CFString, &minRef) == .success,
+               let isMin = minRef as? Bool,
+               isMin {
+                return false
+            }
+            var roleRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(win, kAXRoleAttribute as CFString, &roleRef) == .success,
+               let role = roleRef as? String {
+                return role == (kAXWindowRole as String)
+            }
+            return true
+        }
+
+        var focusedWin: CFTypeRef?
+        let focusedErr = AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedWin)
+        if focusedErr == .success,
+           let fw = focusedWin,
+           CFGetTypeID(fw) == AXUIElementGetTypeID(),
+           isOpenWindow(fw as! AXUIElement) {
+            return .window(fw as! AXUIElement)
+        }
+
+        var mainWin: CFTypeRef?
+        let mainErr = AXUIElementCopyAttributeValue(appElement, kAXMainWindowAttribute as CFString, &mainWin)
+        if mainErr == .success,
+           let mw = mainWin,
+           CFGetTypeID(mw) == AXUIElementGetTypeID(),
+           isOpenWindow(mw as! AXUIElement) {
+            return .window(mw as! AXUIElement)
+        }
+
+        var listRef: CFTypeRef?
+        let winErr = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &listRef)
+        if winErr == .success,
+           let windows = listRef as? [AXUIElement] {
+            if let firstOpen = windows.first(where: isOpenWindow) {
+                return .window(firstOpen)
+            }
+            return .noWindow
+        }
+
+        if winErr != .success && winErr != .noValue {
+            return .axFailure(winErr)
+        }
+        if focusedErr != .success && focusedErr != .noValue {
+            return .axFailure(focusedErr)
+        }
+        if mainErr != .success && mainErr != .noValue {
+            return .axFailure(mainErr)
+        }
+        return .noWindow
     }
 
     public func unminimizeFirstWindowIfAllMinimized(pid: pid_t) {

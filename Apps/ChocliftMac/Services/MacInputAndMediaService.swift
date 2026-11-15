@@ -19,6 +19,8 @@ public final class MacInputAndMediaService {
     public var mediaSeekContextProvider: (() -> MacMediaSeekContext)?
     /// Supplies live Now Playing bundle + running-player context for shuffle/repeat (`MacMediaPlaybackModeRouter`).
     public var mediaPlaybackModeContextProvider: (() -> MacMediaPlaybackModeContext)?
+    public var toggleAppearanceHandler: (() -> (success: Bool, message: String))?
+    public var toggleNightShiftHandler: (() -> (success: Bool, message: String))?
 
     public init(windowService: MacAccessibilityAndWindowService) {
         self.windowService = windowService
@@ -312,6 +314,14 @@ public final class MacInputAndMediaService {
             return windowService.performWindowOperation(.snapLeft, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .snapWindowRight:
             return windowService.performWindowOperation(.snapRight, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+        case .snapWindowTopLeft:
+            return windowService.performWindowOperation(.snapTopLeft, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+        case .snapWindowTopRight:
+            return windowService.performWindowOperation(.snapTopRight, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+        case .snapWindowBottomLeft:
+            return windowService.performWindowOperation(.snapBottomLeft, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+        case .snapWindowBottomRight:
+            return windowService.performWindowOperation(.snapBottomRight, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .centerWindow:
             return windowService.performWindowOperation(.center, preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         case .toggleFullscreen:
@@ -326,6 +336,14 @@ public final class MacInputAndMediaService {
             }
             postKeyStroke(virtualKey: stroke.virtualKey, flags: stroke.flags)
             return (true, action.title())
+
+        case .switchToNextSpace, .switchToPreviousSpace, .toggleAppSwitcher:
+            return WorkspaceShortcutKeystrokeRouting.execute(
+                action,
+                ensureAccessibility: ensureAccessibilityOrPrompt,
+                deniedResult: accessibilityDeniedResult,
+                postKeyStroke: postKeyStroke(virtualKey:flags:)
+            )
 
         case .copySelection:
             guard ensureAccessibilityOrPrompt() else {
@@ -468,7 +486,299 @@ public final class MacInputAndMediaService {
                 NSApp.orderFrontCharacterPalette(nil)
             }
             return (true, L10n.tr("已打开表情面板", "Opened Emoji Palette"))
+
+        case .toggleAppearance:
+            if let toggleAppearanceHandler {
+                return toggleAppearanceHandler()
+            }
+            let res = MacSystemControlService.toggleGlobalAppearance()
+            return (res.success, res.detail)
+
+        case .toggleNightShift:
+            if let toggleNightShiftHandler {
+                return toggleNightShiftHandler()
+            }
+            return (false, MacNightShiftToggle.unavailableDetail())
+
+        case .closeFrontmostWindow:
+            return windowService.closeFrontmostWindow(preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+
+        case .newFrontmostWindow:
+            return openNewFrontmostWindow(preferredPID: preferredPID, strictTargetPID: strictTargetPID)
+
+        case .toggleLaunchpad:
+            return toggleLaunchpad()
+
+        case .toggleNotificationCenter:
+            return toggleNotificationCenter()
+
+        case .toggleDictation:
+            return executeToggleDictation(preferredPID: preferredPID, strictTargetPID: strictTargetPID)
         }
+    }
+
+    public func openNewFrontmostWindow(
+        preferredPID: pid_t?,
+        strictTargetPID: Bool = false
+    ) -> (success: Bool, message: String) {
+        guard ensureAccessibilityOrPrompt() else {
+            return accessibilityDeniedResult()
+        }
+        guard let targetApp = resolveNonSelfTargetForKeystroke(preferredPID, strict: strictTargetPID) else {
+            return strictTargetPID
+                ? missingStrictTargetResult()
+                : (false, L10n.tr("当前没有可新建窗口的前台应用", "No frontmost application available for New Window"))
+        }
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier != targetApp.processIdentifier {
+            targetApp.activate(options: [.activateAllWindows])
+            RunLoop.current.run(until: Date().addingTimeInterval(0.04))
+        }
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier != myPID else {
+            return (false, L10n.tr("当前没有可新建窗口的前台应用", "No frontmost application available for New Window"))
+        }
+        postKeyStroke(virtualKey: CGKeyCode(kVK_ANSI_N), flags: .maskCommand)
+        let name = targetApp.localizedName ?? targetApp.bundleIdentifier ?? "App"
+        return (true, L10n.tr("已在 \(name) 新建窗口 (⌘N)", "Opened new window in \(name) (⌘N)"))
+    }
+
+    private func executeToggleDictation(
+        preferredPID: pid_t?,
+        strictTargetPID: Bool
+    ) -> (success: Bool, message: String) {
+        guard ensureAccessibilityOrPrompt() else {
+            return accessibilityDeniedResult()
+        }
+        guard activateTargetForKeystroke(preferredPID, strict: strictTargetPID) else {
+            return missingStrictTargetResult()
+        }
+
+        if let dictationEnabled = UserDefaults(suiteName: "com.apple.assistant.support")?.object(forKey: "Dictation Enabled") as? Bool,
+           !dictationEnabled {
+            return (
+                false,
+                L10n.tr(
+                    "请先在 Mac「系统设置 → 键盘 → 听写」中开启听写",
+                    "Enable Dictation in Mac System Settings → Keyboard → Dictation first"
+                )
+            )
+        }
+
+        if let dictationIM = Self.copyDictationInputSource(),
+           Self.boolInputSourceProperty(dictationIM, kTISPropertyInputSourceIsSelected) == true,
+           TISDeselectInputSource(dictationIM) == noErr {
+            return (true, L10n.tr("已停止听写", "Stopped Dictation"))
+        }
+
+        if let targetPID = resolvedDictationTargetPID(preferredPID: preferredPID, strict: strictTargetPID) {
+            switch triggerDictationMenuAction(forPID: targetPID) {
+            case .triggered:
+                return (true, L10n.tr("已切换听写", "Toggled Dictation"))
+            case .disabledInFocusedContext, .notFound:
+                break
+            }
+        }
+
+        if let shortcut = Self.configuredSystemDictationKeystroke() {
+            postKeyStroke(virtualKey: shortcut.virtualKey, flags: shortcut.flags)
+            return (true, L10n.tr("已触发系统听写快捷键", "Triggered Dictation Shortcut"))
+        }
+
+        return (
+            false,
+            L10n.tr(
+                "无法切换听写：请先在 Mac 点击可输入的文本框，或在系统设置中为听写配置快捷键",
+                "Cannot toggle Dictation: focus a text field on your Mac or set a Dictation shortcut in System Settings"
+            )
+        )
+    }
+
+    public func toggleLaunchpad() -> (success: Bool, message: String) {
+        let candidatePaths = [
+            "/System/Applications/Launchpad.app",
+            "/System/Applications/Apps.app"
+        ]
+        for path in candidatePaths where FileManager.default.fileExists(atPath: path) {
+            let url = URL(fileURLWithPath: path)
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            return (true, L10n.tr("已切换启动台", "Toggled Launchpad"))
+        }
+        guard ensureAccessibilityOrPrompt() else {
+            return accessibilityDeniedResult()
+        }
+        postKeyStroke(virtualKey: CGKeyCode(0x83), flags: [])
+        return (true, L10n.tr("已切换启动台", "Toggled Launchpad"))
+    }
+
+    public func toggleNotificationCenter() -> (success: Bool, message: String) {
+        if windowService.pressNotificationCenterMenuBarClock() {
+            return (true, L10n.tr("已切换通知中心", "Toggled Notification Center"))
+        }
+        let notificationCenterPath = "/System/Library/CoreServices/NotificationCenter.app"
+        if FileManager.default.fileExists(atPath: notificationCenterPath) {
+            let url = URL(fileURLWithPath: notificationCenterPath)
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            return (true, L10n.tr("已切换通知中心", "Toggled Notification Center"))
+        }
+        _ = windowService.promptForAccessibilityPermission()
+        return accessibilityDeniedResult()
+    }
+
+    private func resolveNonSelfTargetForKeystroke(_ preferredPID: pid_t?, strict: Bool) -> NSRunningApplication? {
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let selfBundleID = Bundle.main.bundleIdentifier
+        func isEligible(_ app: NSRunningApplication) -> Bool {
+            guard !app.isTerminated,
+                  app.processIdentifier != myPID,
+                  app.bundleIdentifier != "com.apple.loginwindow" else {
+                return false
+            }
+            if let selfBundleID, app.bundleIdentifier == selfBundleID {
+                return false
+            }
+            return true
+        }
+        if strict {
+            guard let preferredPID,
+                  let app = NSRunningApplication(processIdentifier: preferredPID),
+                  isEligible(app) else {
+                return nil
+            }
+            return app
+        }
+        if let front = NSWorkspace.shared.frontmostApplication, isEligible(front) {
+            return front
+        }
+        if let preferredPID,
+           let app = NSRunningApplication(processIdentifier: preferredPID),
+           isEligible(app) {
+            return app
+        }
+        return nil
+    }
+
+    private enum DictationMenuOutcome {
+        case triggered
+        case disabledInFocusedContext
+        case notFound
+    }
+
+    private func resolvedDictationTargetPID(preferredPID: pid_t?, strict: Bool) -> pid_t? {
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        if let preferredPID,
+           preferredPID != myPID,
+           let app = NSRunningApplication(processIdentifier: preferredPID),
+           !app.isTerminated {
+            return preferredPID
+        }
+        if strict {
+            return nil
+        }
+        if let front = NSWorkspace.shared.frontmostApplication,
+           front.processIdentifier != myPID,
+           !front.isTerminated {
+            return front.processIdentifier
+        }
+        return nil
+    }
+
+    private func triggerDictationMenuAction(forPID pid: pid_t) -> DictationMenuOutcome {
+        let appElement = AXUIElementCreateApplication(pid)
+        var menuBarRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXMenuBarAttribute as CFString, &menuBarRef) == .success,
+              let menuBarRef else {
+            return .notFound
+        }
+        let menuBar = unsafeBitCast(menuBarRef, to: AXUIElement.self)
+        var topItemsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(menuBar, kAXChildrenAttribute as CFString, &topItemsRef) == .success,
+              let topItems = topItemsRef as? [AXUIElement] else {
+            return .notFound
+        }
+
+        let knownIdentifiers: Set<String> = ["startDictation:", "stopDictation:", "cancelDictation:"]
+        let knownTitles: Set<String> = [
+            "Start Dictation", "Start Dictation…", "Start Dictation...",
+            "Stop Dictation", "开始听写", "开始听写…", "开始听写...", "停止听写"
+        ]
+        var sawDisabledItem = false
+
+        for topItem in topItems {
+            var submenusRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(topItem, kAXChildrenAttribute as CFString, &submenusRef) == .success,
+                  let submenus = submenusRef as? [AXUIElement] else {
+                continue
+            }
+            for submenu in submenus {
+                var itemsRef: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(submenu, kAXChildrenAttribute as CFString, &itemsRef) == .success,
+                      let items = itemsRef as? [AXUIElement] else {
+                    continue
+                }
+                for item in items {
+                    var idRef: CFTypeRef?
+                    var titleRef: CFTypeRef?
+                    _ = AXUIElementCopyAttributeValue(item, kAXIdentifierAttribute as CFString, &idRef)
+                    _ = AXUIElementCopyAttributeValue(item, kAXTitleAttribute as CFString, &titleRef)
+                    let identifier = (idRef as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    let title = (titleRef as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    guard knownIdentifiers.contains(identifier) || knownTitles.contains(title) else {
+                        continue
+                    }
+                    var enabledRef: CFTypeRef?
+                    _ = AXUIElementCopyAttributeValue(item, kAXEnabledAttribute as CFString, &enabledRef)
+                    let isEnabled = (enabledRef as? Bool) ?? false
+                    if isEnabled, AXUIElementPerformAction(item, kAXPressAction as CFString) == .success {
+                        return .triggered
+                    }
+                    sawDisabledItem = true
+                }
+            }
+        }
+        return sawDisabledItem ? .disabledInFocusedContext : .notFound
+    }
+
+    private static func copyDictationInputSource() -> TISInputSource? {
+        let filter = [kTISPropertyInputSourceID as String: "com.apple.inputmethod.ironwood"] as CFDictionary
+        guard let list = TISCreateInputSourceList(filter, true)?.takeRetainedValue() as? [TISInputSource] else {
+            return nil
+        }
+        return list.first
+    }
+
+    private static func boolInputSourceProperty(_ source: TISInputSource, _ key: CFString) -> Bool? {
+        guard let rawPtr = TISGetInputSourceProperty(source, key) else { return nil }
+        let value = Unmanaged<AnyObject>.fromOpaque(rawPtr).takeUnretainedValue()
+        return value as? Bool
+    }
+
+    private static func configuredSystemDictationKeystroke() -> (virtualKey: CGKeyCode, flags: CGEventFlags)? {
+        // Symbolic hotkey 164 = Start Dictation when explicitly enabled with a real virtual key code.
+        if let hotkeys = UserDefaults(suiteName: "com.apple.symbolichotkeys")?.dictionary(forKey: "AppleSymbolicHotKeys"),
+           let entry = hotkeys["164"] as? [String: Any],
+           (entry["enabled"] as? Bool) == true,
+           let value = entry["value"] as? [String: Any],
+           let params = value["parameters"] as? [Int],
+           params.count >= 3 {
+            let keyCode = params[1]
+            let rawModifiers = UInt64(bitPattern: Int64(params[2]))
+            if keyCode >= 0 && keyCode < 65535 {
+                var flags: CGEventFlags = []
+                if (rawModifiers & (1 << 17)) != 0 { flags.insert(.maskShift) }
+                if (rawModifiers & (1 << 18)) != 0 { flags.insert(.maskControl) }
+                if (rawModifiers & (1 << 19)) != 0 { flags.insert(.maskAlternate) }
+                if (rawModifiers & (1 << 20)) != 0 { flags.insert(.maskCommand) }
+                if (rawModifiers & (1 << 23)) != 0 { flags.insert(.maskSecondaryFn) }
+                return (CGKeyCode(keyCode), flags)
+            }
+        }
+
+        // AppleFnUsageType == 3 means pressing 🌐 / Fn starts Dictation on macOS.
+        if let fnUsage = UserDefaults(suiteName: "com.apple.HIToolbox")?.object(forKey: "AppleFnUsageType") as? Int,
+           fnUsage == 3 {
+            return (CGKeyCode(kVK_Function), .maskSecondaryFn)
+        }
+        return nil
     }
 
     // MARK: - Compact Key Row (Arrows, Escape, Space — Existing Input Path)
@@ -498,6 +808,9 @@ public final class MacInputAndMediaService {
         case .escape:
             virtualKey = CGKeyCode(kVK_Escape)
             flags = []
+        case .tab:
+            virtualKey = CGKeyCode(kVK_Tab)
+            flags = []
         case .leftArrow:
             virtualKey = CGKeyCode(kVK_LeftArrow)
             flags = [.maskSecondaryFn, .maskNumericPad]
@@ -512,6 +825,12 @@ public final class MacInputAndMediaService {
             flags = [.maskSecondaryFn, .maskNumericPad]
         case .space:
             virtualKey = CGKeyCode(kVK_Space)
+            flags = []
+        case .returnKey:
+            virtualKey = CGKeyCode(kVK_Return)
+            flags = []
+        case .delete:
+            virtualKey = CGKeyCode(kVK_Delete)
             flags = []
         }
 

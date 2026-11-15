@@ -93,6 +93,20 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case quitApp = "quit_app"
     case openEmojiPicker = "open_emoji_picker"
     case moveWindowToNextDisplay = "move_window_to_next_display"
+    case snapWindowTopLeft = "snap_window_top_left"
+    case snapWindowTopRight = "snap_window_top_right"
+    case snapWindowBottomLeft = "snap_window_bottom_left"
+    case snapWindowBottomRight = "snap_window_bottom_right"
+    case switchToNextSpace = "switch_to_next_space"
+    case switchToPreviousSpace = "switch_to_previous_space"
+    case toggleAppSwitcher = "toggle_app_switcher"
+    case toggleAppearance = "toggle_appearance"
+    case toggleNightShift = "toggle_night_shift"
+    case closeFrontmostWindow = "close_frontmost_window"
+    case newFrontmostWindow = "new_frontmost_window"
+    case toggleLaunchpad = "toggle_launchpad"
+    case toggleNotificationCenter = "toggle_notification_center"
+    case toggleDictation = "toggle_dictation"
 
     public var id: String { rawValue }
 
@@ -102,6 +116,10 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .minimizeWindow: return "minus.square.fill"
         case .snapWindowLeft: return "rectangle.lefthalf.inset.filled"
         case .snapWindowRight: return "rectangle.righthalf.inset.filled"
+        case .snapWindowTopLeft: return "rectangle.inset.topleft.filled"
+        case .snapWindowTopRight: return "rectangle.inset.topright.filled"
+        case .snapWindowBottomLeft: return "rectangle.inset.bottomleft.filled"
+        case .snapWindowBottomRight: return "rectangle.inset.bottomright.filled"
         case .switchToNextWindow: return "arrow.right.square"
         case .switchToPreviousWindow: return "arrow.left.square"
         case .centerWindow: return "rectangle.center.inset.filled"
@@ -125,16 +143,31 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .quitApp: return "xmark.octagon.fill"
         case .openEmojiPicker: return "face.smiling.inverse"
         case .moveWindowToNextDisplay: return "display.2"
+        case .switchToNextSpace: return "chevron.right.square.fill"
+        case .switchToPreviousSpace: return "chevron.left.square.fill"
+        case .toggleAppSwitcher: return "squares.below.rectangle"
+        case .toggleAppearance: return "circle.lefthalf.filled"
+        case .toggleNightShift: return "sunset.fill"
+        case .closeFrontmostWindow: return "xmark.square.fill"
+        case .newFrontmostWindow: return "macwindow.badge.plus"
+        case .toggleLaunchpad: return "square.grid.3x3.fill"
+        case .toggleNotificationCenter: return "bell.badge.fill"
+        case .toggleDictation: return "mic.fill"
         }
     }
 
     public var accentHex: String {
         switch self {
-        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow, .moveWindowToNextDisplay:
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
+             .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
+             .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow,
+             .moveWindowToNextDisplay, .closeFrontmostWindow, .newFrontmostWindow:
             return "#EDF6FF"
-        case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
+        case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .toggleDictation:
             return "#F3EEFF"
-        case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker:
+        case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker,
+             .switchToNextSpace, .switchToPreviousSpace, .toggleAppSwitcher, .toggleAppearance, .toggleNightShift,
+             .toggleLaunchpad, .toggleNotificationCenter:
             return "#FFF1EC"
         case .mediaPlayPause, .mediaNext, .mediaPrevious, .volumeUp, .volumeDown, .volumeMute:
             return "#ECFAEE"
@@ -143,7 +176,9 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public var isWindowAction: Bool {
         switch self {
-        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay:
+        case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
+             .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
+             .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay, .closeFrontmostWindow:
             return true
         default:
             return false
@@ -152,7 +187,9 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
 
     public var isUndoableWindowMove: Bool {
         switch self {
-        case .maximizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .moveWindowToNextDisplay:
+        case .maximizeWindow, .snapWindowLeft, .snapWindowRight,
+             .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
+             .centerWindow, .moveWindowToNextDisplay:
             return true
         default:
             return false
@@ -173,7 +210,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return true
         }
         switch self {
-        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp, .switchToNextWindow, .switchToPreviousWindow:
+        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp,
+             .switchToNextWindow, .switchToPreviousWindow, .newFrontmostWindow, .toggleDictation:
             return true
         default:
             return false
@@ -186,6 +224,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         switch self {
         case .switchToNextWindow: return "⌘`"
         case .switchToPreviousWindow: return "⇧⌘`"
+        case .newFrontmostWindow:
+            return "⌘N"
         case .copySelection:
             return "⌘C"
         case .pasteClipboard:
@@ -200,11 +240,19 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return "⌃⌘Q"
         case .openEmojiPicker:
             return "⌃⌘Space"
+        case .switchToNextSpace:
+            return "⌃→"
+        case .switchToPreviousSpace:
+            return "⌃←"
+        case .toggleAppSwitcher:
+            return "⌘Tab"
         case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
+             .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
              .centerWindow, .toggleFullscreen, .missionControl, .showDesktop,
              .screenshotInteractive, .mediaPlayPause, .mediaNext, .mediaPrevious,
              .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca,
-             .moveWindowToNextDisplay:
+             .moveWindowToNextDisplay, .toggleAppearance, .toggleNightShift,
+             .closeFrontmostWindow, .toggleLaunchpad, .toggleNotificationCenter, .toggleDictation:
             return nil
         }
     }
@@ -215,6 +263,10 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .minimizeWindow: return L10n.tr("最小化窗口", "Minimize Window", language: lang)
         case .snapWindowLeft: return L10n.tr("窗口贴靠左半屏", "Snap Window Left", language: lang)
         case .snapWindowRight: return L10n.tr("窗口贴靠右半屏", "Snap Window Right", language: lang)
+        case .snapWindowTopLeft: return L10n.tr("窗口贴靠左上角", "Snap Window Top Left", language: lang)
+        case .snapWindowTopRight: return L10n.tr("窗口贴靠右上角", "Snap Window Top Right", language: lang)
+        case .snapWindowBottomLeft: return L10n.tr("窗口贴靠左下角", "Snap Window Bottom Left", language: lang)
+        case .snapWindowBottomRight: return L10n.tr("窗口贴靠右下角", "Snap Window Bottom Right", language: lang)
         case .switchToNextWindow: return L10n.tr("下一个窗口", "Next Window", language: lang)
         case .switchToPreviousWindow: return L10n.tr("上一个窗口", "Previous Window", language: lang)
         case .centerWindow: return L10n.tr("窗口居中", "Center Window", language: lang)
@@ -238,6 +290,16 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .quitApp: return L10n.tr("退出当前应用", "Quit Application", language: lang)
         case .openEmojiPicker: return L10n.tr("系统表情面板", "macOS Emoji Panel", language: lang)
         case .moveWindowToNextDisplay: return L10n.tr("窗口移至下一显示器", "Move Window to Next Display", language: lang)
+        case .switchToNextSpace: return L10n.tr("下一个桌面空间", "Next Space", language: lang)
+        case .switchToPreviousSpace: return L10n.tr("上一个桌面空间", "Previous Space", language: lang)
+        case .toggleAppSwitcher: return L10n.tr("应用切换器", "App Switcher", language: lang)
+        case .toggleAppearance: return L10n.tr("切换外观", "Toggle Appearance", language: lang)
+        case .toggleNightShift: return L10n.tr("切换夜览", "Toggle Night Shift", language: lang)
+        case .closeFrontmostWindow: return L10n.tr("关闭当前窗口", "Close Window", language: lang)
+        case .newFrontmostWindow: return L10n.tr("新建窗口", "New Window", language: lang)
+        case .toggleLaunchpad: return L10n.tr("启动台", "Launchpad", language: lang)
+        case .toggleNotificationCenter: return L10n.tr("通知中心", "Notification Center", language: lang)
+        case .toggleDictation: return L10n.tr("切换听写", "Toggle Dictation", language: lang)
         }
     }
 
@@ -247,6 +309,10 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .minimizeWindow: return L10n.tr("最小化", "Minimize", language: lang)
         case .snapWindowLeft: return L10n.tr("左半屏", "Snap Left", language: lang)
         case .snapWindowRight: return L10n.tr("右半屏", "Snap Right", language: lang)
+        case .snapWindowTopLeft: return L10n.tr("左上角", "Top Left", language: lang)
+        case .snapWindowTopRight: return L10n.tr("右上角", "Top Right", language: lang)
+        case .snapWindowBottomLeft: return L10n.tr("左下角", "Bottom Left", language: lang)
+        case .snapWindowBottomRight: return L10n.tr("右下角", "Bottom Right", language: lang)
         case .switchToNextWindow: return L10n.tr("下一个窗口", "Next Window", language: lang)
         case .switchToPreviousWindow: return L10n.tr("上一个窗口", "Previous Window", language: lang)
         case .centerWindow: return L10n.tr("居中", "Center", language: lang)
@@ -270,12 +336,24 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .quitApp: return L10n.tr("退出", "Quit", language: lang)
         case .openEmojiPicker: return L10n.tr("表情框", "Emoji", language: lang)
         case .moveWindowToNextDisplay: return L10n.tr("下一屏幕", "Next Display", language: lang)
+        case .switchToNextSpace: return L10n.tr("下一空间", "Next Space", language: lang)
+        case .switchToPreviousSpace: return L10n.tr("上一空间", "Prev Space", language: lang)
+        case .toggleAppSwitcher: return L10n.tr("应用切换", "App Switcher", language: lang)
+        case .toggleAppearance: return L10n.tr("外观", "Appearance", language: lang)
+        case .toggleNightShift: return L10n.tr("夜览", "Night Shift", language: lang)
+        case .closeFrontmostWindow: return L10n.tr("关闭窗口", "Close Window", language: lang)
+        case .newFrontmostWindow: return L10n.tr("新建窗口", "New Window", language: lang)
+        case .toggleLaunchpad: return L10n.tr("启动台", "Launchpad", language: lang)
+        case .toggleNotificationCenter: return L10n.tr("通知中心", "Notifications", language: lang)
+        case .toggleDictation: return L10n.tr("听写", "Dictation", language: lang)
         }
     }
 
     public static let windowLayoutSlotActions: [SystemQuickAction] = [
         .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight,
-        .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay
+        .snapWindowTopLeft, .snapWindowTopRight, .snapWindowBottomLeft, .snapWindowBottomRight,
+        .centerWindow, .toggleFullscreen, .moveWindowToNextDisplay,
+        .closeFrontmostWindow, .newFrontmostWindow
     ]
 
     public static func slotActionSections(
@@ -293,7 +371,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
                 compactHeaders
                     ? L10n.tr("编辑与剪贴板", "Clipboard & Edit", language: lang)
                     : L10n.tr("编辑与剪贴板", "Clipboard & Editing", language: lang),
-                [.copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction]
+                [.copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .toggleDictation]
             ),
             (
                 L10n.tr("媒体与音量", "Media & Volume", language: lang),
@@ -301,7 +379,14 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             ),
             (
                 L10n.tr("桌面与系统控制", "Workspace & System", language: lang),
-                [.missionControl, .showDesktop, .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp]
+                [
+                    .missionControl, .showDesktop,
+                    .switchToPreviousSpace, .switchToNextSpace, .toggleAppSwitcher,
+                    .toggleLaunchpad, .toggleNotificationCenter,
+                    .screenshotInteractive, .openEmojiPicker,
+                    .toggleAppearance, .toggleNightShift,
+                    .lockScreen, .quitApp
+                ]
             )
         ]
     }
@@ -309,6 +394,153 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     /// Only `.volumeUp`, `.volumeDown`, and `.mediaNext` repeat while held down.
     public var supportsHoldToRepeat: Bool {
         HoldToRepeatPolicy.supportsHoldToRepeat(self)
+    }
+}
+
+// MARK: - Appearance & Night Shift Toggle Policies
+
+public enum MacAppearanceMode: String, Codable, Equatable, Hashable, Sendable {
+    case light
+    case dark
+
+    public static func fromInterfaceStyle(_ rawValue: String?) -> MacAppearanceMode {
+        guard let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              trimmed.caseInsensitiveCompare("Dark") == .orderedSame else {
+            return .light
+        }
+        return .dark
+    }
+
+    public func feedbackDetail(in lang: AppLanguage = .system) -> String {
+        switch self {
+        case .light:
+            return L10n.tr("已切换为浅色外观", "Switched to light appearance", language: lang)
+        case .dark:
+            return L10n.tr("已切换为深色外观", "Switched to dark appearance", language: lang)
+        }
+    }
+}
+
+public enum MacAppearanceToggle {
+    public static let interfaceStyleKey = "AppleInterfaceStyle"
+    public static let themeChangedNotificationName = "AppleInterfaceThemeChangedNotification"
+
+    /// Returns `"Dark"` when the current `AppleInterfaceStyle` is `nil` or `"Light"`,
+    /// and `nil` (delete key for light mode) when the current value is `"Dark"`.
+    public static func nextInterfaceStyleValue(from currentValue: String?) -> String? {
+        switch MacAppearanceMode.fromInterfaceStyle(currentValue) {
+        case .light:
+            return "Dark"
+        case .dark:
+            return nil
+        }
+    }
+
+    public static func perform(
+        in defaults: UserDefaults,
+        language: AppLanguage = .system,
+        postThemeChangedNotification: () -> Void = {}
+    ) -> (success: Bool, mode: MacAppearanceMode?, detail: String) {
+        perform(
+            language: language,
+            readCurrent: { defaults.string(forKey: interfaceStyleKey) },
+            writeNext: { nextValue in
+                if let nextValue {
+                    defaults.set(nextValue, forKey: interfaceStyleKey)
+                } else {
+                    defaults.removeObject(forKey: interfaceStyleKey)
+                }
+                return true
+            },
+            postThemeChangedNotification: postThemeChangedNotification,
+            readBack: { defaults.string(forKey: interfaceStyleKey) }
+        )
+    }
+
+    public static func perform(
+        language: AppLanguage = .system,
+        readCurrent: () -> String?,
+        writeNext: (String?) -> Bool,
+        postThemeChangedNotification: () -> Void,
+        readBack: () -> String?
+    ) -> (success: Bool, mode: MacAppearanceMode?, detail: String) {
+        let nextRaw = nextInterfaceStyleValue(from: readCurrent())
+        let expectedMode = MacAppearanceMode.fromInterfaceStyle(nextRaw)
+
+        guard writeNext(nextRaw) else {
+            return (
+                false,
+                nil,
+                L10n.tr("无法在此 Mac 上切换外观", "Appearance could not be toggled on this Mac", language: language)
+            )
+        }
+
+        postThemeChangedNotification()
+
+        let verifiedMode = MacAppearanceMode.fromInterfaceStyle(readBack())
+        guard verifiedMode == expectedMode else {
+            return (
+                false,
+                nil,
+                L10n.tr("外观写入后校验未通过", "Appearance change could not be verified on this Mac", language: language)
+            )
+        }
+
+        return (true, verifiedMode, verifiedMode.feedbackDetail(in: language))
+    }
+}
+
+public enum MacNightShiftToggle {
+    public struct StatusSnapshot: Equatable, Sendable {
+        public let isAvailable: Bool
+        public let isEnabled: Bool
+
+        public init(isAvailable: Bool, isEnabled: Bool) {
+            self.isAvailable = isAvailable
+            self.isEnabled = isEnabled
+        }
+    }
+
+    public static func parseStatusDictionary(_ dictionary: [String: Any]?) -> StatusSnapshot? {
+        guard let dictionary,
+              let available = (dictionary["BlueReductionAvailable"] as? NSNumber)?.boolValue,
+              let enabled = (dictionary["BlueReductionEnabled"] as? NSNumber)?.boolValue else {
+            return nil
+        }
+        return StatusSnapshot(isAvailable: available, isEnabled: enabled)
+    }
+
+    public static func unavailableDetail(in lang: AppLanguage = .system) -> String {
+        L10n.tr("无法在此 Mac 上切换夜览", "Night Shift could not be toggled on this Mac", language: lang)
+    }
+
+    public static func feedbackDetail(isEnabled: Bool, in lang: AppLanguage = .system) -> String {
+        isEnabled
+            ? L10n.tr("已开启夜览", "Night Shift turned on", language: lang)
+            : L10n.tr("已关闭夜览", "Night Shift turned off", language: lang)
+    }
+
+    public static func perform(
+        language: AppLanguage = .system,
+        isSupported: () -> Bool,
+        readStatus: () -> StatusSnapshot?,
+        writeEnabled: (Bool) -> Bool
+    ) -> (success: Bool, isEnabled: Bool?, detail: String) {
+        guard isSupported(),
+              let current = readStatus(),
+              current.isAvailable else {
+            return (false, nil, unavailableDetail(in: language))
+        }
+
+        let targetEnabled = !current.isEnabled
+        guard writeEnabled(targetEnabled),
+              let verified = readStatus(),
+              verified.isAvailable,
+              verified.isEnabled == targetEnabled else {
+            return (false, nil, unavailableDetail(in: language))
+        }
+
+        return (true, targetEnabled, feedbackDetail(isEnabled: targetEnabled, in: language))
     }
 }
 
@@ -2583,6 +2815,31 @@ public enum WindowCycleKeystrokeRouting {
         case .switchToPreviousWindow: return (CGKeyCode(kVK_ANSI_Grave), [.maskCommand, .maskShift])
         default: return nil
         }
+    }
+}
+
+public enum WorkspaceShortcutKeystrokeRouting {
+    public static func keystroke(for action: SystemQuickAction) -> (virtualKey: CGKeyCode, flags: CGEventFlags)? {
+        switch action {
+        case .switchToNextSpace: return (CGKeyCode(kVK_RightArrow), .maskControl)
+        case .switchToPreviousSpace: return (CGKeyCode(kVK_LeftArrow), .maskControl)
+        case .toggleAppSwitcher: return (CGKeyCode(kVK_Tab), .maskCommand)
+        default: return nil
+        }
+    }
+
+    public static func execute(
+        _ action: SystemQuickAction,
+        ensureAccessibility: () -> Bool,
+        deniedResult: () -> (success: Bool, message: String),
+        postKeyStroke: (CGKeyCode, CGEventFlags) -> Void
+    ) -> (success: Bool, message: String) {
+        guard ensureAccessibility() else { return deniedResult() }
+        guard let stroke = keystroke(for: action) else {
+            return (false, action.title())
+        }
+        postKeyStroke(stroke.virtualKey, stroke.flags)
+        return (true, action.title())
     }
 }
 #endif

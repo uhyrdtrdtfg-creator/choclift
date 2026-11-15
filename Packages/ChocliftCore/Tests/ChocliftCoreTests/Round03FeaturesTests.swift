@@ -220,13 +220,17 @@ final class Round03FeaturesTests: XCTestCase {
         let expectedShortcuts: [SystemQuickAction: String] = [
             .switchToNextWindow: "⌘`",
             .switchToPreviousWindow: "⇧⌘`",
+            .newFrontmostWindow: "⌘N",
             .copySelection: "⌘C",
             .pasteClipboard: "⌘V",
             .cutSelection: "⌘X",
             .undoAction: "⌘Z",
             .redoAction: "⇧⌘Z",
             .lockScreen: "⌃⌘Q",
-            .openEmojiPicker: "⌃⌘Space"
+            .openEmojiPicker: "⌃⌘Space",
+            .switchToNextSpace: "⌃→",
+            .switchToPreviousSpace: "⌃←",
+            .toggleAppSwitcher: "⌘Tab"
         ]
 
         for action in SystemQuickAction.allCases {

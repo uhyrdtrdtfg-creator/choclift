@@ -226,7 +226,7 @@ final class Round05FeaturesTests: XCTestCase {
     func testCompactKeyRowContainsOnlyArrowsEscapeAndSpace() throws {
         XCTAssertEqual(
             CompanionCompactKey.compactRowOrder,
-            [.escape, .leftArrow, .upArrow, .downArrow, .rightArrow, .space]
+            [.escape, .tab, .leftArrow, .upArrow, .downArrow, .rightArrow, .space, .returnKey, .delete]
         )
         XCTAssertEqual(Set(CompanionCompactKey.allCases), Set(CompanionCompactKey.compactRowOrder))
 

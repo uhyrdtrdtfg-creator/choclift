@@ -90,11 +90,19 @@ public struct IOSCompactKeyAndRecentsBar: View {
 
     public var body: some View {
         VStack(spacing: 6) {
-            HStack(spacing: 5) {
-                ForEach(CompanionCompactKey.compactRowOrder) { compactKey in
-                    compactKeyCapButton(for: compactKey)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 5) {
+                    ForEach(CompanionCompactKey.compactRowOrder) { compactKey in
+                        compactKeyCapButton(for: compactKey, flexibleWidth: true)
+                    }
                 }
-
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 5) {
+                        ForEach(CompanionCompactKey.compactRowOrder) { compactKey in
+                            compactKeyCapButton(for: compactKey, flexibleWidth: false)
+                        }
+                    }
+                }
             }
 
             recentTilesButton
@@ -120,7 +128,7 @@ public struct IOSCompactKeyAndRecentsBar: View {
         }
     }
 
-    private func compactKeyCapButton(for compactKey: CompanionCompactKey) -> some View {
+    private func compactKeyCapButton(for compactKey: CompanionCompactKey, flexibleWidth: Bool) -> some View {
         let pressID = "compact-key-\(compactKey.rawValue)"
         let isPressed = (pressedKey == pressID)
         let isWideKey = (compactKey == .space)
@@ -140,10 +148,12 @@ public struct IOSCompactKeyAndRecentsBar: View {
                         .font(ChocType.micro)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
+                        .fixedSize(horizontal: !flexibleWidth, vertical: false)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .frame(minWidth: isWideKey ? 52 : 34, minHeight: 44)
+            .padding(.horizontal, compactKey.isArrowKey ? 0 : 6)
+            .frame(maxWidth: flexibleWidth ? .infinity : nil)
+            .frame(minWidth: isWideKey ? 48 : 34, minHeight: 44)
             .background(
                 isPressed ? palette.tileFillBottom : palette.tileFillTop,
                 in: RoundedRectangle(cornerRadius: 10, style: .continuous)

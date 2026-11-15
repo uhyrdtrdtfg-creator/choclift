@@ -425,8 +425,12 @@ public struct IOSRootTouchBarView: View {
                     ForEach([SystemQuickAction.mediaPlayPause, .mediaPrevious, .mediaNext, .volumeDown, .volumeUp]) { action in
                         toolsRow(action.title(in: lang), action.sfSymbol) { client.performQuickAction(action) }
                     }
+                    toolsRow(L10n.tr("快退 15 秒", "Back 15s", language: lang), "gobackward.15") { _ = client.seekNowPlayingBackward15() }
+                    toolsRow(L10n.tr("快进 15 秒", "Forward 15s", language: lang), "goforward.15") { _ = client.seekNowPlayingForward15() }
                     toolsRow(L10n.tr("降低亮度", "Brightness Down", language: lang), "sun.min") { client.setControlLevel(kind: .brightness, level: client.controlStripState.brightness - 0.1) }
                     toolsRow(L10n.tr("提高亮度", "Brightness Up", language: lang), "sun.max") { client.setControlLevel(kind: .brightness, level: client.controlStripState.brightness + 0.1) }
+                    toolsRow(SystemQuickAction.toggleAppearance.title(in: lang), SystemQuickAction.toggleAppearance.sfSymbol) { client.performQuickAction(.toggleAppearance) }
+                    toolsRow(SystemQuickAction.toggleNightShift.title(in: lang), SystemQuickAction.toggleNightShift.sfSymbol) { client.performQuickAction(.toggleNightShift) }
                     toolsRow(L10n.tr("麦克风静音", "Toggle Microphone Mute", language: lang), "mic.slash") { client.toggleMicMute() }
                 }
                 toolsSection(L10n.tr("日历与截屏", "Calendar & Screenshots", language: lang)) {
@@ -439,15 +443,41 @@ public struct IOSRootTouchBarView: View {
                     toolsRow(client.isLockMacScreenArmed() ? L10n.tr("再点一次锁定", "Tap Again to Lock", language: lang) : L10n.tr("锁定屏幕", "Lock Screen", language: lang), "lock") { _ = client.tapLockMacScreen() }
                 }
                 toolsSection(L10n.tr("桌面与窗口", "Desktop & Windows", language: lang)) {
+                    toolsRow(SystemQuickAction.closeFrontmostWindow.title(in: lang), SystemQuickAction.closeFrontmostWindow.sfSymbol) {
+                        client.performQuickAction(.closeFrontmostWindow)
+                    }
+                    toolsRow(SystemQuickAction.newFrontmostWindow.title(in: lang), SystemQuickAction.newFrontmostWindow.sfSymbol) {
+                        client.performQuickAction(.newFrontmostWindow)
+                    }
                     toolsRow(SystemQuickAction.quitApp.title(in: lang), SystemQuickAction.quitApp.sfSymbol) {
                         client.tapQuitFrontmostApp()
                     }
                     toolsRow(L10n.tr("显示桌面", "Show Desktop", language: lang), "macwindow") { client.performQuickAction(.showDesktop) }
+                    ForEach([
+                        SystemQuickAction.switchToPreviousSpace,
+                        .switchToNextSpace,
+                        .toggleAppSwitcher,
+                        .toggleLaunchpad,
+                        .toggleNotificationCenter
+                    ]) { action in
+                        toolsRow(action.title(in: lang), action.sfSymbol) { client.performQuickAction(action) }
+                    }
                     toolsRow(L10n.tr("桌面图标", "Toggle Desktop Icons", language: lang), "square.grid.2x2") { client.toggleFinderDesktopIcons() }
                     toolsRow(L10n.tr("隐藏其他窗口", "Hide Other Windows", language: lang), "rectangle.on.rectangle") { client.hideOtherWindows() }
+                    ForEach([
+                        SystemQuickAction.snapWindowTopLeft,
+                        .snapWindowTopRight,
+                        .snapWindowBottomLeft,
+                        .snapWindowBottomRight
+                    ]) { action in
+                        toolsRow(action.title(in: lang), action.sfSymbol) { client.performQuickAction(action) }
+                    }
                     toolsRow(L10n.tr("撤销窗口移动", "Undo Window Move", language: lang), "arrow.uturn.backward") { client.undoLastWindowMove() }
                 }
                 toolsSection(L10n.tr("编辑与剪贴板", "Editing & Clipboard", language: lang)) {
+                    toolsRow(SystemQuickAction.toggleDictation.title(in: lang), SystemQuickAction.toggleDictation.sfSymbol) {
+                        client.performQuickAction(.toggleDictation)
+                    }
                     toolsRow(L10n.tr("粘贴 Mac 剪贴板", "Paste Mac Clipboard", language: lang), "doc.on.clipboard") { client.pasteMacClipboard() }
                     ForEach(CompanionCompactKey.allCases) { key in
                         toolsRow(key.title(in: lang), key.sfSymbol) { client.sendCompactKey(key) }

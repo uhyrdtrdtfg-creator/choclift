@@ -63,6 +63,9 @@ final class Round01InteractionTests: XCTestCase {
         XCTAssertTrue(BarItem(kind: .systemAction(action: .lockScreen)).requiresDestructiveConfirmation(in: profile))
         XCTAssertFalse(BarItem(kind: .systemAction(action: .quitApp)).requiresDestructiveConfirmation(in: profile))
         XCTAssertFalse(BarItem(kind: .systemAction(action: .maximizeWindow)).requiresDestructiveConfirmation(in: profile))
+        XCTAssertFalse(BarItem(kind: .systemAction(action: .switchToNextSpace)).requiresDestructiveConfirmation(in: profile))
+        XCTAssertFalse(BarItem(kind: .systemAction(action: .switchToPreviousSpace)).requiresDestructiveConfirmation(in: profile))
+        XCTAssertFalse(BarItem(kind: .systemAction(action: .toggleAppSwitcher)).requiresDestructiveConfirmation(in: profile))
         XCTAssertFalse(
             BarItem(kind: .macApp(bundleIdentifier: "com.apple.Safari", appName: "Safari"))
                 .requiresDestructiveConfirmation(in: profile)
@@ -72,6 +75,24 @@ final class Round01InteractionTests: XCTestCase {
         XCTAssertTrue(profile.makeBarItem(for: lockFlow).requiresDestructiveConfirmation(in: profile))
         XCTAssertFalse(profile.makeBarItem(for: quitFlow).requiresDestructiveConfirmation(in: profile))
         XCTAssertFalse(profile.makeBarItem(for: disabledLockFlow).requiresDestructiveConfirmation(in: profile))
+
+        let quarterActions: [SystemQuickAction] = [
+            .snapWindowTopLeft,
+            .snapWindowTopRight,
+            .snapWindowBottomLeft,
+            .snapWindowBottomRight
+        ]
+        XCTAssertTrue(SystemQuickAction.lockScreen.requiresDestructiveConfirmation)
+        for quarter in quarterActions {
+            XCTAssertFalse(quarter.requiresDestructiveConfirmation)
+            XCTAssertFalse(BarItem(kind: .systemAction(action: quarter)).requiresDestructiveConfirmation(in: profile))
+        }
+        let quarterFlow = ActionFlow(
+            name: "Quarter Grid",
+            emoji: "🪟",
+            steps: quarterActions.map { ActionFlowStep(kind: .systemAction(action: $0)) }
+        )
+        XCTAssertFalse(quarterFlow.requiresDestructiveConfirmation)
     }
 
     func testDestructiveConfirmGateRequiresSecondTapWithinThreeSeconds() {
