@@ -969,10 +969,38 @@ public struct IOSFlowEditorSheet: View {
             Divider()
 
             Button {
+                let step = ActionFlowStep(
+                    kind: .quitApp(
+                        bundleIdentifier: followBundle ?? "",
+                        appName: followName ?? "",
+                        appPath: nil
+                    )
+                )
+                stepSession = IOSStepEditSession(step: step, defaultFollowBundleID: followBundle)
+            } label: {
+                Label(L10n.tr("退出 App…", "Quit App…", language: lang), systemImage: "xmark.octagon.fill")
+            }
+
+            Button {
                 let step = ActionFlowStep(kind: .openWebsite(url: "", title: nil, switchExistingTab: true))
                 stepSession = IOSStepEditSession(step: step, defaultFollowBundleID: followBundle)
             } label: {
-                Label(L10n.tr("打开网页…", "Open Website…", language: lang), systemImage: "globe")
+                Label(L10n.tr("打开浏览器到站点…", "Open Browser to a Site…", language: lang), systemImage: "globe")
+            }
+
+            Button {
+                let opener = client.macCatalogApps.first { $0.bundleIdentifier == "com.apple.finder" } ?? client.macCatalogApps.first
+                let step = ActionFlowStep(
+                    kind: .openFolderInApp(
+                        folderPath: "",
+                        bundleIdentifier: opener?.bundleIdentifier ?? "com.apple.finder",
+                        appName: opener?.appName ?? "Finder",
+                        appPath: opener?.appPath
+                    )
+                )
+                stepSession = IOSStepEditSession(step: step, defaultFollowBundleID: followBundle)
+            } label: {
+                Label(L10n.tr("用应用打开工作目录…", "Open Working Directory in App…", language: lang), systemImage: "folder.badge.plus")
             }
 
             Button {
@@ -1038,6 +1066,8 @@ public struct IOSFlowEditorSheet: View {
                 return name
             case .waitForAppFrontmost(_, let name, _):
                 if let name, !name.isEmpty { return name }
+            case .quitApp(_, let name, _), .openFolderInApp(_, _, let name, _):
+                if !name.isEmpty { return name }
             default:
                 continue
             }
@@ -1061,6 +1091,8 @@ public struct IOSFlowStepEditorSheet: View {
         case systemAction
         case delay
         case openWebsite
+        case quitApp
+        case openFolder
         case runShortcut
         case insertSnippet
 
@@ -1077,7 +1109,11 @@ public struct IOSFlowStepEditorSheet: View {
             case .delay:
                 return L10n.tr("延时", "Delay", language: lang)
             case .openWebsite:
-                return L10n.tr("打开网页", "Open Website", language: lang)
+                return L10n.tr("打开站点", "Open Site", language: lang)
+            case .quitApp:
+                return L10n.tr("退出 App", "Quit App", language: lang)
+            case .openFolder:
+                return L10n.tr("打开工作目录", "Open Folder", language: lang)
             case .runShortcut:
                 return L10n.tr("运行快捷指令", "Run Shortcut", language: lang)
             case .insertSnippet:
@@ -1097,6 +1133,10 @@ public struct IOSFlowStepEditorSheet: View {
                 return "timer"
             case .openWebsite:
                 return "globe"
+            case .quitApp:
+                return "xmark.octagon.fill"
+            case .openFolder:
+                return "folder.badge.plus"
             case .runShortcut:
                 return "sparkles.rectangle.stack"
             case .insertSnippet:
@@ -1128,6 +1168,11 @@ public struct IOSFlowStepEditorSheet: View {
     @State private var websiteURL: String = ""
     @State private var websiteTitle: String = ""
     @State private var websiteSwitchTab: Bool = true
+    @State private var useSpecificBrowser: Bool = false
+    @State private var browserBundleID: String = ""
+    @State private var browserAppName: String = ""
+
+    @State private var folderPath: String = ""
 
     @State private var shortcutSearch: String = ""
     @State private var shortcutName: String = ""
@@ -1213,11 +1258,28 @@ public struct IOSFlowStepEditorSheet: View {
             _choice = State(initialValue: .delay)
             _delaySeconds = State(initialValue: ActionFlowStep.clampDelay(secs))
 
-        case .openWebsite(let url, let title, let switchExistingTab):
+        case .openWebsite(let url, let title, let switchExistingTab, let browserBundle, let browserName):
             _choice = State(initialValue: .openWebsite)
             _websiteURL = State(initialValue: url)
             _websiteTitle = State(initialValue: title ?? "")
             _websiteSwitchTab = State(initialValue: switchExistingTab)
+            let cleanBrowser = browserBundle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            _useSpecificBrowser = State(initialValue: !cleanBrowser.isEmpty)
+            _browserBundleID = State(initialValue: cleanBrowser)
+            _browserAppName = State(initialValue: browserName ?? "")
+
+        case .quitApp(let bid, let name, let path):
+            _choice = State(initialValue: .quitApp)
+            _bundleID = State(initialValue: bid)
+            _appName = State(initialValue: name)
+            _appPath = State(initialValue: path)
+
+        case .openFolderInApp(let path, let bid, let name, let appFilePath):
+            _choice = State(initialValue: .openFolder)
+            _folderPath = State(initialValue: path)
+            _bundleID = State(initialValue: bid)
+            _appName = State(initialValue: name)
+            _appPath = State(initialValue: appFilePath)
 
         case .runShortcut(let name):
             _choice = State(initialValue: .runShortcut)
@@ -1265,6 +1327,10 @@ public struct IOSFlowStepEditorSheet: View {
                     delaySections
                 case .openWebsite:
                     websiteSections
+                case .quitApp:
+                    quitAppSections
+                case .openFolder:
+                    openFolderSections
                 case .runShortcut:
                     shortcutSections
                 case .insertSnippet:
@@ -1327,7 +1393,17 @@ public struct IOSFlowStepEditorSheet: View {
         case .delay:
             return delaySeconds >= ActionFlowStep.minDelaySeconds
         case .openWebsite:
-            return ActionFlowStep.isValidWebsiteURL(websiteURL)
+            guard ActionFlowStep.isValidWebsiteURL(websiteURL) else { return false }
+            if useSpecificBrowser {
+                return !browserBundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            return true
+        case .quitApp:
+            let bid = bundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !bid.isEmpty && !ActionFlowStep.isChocliftBundleIdentifier(bid)
+        case .openFolder:
+            return ActionFlowStep.isValidWorkingDirectoryPath(folderPath)
+                && !bundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .runShortcut:
             return !shortcutName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .insertSnippet:
@@ -1514,12 +1590,38 @@ public struct IOSFlowStepEditorSheet: View {
             TextField(L10n.tr("显示标题（可选）", "Display Title (Optional)", language: lang), text: $websiteTitle)
 
             Toggle(
+                L10n.tr("指定浏览器", "Choose a Browser", language: lang),
+                isOn: $useSpecificBrowser
+            )
+            .tint(palette.accent)
+
+            Toggle(
                 L10n.tr("智能切换到已打开的浏览器标签页", "Switch to Already-Open Browser Tab", language: lang),
                 isOn: $websiteSwitchTab
             )
             .tint(palette.accent)
         }
-        .listRowBackground(palette.barSurface)
+
+        if useSpecificBrowser {
+            Section(L10n.tr("浏览器", "Browser", language: lang)) {
+                ForEach(browserCandidates.prefix(12), id: \.bundleID) { row in
+                    Button {
+                        browserBundleID = row.bundleID
+                        browserAppName = row.appName
+                    } label: {
+                        HStack {
+                            Text(row.appName).foregroundStyle(palette.primaryText)
+                            Spacer()
+                            if browserBundleID.caseInsensitiveCompare(row.bundleID) == .orderedSame {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(palette.accent)
+                            }
+                        }
+                    }
+                }
+            }
+            .listRowBackground(palette.barSurface)
+        }
 
         Section(L10n.tr("常用网页预设", "Quick Website Presets", language: lang)) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -1547,6 +1649,76 @@ public struct IOSFlowStepEditorSheet: View {
             }
         }
         .listRowBackground(palette.barSurface)
+    }
+
+    private var browserCandidates: [(bundleID: String, appName: String, appPath: String?, icon: Data?)] {
+        let known = [
+            "com.apple.Safari",
+            "com.google.Chrome",
+            "company.thebrowser.Browser",
+            "com.brave.Browser",
+            "com.microsoft.edgemac",
+            "org.mozilla.firefox"
+        ]
+        let matched = availableApps.filter { row in
+            known.contains { $0.caseInsensitiveCompare(row.bundleID) == .orderedSame }
+        }
+        return matched.isEmpty ? availableApps : matched
+    }
+
+    @ViewBuilder
+    private var quitAppSections: some View {
+        Section(L10n.tr("要退出的 App", "App to Quit", language: lang)) {
+            Text(L10n.tr("退出 Mac 上选中的其它 App，不会退出 Choclift。应用没在运行时这一步会失败。", "Quits the selected app on the Mac. This never quits Choclift. The step fails if the app is not running.", language: lang))
+                .font(ChocType.caption)
+                .foregroundStyle(palette.secondaryText)
+            TextField("com.apple.Safari", text: $bundleID)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            TextField(L10n.tr("应用名称", "App Name", language: lang), text: $appName)
+        }
+        .listRowBackground(palette.barSurface)
+        appPickSection
+    }
+
+    @ViewBuilder
+    private var openFolderSections: some View {
+        Section(L10n.tr("工作目录", "Working Directory", language: lang)) {
+            TextField("/Users/me/Projects/app", text: $folderPath)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            Text(L10n.tr("填写 Mac 上的绝对目录。执行时会用下面选的应用打开这个文件夹。", "Enter an absolute folder path on the Mac. The selected app opens that folder.", language: lang))
+                .font(ChocType.caption)
+                .foregroundStyle(palette.secondaryText)
+        }
+        .listRowBackground(palette.barSurface)
+        appPickSection
+    }
+
+    @ViewBuilder
+    private var appPickSection: some View {
+        if !availableApps.isEmpty {
+            Section(L10n.tr("从已同步的 Mac 应用中选取", "Pick from Mac Apps", language: lang)) {
+                TextField(L10n.tr("搜索应用…", "Search apps…", language: lang), text: $searchText)
+                ForEach(availableApps.prefix(40), id: \.bundleID) { row in
+                    Button {
+                        bundleID = row.bundleID
+                        appName = row.appName
+                        appPath = row.appPath
+                    } label: {
+                        HStack {
+                            Text(row.appName).foregroundStyle(palette.primaryText)
+                            Spacer()
+                            if bundleID.caseInsensitiveCompare(row.bundleID) == .orderedSame {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(palette.accent)
+                            }
+                        }
+                    }
+                }
+            }
+            .listRowBackground(palette.barSurface)
+        }
     }
 
     @ViewBuilder
@@ -1741,12 +1913,41 @@ public struct IOSFlowStepEditorSheet: View {
             guard ActionFlowStep.isValidWebsiteURL(websiteURL) else { return nil }
             let cleanURL = ActionFlowStep.normalizedWebsiteURL(websiteURL)
             let cleanTitle = websiteTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanBrowser = browserBundleID.trimmingCharacters(in: .whitespacesAndNewlines)
+            let cleanBrowserName = browserAppName.trimmingCharacters(in: .whitespacesAndNewlines)
             return ActionFlowStep(
                 id: stepID,
                 kind: .openWebsite(
                     url: cleanURL,
                     title: cleanTitle.isEmpty ? nil : cleanTitle,
-                    switchExistingTab: websiteSwitchTab
+                    switchExistingTab: websiteSwitchTab,
+                    browserBundleIdentifier: useSpecificBrowser && !cleanBrowser.isEmpty ? cleanBrowser : nil,
+                    browserAppName: useSpecificBrowser && !cleanBrowserName.isEmpty ? cleanBrowserName : nil
+                ),
+                isEnabled: stepEnabled
+            )
+
+        case .quitApp:
+            guard !cleanBid.isEmpty, !ActionFlowStep.isChocliftBundleIdentifier(cleanBid) else { return nil }
+            return ActionFlowStep(
+                id: stepID,
+                kind: .quitApp(
+                    bundleIdentifier: cleanBid,
+                    appName: cleanName.isEmpty ? cleanBid : cleanName,
+                    appPath: appPath
+                ),
+                isEnabled: stepEnabled
+            )
+
+        case .openFolder:
+            guard ActionFlowStep.isValidWorkingDirectoryPath(folderPath), !cleanBid.isEmpty else { return nil }
+            return ActionFlowStep(
+                id: stepID,
+                kind: .openFolderInApp(
+                    folderPath: ActionFlowStep.normalizedWorkingDirectoryPath(folderPath),
+                    bundleIdentifier: cleanBid,
+                    appName: cleanName.isEmpty ? cleanBid : cleanName,
+                    appPath: appPath
                 ),
                 isEnabled: stepEnabled
             )

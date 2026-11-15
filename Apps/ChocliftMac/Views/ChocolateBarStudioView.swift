@@ -12,6 +12,7 @@ private struct EditingSlotTarget: Identifiable {
 public struct ChocolateBarStudioView: View {
     @ObservedObject var coordinator: MacAppCoordinator
     @State private var clearGate = DestructiveActionConfirmGate()
+    @State private var lockGate = DestructiveActionConfirmGate()
     @State private var selectedSlotIndex: Int?
     @State private var volumePreview: Double?
     @State private var editingSlot: EditingSlotTarget?
@@ -550,8 +551,8 @@ public struct ChocolateBarStudioView: View {
                 Text(L10n.tr("Mac 控制", "Mac Controls", language: lang))
                     .font(ChocType.caption).foregroundStyle(palette.secondaryText)
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 76, maximum: 96), spacing: 16)], spacing: 16) {
-                    ForEach(SystemQuickAction.allCases.filter { !$0.requiresDestructiveConfirmation }) { action in
-                        Button { _ = coordinator.performLocalQuickAction(action, triggeredBy: "Mac Studio") } label: {
+                    ForEach(SystemQuickAction.allCases) { action in
+                        Button { tapStudioQuickAction(action) } label: {
                             VStack(spacing: 2) {
                                 Image(systemName: action.sfSymbol).font(.system(size: 32))
                                     .foregroundStyle(palette.accent).frame(height: 64)
@@ -566,6 +567,29 @@ public struct ChocolateBarStudioView: View {
             .padding(.vertical, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func tapStudioQuickAction(_ action: SystemQuickAction) {
+        guard action.requiresDestructiveConfirmation else {
+            lockGate.disarm()
+            _ = coordinator.performLocalQuickAction(action, triggeredBy: "Mac Studio")
+            return
+        }
+        let decision = lockGate.registerTap(
+            targetID: action.rawValue,
+            isDestructive: true,
+            at: ProcessInfo.processInfo.systemUptime
+        )
+        if case .requireSecondTap = decision {
+            let delay = CompanionInteractionPolicy.destructiveConfirmWindowSeconds + 0.05
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                lockGate.expireIfNeeded(at: ProcessInfo.processInfo.systemUptime)
+            }
+            coordinator.flashBanner(L10n.tr("3 秒内再点一次确认锁定屏幕", "Tap again within 3s to lock the screen", language: lang))
+            return
+        }
+        _ = coordinator.performLocalQuickAction(action, triggeredBy: "Mac Studio")
     }
 
     private func workspacePageGrid(_ page: BarPage) -> some View {

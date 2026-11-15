@@ -173,7 +173,7 @@ final class Round03FeaturesTests: XCTestCase {
         // 3. Editing the original slot updates what the reference resolves to automatically
         let updatedOriginal = BarItem(
             id: originalShortcut.id,
-            kind: .systemAction(action: .quitApp)
+            kind: .systemAction(action: .lockScreen)
         )
         profile.pages[0].slots[2] = updatedOriginal
         XCTAssertEqual(profile.resolveBarItem(refItem, from: refOrigin).resolvedItem, updatedOriginal)

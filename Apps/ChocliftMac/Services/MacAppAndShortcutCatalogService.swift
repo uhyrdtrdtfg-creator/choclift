@@ -341,7 +341,11 @@ public final class MacAppAndShortcutCatalogService {
 
     // MARK: - Website Bookmarks + Smart Existing Tab Switcher
 
-    public func openWebsite(rawURL: String, switchExistingTab: Bool) async -> (success: Bool, message: String) {
+    public func openWebsite(
+        rawURL: String,
+        switchExistingTab: Bool,
+        browserBundleIdentifier: String? = nil
+    ) async -> (success: Bool, message: String) {
         let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != "https://", trimmed != "http://" else {
             return (false, L10n.tr("无效的网址：\(rawURL)", "Invalid URL: \(rawURL)"))
@@ -355,16 +359,37 @@ public final class MacAppAndShortcutCatalogService {
             return (false, L10n.tr("无效的网址：\(rawURL)", "Invalid URL: \(rawURL)"))
         }
 
+        let preferredBrowser = browserBundleIdentifier?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let browserBundle = (preferredBrowser?.isEmpty == false) ? preferredBrowser : nil
+
         if switchExistingTab {
             let loweredHost = host.lowercased()
             let cleanedHost = loweredHost.hasPrefix("www.") ? String(loweredHost.dropFirst(4)) : loweredHost
             let runningBundleIDs = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
             let switched = await Task.detached(priority: .userInitiated) {
-                Self.trySwitchExistingBrowserTab(matchingHost: cleanedHost, runningBundleIDs: runningBundleIDs)
+                Self.trySwitchExistingBrowserTab(
+                    matchingHost: cleanedHost,
+                    runningBundleIDs: runningBundleIDs,
+                    preferredBundleIdentifier: browserBundle
+                )
             }.value
 
             if switched {
                 return (true, L10n.tr("已切换到已打开的网页标签页 (\(cleanedHost))", "Switched to open browser tab (\(cleanedHost))"))
+            }
+        }
+
+        if let browserBundle,
+           let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: browserBundle) {
+            let config = NSWorkspace.OpenConfiguration()
+            config.activates = true
+            do {
+                _ = try await NSWorkspace.shared.open([targetURL], withApplicationAt: appURL, configuration: config)
+                let name = FileManager.default.displayName(atPath: appURL.path)
+                return (true, L10n.tr("已用 \(name) 打开 \(host)", "Opened \(host) in \(name)"))
+            } catch {
+                return (false, error.localizedDescription)
             }
         }
 
@@ -374,7 +399,92 @@ public final class MacAppAndShortcutCatalogService {
             : (false, L10n.tr("无法打开网址：\(normalizedString)", "Failed to open URL: \(normalizedString)"))
     }
 
-    nonisolated private static func trySwitchExistingBrowserTab(matchingHost: String, runningBundleIDs: Set<String>) -> Bool {
+    public func quitRunningApp(
+        bundleIdentifier: String,
+        appPath: String?
+    ) -> (success: Bool, message: String) {
+        let bundleID = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !bundleID.isEmpty else {
+            return (false, L10n.tr("未选择要退出的应用", "No app selected to quit"))
+        }
+        guard !ActionFlowStep.isChocliftBundleIdentifier(bundleID) else {
+            return (false, L10n.tr("不能通过动作流退出 Choclift", "Action flows cannot quit Choclift"))
+        }
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let matches = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            .filter { !$0.isTerminated && $0.processIdentifier != myPID }
+        let fallback = NSWorkspace.shared.runningApplications.filter {
+            !$0.isTerminated &&
+            $0.processIdentifier != myPID &&
+            $0.bundleIdentifier?.caseInsensitiveCompare(bundleID) == .orderedSame
+        }
+        let targets = matches.isEmpty ? fallback : matches
+        guard !targets.isEmpty else {
+            let label = targets.first?.localizedName ?? bundleID
+            _ = appPath
+            return (false, L10n.tr("\(label) 当前没有在运行", "\(label) is not running"))
+        }
+        var quitCount = 0
+        var name = bundleID
+        for app in targets {
+            name = app.localizedName ?? name
+            if app.terminate() {
+                quitCount += 1
+            }
+        }
+        guard quitCount > 0 else {
+            return (false, L10n.tr("无法退出 \(name)", "Could not quit \(name)"))
+        }
+        return (true, L10n.tr("已退出 \(name)", "Quit \(name)"))
+    }
+
+    public func openFolderInApp(
+        folderPath: String,
+        bundleIdentifier: String,
+        appPath: String?
+    ) async -> (success: Bool, message: String) {
+        let folder = ActionFlowStep.normalizedWorkingDirectoryPath(folderPath)
+        guard ActionFlowStep.isValidWorkingDirectoryPath(folder) else {
+            return (false, L10n.tr("工作目录无效", "Working directory is invalid"))
+        }
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder, isDirectory: &isDirectory), isDirectory.boolValue else {
+            return (false, L10n.tr("找不到工作目录：\(folder)", "Working directory not found: \(folder)"))
+        }
+        let bundleID = bundleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !bundleID.isEmpty else {
+            return (false, L10n.tr("未选择用来打开目录的应用", "No app selected to open the folder"))
+        }
+        let appURL: URL? = {
+            if let appPath, FileManager.default.fileExists(atPath: appPath) {
+                return URL(fileURLWithPath: appPath)
+            }
+            if let cached = appPathByBundleID[bundleID], FileManager.default.fileExists(atPath: cached) {
+                return URL(fileURLWithPath: cached)
+            }
+            return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID)
+        }()
+        guard let appURL else {
+            return (false, L10n.tr("未在 Mac 上找到该应用 (\(bundleID))", "App not found on Mac (\(bundleID))"))
+        }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        let folderURL = URL(fileURLWithPath: folder, isDirectory: true)
+        do {
+            _ = try await NSWorkspace.shared.open([folderURL], withApplicationAt: appURL, configuration: config)
+            let appLabel = FileManager.default.displayName(atPath: appURL.path)
+            let folderLabel = folderURL.lastPathComponent
+            return (true, L10n.tr("已用 \(appLabel) 打开 \(folderLabel)", "Opened \(folderLabel) in \(appLabel)"))
+        } catch {
+            return (false, error.localizedDescription)
+        }
+    }
+
+    nonisolated private static func trySwitchExistingBrowserTab(
+        matchingHost: String,
+        runningBundleIDs: Set<String>,
+        preferredBundleIdentifier: String? = nil
+    ) -> Bool {
         let escapedHost = matchingHost.replacingOccurrences(of: "\"", with: "")
         guard !escapedHost.isEmpty else { return false }
 
@@ -386,7 +496,13 @@ public final class MacAppAndShortcutCatalogService {
             ("com.microsoft.edgemac", "Microsoft Edge")
         ]
 
-        for browser in chromiumCandidates where runningBundleIDs.contains(browser.bundleID) {
+        let preferred = preferredBundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let orderedChromium: [(bundleID: String, appName: String)] = {
+            guard let preferred, !preferred.isEmpty else { return chromiumCandidates }
+            return chromiumCandidates.filter { $0.bundleID.caseInsensitiveCompare(preferred) == .orderedSame }
+        }()
+
+        for browser in orderedChromium where runningBundleIDs.contains(browser.bundleID) {
             let scriptSource = """
             tell application "\(browser.appName)"
                 set winIdx to 1
@@ -411,8 +527,9 @@ public final class MacAppAndShortcutCatalogService {
             }
         }
 
-        // Safari
-        if runningBundleIDs.contains("com.apple.Safari") {
+        let preferSafari = preferredBundleIdentifier?.caseInsensitiveCompare("com.apple.Safari") == .orderedSame
+        let allowSafari = preferredBundleIdentifier == nil || preferSafari
+        if allowSafari, runningBundleIDs.contains("com.apple.Safari") {
             let safariScript = """
             tell application "Safari"
                 repeat with w in windows

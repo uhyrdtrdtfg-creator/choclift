@@ -152,7 +152,9 @@ public enum ActionFlowSystemPromptBuilder {
         "system_action",
         "open_website",
         "run_shortcut",
-        "insert_snippet"
+        "insert_snippet",
+        "quit_app",
+        "open_folder_in_app"
     ]
 
     public static func makeSystemPrompt(context: ActionFlowProposalCatalogContext = .init()) -> String {
@@ -170,16 +172,19 @@ public enum ActionFlowSystemPromptBuilder {
             "  \"steps\": [ <non-empty ordered array of step objects> ]",
             "}",
             "",
-            "Allowed step \"type\" values — use ONLY these 7 existing ActionFlowStepKind cases and NEVER invent any other step type:",
+            "Allowed step \"type\" values — use ONLY these 9 existing ActionFlowStepKind cases and NEVER invent any other step type:",
             "1. \"launch_or_activate_app\" (launch app): {\"type\": \"launch_or_activate_app\", \"bundleIdentifier\": \"<macOS bundle ID>\", \"appName\": \"<app display name>\"}",
             "2. \"wait_for_app_frontmost\" (wait until frontmost): {\"type\": \"wait_for_app_frontmost\", \"bundleIdentifier\": \"<bundle ID or empty string to follow previous app>\", \"appName\": \"<optional app name>\", \"timeoutSeconds\": 3.0}",
             "3. \"delay\" (delay): {\"type\": \"delay\", \"seconds\": <number from 0.05 to 10.0>}",
             "4. \"system_action\" (system action): {\"type\": \"system_action\", \"action\": \"<one of: \(quickActionTags)>\", \"targetBundleIdentifier\": \"<optional bundle ID>\", \"targetAppName\": \"<optional app name>\"}",
-            "5. \"open_website\" (open website): {\"type\": \"open_website\", \"url\": \"<https://...>\", \"title\": \"<optional title>\", \"switchExistingTab\": true}",
+            "5. \"open_website\" (open a site in a browser): {\"type\": \"open_website\", \"url\": \"<https://...>\", \"title\": \"<optional title>\", \"switchExistingTab\": true, \"browserBundleIdentifier\": \"<optional browser bundle ID; omit to use the default browser>\", \"browserAppName\": \"<optional browser name>\"}",
             "6. \"run_shortcut\" (run shortcut): {\"type\": \"run_shortcut\", \"shortcutName\": \"<exact macOS Shortcut name>\"}",
             "7. \"insert_snippet\" (insert snippet): {\"type\": \"insert_snippet\", \"snippetID\": \"<UUID string>\", \"titleSnapshot\": \"<optional snippet title>\"}",
+            "8. \"quit_app\" (quit another app, never Choclift): {\"type\": \"quit_app\", \"bundleIdentifier\": \"<macOS bundle ID of the app to quit>\", \"appName\": \"<app display name>\"}",
+            "9. \"open_folder_in_app\" (open a working directory in an IDE or other folder-capable app): {\"type\": \"open_folder_in_app\", \"folderPath\": \"<absolute local directory>\", \"bundleIdentifier\": \"<app bundle ID>\", \"appName\": \"<app display name>\"}",
             "",
-            "Common macOS bundle identifiers: Safari=com.apple.Safari, Finder=com.apple.finder, Notes=com.apple.Notes, Terminal=com.apple.Terminal, Xcode=com.apple.dt.Xcode, Mail=com.apple.mail, Calendar=com.apple.iCal, Reminders=com.apple.reminders, Music=com.apple.Music, Messages=com.apple.MobileSMS, Preview=com.apple.Preview, Calculator=com.apple.calculator, System Settings=com.apple.systempreferences."
+            "Common macOS bundle identifiers: Safari=com.apple.Safari, Chrome=com.google.Chrome, Arc=company.thebrowser.Browser, Finder=com.apple.finder, Notes=com.apple.Notes, Terminal=com.apple.Terminal, Xcode=com.apple.dt.Xcode, Visual Studio Code=com.microsoft.VSCode, Cursor=com.todesktop.230313mzl4w4u92, Mail=com.apple.mail, Calendar=com.apple.iCal, Reminders=com.apple.reminders, Music=com.apple.Music, Messages=com.apple.MobileSMS, Preview=com.apple.Preview, Calculator=com.apple.calculator, System Settings=com.apple.systempreferences.",
+            "Never emit quit_app for com.choclift.mac. open_folder_in_app folderPath must be an absolute local directory such as /Users/name/Projects/app. Omit browserBundleIdentifier when the user did not name a browser."
         ]
 
         if !context.installedApps.isEmpty {
@@ -219,6 +224,13 @@ public enum ActionFlowDraftDecoder {
         "notes": ("com.apple.Notes", "Notes"),
         "terminal": ("com.apple.Terminal", "Terminal"),
         "xcode": ("com.apple.dt.Xcode", "Xcode"),
+        "visual studio code": ("com.microsoft.VSCode", "Visual Studio Code"),
+        "vscode": ("com.microsoft.VSCode", "Visual Studio Code"),
+        "code": ("com.microsoft.VSCode", "Visual Studio Code"),
+        "cursor": ("com.todesktop.230313mzl4w4u92", "Cursor"),
+        "chrome": ("com.google.Chrome", "Google Chrome"),
+        "google chrome": ("com.google.Chrome", "Google Chrome"),
+        "arc": ("company.thebrowser.Browser", "Arc"),
         "mail": ("com.apple.mail", "Mail"),
         "calendar": ("com.apple.iCal", "Calendar"),
         "reminders": ("com.apple.reminders", "Reminders"),
@@ -476,12 +488,16 @@ public enum ActionFlowDraftDecoder {
             let normalizedURL = ActionFlowStep.normalizedWebsiteURL(rawURL)
             let rawTitle = (kindDict["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             let switchTab = (kindDict["switchExistingTab"] as? Bool) ?? true
+            let rawBrowser = (kindDict["browserBundleIdentifier"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let rawBrowserName = (kindDict["browserAppName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
             return ActionFlowStep(
                 id: stepID,
                 kind: .openWebsite(
                     url: normalizedURL,
                     title: (rawTitle?.isEmpty == false) ? rawTitle : nil,
-                    switchExistingTab: switchTab
+                    switchExistingTab: switchTab,
+                    browserBundleIdentifier: (rawBrowser?.isEmpty == false) ? rawBrowser : nil,
+                    browserAppName: (rawBrowserName?.isEmpty == false) ? rawBrowserName : nil
                 ),
                 isEnabled: isEnabled
             )
@@ -531,9 +547,96 @@ public enum ActionFlowDraftDecoder {
                 isEnabled: isEnabled
             )
 
+        case "quit_app":
+            let resolved = try resolveNamedApp(
+                kindDict: kindDict,
+                index: index,
+                context: context,
+                typeName: "quit_app"
+            )
+            guard !ActionFlowStep.isChocliftBundleIdentifier(resolved.bundleID) else {
+                throw ActionFlowProposalError.invalidStep(
+                    index: index,
+                    reason: "quit_app cannot target Choclift"
+                )
+            }
+            return ActionFlowStep(
+                id: stepID,
+                kind: .quitApp(
+                    bundleIdentifier: resolved.bundleID,
+                    appName: resolved.appName,
+                    appPath: resolved.appPath
+                ),
+                isEnabled: isEnabled
+            )
+
+        case "open_folder_in_app":
+            let rawFolder = (kindDict["folderPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard ActionFlowStep.isValidWorkingDirectoryPath(rawFolder) else {
+                throw ActionFlowProposalError.invalidStep(
+                    index: index,
+                    reason: "open_folder_in_app requires an absolute local folderPath"
+                )
+            }
+            let resolved = try resolveNamedApp(
+                kindDict: kindDict,
+                index: index,
+                context: context,
+                typeName: "open_folder_in_app"
+            )
+            return ActionFlowStep(
+                id: stepID,
+                kind: .openFolderInApp(
+                    folderPath: ActionFlowStep.normalizedWorkingDirectoryPath(rawFolder),
+                    bundleIdentifier: resolved.bundleID,
+                    appName: resolved.appName,
+                    appPath: resolved.appPath
+                ),
+                isEnabled: isEnabled
+            )
+
         default:
             throw ActionFlowProposalError.unknownStepType(rawType)
         }
+    }
+
+    private static func resolveNamedApp(
+        kindDict: [String: Any],
+        index: Int,
+        context: ActionFlowProposalCatalogContext,
+        typeName: String
+    ) throws -> (bundleID: String, appName: String, appPath: String?) {
+        let rawBundle = (kindDict["bundleIdentifier"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let rawAppName = (kindDict["appName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let rawAppPath = (kindDict["appPath"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        var resolvedBundle = rawBundle
+        var resolvedName = rawAppName
+        var resolvedPath = (rawAppPath?.isEmpty == false) ? rawAppPath : nil
+
+        if resolvedBundle.isEmpty && !rawAppName.isEmpty {
+            if let installed = context.installedApps.first(where: {
+                $0.appName.caseInsensitiveCompare(rawAppName) == .orderedSame
+            }) {
+                resolvedBundle = installed.bundleIdentifier
+                resolvedName = installed.appName
+                if resolvedPath == nil { resolvedPath = installed.appPath }
+            } else if let builtIn = builtInAppBundleIdentifiersByLowerName[rawAppName.lowercased()] {
+                resolvedBundle = builtIn.bundleID
+                resolvedName = builtIn.appName
+            }
+        }
+        guard !resolvedBundle.isEmpty else {
+            throw ActionFlowProposalError.invalidStep(
+                index: index,
+                reason: "\(typeName) requires a non-empty bundleIdentifier"
+            )
+        }
+        if resolvedName.isEmpty {
+            resolvedName = context.installedApps.first(where: {
+                $0.bundleIdentifier.caseInsensitiveCompare(resolvedBundle) == .orderedSame
+            })?.appName ?? resolvedBundle
+        }
+        return (resolvedBundle, resolvedName, resolvedPath)
     }
 
     private static func numericDouble(from value: Any) -> Double? {

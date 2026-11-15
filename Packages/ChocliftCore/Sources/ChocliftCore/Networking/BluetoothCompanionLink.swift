@@ -1629,7 +1629,7 @@ final class BluetoothClientLink: BluetoothMetadataAwareTransport, BluetoothError
         cancelWriteAckWatchdog()
         let timeout = max(0.01, writeAckTimeoutSeconds)
         writeAckWatchdogTask = Task { @MainActor [weak self] in
-            await MacServerEngine.sleepUntilCancelled(seconds: timeout)
+            await CancellableDelay.sleepUntilCancelled(seconds: timeout)
             guard let self,
                   !Task.isCancelled,
                   !self.isClosed,

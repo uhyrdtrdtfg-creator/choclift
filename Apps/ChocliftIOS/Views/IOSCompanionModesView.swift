@@ -193,8 +193,14 @@ public struct IOSChocolateBarSurfaceView: View {
                     Text(L10n.tr("Mac 控制", "Mac Controls", language: lang))
                         .font(ChocType.caption).foregroundStyle(palette.secondaryText)
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: tileColumnCount), spacing: 12) {
-                        ForEach(SystemQuickAction.allCases.filter { !$0.requiresDestructiveConfirmation }) { action in
-                            Button { client.performQuickAction(action) } label: {
+                        ForEach(SystemQuickAction.allCases) { action in
+                            Button {
+                                if action == .lockScreen {
+                                    _ = client.tapLockMacScreen()
+                                } else {
+                                    client.performQuickAction(action)
+                                }
+                            } label: {
                                 VStack(spacing: 2) {
                                     Image(systemName: action.sfSymbol)
                                         .font(.system(size: 32, weight: .medium))

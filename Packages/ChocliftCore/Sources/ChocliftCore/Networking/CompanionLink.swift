@@ -1,5 +1,66 @@
 import Foundation
 
+/// CI's XCTest records `CancellationError` from `Task.sleep` even after `try?`.
+enum CancellableDelay {
+    static func sleepUntilCancelled(seconds: TimeInterval) async {
+        let delay = max(0, seconds)
+        let gate = NonThrowingSleepGate()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                gate.arm(delay: delay, continuation: continuation)
+            }
+        } onCancel: {
+            gate.cancel()
+        }
+    }
+}
+
+private final class NonThrowingSleepGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var work: DispatchWorkItem?
+    private var cancelled = false
+    private var finished = false
+
+    func arm(delay: TimeInterval, continuation: CheckedContinuation<Void, Never>) {
+        let item = DispatchWorkItem { [weak self] in
+            self?.finish()
+        }
+        lock.lock()
+        if cancelled || finished {
+            lock.unlock()
+            continuation.resume()
+            return
+        }
+        self.continuation = continuation
+        work = item
+        lock.unlock()
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        work?.cancel()
+        work = nil
+        lock.unlock()
+        finish()
+    }
+
+    private func finish() {
+        lock.lock()
+        guard !finished else {
+            lock.unlock()
+            return
+        }
+        finished = true
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume()
+    }
+}
+
 public enum CompanionLinkKind: String, Codable, Equatable, Hashable, Sendable {
     case wifi
     case bluetooth
