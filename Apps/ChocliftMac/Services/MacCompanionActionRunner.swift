@@ -42,6 +42,8 @@ enum MacCompanionActionRunner {
             return MacSpeechActionPack.run(id: id)
         if CompanionActionCatalog.capturePack.contains(where: { $0.id == id }) || id.hasPrefix("capture.") {
             return MacCaptureActionPack.run(id: id, preferredPID: preferredPID)
+        if CompanionActionCatalog.windowTitlePack.contains(where: { $0.id == id }) {
+            return MacWindowTitleActionPack.run(id: id, preferredPID: preferredPID)
         }
         return (false, L10n.tr("不支持此操作", "Unsupported action"))
     }
