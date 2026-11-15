@@ -871,9 +871,6 @@ public final class MacServerEngine: ObservableObject {
         case .ping(let timestamp):
             send(.pong(timestamp: timestamp), to: session)
 
-        case .performCompanionAction:
-            break
-
         case .unknownClientMessage:
             if !session.isAuthenticated {
                 send(
