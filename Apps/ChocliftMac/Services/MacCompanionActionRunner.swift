@@ -13,6 +13,10 @@ enum MacCompanionActionRunner {
         if CompanionActionCatalog.mediaPack.contains(where: { $0.id == id }) {
             return MacMediaActionPack.run(id: id)
         }
+        if id == FilesRecentCompanionActionID.openRecent.rawValue
+            || id == FilesRecentCompanionActionID.openLatestDownload.rawValue {
+            return MacFilesRecentActionPack.run(id: id)
+        }
         if CompanionActionCatalog.filesPack.contains(where: { $0.id == id }) {
             return MacFilesActionPack.run(id: id)
         }
