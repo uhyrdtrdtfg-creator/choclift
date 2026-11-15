@@ -26,6 +26,9 @@ enum MacCompanionActionRunner {
         if CompanionActionCatalog.systemPack.contains(where: { $0.id == id }) {
             return MacSystemActionPack.run(id: id)
         }
+        if CompanionActionCatalog.finderDockPack.contains(where: { $0.id == id }) {
+            return MacFinderDockActionPack.run(id: id)
+        }
         if id.hasPrefix("apps.") {
             return MacAppsActionPack.run(id: id)
         }
