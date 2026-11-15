@@ -5,7 +5,7 @@ final class CompanionActionCatalogTests: XCTestCase {
     func testCatalogListsFiftyUniqueActionsAndRejectsUnknownIds() {
         let ids = CompanionActionCatalog.all.map(\.id)
         XCTAssertEqual(Set(ids).count, ids.count)
-        XCTAssertEqual(ids.count, 56)
+        XCTAssertEqual(ids.count, 58)
         XCTAssertEqual(ids.filter { $0.hasPrefix("window.") }.count, 10)
         XCTAssertEqual(ids.filter { $0.hasPrefix("media.") }.count, 10)
         XCTAssertEqual(ids.filter { $0.hasPrefix("files.") }.count, 12)
@@ -13,6 +13,8 @@ final class CompanionActionCatalogTests: XCTestCase {
         XCTAssertEqual(ids.filter { $0.hasPrefix("system.") }.count, 10)
         XCTAssertEqual(ids.filter { $0.hasPrefix("apps.") }.count, 1)
         XCTAssertEqual(ids.filter { $0 == "apps.open_launchpad" }.count, 1)
+        XCTAssertEqual(ids.filter { $0 == "finder.toggle_hidden_files" }.count, 1)
+        XCTAssertEqual(ids.filter { $0 == "dock.toggle_autohide" }.count, 1)
         XCTAssertNil(CompanionActionCatalog.action(id: "not_a_real_action"))
         XCTAssertFalse(CompanionActionCatalog.isKnown("not_a_real_action"))
     }
