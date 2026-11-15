@@ -6,7 +6,703 @@
 				BF6758CF4DF911DDE4373FA7 /* MacAppSettingsActionPack.swift */,
 				B865DCA1854CD482FE976EF3 /* CompanionActionPack+Capture.swift */,
 				023D7E71675EC6CC75A49681 /* CompanionActionPack+AppSettings.swift */,
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0151A116C09C4D23AB6EE9F7 /* ControlStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB259C3541C52B0FDAF4888C /* ControlStrip.swift */; };
+		01D8AD4835F55C0BDD6CC9D2 /* MacSoundboardService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC01A4B0509B5E43B8CA5A46 /* MacSoundboardService.swift */; };
+		038B4B95F44C70C1836C9519 /* MacSpaceSwipe.swift in Sources */ = {isa = PBXBuildFile; fileRef = D277EA17E3D6784BA5FEC76D /* MacSpaceSwipe.swift */; };
+		04CC39CE219884E5399BC74D /* Round03Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BECCE6B737BB090769DC143 /* Round03Models.swift */; };
+		056675F2A07A7CDF8A40F77F /* CompanionActionPack+Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BF56E643510A055FB8F95C1 /* CompanionActionPack+Session.swift */; };
+		0624C0097D3B262E2C4E78F0 /* CompanionActionPack+Files.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B997305863F5C700F00C218 /* CompanionActionPack+Files.swift */; };
+		06F0B9426723A90AD500110C /* MacUpdateConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3751C53D210CAF7803AF45E /* MacUpdateConfiguration.swift */; };
+		0902B8781D8ACED446E80F86 /* terminal.png in Resources */ = {isa = PBXBuildFile; fileRef = 6CB4B777F556BB9F5483D0A8 /* terminal.png */; };
+		0E82DA111317F42CBC158E07 /* IOSRound03CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47C1280B27AE8610D9B62192 /* IOSRound03CompanionFeatures.swift */; };
+		0F434D4989EDE569D36B3391 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 66E4E8891AFD6F4FABAFF271 /* Assets.xcassets */; };
+		0F582E8E29BA059DE8155ACC /* safari.png in Resources */ = {isa = PBXBuildFile; fileRef = D6A84CEE75CB8D687A708F81 /* safari.png */; };
+		1107BCC3808407CFEBB3335D /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378D57F87F9075FB787AF62B /* WireProtocol.swift */; };
+		11514719064CA3F4324F0633 /* MacSlotItemPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E799103D3FF189D12A92AC14 /* MacSlotItemPickerSheet.swift */; };
+		1450C9D8CEBD2522655EA27E /* reminders.png in Resources */ = {isa = PBXBuildFile; fileRef = 213217E3E0ADB61F84B88238 /* reminders.png */; };
+		153C71E6D96A959112D4EA14 /* MacCompanionHotkeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2B19DF3B395B6D88C4CF1AF /* MacCompanionHotkeyMonitor.swift */; };
+		18D1A1C7144F4A8B7F2F178A /* SentenceActionFlowProposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA86D7ED48F9DCB7113CBAA8 /* SentenceActionFlowProposer.swift */; };
+		193DB321685333968B34BDF5 /* CompanionInteractionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0100A476F462BB1702A464F /* CompanionInteractionPolicy.swift */; };
+		198B34E371238CED9FDAFFD2 /* calendar.png in Resources */ = {isa = PBXBuildFile; fileRef = 30CE11D675395B109D762312 /* calendar.png */; };
+		1A1ADFCC402D53E141BE4FD4 /* music.png in Resources */ = {isa = PBXBuildFile; fileRef = 8215F8844882FF09DD4D19AC /* music.png */; };
+		1AF91D7A950360F2FC55A64E /* ActionFlows.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */; };
+		1B2887D179DA3B9B3DCB33FC /* Round07Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 155A24217ED47F44DF05F1C6 /* Round07Models.swift */; };
+		1DBAAF1183B0E8E08AE9E224 /* mail.png in Resources */ = {isa = PBXBuildFile; fileRef = 2FE0A5E4654684D8D73CB0A6 /* mail.png */; };
+		1DC30F48A2BE707B77945004 /* ChocliftIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F15036CF65DE146CA00BB84 /* ChocliftIOSApp.swift */; };
+		1EAB438701E11328B296FF8B /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
+		1F0C8E75A0F8EB3B1909622A /* CompanionActionPack+Files.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B997305863F5C700F00C218 /* CompanionActionPack+Files.swift */; };
+		1F122F5B9EA993FD2CC9EC19 /* CompanionActionPack+System.swift in Sources */ = {isa = PBXBuildFile; fileRef = 474A9F9ACA07FF105EED7A00 /* CompanionActionPack+System.swift */; };
+		20DB19B33DBA44C0D47F1B8E /* CompanionActionPack+Apps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F2E71FEEB8D3806C6759ADB /* CompanionActionPack+Apps.swift */; };
+		20E11EA7087097BB3693435B /* Round08Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472B24341B0AAB1760F49B87 /* Round08Models.swift */; };
+		210F670DBB717092C901F964 /* CompanionHotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0B189405B590A056914BC80 /* CompanionHotkey.swift */; };
+		219F65F9BDE35A890476E5CD /* libChocliftCoreMac.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 309FB4ADE26AAF40909BC0FB /* libChocliftCoreMac.a */; };
+		231821A9E716F4AAF256C035 /* reminders.png in Resources */ = {isa = PBXBuildFile; fileRef = 213217E3E0ADB61F84B88238 /* reminders.png */; };
+		2426AA4D66FE445078439357 /* Round10Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B996B2D0F3955B3B154BA5E /* Round10Models.swift */; };
+		279CF3156F7E48C9C2240587 /* SoundboardStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73053E274F62F8A83517413A /* SoundboardStudioView.swift */; };
+		27E94B41C270E749B534D06F /* IOSOrcaTaskStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A7C401AEDAB7AEB1C5EDE46 /* IOSOrcaTaskStatusView.swift */; };
+		28AAE9E440B4B1A1D394BF4B /* OrcaTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */; };
+		29B58666A6A065CBBAA28A3B /* CompanionActionPack+Window.swift in Sources */ = {isa = PBXBuildFile; fileRef = 700D598F2F561B74E776B14B /* CompanionActionPack+Window.swift */; };
+		2C8E4122BC0C618D66E952D8 /* ChocolateBarStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00E7551CE4795CA307064107 /* ChocolateBarStudioView.swift */; };
+		2D0F4E22AA7F65ABDF67B5BA /* Round08Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472B24341B0AAB1760F49B87 /* Round08Models.swift */; };
+		2D717D29F44736CCFF71E4EC /* OrcaSelectionDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457684FD77B5477F24FC5F8D /* OrcaSelectionDispatch.swift */; };
+		2E2173A1830B44354D4716D8 /* CompanionActionPack+Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41824073855416182B64DCC4 /* CompanionActionPack+Media.swift */; };
+		2E8768794A140A931D4159E5 /* Round04Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FF0695A991380B3FB28853 /* Round04Models.swift */; };
+		31CCFE49363696DDFEBB8E46 /* IOSRound07CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F95FB5FC997029CE27750AE /* IOSRound07CompanionFeatures.swift */; };
+		324916B32841302FBCA352BA /* CompanionActionPack+Apps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F2E71FEEB8D3806C6759ADB /* CompanionActionPack+Apps.swift */; };
+		33878859FBF852A76234D4F2 /* Round05Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */; };
+		3398DF62B62B53105D05AD43 /* ActionFlowsStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A0A827A172B80AEAD41CB0 /* ActionFlowsStudioView.swift */; };
+		345F6C0A12D26C40FDB51738 /* IOSRootTouchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C6F35B1BB29CD96ADCDCAA /* IOSRootTouchBarView.swift */; };
+		3695A85ECA5D017250793BC3 /* notes.png in Resources */ = {isa = PBXBuildFile; fileRef = BE2646C17F6B581FF2D9A9FC /* notes.png */; };
+		3923DE033DA8CB55EBCDE31D /* CompanionActionPack+Display.swift in Sources */ = {isa = PBXBuildFile; fileRef = 718D4FBEB597E4E68A91BCF6 /* CompanionActionPack+Display.swift */; };
+		397EC37A53C4C6D011658F1E /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
+		39B7BF35A2DCA3748B9CCD32 /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
+		39C7A34BF45F7854FE2A8AA4 /* Round05Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */; };
+		3A4D4F0B472779B5B93BB736 /* QuadAppLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C79254C7D1D99229CFFA4BB /* QuadAppLayout.swift */; };
+		3AE70F44F2814BCF59DB9948 /* MacCompanionActionRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47AD940D8025DB63EA4C41E1 /* MacCompanionActionRunner.swift */; };
+		3AEE71679D5867F745611811 /* CompanionActionPack+DisplayMove.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE4BF0AD16E5CF7E414797F /* CompanionActionPack+DisplayMove.swift */; };
+		3C15E81A92C1FF01F16CE209 /* CompanionActionPack+FilesRecent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3BD2E09E1BAA8964BA95CA /* CompanionActionPack+FilesRecent.swift */; };
+		3C4C52891835C63359ED3EF3 /* IOSSlotEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 992E3238F727E1244DEB62AA /* IOSSlotEditorSheet.swift */; };
+		3C6CD3F09A85957E235FC292 /* IOSRound05CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9242FC5069DD70073C7079D2 /* IOSRound05CompanionFeatures.swift */; };
+		3C8A64C1EFB1AB65A7B34C35 /* ActionFlows.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */; };
+		3D297C87D7B93EB26438D46F /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
+		3EFE96C6529C29EEF363A9C4 /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8859A29A043A4B69F607B04C /* EmojiCatalog.swift */; };
+		3FA892A377C6D601010E6F2C /* libChocliftCoreIOS.a in Frameworks */ = {isa = PBXBuildFile; fileRef = AF86327935FFCF951774ACA4 /* libChocliftCoreIOS.a */; };
+		412D3EB8217B5551FA83431F /* DevicesAndMainWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31CBDF43194BCF470C79690B /* DevicesAndMainWindowView.swift */; };
+		42844B96ABDB2F320FF2D4CB /* MacCompanionFeaturesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59B27570BCCEA27BF8A49A7D /* MacCompanionFeaturesService.swift */; };
+		42E28ECB2B1007C4402E3112 /* ChocDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */; };
+		4384AE4390A37012B4601BFA /* WatchRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8199ABF1806E897A7512A503 /* WatchRootView.swift */; };
+		43ADD17D4B76EB5F4AD6416C /* BluetoothCompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */; };
+		453F5A44CEF655AECC7B8933 /* Round09Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFF6C63559721508DFED62E9 /* Round09Models.swift */; };
+		45BF1BD57308D700E5E11D3E /* SentenceActionFlowProposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA86D7ED48F9DCB7113CBAA8 /* SentenceActionFlowProposer.swift */; };
+		45FACC28CE3788D20748324C /* Round03Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BECCE6B737BB090769DC143 /* Round03Models.swift */; };
+		46B439371362CCD4D5EA02D7 /* CompanionActionPack+Files.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B997305863F5C700F00C218 /* CompanionActionPack+Files.swift */; };
+		4834E91B9EA3E33E51B5009E /* MacQuadLayoutRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B451EA8D2F5C131A3E42F8 /* MacQuadLayoutRunner.swift */; };
+		48A6D98FD3240276622D68B8 /* SentenceActionFlowProposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA86D7ED48F9DCB7113CBAA8 /* SentenceActionFlowProposer.swift */; };
+		4946D8F47BBA0A5DCD8BC7FF /* Round06Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5516ABBE3BED08F5C3A200D3 /* Round06Models.swift */; };
+		4BC4DA9477CFF0CBC02DD7B5 /* MacAppsActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58EF7D2F5BE156122F5C01A7 /* MacAppsActionPack.swift */; };
+		4D794D1D9DAEA44BC4EA11C2 /* CompanionActionPack+FilesRecent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3BD2E09E1BAA8964BA95CA /* CompanionActionPack+FilesRecent.swift */; };
+		4D8E5D7770C2D29F32B9E1B7 /* CompanionActionCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBAB69B3EFD755C9C6D81036 /* CompanionActionCatalog.swift */; };
+		4D9840876E5D692950FF865B /* finder.png in Resources */ = {isa = PBXBuildFile; fileRef = 289E4D12B0F6E3F188113079 /* finder.png */; };
+		4EA5261FA6CE532A4BC78C1D /* Round04Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FF0695A991380B3FB28853 /* Round04Models.swift */; };
+		4F3B6DEC8AF177C66489A9CF /* BluetoothCompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */; };
+		4F67C43BE9FF842959A97DC3 /* CompanionActionPack+System.swift in Sources */ = {isa = PBXBuildFile; fileRef = 474A9F9ACA07FF105EED7A00 /* CompanionActionPack+System.swift */; };
+		5024016FED5FE77E4E53198A /* CompanionInteractionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0100A476F462BB1702A464F /* CompanionInteractionPolicy.swift */; };
+		5124339CE5C7D8DAF2C51790 /* IOSRound10CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 969BA4AB98E313911133B827 /* IOSRound10CompanionFeatures.swift */; };
+		513AC3710015CB6F8A0F0E5E /* music.png in Resources */ = {isa = PBXBuildFile; fileRef = 8215F8844882FF09DD4D19AC /* music.png */; };
+		52082CB82A2482B4051813B6 /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
+		52BE05EDB2087ADD001AB954 /* CompanionActionPack+SessionShow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07882DEC72AC9EBD97806FE /* CompanionActionPack+SessionShow.swift */; };
+		5517BC755F93DB7DB156C328 /* CompanionDashboardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8642634723AF09AD51E7521 /* CompanionDashboardModels.swift */; };
+		593CF1D80449A00E0E7EFBF8 /* CompanionActionPack+Apps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F2E71FEEB8D3806C6759ADB /* CompanionActionPack+Apps.swift */; };
+		5A969ADA4B9D5D585B04C9AC /* WatchPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55A39DFD6BABFD8EDBD71C3E /* WatchPairingView.swift */; };
+		5BA1BD1B00D6643627022CBD /* MacNotchPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 135724865A4998877AAC6E9C /* MacNotchPanelView.swift */; };
+		5FADBB823421CE699E25A31E /* MacAppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C7BD308B52CE99958DDECFA /* MacAppCoordinator.swift */; };
+		636AB976C55CBEBA27B1716A /* ActionFlows.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */; };
+		654CE5DF7566F6783D98BE4A /* IOSPairingAndConnectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD7D98161F2A0939B6B59889 /* IOSPairingAndConnectionSheet.swift */; };
+		68A2E4A52388125FC05403E5 /* MacFilesRecentActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65756A0D455D2B88D81D3EE3 /* MacFilesRecentActionPack.swift */; };
+		690D7F9FD935271A91B7DBD3 /* BundledAppIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */; };
+		6938D92F8B6144C57713553D /* xcode.png in Resources */ = {isa = PBXBuildFile; fileRef = 0381A811167B0BA8047F75B9 /* xcode.png */; };
+		694200921F05BC2B0BD03F96 /* CompanionActionPack+Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41824073855416182B64DCC4 /* CompanionActionPack+Media.swift */; };
+		6A0D6FD1901DBDDA07EE1644 /* ChocliftWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 986435E767EE4D1C6FA42738 /* ChocliftWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		6BF1273A3B22B05D9D291B58 /* safari.png in Resources */ = {isa = PBXBuildFile; fileRef = D6A84CEE75CB8D687A708F81 /* safari.png */; };
+		6C90D70E5CDF89187DB9B236 /* PlatformCompanionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */; };
+		6FBAEDF0A09B6179B14A661B /* CompanionHotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0B189405B590A056914BC80 /* CompanionHotkey.swift */; };
+		7085DA26C3A66E622457803B /* MacSessionActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 311E159BEC4D38718A51748B /* MacSessionActionPack.swift */; };
+		71638B109DA174CC1A449AD7 /* QuadAppLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C79254C7D1D99229CFFA4BB /* QuadAppLayout.swift */; };
+		73A50ADF2E84DCAC91075CA4 /* PlatformCompanionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */; };
+		744EB2EA1DB278ECCE40EAF0 /* MacAppAndShortcutCatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B459D461CDBACF99B6F99A8E /* MacAppAndShortcutCatalogService.swift */; };
+		75412A9C9B26A552680AFD2D /* MacServerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3371CFFF20B9E1134EDB3E8 /* MacServerEngine.swift */; };
+		7581CD6E2F0929431A33F49F /* MacServerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3371CFFF20B9E1134EDB3E8 /* MacServerEngine.swift */; };
+		77751E9F1949AAB0488357B0 /* libChocliftCoreWatch.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 6FC7D3375FFAED79D1CB7DE7 /* libChocliftCoreWatch.a */; };
+		780CDBBDFD1E14F28E266E1C /* MacWindowActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19992DD9336E2AE2A46554B4 /* MacWindowActionPack.swift */; };
+		78348E63FFB5BED7B7479BF4 /* xcode.png in Resources */ = {isa = PBXBuildFile; fileRef = 0381A811167B0BA8047F75B9 /* xcode.png */; };
+		7835B805B520ABC0E4F5B8CC /* terminal.png in Resources */ = {isa = PBXBuildFile; fileRef = 6CB4B777F556BB9F5483D0A8 /* terminal.png */; };
+		7873292E1BA2830A6AC412E9 /* NotchPanelGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */; };
+		78F8044087C0A2F084FD5A14 /* CompanionActionPack+Window.swift in Sources */ = {isa = PBXBuildFile; fileRef = 700D598F2F561B74E776B14B /* CompanionActionPack+Window.swift */; };
+		79190E0587870F258D91793C /* calendar.png in Resources */ = {isa = PBXBuildFile; fileRef = 30CE11D675395B109D762312 /* calendar.png */; };
+		79E3C4357CDFCA8DA711EDF6 /* CompanionInteractionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0100A476F462BB1702A464F /* CompanionInteractionPolicy.swift */; };
+		7A194DD828D7FC40AD07184A /* WatchSurfacesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E9FE4714CD1037D2AFD3E731 /* WatchSurfacesView.swift */; };
+		7A433E0B51F8B9F8A1950AD7 /* xcode.png in Resources */ = {isa = PBXBuildFile; fileRef = 0381A811167B0BA8047F75B9 /* xcode.png */; };
+		7AB4E8F26192B87A6A53DD91 /* MultiTouchGestureOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55531469D9255C9D44CE4F85 /* MultiTouchGestureOverlay.swift */; };
+		7EBD3239BF9822264C76F8FA /* CompanionHotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0B189405B590A056914BC80 /* CompanionHotkey.swift */; };
+		7EC084F765694562A6489EC6 /* ControlStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB259C3541C52B0FDAF4888C /* ControlStrip.swift */; };
+		7FD37A2F0B77A1D3EA6DBFC0 /* finder.png in Resources */ = {isa = PBXBuildFile; fileRef = 289E4D12B0F6E3F188113079 /* finder.png */; };
+		82612B4144EDA160119CA96E /* PlatformCompanionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */; };
+		834C7CBB907FCECE0FDA0022 /* CompanionActionPack+FilesRecent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3BD2E09E1BAA8964BA95CA /* CompanionActionPack+FilesRecent.swift */; };
+		83A2B79E6AA4B0064DCB8D8B /* messages.png in Resources */ = {isa = PBXBuildFile; fileRef = D2F04CF28043E06EA8DB3BE5 /* messages.png */; };
+		841E737659C3B3218210D9EB /* CompanionActionPack+DisplayMove.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE4BF0AD16E5CF7E414797F /* CompanionActionPack+DisplayMove.swift */; };
+		856C0A656C5370A2B44A5DE2 /* MacNotchPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116CCCD57CF0CF405584EA0E /* MacNotchPanelController.swift */; };
+		85DD112C6A09F80CC0D40639 /* CompanionActionPack+SessionShow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07882DEC72AC9EBD97806FE /* CompanionActionPack+SessionShow.swift */; };
+		86DE51B51BDB96523BCE17DE /* MacDisplayActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D073AD8485E312AC5F89228E /* MacDisplayActionPack.swift */; };
+		8BD28D289A0F06AB4ABD0E89 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 7F966FF90CB5DBD1DB68339B /* Sparkle */; };
+		8C918E3285A15566849F6612 /* CompanionActionCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBAB69B3EFD755C9C6D81036 /* CompanionActionCatalog.swift */; };
+		8CDA41C0F0FFD2D11986AFD0 /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
+		8DC9025CCB0479F66B909C6B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5803BC1A7998DE5911DF1E24 /* Assets.xcassets */; };
+		8F2FF2DBCAC5D196E694ADC3 /* Round06Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5516ABBE3BED08F5C3A200D3 /* Round06Models.swift */; };
+		8FECADEBC2036A257A7875F6 /* MacSparkleUpdaterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9BC943E32E3BCE780C9AFB69 /* MacSparkleUpdaterService.swift */; };
+		91A4E7C562E80F58CD15CAD4 /* MacMediaActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CA88B453BBD7B10F3528EFB /* MacMediaActionPack.swift */; };
+		91E26155F0C875E30B5515E6 /* notes.png in Resources */ = {isa = PBXBuildFile; fileRef = BE2646C17F6B581FF2D9A9FC /* notes.png */; };
+		94068E1F1827A415A1EBA1E1 /* MacAccessibilityAndWindowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8003AD2FBC8B7C7AD4459D47 /* MacAccessibilityAndWindowService.swift */; };
+		94A271287C3D5FB9DC454029 /* NotchPanelGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */; };
+		9671510D567E628E9D3373DA /* MacMenuBarStatusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54B9623F42577CE556571F6E /* MacMenuBarStatusController.swift */; };
+		96935FA7083065FD5D95091B /* IOSRound04CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6FCAB30E95B2B4A3F12C937 /* IOSRound04CompanionFeatures.swift */; };
+		97EA3064B9BBD1EA92A9788E /* IOSRound02CompanionControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07212AF17DB6353FA2039C3E /* IOSRound02CompanionControls.swift */; };
+		9B3B62752E758C58AB001C99 /* ChocDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */; };
+		9CCC043223B77D2383E1CA84 /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8859A29A043A4B69F607B04C /* EmojiCatalog.swift */; };
+		9CF94F51BEED7383E1BCAF39 /* notes.png in Resources */ = {isa = PBXBuildFile; fileRef = BE2646C17F6B581FF2D9A9FC /* notes.png */; };
+		9D4BA2D1793B8083F5CB6FC4 /* Round09Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFF6C63559721508DFED62E9 /* Round09Models.swift */; };
+		A0F3B5A33B874296C4D6CDF5 /* CompanionActionPack+System.swift in Sources */ = {isa = PBXBuildFile; fileRef = 474A9F9ACA07FF105EED7A00 /* CompanionActionPack+System.swift */; };
+		A131814B44B3EAE9507D605C /* IOSCompanionHotkeysSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 692D15C11392D1C31F797CDF /* IOSCompanionHotkeysSection.swift */; };
+		A1FB935F3578677F75BFFD9F /* CompanionActionCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBAB69B3EFD755C9C6D81036 /* CompanionActionCatalog.swift */; };
+		A30D2564AFDE27554AF84361 /* BluetoothCompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */; };
+		A33C8EE75538EA7E40D5DA14 /* messages.png in Resources */ = {isa = PBXBuildFile; fileRef = D2F04CF28043E06EA8DB3BE5 /* messages.png */; };
+		A3BE69B57FD7B452B20CB0EB /* MacSystemActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 941C1550D6929E3B9C9B55B7 /* MacSystemActionPack.swift */; };
+		A47C0139179CCCBFD1B48617 /* Round07Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 155A24217ED47F44DF05F1C6 /* Round07Models.swift */; };
+		A5374FE85744A7334FEE033E /* OrcaTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */; };
+		A616F76D587F3D7430BCB29C /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378D57F87F9075FB787AF62B /* WireProtocol.swift */; };
+		A6F3710F28B342185CA67F8D /* Round10Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B996B2D0F3955B3B154BA5E /* Round10Models.swift */; };
+		A82F9B22CC59F5BE1DA7E461 /* messages.png in Resources */ = {isa = PBXBuildFile; fileRef = D2F04CF28043E06EA8DB3BE5 /* messages.png */; };
+		A8E599E4AE698CB6BC397B22 /* mail.png in Resources */ = {isa = PBXBuildFile; fileRef = 2FE0A5E4654684D8D73CB0A6 /* mail.png */; };
+		AA9AE8D5A804F9AAB65A084F /* IOSRound08CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75BBF0187C7EDEA2BE3E2EBD /* IOSRound08CompanionFeatures.swift */; };
+		ABBA55C46CDF51849DAD70FE /* CompanionActionPack+Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41824073855416182B64DCC4 /* CompanionActionPack+Media.swift */; };
+		AE0BC7BF7AA90B725B2F5D04 /* IOSRound09CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F9CD5A5ABA6E4BA4A3A7A40 /* IOSRound09CompanionFeatures.swift */; };
+		B28B2B9D5B25E49FFCE3801D /* CompanionActionPack+Edit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */; };
+		B3A9932DA455C1C8C3515FF3 /* EmojiBarStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7CB5368CF46C2C2213D8656 /* EmojiBarStudioView.swift */; };
+		B3BA2F5E02B9B0FEC459BEF0 /* MacKeepAwakeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 557EC516DCE93E05E1DA8805 /* MacKeepAwakeService.swift */; };
+		B779328CE1C37C369B1BDFE2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0637814C808EC6900262C681 /* Assets.xcassets */; };
+		B83501BAFE40DC2395AE3251 /* Round04Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FF0695A991380B3FB28853 /* Round04Models.swift */; };
+		B85F933F5A4A322234A160F5 /* calendar.png in Resources */ = {isa = PBXBuildFile; fileRef = 30CE11D675395B109D762312 /* calendar.png */; };
+		B87ED18F694827573BF6F5AF /* OrcaSelectionDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457684FD77B5477F24FC5F8D /* OrcaSelectionDispatch.swift */; };
+		B8F2F788A18171EF3C6425D7 /* Round08Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472B24341B0AAB1760F49B87 /* Round08Models.swift */; };
+		B94603986FDB8C63A5EFA896 /* Round03Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BECCE6B737BB090769DC143 /* Round03Models.swift */; };
+		BC94FCFFD6ABE26E0CAEC587 /* CompanionActionPack+Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BF56E643510A055FB8F95C1 /* CompanionActionPack+Session.swift */; };
+		BDAB74CDC0F57501EA16D86C /* CompanionActionPack+Edit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */; };
+		BFB77175E5EBCA7CC882CF59 /* CompanionActionPack+SessionShow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07882DEC72AC9EBD97806FE /* CompanionActionPack+SessionShow.swift */; };
+		C0DE9291FA2C4F6F27838894 /* MacTimeTravelMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 813CADCB2CE124AC898446DE /* MacTimeTravelMonitor.swift */; };
+		C178C120B322517C52CAEE3A /* BundledAppIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */; };
+		C294D28D964EFF6643FAC393 /* IOSCompanionModesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65CAA7B788878C4CCF682A40 /* IOSCompanionModesView.swift */; };
+		C55F470AACCF7B28E03A49EF /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
+		C70C19A2704A9D93C4C29C21 /* Round09Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFF6C63559721508DFED62E9 /* Round09Models.swift */; };
+		C735ED138475E8FF8564F1FD /* MacInputAndMediaService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2610F6011A383F732C01DC10 /* MacInputAndMediaService.swift */; };
+		C8D3D57C7B3C8E9637DB941D /* MacOrcaStatusService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F4B0BF41FA187CA0429E197 /* MacOrcaStatusService.swift */; };
+		C8FC5F6E229B84BD0B158814 /* OrcaTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */; };
+		C92914F9B3AB35A4C3326EC2 /* MacUpdateConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3751C53D210CAF7803AF45E /* MacUpdateConfiguration.swift */; };
+		CA0525BDEEFD42C3034CC423 /* CompanionActionPack+DisplayMove.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AE4BF0AD16E5CF7E414797F /* CompanionActionPack+DisplayMove.swift */; };
+		CAF7335208F5094F394E4D6E /* CompanionActionPack+Display.swift in Sources */ = {isa = PBXBuildFile; fileRef = 718D4FBEB597E4E68A91BCF6 /* CompanionActionPack+Display.swift */; };
+		CB28FF807321B324891136B2 /* MacEditActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7E6D5CDE0583B0DF8011C61 /* MacEditActionPack.swift */; };
+		CD2ABCE216981DECA9C23D63 /* NotchPanelGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */; };
+		D036B26D11015CC9DCBCCD5A /* Round06Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5516ABBE3BED08F5C3A200D3 /* Round06Models.swift */; };
+		D072F3822ADE02D3C85A0641 /* MacCompanionHotkeysCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB92F1ECD64FE5AC8BE66E21 /* MacCompanionHotkeysCard.swift */; };
+		D117BED0C6A4AC940F4AFA5A /* ChocDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */; };
+		D1416E3B8D4ECE187FBBCBFB /* mail.png in Resources */ = {isa = PBXBuildFile; fileRef = 2FE0A5E4654684D8D73CB0A6 /* mail.png */; };
+		D19ADC68FDF7AB4963E84CA3 /* EmojiCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8859A29A043A4B69F607B04C /* EmojiCatalog.swift */; };
+		D1FE97D409EB7ECCC933E602 /* safari.png in Resources */ = {isa = PBXBuildFile; fileRef = D6A84CEE75CB8D687A708F81 /* safari.png */; };
+		D6EAD45F4FE9EF9CFFBEE890 /* CompanionDashboardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8642634723AF09AD51E7521 /* CompanionDashboardModels.swift */; };
+		D7FCC2E5110CA56C5725F6DA /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
+		D83C8556667C1E95D19A2B99 /* MacFilesActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = A42F0F5A0680F0FDE17F7C0D /* MacFilesActionPack.swift */; };
+		D8847B5706C5AEE2867F3B24 /* OrcaSelectionDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457684FD77B5477F24FC5F8D /* OrcaSelectionDispatch.swift */; };
+		D98C8883FC0A69798C9BE591 /* music.png in Resources */ = {isa = PBXBuildFile; fileRef = 8215F8844882FF09DD4D19AC /* music.png */; };
+		DAB4CBDFA2B7DA671F50C2C0 /* MacServerEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3371CFFF20B9E1134EDB3E8 /* MacServerEngine.swift */; };
+		DE2BB25340B0E35ECACB71AF /* reminders.png in Resources */ = {isa = PBXBuildFile; fileRef = 213217E3E0ADB61F84B88238 /* reminders.png */; };
+		DF54945FD6A26594125CA46B /* Round05Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */; };
+		DF61BE35854C52722D2F20F5 /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
+		DFB1DDE64AE82710C328A49C /* IOSFlowEditorViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */; };
+		E85500D399E5CD039276A0C1 /* ControlStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB259C3541C52B0FDAF4888C /* ControlStrip.swift */; };
+		E8750C18F4A9A27AA2A9EF3E /* ChocliftMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3DBA1BF1036F57F143E4AAA /* ChocliftMacApp.swift */; };
+		EB47886475B3208848D9B611 /* BundledAppIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */; };
+		EC022D14BDC93E5DF87084C3 /* CompanionActionPack+Display.swift in Sources */ = {isa = PBXBuildFile; fileRef = 718D4FBEB597E4E68A91BCF6 /* CompanionActionPack+Display.swift */; };
+		ECA24CBF17C42A363AAE479A /* MacSessionShowActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB16029992FA4227C4142607 /* MacSessionShowActionPack.swift */; };
+		EDFA97F81CBE7CAFA5C48842 /* CompanionDashboardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8642634723AF09AD51E7521 /* CompanionDashboardModels.swift */; };
+		F104D05C7D408E37FDAF1272 /* MacUpdateConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3751C53D210CAF7803AF45E /* MacUpdateConfiguration.swift */; };
+		F1287122DF85975EC3734CA1 /* CompanionActionPack+Edit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */; };
+		F1464D08A4FB2C4F40B6036C /* CompanionActionPack+Window.swift in Sources */ = {isa = PBXBuildFile; fileRef = 700D598F2F561B74E776B14B /* CompanionActionPack+Window.swift */; };
+		F179169D873243EE590DC3CC /* TimeTravelAndGestureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9A7BFF5A52FBC825E5EC0A6 /* TimeTravelAndGestureViews.swift */; };
+		F36544C088A44A5AF7B346C2 /* QuadAppLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C79254C7D1D99229CFFA4BB /* QuadAppLayout.swift */; };
+		F67EF010677977FC8A1792D1 /* finder.png in Resources */ = {isa = PBXBuildFile; fileRef = 289E4D12B0F6E3F188113079 /* finder.png */; };
+		F8688F658607938931989B76 /* MacSystemControlService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A4EBD8AF7B0252DB6BBA48 /* MacSystemControlService.swift */; };
+		F8BF87CF78B197F1728428F7 /* CompanionActionPack+Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BF56E643510A055FB8F95C1 /* CompanionActionPack+Session.swift */; };
+		F9A2071D485ADDE2BBE5E965 /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378D57F87F9075FB787AF62B /* WireProtocol.swift */; };
+		F9F94D68FE71C55C21B8443F /* Round10Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B996B2D0F3955B3B154BA5E /* Round10Models.swift */; };
+		F9FC4D6C32DF2E52155D2376 /* ChocliftWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 226A03B84444E14186ACF945 /* ChocliftWatchApp.swift */; };
+		FA3A076AB373D91EFA8C5CFF /* Round07Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 155A24217ED47F44DF05F1C6 /* Round07Models.swift */; };
+		FA6D9491F0BDCC9A6FB30C27 /* terminal.png in Resources */ = {isa = PBXBuildFile; fileRef = 6CB4B777F556BB9F5483D0A8 /* terminal.png */; };
+		FD12AEBCCDD3CBBB601B597A /* MacDisplayMoveActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1587EDA2E6C8E898D98E23A /* MacDisplayMoveActionPack.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		5B27C9D07CE58405EC050571 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C8496331E50470D7EB25B280 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 608235EEE360F10561CB4ED4;
+			remoteInfo = ChocliftCoreWatch;
+		};
+		79444F1927CB0D5004790E80 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C8496331E50470D7EB25B280 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4EE69620AB22A2171E3185C5;
+			remoteInfo = ChocliftCoreMac;
+		};
+		A65CF5CC8EE3E58BACC587ED /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C8496331E50470D7EB25B280 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6A00C29B2A4BA5BD61E28207;
+			remoteInfo = ChocliftCoreIOS;
+		};
+		DAFBE43C1A0D103EA9D4300E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C8496331E50470D7EB25B280 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1FB93D743967AC4526702A6D;
+			remoteInfo = ChocliftWatch;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		0DDC4675B60CD88EF8BA50A1 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				6A0D6FD1901DBDDA07EE1644 /* ChocliftWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		00E7551CE4795CA307064107 /* ChocolateBarStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocolateBarStudioView.swift; sourceTree = "<group>"; };
+		0381A811167B0BA8047F75B9 /* xcode.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = xcode.png; sourceTree = "<group>"; };
+		0455E6A3BEB8E8030DFB5547 /* ChocliftMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChocliftMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0637814C808EC6900262C681 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		07212AF17DB6353FA2039C3E /* IOSRound02CompanionControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound02CompanionControls.swift; sourceTree = "<group>"; };
+		0D64F1BC1A63A04202433DEB /* ChocliftIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ChocliftIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0F2E71FEEB8D3806C6759ADB /* CompanionActionPack+Apps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Apps.swift"; sourceTree = "<group>"; };
+		116CCCD57CF0CF405584EA0E /* MacNotchPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNotchPanelController.swift; sourceTree = "<group>"; };
+		135724865A4998877AAC6E9C /* MacNotchPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNotchPanelView.swift; sourceTree = "<group>"; };
+		155A24217ED47F44DF05F1C6 /* Round07Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round07Models.swift; sourceTree = "<group>"; };
+		15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledAppIcons.swift; sourceTree = "<group>"; };
+		19992DD9336E2AE2A46554B4 /* MacWindowActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacWindowActionPack.swift; sourceTree = "<group>"; };
+		213217E3E0ADB61F84B88238 /* reminders.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = reminders.png; sourceTree = "<group>"; };
+		2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Edit.swift"; sourceTree = "<group>"; };
+		226A03B84444E14186ACF945 /* ChocliftWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftWatchApp.swift; sourceTree = "<group>"; };
+		2610F6011A383F732C01DC10 /* MacInputAndMediaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacInputAndMediaService.swift; sourceTree = "<group>"; };
+		26FF0695A991380B3FB28853 /* Round04Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round04Models.swift; sourceTree = "<group>"; };
+		289E4D12B0F6E3F188113079 /* finder.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = finder.png; sourceTree = "<group>"; };
+		2F15036CF65DE146CA00BB84 /* ChocliftIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftIOSApp.swift; sourceTree = "<group>"; };
+		2FE0A5E4654684D8D73CB0A6 /* mail.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = mail.png; sourceTree = "<group>"; };
+		309FB4ADE26AAF40909BC0FB /* libChocliftCoreMac.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libChocliftCoreMac.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		30CE11D675395B109D762312 /* calendar.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = calendar.png; sourceTree = "<group>"; };
+		311E159BEC4D38718A51748B /* MacSessionActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSessionActionPack.swift; sourceTree = "<group>"; };
+		31CBDF43194BCF470C79690B /* DevicesAndMainWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicesAndMainWindowView.swift; sourceTree = "<group>"; };
+		378D57F87F9075FB787AF62B /* WireProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WireProtocol.swift; sourceTree = "<group>"; };
+		41824073855416182B64DCC4 /* CompanionActionPack+Media.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Media.swift"; sourceTree = "<group>"; };
+		457684FD77B5477F24FC5F8D /* OrcaSelectionDispatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrcaSelectionDispatch.swift; sourceTree = "<group>"; };
+		472B24341B0AAB1760F49B87 /* Round08Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round08Models.swift; sourceTree = "<group>"; };
+		474A9F9ACA07FF105EED7A00 /* CompanionActionPack+System.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+System.swift"; sourceTree = "<group>"; };
+		4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrcaTaskStatus.swift; sourceTree = "<group>"; };
+		47AD940D8025DB63EA4C41E1 /* MacCompanionActionRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCompanionActionRunner.swift; sourceTree = "<group>"; };
+		47B451EA8D2F5C131A3E42F8 /* MacQuadLayoutRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacQuadLayoutRunner.swift; sourceTree = "<group>"; };
+		47C1280B27AE8610D9B62192 /* IOSRound03CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound03CompanionFeatures.swift; sourceTree = "<group>"; };
+		4B996B2D0F3955B3B154BA5E /* Round10Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round10Models.swift; sourceTree = "<group>"; };
+		4E3BD2E09E1BAA8964BA95CA /* CompanionActionPack+FilesRecent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+FilesRecent.swift"; sourceTree = "<group>"; };
+		54B9623F42577CE556571F6E /* MacMenuBarStatusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMenuBarStatusController.swift; sourceTree = "<group>"; };
+		5516ABBE3BED08F5C3A200D3 /* Round06Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round06Models.swift; sourceTree = "<group>"; };
+		55531469D9255C9D44CE4F85 /* MultiTouchGestureOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiTouchGestureOverlay.swift; sourceTree = "<group>"; };
+		557EC516DCE93E05E1DA8805 /* MacKeepAwakeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacKeepAwakeService.swift; sourceTree = "<group>"; };
+		55A39DFD6BABFD8EDBD71C3E /* WatchPairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPairingView.swift; sourceTree = "<group>"; };
+		5803BC1A7998DE5911DF1E24 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		58EF7D2F5BE156122F5C01A7 /* MacAppsActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppsActionPack.swift; sourceTree = "<group>"; };
+		59B27570BCCEA27BF8A49A7D /* MacCompanionFeaturesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCompanionFeaturesService.swift; sourceTree = "<group>"; };
+		5A7C401AEDAB7AEB1C5EDE46 /* IOSOrcaTaskStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSOrcaTaskStatusView.swift; sourceTree = "<group>"; };
+		5F9CD5A5ABA6E4BA4A3A7A40 /* IOSRound09CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound09CompanionFeatures.swift; sourceTree = "<group>"; };
+		65756A0D455D2B88D81D3EE3 /* MacFilesRecentActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFilesRecentActionPack.swift; sourceTree = "<group>"; };
+		65CAA7B788878C4CCF682A40 /* IOSCompanionModesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSCompanionModesView.swift; sourceTree = "<group>"; };
+		66E4E8891AFD6F4FABAFF271 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		692D15C11392D1C31F797CDF /* IOSCompanionHotkeysSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSCompanionHotkeysSection.swift; sourceTree = "<group>"; };
+		6B997305863F5C700F00C218 /* CompanionActionPack+Files.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Files.swift"; sourceTree = "<group>"; };
+		6C79254C7D1D99229CFFA4BB /* QuadAppLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuadAppLayout.swift; sourceTree = "<group>"; };
+		6CB4B777F556BB9F5483D0A8 /* terminal.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = terminal.png; sourceTree = "<group>"; };
+		6FC7D3375FFAED79D1CB7DE7 /* libChocliftCoreWatch.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libChocliftCoreWatch.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		700D598F2F561B74E776B14B /* CompanionActionPack+Window.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Window.swift"; sourceTree = "<group>"; };
+		701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothCompanionLink.swift; sourceTree = "<group>"; };
+		718D4FBEB597E4E68A91BCF6 /* CompanionActionPack+Display.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Display.swift"; sourceTree = "<group>"; };
+		73053E274F62F8A83517413A /* SoundboardStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundboardStudioView.swift; sourceTree = "<group>"; };
+		75A0A827A172B80AEAD41CB0 /* ActionFlowsStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionFlowsStudioView.swift; sourceTree = "<group>"; };
+		75BBF0187C7EDEA2BE3E2EBD /* IOSRound08CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound08CompanionFeatures.swift; sourceTree = "<group>"; };
+		7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionClientEngine.swift; sourceTree = "<group>"; };
+		7BF56E643510A055FB8F95C1 /* CompanionActionPack+Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Session.swift"; sourceTree = "<group>"; };
+		8003AD2FBC8B7C7AD4459D47 /* MacAccessibilityAndWindowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAccessibilityAndWindowService.swift; sourceTree = "<group>"; };
+		813CADCB2CE124AC898446DE /* MacTimeTravelMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacTimeTravelMonitor.swift; sourceTree = "<group>"; };
+		8199ABF1806E897A7512A503 /* WatchRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRootView.swift; sourceTree = "<group>"; };
+		8215F8844882FF09DD4D19AC /* music.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = music.png; sourceTree = "<group>"; };
+		8859A29A043A4B69F607B04C /* EmojiCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiCatalog.swift; sourceTree = "<group>"; };
+		8AE4BF0AD16E5CF7E414797F /* CompanionActionPack+DisplayMove.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+DisplayMove.swift"; sourceTree = "<group>"; };
+		8BECCE6B737BB090769DC143 /* Round03Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round03Models.swift; sourceTree = "<group>"; };
+		8C7BD308B52CE99958DDECFA /* MacAppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppCoordinator.swift; sourceTree = "<group>"; };
+		90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionLink.swift; sourceTree = "<group>"; };
+		9242FC5069DD70073C7079D2 /* IOSRound05CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound05CompanionFeatures.swift; sourceTree = "<group>"; };
+		92C6F35B1BB29CD96ADCDCAA /* IOSRootTouchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRootTouchBarView.swift; sourceTree = "<group>"; };
+		941C1550D6929E3B9C9B55B7 /* MacSystemActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSystemActionPack.swift; sourceTree = "<group>"; };
+		969BA4AB98E313911133B827 /* IOSRound10CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound10CompanionFeatures.swift; sourceTree = "<group>"; };
+		986435E767EE4D1C6FA42738 /* ChocliftWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChocliftWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		992E3238F727E1244DEB62AA /* IOSSlotEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSlotEditorSheet.swift; sourceTree = "<group>"; };
+		9BC943E32E3BCE780C9AFB69 /* MacSparkleUpdaterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSparkleUpdaterService.swift; sourceTree = "<group>"; };
+		9CA88B453BBD7B10F3528EFB /* MacMediaActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMediaActionPack.swift; sourceTree = "<group>"; };
+		9F4B0BF41FA187CA0429E197 /* MacOrcaStatusService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOrcaStatusService.swift; sourceTree = "<group>"; };
+		9F95FB5FC997029CE27750AE /* IOSRound07CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound07CompanionFeatures.swift; sourceTree = "<group>"; };
+		A07882DEC72AC9EBD97806FE /* CompanionActionPack+SessionShow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+SessionShow.swift"; sourceTree = "<group>"; };
+		A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchPanelGeometry.swift; sourceTree = "<group>"; };
+		A0B189405B590A056914BC80 /* CompanionHotkey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionHotkey.swift; sourceTree = "<group>"; };
+		A2B19DF3B395B6D88C4CF1AF /* MacCompanionHotkeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCompanionHotkeyMonitor.swift; sourceTree = "<group>"; };
+		A42F0F5A0680F0FDE17F7C0D /* MacFilesActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFilesActionPack.swift; sourceTree = "<group>"; };
+		A7CB5368CF46C2C2213D8656 /* EmojiBarStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmojiBarStudioView.swift; sourceTree = "<group>"; };
+		A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round05Models.swift; sourceTree = "<group>"; };
+		AC01A4B0509B5E43B8CA5A46 /* MacSoundboardService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSoundboardService.swift; sourceTree = "<group>"; };
+		AF86327935FFCF951774ACA4 /* libChocliftCoreIOS.a */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = archive.ar; path = libChocliftCoreIOS.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		B0100A476F462BB1702A464F /* CompanionInteractionPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionInteractionPolicy.swift; sourceTree = "<group>"; };
+		B3371CFFF20B9E1134EDB3E8 /* MacServerEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacServerEngine.swift; sourceTree = "<group>"; };
+		B3DBA1BF1036F57F143E4AAA /* ChocliftMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftMacApp.swift; sourceTree = "<group>"; };
+		B459D461CDBACF99B6F99A8E /* MacAppAndShortcutCatalogService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppAndShortcutCatalogService.swift; sourceTree = "<group>"; };
+		B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompanionSupport.swift; sourceTree = "<group>"; };
+		B9A7BFF5A52FBC825E5EC0A6 /* TimeTravelAndGestureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeTravelAndGestureViews.swift; sourceTree = "<group>"; };
+		BA86D7ED48F9DCB7113CBAA8 /* SentenceActionFlowProposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SentenceActionFlowProposer.swift; sourceTree = "<group>"; };
+		BBAB69B3EFD755C9C6D81036 /* CompanionActionCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionActionCatalog.swift; sourceTree = "<group>"; };
+		BE2646C17F6B581FF2D9A9FC /* notes.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = notes.png; sourceTree = "<group>"; };
+		C1587EDA2E6C8E898D98E23A /* MacDisplayMoveActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDisplayMoveActionPack.swift; sourceTree = "<group>"; };
+		C2A4EBD8AF7B0252DB6BBA48 /* MacSystemControlService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSystemControlService.swift; sourceTree = "<group>"; };
+		C5756FAFC7277A62567E747E /* ChocliftModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftModels.swift; sourceTree = "<group>"; };
+		D073AD8485E312AC5F89228E /* MacDisplayActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDisplayActionPack.swift; sourceTree = "<group>"; };
+		D277EA17E3D6784BA5FEC76D /* MacSpaceSwipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSpaceSwipe.swift; sourceTree = "<group>"; };
+		D2F04CF28043E06EA8DB3BE5 /* messages.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = messages.png; sourceTree = "<group>"; };
+		D3751C53D210CAF7803AF45E /* MacUpdateConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacUpdateConfiguration.swift; sourceTree = "<group>"; };
+		D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSFlowEditorViews.swift; sourceTree = "<group>"; };
+		D6A84CEE75CB8D687A708F81 /* safari.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = safari.png; sourceTree = "<group>"; };
+		D6FCAB30E95B2B4A3F12C937 /* IOSRound04CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound04CompanionFeatures.swift; sourceTree = "<group>"; };
+		DD7D98161F2A0939B6B59889 /* IOSPairingAndConnectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSPairingAndConnectionSheet.swift; sourceTree = "<group>"; };
+		DFF6C63559721508DFED62E9 /* Round09Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round09Models.swift; sourceTree = "<group>"; };
+		E799103D3FF189D12A92AC14 /* MacSlotItemPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSlotItemPickerSheet.swift; sourceTree = "<group>"; };
+		E7E6D5CDE0583B0DF8011C61 /* MacEditActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEditActionPack.swift; sourceTree = "<group>"; };
+		E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocDesignSystem.swift; sourceTree = "<group>"; };
+		E8642634723AF09AD51E7521 /* CompanionDashboardModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompanionDashboardModels.swift; sourceTree = "<group>"; };
+		E9FE4714CD1037D2AFD3E731 /* WatchSurfacesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSurfacesView.swift; sourceTree = "<group>"; };
+		EB16029992FA4227C4142607 /* MacSessionShowActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSessionShowActionPack.swift; sourceTree = "<group>"; };
+		EB92F1ECD64FE5AC8BE66E21 /* MacCompanionHotkeysCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCompanionHotkeysCard.swift; sourceTree = "<group>"; };
+		EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionFlows.swift; sourceTree = "<group>"; };
+		FB259C3541C52B0FDAF4888C /* ControlStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ControlStrip.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		00137395ED8DA7476FFCF532 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				77751E9F1949AAB0488357B0 /* libChocliftCoreWatch.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A8F0BC1E0AA73A9E5D720E4C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				219F65F9BDE35A890476E5CD /* libChocliftCoreMac.a in Frameworks */,
+				8BD28D289A0F06AB4ABD0E89 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DB9AF018453C5E680B8C405F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3FA892A377C6D601010E6F2C /* libChocliftCoreIOS.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		05ED263ABF937BE60DE95937 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				98F159AB31C863D6EDE5E293 /* ChocliftCore */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		06AD84545A76CF0844F3163F /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				8003AD2FBC8B7C7AD4459D47 /* MacAccessibilityAndWindowService.swift */,
+				B459D461CDBACF99B6F99A8E /* MacAppAndShortcutCatalogService.swift */,
+				58EF7D2F5BE156122F5C01A7 /* MacAppsActionPack.swift */,
+				47AD940D8025DB63EA4C41E1 /* MacCompanionActionRunner.swift */,
+				59B27570BCCEA27BF8A49A7D /* MacCompanionFeaturesService.swift */,
+				A2B19DF3B395B6D88C4CF1AF /* MacCompanionHotkeyMonitor.swift */,
+				D073AD8485E312AC5F89228E /* MacDisplayActionPack.swift */,
+				C1587EDA2E6C8E898D98E23A /* MacDisplayMoveActionPack.swift */,
+				E7E6D5CDE0583B0DF8011C61 /* MacEditActionPack.swift */,
+				A42F0F5A0680F0FDE17F7C0D /* MacFilesActionPack.swift */,
+				65756A0D455D2B88D81D3EE3 /* MacFilesRecentActionPack.swift */,
+				2610F6011A383F732C01DC10 /* MacInputAndMediaService.swift */,
+				557EC516DCE93E05E1DA8805 /* MacKeepAwakeService.swift */,
+				9CA88B453BBD7B10F3528EFB /* MacMediaActionPack.swift */,
+				54B9623F42577CE556571F6E /* MacMenuBarStatusController.swift */,
+				116CCCD57CF0CF405584EA0E /* MacNotchPanelController.swift */,
+				9F4B0BF41FA187CA0429E197 /* MacOrcaStatusService.swift */,
+				47B451EA8D2F5C131A3E42F8 /* MacQuadLayoutRunner.swift */,
+				311E159BEC4D38718A51748B /* MacSessionActionPack.swift */,
+				EB16029992FA4227C4142607 /* MacSessionShowActionPack.swift */,
+				AC01A4B0509B5E43B8CA5A46 /* MacSoundboardService.swift */,
+				D277EA17E3D6784BA5FEC76D /* MacSpaceSwipe.swift */,
+				9BC943E32E3BCE780C9AFB69 /* MacSparkleUpdaterService.swift */,
+				941C1550D6929E3B9C9B55B7 /* MacSystemActionPack.swift */,
+				C2A4EBD8AF7B0252DB6BBA48 /* MacSystemControlService.swift */,
+				813CADCB2CE124AC898446DE /* MacTimeTravelMonitor.swift */,
+				19992DD9336E2AE2A46554B4 /* MacWindowActionPack.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		1131669875D124B40C036C96 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				30CE11D675395B109D762312 /* calendar.png */,
+				289E4D12B0F6E3F188113079 /* finder.png */,
+				2FE0A5E4654684D8D73CB0A6 /* mail.png */,
+				D2F04CF28043E06EA8DB3BE5 /* messages.png */,
+				8215F8844882FF09DD4D19AC /* music.png */,
+				BE2646C17F6B581FF2D9A9FC /* notes.png */,
+				213217E3E0ADB61F84B88238 /* reminders.png */,
+				D6A84CEE75CB8D687A708F81 /* safari.png */,
+				6CB4B777F556BB9F5483D0A8 /* terminal.png */,
+				0381A811167B0BA8047F75B9 /* xcode.png */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		11E46DC5D246539BF061D42A /* Networking */ = {
+			isa = PBXGroup;
+			children = (
+				701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */,
+				7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */,
+				90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */,
+				B3371CFFF20B9E1134EDB3E8 /* MacServerEngine.swift */,
+			);
+			path = Networking;
+			sourceTree = "<group>";
+		};
+		14DA40EBCF1BE77816A1DF0A /* ChocliftIOS */ = {
+			isa = PBXGroup;
+			children = (
+				2F15036CF65DE146CA00BB84 /* ChocliftIOSApp.swift */,
+				962389C931396761AE236EBA /* Gestures */,
+				5944112946F47C43349120AD /* Resources */,
+				611183D3DF953E248C5FFD0A /* Views */,
+			);
+			path = ChocliftIOS;
+			sourceTree = "<group>";
+		};
+		19D95D64583937DA1ED6884C /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				55A39DFD6BABFD8EDBD71C3E /* WatchPairingView.swift */,
+				8199ABF1806E897A7512A503 /* WatchRootView.swift */,
+				E9FE4714CD1037D2AFD3E731 /* WatchSurfacesView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		1C97F7D3EC2CAC82D47B2EFE /* ChocliftMac */ = {
+			isa = PBXGroup;
+			children = (
+				B3DBA1BF1036F57F143E4AAA /* ChocliftMacApp.swift */,
+				EFD89837103F095FCC16A9F9 /* Resources */,
+				06AD84545A76CF0844F3163F /* Services */,
+				ECAFCED3595F73C18B0F97C0 /* State */,
+				65D7538001307E72D79EACBB /* Views */,
+			);
+			path = ChocliftMac;
+			sourceTree = "<group>";
+		};
+		2C4D279BE00357517919314F /* ChocliftCore */ = {
+			isa = PBXGroup;
+			children = (
+				05ED263ABF937BE60DE95937 /* Sources */,
+			);
+			path = ChocliftCore;
+			sourceTree = "<group>";
+		};
+		5944112946F47C43349120AD /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				5803BC1A7998DE5911DF1E24 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		611183D3DF953E248C5FFD0A /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				692D15C11392D1C31F797CDF /* IOSCompanionHotkeysSection.swift */,
+				65CAA7B788878C4CCF682A40 /* IOSCompanionModesView.swift */,
+				D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */,
+				5A7C401AEDAB7AEB1C5EDE46 /* IOSOrcaTaskStatusView.swift */,
+				DD7D98161F2A0939B6B59889 /* IOSPairingAndConnectionSheet.swift */,
+				92C6F35B1BB29CD96ADCDCAA /* IOSRootTouchBarView.swift */,
+				07212AF17DB6353FA2039C3E /* IOSRound02CompanionControls.swift */,
+				47C1280B27AE8610D9B62192 /* IOSRound03CompanionFeatures.swift */,
+				D6FCAB30E95B2B4A3F12C937 /* IOSRound04CompanionFeatures.swift */,
+				9242FC5069DD70073C7079D2 /* IOSRound05CompanionFeatures.swift */,
+				9F95FB5FC997029CE27750AE /* IOSRound07CompanionFeatures.swift */,
+				75BBF0187C7EDEA2BE3E2EBD /* IOSRound08CompanionFeatures.swift */,
+				5F9CD5A5ABA6E4BA4A3A7A40 /* IOSRound09CompanionFeatures.swift */,
+				969BA4AB98E313911133B827 /* IOSRound10CompanionFeatures.swift */,
+				992E3238F727E1244DEB62AA /* IOSSlotEditorSheet.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		639EAABE1ED85F4101071E69 /* Apps */ = {
+			isa = PBXGroup;
+			children = (
+				14DA40EBCF1BE77816A1DF0A /* ChocliftIOS */,
+				1C97F7D3EC2CAC82D47B2EFE /* ChocliftMac */,
+				8ABADF79BDD19D33F855502A /* ChocliftWatch */,
+			);
+			path = Apps;
+			sourceTree = "<group>";
+		};
+		65D7538001307E72D79EACBB /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				75A0A827A172B80AEAD41CB0 /* ActionFlowsStudioView.swift */,
+				00E7551CE4795CA307064107 /* ChocolateBarStudioView.swift */,
+				31CBDF43194BCF470C79690B /* DevicesAndMainWindowView.swift */,
+				A7CB5368CF46C2C2213D8656 /* EmojiBarStudioView.swift */,
+				EB92F1ECD64FE5AC8BE66E21 /* MacCompanionHotkeysCard.swift */,
+				135724865A4998877AAC6E9C /* MacNotchPanelView.swift */,
+				E799103D3FF189D12A92AC14 /* MacSlotItemPickerSheet.swift */,
+				73053E274F62F8A83517413A /* SoundboardStudioView.swift */,
+				B9A7BFF5A52FBC825E5EC0A6 /* TimeTravelAndGestureViews.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		6E42746BC3649EA0DC87EDA5 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				2C4D279BE00357517919314F /* ChocliftCore */,
+			);
+			path = Packages;
+			sourceTree = "<group>";
+		};
+		7622D5E122281EF62957FD41 /* Protocol */ = {
+			isa = PBXGroup;
+			children = (
+				378D57F87F9075FB787AF62B /* WireProtocol.swift */,
+			);
+			path = Protocol;
+			sourceTree = "<group>";
+		};
+		7C78FABA4E3823D157FAADDC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				0D64F1BC1A63A04202433DEB /* ChocliftIOS.app */,
+				0455E6A3BEB8E8030DFB5547 /* ChocliftMac.app */,
+				986435E767EE4D1C6FA42738 /* ChocliftWatch.app */,
+				AF86327935FFCF951774ACA4 /* libChocliftCoreIOS.a */,
+				309FB4ADE26AAF40909BC0FB /* libChocliftCoreMac.a */,
+				6FC7D3375FFAED79D1CB7DE7 /* libChocliftCoreWatch.a */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		7CEAC78863A2F2A513C1AF48 /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */,
+				B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		8ABADF79BDD19D33F855502A /* ChocliftWatch */ = {
+			isa = PBXGroup;
+			children = (
+				226A03B84444E14186ACF945 /* ChocliftWatchApp.swift */,
+				B94574FDA0863F4AAF2322B4 /* Resources */,
+				19D95D64583937DA1ED6884C /* Views */,
+			);
+			path = ChocliftWatch;
+			sourceTree = "<group>";
+		};
+		962389C931396761AE236EBA /* Gestures */ = {
+			isa = PBXGroup;
+			children = (
+				55531469D9255C9D44CE4F85 /* MultiTouchGestureOverlay.swift */,
+			);
+			path = Gestures;
+			sourceTree = "<group>";
+		};
+		98F159AB31C863D6EDE5E293 /* ChocliftCore */ = {
+			isa = PBXGroup;
+			children = (
+				EF328F02173594A59963393B /* Models */,
+				11E46DC5D246539BF061D42A /* Networking */,
+				7622D5E122281EF62957FD41 /* Protocol */,
+				1131669875D124B40C036C96 /* Resources */,
+				7CEAC78863A2F2A513C1AF48 /* Theme */,
+			);
+			path = ChocliftCore;
+			sourceTree = "<group>";
+		};
+		B94574FDA0863F4AAF2322B4 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				0637814C808EC6900262C681 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		E89DC0A159094384CC6D16C0 = {
+			isa = PBXGroup;
+			children = (
+				639EAABE1ED85F4101071E69 /* Apps */,
+				6E42746BC3649EA0DC87EDA5 /* Packages */,
+				7C78FABA4E3823D157FAADDC /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		ECAFCED3595F73C18B0F97C0 /* State */ = {
+			isa = PBXGroup;
+			children = (
+				8C7BD308B52CE99958DDECFA /* MacAppCoordinator.swift */,
+			);
+			path = State;
+			sourceTree = "<group>";
+		};
+		EF328F02173594A59963393B /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */,
+				15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */,
+				C5756FAFC7277A62567E747E /* ChocliftModels.swift */,
+				BBAB69B3EFD755C9C6D81036 /* CompanionActionCatalog.swift */,
+				0F2E71FEEB8D3806C6759ADB /* CompanionActionPack+Apps.swift */,
 				718D4FBEB597E4E68A91BCF6 /* CompanionActionPack+Display.swift */,
+				8AE4BF0AD16E5CF7E414797F /* CompanionActionPack+DisplayMove.swift */,
 				2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */,
 				6B997305863F5C700F00C218 /* CompanionActionPack+Files.swift */,
 				4E3BD2E09E1BAA8964BA95CA /* CompanionActionPack+FilesRecent.swift */,
@@ -358,6 +1054,7 @@
 				324916B32841302FBCA352BA /* CompanionActionPack+Apps.swift in Sources */,
 				B823C26860206B7E16B33004 /* CompanionActionPack+Capture.swift in Sources */,
 				EC022D14BDC93E5DF87084C3 /* CompanionActionPack+Display.swift in Sources */,
+				841E737659C3B3218210D9EB /* CompanionActionPack+DisplayMove.swift in Sources */,
 				BDAB74CDC0F57501EA16D86C /* CompanionActionPack+Edit.swift in Sources */,
 				46B439371362CCD4D5EA02D7 /* CompanionActionPack+Files.swift in Sources */,
 				4D794D1D9DAEA44BC4EA11C2 /* CompanionActionPack+FilesRecent.swift in Sources */,
@@ -414,6 +1111,7 @@
 				593CF1D80449A00E0E7EFBF8 /* CompanionActionPack+Apps.swift in Sources */,
 				7E39387C404D998019DB8529 /* CompanionActionPack+Capture.swift in Sources */,
 				CAF7335208F5094F394E4D6E /* CompanionActionPack+Display.swift in Sources */,
+				CA0525BDEEFD42C3034CC423 /* CompanionActionPack+DisplayMove.swift in Sources */,
 				B28B2B9D5B25E49FFCE3801D /* CompanionActionPack+Edit.swift in Sources */,
 				1F0C8E75A0F8EB3B1909622A /* CompanionActionPack+Files.swift in Sources */,
 				3C15E81A92C1FF01F16CE209 /* CompanionActionPack+FilesRecent.swift in Sources */,
@@ -478,6 +1176,7 @@
 				B4235E1800D45E807D389AC2 /* MacDeskTimerCard.swift in Sources */,
 				C1DABB0FB932F9CB930B9CD6 /* MacDeskTimerService.swift in Sources */,
 				86DE51B51BDB96523BCE17DE /* MacDisplayActionPack.swift in Sources */,
+				FD12AEBCCDD3CBBB601B597A /* MacDisplayMoveActionPack.swift in Sources */,
 				CB28FF807321B324891136B2 /* MacEditActionPack.swift in Sources */,
 				D83C8556667C1E95D19A2B99 /* MacFilesActionPack.swift in Sources */,
 				68A2E4A52388125FC05403E5 /* MacFilesRecentActionPack.swift in Sources */,
@@ -521,6 +1220,7 @@
 				20DB19B33DBA44C0D47F1B8E /* CompanionActionPack+Apps.swift in Sources */,
 				AC0BCFB332178D61630A3BA3 /* CompanionActionPack+Capture.swift in Sources */,
 				3923DE033DA8CB55EBCDE31D /* CompanionActionPack+Display.swift in Sources */,
+				3AEE71679D5867F745611811 /* CompanionActionPack+DisplayMove.swift in Sources */,
 				F1287122DF85975EC3734CA1 /* CompanionActionPack+Edit.swift in Sources */,
 				0624C0097D3B262E2C4E78F0 /* CompanionActionPack+Files.swift in Sources */,
 				834C7CBB907FCECE0FDA0022 /* CompanionActionPack+FilesRecent.swift in Sources */,
