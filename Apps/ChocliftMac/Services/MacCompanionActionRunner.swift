@@ -22,6 +22,9 @@ enum MacCompanionActionRunner {
         if id.hasPrefix("apps.") {
             return MacAppsActionPack.run(id: id)
         }
+        if id.hasPrefix("display.") {
+            return MacDisplayActionPack.run(id: id)
+        }
         return (false, L10n.tr("不支持此操作", "Unsupported action"))
     }
 }
