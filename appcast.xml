@@ -5,6 +5,15 @@
     <description>Choclift 自动更新源</description>
     <language>zh</language>
     <item>
+      <title>1.0.35</title>
+      <pubDate>Sun, 15 Nov 2026 13:50:00 +0000</pubDate>
+      <sparkle:version>182</sparkle:version>
+      <sparkle:shortVersionString>1.0.35</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/uhyrdtrdtfg-creator/choclift/releases/tag/v1.0.35</sparkle:releaseNotesLink>
+      <enclosure url="https://github.com/uhyrdtrdtfg-creator/choclift/releases/download/v1.0.35/Choclift.zip" length="7479010" type="application/octet-stream" sparkle:edSignature="5BGtMEtYa7Fg1ipcsPI0nhSPYlHPKflQWob/xfFtAaS4a9rz3O0XTtbrmp1LrwnK7ZmCBKaE4NWTcgWz5hFZBQ==" sparkle:os="macos" />
+    </item>
+    <item>
       <title>1.0.34</title>
       <pubDate>Sun, 15 Nov 2026 13:20:56 +0000</pubDate>
       <sparkle:version>171</sparkle:version>
