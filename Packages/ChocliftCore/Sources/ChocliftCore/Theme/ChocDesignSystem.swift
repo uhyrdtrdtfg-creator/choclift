@@ -623,7 +623,13 @@ public struct ChocBarTileCard: View {
                         switch resolved.kind {
                         case .macApp(_, _, _, let symbol):
                             DataImageView(pngData: resolvedIconData(for: resolved), fallbackSymbol: symbol, tint: palette.secondaryText)
-                        case .shortcut(_, let emoji, _), .website(_, _, let emoji, _, _),
+                        case .website(let url, _, let emoji, _, _):
+                            if WebsiteMark.isGitHub(url) {
+                                WebsiteMark.gitHub(side: side * 0.62)
+                            } else {
+                                Text(emoji.isEmpty ? "📝" : emoji).font(.system(size: side * 0.8))
+                            }
+                        case .shortcut(_, let emoji, _),
                              .flow(_, _, let emoji, _, _), .soundboard(_, _, let emoji, _),
                              .snippet(_, _, let emoji, _):
                             Text(emoji.isEmpty ? "📝" : emoji).font(.system(size: side * 0.8))
@@ -675,6 +681,94 @@ public struct ChocBarTileCard: View {
         return nil
     }
 
+}
+
+enum WebsiteMark {
+    static func isGitHub(_ url: String) -> Bool {
+        guard let host = URL(string: url)?.host?.lowercased() else { return false }
+        return host == "github.com" || host.hasSuffix(".github.com")
+    }
+
+    static func gitHub(side: CGFloat) -> some View {
+        GitHubMark()
+            .fill(Color(hex: "#24292F"))
+            .frame(width: side, height: side)
+    }
+}
+
+/// GitHub mark from the 24×24 silhouette path.
+struct GitHubMark: Shape {
+    func path(in rect: CGRect) -> Path {
+        let scale = min(rect.width, rect.height) / 24
+        var transform = CGAffineTransform(translationX: rect.midX, y: rect.midY)
+            .scaledBy(x: scale, y: scale)
+            .translatedBy(x: -12, y: -12)
+        return GitHubMarkPath.source.applying(transform)
+    }
+}
+
+private enum GitHubMarkPath {
+    static let source: Path = {
+        let data = "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+        return SVGPathParser.path(from: data)
+    }()
+}
+
+enum SVGPathParser {
+    static func path(from data: String) -> Path {
+        var path = Path()
+        var index = data.startIndex
+        var command: Character = "M"
+        var current = CGPoint.zero
+        var start = CGPoint.zero
+        func number() -> CGFloat? {
+            while index < data.endIndex, data[index] == "," || data[index] == " " { index = data.index(after: index) }
+            guard index < data.endIndex else { return nil }
+            let begin = index
+            if data[index] == "-" { index = data.index(after: index) }
+            var sawDot = false
+            var sawDigit = false
+            while index < data.endIndex {
+                let ch = data[index]
+                if ch.isNumber { sawDigit = true; index = data.index(after: index); continue }
+                if ch == ".", !sawDot { sawDot = true; index = data.index(after: index); continue }
+                break
+            }
+            guard sawDigit, let value = Double(data[begin..<index]) else { return nil }
+            return CGFloat(value)
+        }
+        while index < data.endIndex {
+            let ch = data[index]
+            if ch.isLetter {
+                command = ch
+                index = data.index(after: index)
+            }
+            switch command {
+            case "M", "m":
+                guard let x = number(), let y = number() else { return path }
+                current = command == "m" ? CGPoint(x: current.x + x, y: current.y + y) : CGPoint(x: x, y: y)
+                start = current
+                path.move(to: current)
+                command = command == "m" ? "l" : "L"
+            case "L", "l":
+                guard let x = number(), let y = number() else { return path }
+                current = command == "l" ? CGPoint(x: current.x + x, y: current.y + y) : CGPoint(x: x, y: y)
+                path.addLine(to: current)
+            case "C", "c":
+                guard let x1 = number(), let y1 = number(), let x2 = number(), let y2 = number(), let x = number(), let y = number() else { return path }
+                let c1 = command == "c" ? CGPoint(x: current.x + x1, y: current.y + y1) : CGPoint(x: x1, y: y1)
+                let c2 = command == "c" ? CGPoint(x: current.x + x2, y: current.y + y2) : CGPoint(x: x2, y: y2)
+                current = command == "c" ? CGPoint(x: current.x + x, y: current.y + y) : CGPoint(x: x, y: y)
+                path.addCurve(to: current, control1: c1, control2: c2)
+            case "Z", "z":
+                path.closeSubpath()
+                current = start
+            default:
+                return path
+            }
+        }
+        return path
+    }
 }
 
 // MARK: - Touch-Down & Cancel-Safe Pressed Key Feedback

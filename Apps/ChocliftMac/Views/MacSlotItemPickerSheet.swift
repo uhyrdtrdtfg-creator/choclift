@@ -836,7 +836,7 @@ public struct MacSlotItemPickerSheet: View {
 
                 VStack(spacing: 6) {
                     presetWebsiteButton(title: "YouTube", url: "https://www.youtube.com", emoji: "▶️", hex: "#FFF1EC")
-                    presetWebsiteButton(title: "GitHub", url: "https://github.com", emoji: "🐙", hex: "#EDF6FF")
+                    presetWebsiteButton(title: "GitHub", url: "https://github.com", emoji: "", hex: "#EDF6FF")
                     presetWebsiteButton(title: "Figma", url: "https://www.figma.com", emoji: "🎨", hex: "#FFF6E3")
                     presetWebsiteButton(title: "Notion", url: "https://www.notion.so", emoji: "📓", hex: "#F3EEFF")
                 }
@@ -861,7 +861,7 @@ public struct MacSlotItemPickerSheet: View {
                         TextField("🌐", text: $websiteEmoji)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 50)
-                        ForEach(["🌐", "▶️", "🐙", "🎨", "📓", "📰", "💬", "🛒"], id: \.self) { em in
+                        ForEach(["🌐", "▶️", "🎨", "📓", "📰", "💬", "🛒", "⭐️"], id: \.self) { em in
                             Button {
                                 websiteEmoji = em
                             } label: {
