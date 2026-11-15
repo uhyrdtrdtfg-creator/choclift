@@ -100,6 +100,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case switchToNextSpace = "switch_to_next_space"
     case switchToPreviousSpace = "switch_to_previous_space"
     case toggleAppSwitcher = "toggle_app_switcher"
+    case toggleAppearance = "toggle_appearance"
+    case toggleNightShift = "toggle_night_shift"
 
     public var id: String { rawValue }
 
@@ -139,6 +141,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .switchToNextSpace: return "chevron.right.square.fill"
         case .switchToPreviousSpace: return "chevron.left.square.fill"
         case .toggleAppSwitcher: return "squares.below.rectangle"
+        case .toggleAppearance: return "circle.lefthalf.filled"
+        case .toggleNightShift: return "sunset.fill"
         }
     }
 
@@ -150,7 +154,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return "#EDF6FF"
         case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
             return "#F3EEFF"
-        case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker, .switchToNextSpace, .switchToPreviousSpace, .toggleAppSwitcher:
+        case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker,
+             .switchToNextSpace, .switchToPreviousSpace, .toggleAppSwitcher, .toggleAppearance, .toggleNightShift:
             return "#FFF1EC"
         case .mediaPlayPause, .mediaNext, .mediaPrevious, .volumeUp, .volumeDown, .volumeMute:
             return "#ECFAEE"
@@ -231,7 +236,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
              .centerWindow, .toggleFullscreen, .missionControl, .showDesktop,
              .screenshotInteractive, .mediaPlayPause, .mediaNext, .mediaPrevious,
              .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca,
-             .moveWindowToNextDisplay:
+             .moveWindowToNextDisplay, .toggleAppearance, .toggleNightShift:
             return nil
         }
     }
@@ -272,6 +277,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .switchToNextSpace: return L10n.tr("下一个桌面空间", "Next Space", language: lang)
         case .switchToPreviousSpace: return L10n.tr("上一个桌面空间", "Previous Space", language: lang)
         case .toggleAppSwitcher: return L10n.tr("应用切换器", "App Switcher", language: lang)
+        case .toggleAppearance: return L10n.tr("切换外观", "Toggle Appearance", language: lang)
+        case .toggleNightShift: return L10n.tr("切换夜览", "Toggle Night Shift", language: lang)
         }
     }
 
@@ -311,6 +318,8 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .switchToNextSpace: return L10n.tr("下一空间", "Next Space", language: lang)
         case .switchToPreviousSpace: return L10n.tr("上一空间", "Prev Space", language: lang)
         case .toggleAppSwitcher: return L10n.tr("应用切换", "App Switcher", language: lang)
+        case .toggleAppearance: return L10n.tr("外观", "Appearance", language: lang)
+        case .toggleNightShift: return L10n.tr("夜览", "Night Shift", language: lang)
         }
     }
 
@@ -346,7 +355,9 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
                 [
                     .missionControl, .showDesktop,
                     .switchToPreviousSpace, .switchToNextSpace, .toggleAppSwitcher,
-                    .screenshotInteractive, .openEmojiPicker, .lockScreen, .quitApp
+                    .screenshotInteractive, .openEmojiPicker,
+                    .toggleAppearance, .toggleNightShift,
+                    .lockScreen, .quitApp
                 ]
             )
         ]
@@ -355,6 +366,153 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     /// Only `.volumeUp`, `.volumeDown`, and `.mediaNext` repeat while held down.
     public var supportsHoldToRepeat: Bool {
         HoldToRepeatPolicy.supportsHoldToRepeat(self)
+    }
+}
+
+// MARK: - Appearance & Night Shift Toggle Policies
+
+public enum MacAppearanceMode: String, Codable, Equatable, Hashable, Sendable {
+    case light
+    case dark
+
+    public static func fromInterfaceStyle(_ rawValue: String?) -> MacAppearanceMode {
+        guard let trimmed = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines),
+              trimmed.caseInsensitiveCompare("Dark") == .orderedSame else {
+            return .light
+        }
+        return .dark
+    }
+
+    public func feedbackDetail(in lang: AppLanguage = .system) -> String {
+        switch self {
+        case .light:
+            return L10n.tr("已切换为浅色外观", "Switched to light appearance", language: lang)
+        case .dark:
+            return L10n.tr("已切换为深色外观", "Switched to dark appearance", language: lang)
+        }
+    }
+}
+
+public enum MacAppearanceToggle {
+    public static let interfaceStyleKey = "AppleInterfaceStyle"
+    public static let themeChangedNotificationName = "AppleInterfaceThemeChangedNotification"
+
+    /// Returns `"Dark"` when the current `AppleInterfaceStyle` is `nil` or `"Light"`,
+    /// and `nil` (delete key for light mode) when the current value is `"Dark"`.
+    public static func nextInterfaceStyleValue(from currentValue: String?) -> String? {
+        switch MacAppearanceMode.fromInterfaceStyle(currentValue) {
+        case .light:
+            return "Dark"
+        case .dark:
+            return nil
+        }
+    }
+
+    public static func perform(
+        in defaults: UserDefaults,
+        language: AppLanguage = .system,
+        postThemeChangedNotification: () -> Void = {}
+    ) -> (success: Bool, mode: MacAppearanceMode?, detail: String) {
+        perform(
+            language: language,
+            readCurrent: { defaults.string(forKey: interfaceStyleKey) },
+            writeNext: { nextValue in
+                if let nextValue {
+                    defaults.set(nextValue, forKey: interfaceStyleKey)
+                } else {
+                    defaults.removeObject(forKey: interfaceStyleKey)
+                }
+                return true
+            },
+            postThemeChangedNotification: postThemeChangedNotification,
+            readBack: { defaults.string(forKey: interfaceStyleKey) }
+        )
+    }
+
+    public static func perform(
+        language: AppLanguage = .system,
+        readCurrent: () -> String?,
+        writeNext: (String?) -> Bool,
+        postThemeChangedNotification: () -> Void,
+        readBack: () -> String?
+    ) -> (success: Bool, mode: MacAppearanceMode?, detail: String) {
+        let nextRaw = nextInterfaceStyleValue(from: readCurrent())
+        let expectedMode = MacAppearanceMode.fromInterfaceStyle(nextRaw)
+
+        guard writeNext(nextRaw) else {
+            return (
+                false,
+                nil,
+                L10n.tr("无法在此 Mac 上切换外观", "Appearance could not be toggled on this Mac", language: language)
+            )
+        }
+
+        postThemeChangedNotification()
+
+        let verifiedMode = MacAppearanceMode.fromInterfaceStyle(readBack())
+        guard verifiedMode == expectedMode else {
+            return (
+                false,
+                nil,
+                L10n.tr("外观写入后校验未通过", "Appearance change could not be verified on this Mac", language: language)
+            )
+        }
+
+        return (true, verifiedMode, verifiedMode.feedbackDetail(in: language))
+    }
+}
+
+public enum MacNightShiftToggle {
+    public struct StatusSnapshot: Equatable, Sendable {
+        public let isAvailable: Bool
+        public let isEnabled: Bool
+
+        public init(isAvailable: Bool, isEnabled: Bool) {
+            self.isAvailable = isAvailable
+            self.isEnabled = isEnabled
+        }
+    }
+
+    public static func parseStatusDictionary(_ dictionary: [String: Any]?) -> StatusSnapshot? {
+        guard let dictionary,
+              let available = (dictionary["BlueReductionAvailable"] as? NSNumber)?.boolValue,
+              let enabled = (dictionary["BlueReductionEnabled"] as? NSNumber)?.boolValue else {
+            return nil
+        }
+        return StatusSnapshot(isAvailable: available, isEnabled: enabled)
+    }
+
+    public static func unavailableDetail(in lang: AppLanguage = .system) -> String {
+        L10n.tr("无法在此 Mac 上切换夜览", "Night Shift could not be toggled on this Mac", language: lang)
+    }
+
+    public static func feedbackDetail(isEnabled: Bool, in lang: AppLanguage = .system) -> String {
+        isEnabled
+            ? L10n.tr("已开启夜览", "Night Shift turned on", language: lang)
+            : L10n.tr("已关闭夜览", "Night Shift turned off", language: lang)
+    }
+
+    public static func perform(
+        language: AppLanguage = .system,
+        isSupported: () -> Bool,
+        readStatus: () -> StatusSnapshot?,
+        writeEnabled: (Bool) -> Bool
+    ) -> (success: Bool, isEnabled: Bool?, detail: String) {
+        guard isSupported(),
+              let current = readStatus(),
+              current.isAvailable else {
+            return (false, nil, unavailableDetail(in: language))
+        }
+
+        let targetEnabled = !current.isEnabled
+        guard writeEnabled(targetEnabled),
+              let verified = readStatus(),
+              verified.isAvailable,
+              verified.isEnabled == targetEnabled else {
+            return (false, nil, unavailableDetail(in: language))
+        }
+
+        return (true, targetEnabled, feedbackDetail(isEnabled: targetEnabled, in: language))
     }
 }
 

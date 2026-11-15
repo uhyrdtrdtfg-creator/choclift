@@ -292,6 +292,21 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         inputService.mediaPlaybackModeContextProvider = { [weak self] in
             self?.systemControlService.currentMediaPlaybackModeContext() ?? MacMediaPlaybackModeContext()
         }
+        inputService.toggleAppearanceHandler = { [weak self] in
+            guard let self else {
+                let res = MacSystemControlService.toggleGlobalAppearance()
+                return (res.success, res.detail)
+            }
+            let res = self.systemControlService.toggleAppearance(language: self.lang)
+            return (res.success, res.detail)
+        }
+        inputService.toggleNightShiftHandler = { [weak self] in
+            guard let self else {
+                return (false, MacNightShiftToggle.unavailableDetail())
+            }
+            let res = self.systemControlService.toggleNightShift(language: self.lang)
+            return (res.success, res.detail)
+        }
 
         keepAwakeService.onAssertionStateChanged = { [weak self] isHolding in
             guard let self else { return }

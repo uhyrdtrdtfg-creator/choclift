@@ -1200,7 +1200,8 @@ public struct WatchQuickActionsView: View {
         .toggleAppSwitcher,
         .copySelection, .pasteClipboard,
         .undoAction, .screenshotInteractive,
-        .openEmojiPicker, .lockScreen,
+        .openEmojiPicker, .toggleAppearance,
+        .toggleNightShift, .lockScreen,
         .quitApp
     ]
 

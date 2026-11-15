@@ -19,6 +19,8 @@ public final class MacInputAndMediaService {
     public var mediaSeekContextProvider: (() -> MacMediaSeekContext)?
     /// Supplies live Now Playing bundle + running-player context for shuffle/repeat (`MacMediaPlaybackModeRouter`).
     public var mediaPlaybackModeContextProvider: (() -> MacMediaPlaybackModeContext)?
+    public var toggleAppearanceHandler: (() -> (success: Bool, message: String))?
+    public var toggleNightShiftHandler: (() -> (success: Bool, message: String))?
 
     public init(windowService: MacAccessibilityAndWindowService) {
         self.windowService = windowService
@@ -484,6 +486,19 @@ public final class MacInputAndMediaService {
                 NSApp.orderFrontCharacterPalette(nil)
             }
             return (true, L10n.tr("已打开表情面板", "Opened Emoji Palette"))
+
+        case .toggleAppearance:
+            if let toggleAppearanceHandler {
+                return toggleAppearanceHandler()
+            }
+            let res = MacSystemControlService.toggleGlobalAppearance()
+            return (res.success, res.detail)
+
+        case .toggleNightShift:
+            if let toggleNightShiftHandler {
+                return toggleNightShiftHandler()
+            }
+            return (false, MacNightShiftToggle.unavailableDetail())
         }
     }
 
