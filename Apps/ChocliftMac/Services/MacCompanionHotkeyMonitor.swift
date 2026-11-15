@@ -155,6 +155,36 @@ public final class MacCompanionHotkeyMonitor {
             return
         }
 
+        if let flowID = CompanionHotkeyLibrary.parsedFlowID(from: hotkey.actionID) {
+            Task { @MainActor [weak coordinator] in
+                guard let coordinator else { return }
+                let trimmedTitle = hotkey.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                let result = await coordinator.runFlowByID(
+                    flowID,
+                    fallbackName: trimmedTitle.isEmpty ? hotkey.actionID : trimmedTitle,
+                    triggeredBy: "Mac Shortcut"
+                )
+                if !result.success {
+                    coordinator.flashBanner(result.detail)
+                }
+            }
+            return
+        }
+
+        if let quadID = CompanionHotkeyLibrary.parsedQuadLayoutID(from: hotkey.actionID) {
+            Task { @MainActor [weak coordinator] in
+                guard let coordinator else { return }
+                let result = await coordinator.runQuadLayout(
+                    id: quadID,
+                    triggeredBy: "Mac Shortcut"
+                )
+                if !result.success {
+                    coordinator.flashBanner(result.message)
+                }
+            }
+            return
+        }
+
         let selfPID = ProcessInfo.processInfo.processIdentifier
         let frontApp = NSWorkspace.shared.frontmostApplication
         let isChocliftFrontmost: Bool = {

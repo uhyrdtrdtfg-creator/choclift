@@ -641,7 +641,7 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
             didSave = draft.hotkeys.contains(sanitized)
         }, broadcastOriginDeviceID: nil)
 
-        let resolvedTitle = sanitized.resolvedTitle(in: lang)
+        let resolvedTitle = sanitized.resolvedTitle(in: profile, language: lang)
         if didSave {
             let detail = L10n.tr(
                 "已保存 \(sanitized.displayLabel) → \(resolvedTitle)",
