@@ -31,6 +31,7 @@ enum MacCompanionActionRunner {
         }
         if CompanionActionCatalog.finderDockPack.contains(where: { $0.id == id }) {
             return MacFinderDockActionPack.run(id: id)
+        }
         if id == AppSettingsCompanionActionID.openSettings {
             return MacAppSettingsActionPack.run(id: id, preferredPID: preferredPID)
         }
@@ -45,10 +46,13 @@ enum MacCompanionActionRunner {
         }
         if CompanionActionCatalog.speechPack.contains(where: { $0.id == id }) {
             return MacSpeechActionPack.run(id: id)
+        }
         if CompanionActionCatalog.capturePack.contains(where: { $0.id == id }) || id.hasPrefix("capture.") {
             return MacCaptureActionPack.run(id: id, preferredPID: preferredPID)
+        }
         if CompanionActionCatalog.windowTitlePack.contains(where: { $0.id == id }) {
             return MacWindowTitleActionPack.run(id: id, preferredPID: preferredPID)
+        }
         if id == SelectionCompanionAction.copyToPhone.rawValue {
             return MacSelectionActionPack.run(id: id, preferredPID: preferredPID)
         }

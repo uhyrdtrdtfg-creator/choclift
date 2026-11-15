@@ -378,9 +378,6 @@ public final class MacSystemControlService {
         let privacyCapture = Self.readPrivacyCaptureStatus(defaultInputDeviceID: inDevice)
         let currentWiFiSSID = Self.readCurrentWiFiSSID()
         let ejectableVolumeCount = Self.enumerateEjectableExternalVolumes().count
-        let resolvedFrontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(
-            frontmostAppNameProvider?() ?? NSWorkspace.shared.frontmostApplication?.localizedName
-        )
         let deskTimer = deskTimerProvider?() ?? currentState.deskTimer
         let resolvedFrontmostAppName: String? = {
             if let frontmostAppNameProvider {

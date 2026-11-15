@@ -615,7 +615,6 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.privacyCapture = privacyCapture
         self.wifiSSID = MacWiFiStatusFormatter.sanitizedSSID(wifiSSID)
         self.ejectableExternalVolumeCount = max(0, ejectableExternalVolumeCount)
-        self.frontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName)
         self.deskTimer = deskTimer
         self.frontmostAppName = FrontmostAppLabel.format(appName: frontmostAppName)
     }
@@ -720,7 +719,6 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         if ejectableExternalVolumeCount > 0 {
             try container.encode(max(0, ejectableExternalVolumeCount), forKey: .ejectableExternalVolumeCount)
         }
-        try container.encodeIfPresent(FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName), forKey: .frontmostAppName)
         try container.encode(deskTimer, forKey: .deskTimer)
         try container.encodeIfPresent(FrontmostAppLabel.format(appName: frontmostAppName), forKey: .frontmostAppName)
     }
@@ -848,8 +846,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             privacyCapture != other.privacyCapture ||
             MacWiFiStatusFormatter.sanitizedSSID(wifiSSID) != MacWiFiStatusFormatter.sanitizedSSID(other.wifiSSID) ||
             max(0, ejectableExternalVolumeCount) != max(0, other.ejectableExternalVolumeCount) ||
-            FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName) != FrontmostAppStripFormatter.sanitizedAppName(other.frontmostAppName) ||
-            deskTimer != other.deskTimer {
+            deskTimer != other.deskTimer ||
             FrontmostAppLabel.format(appName: frontmostAppName) != FrontmostAppLabel.format(appName: other.frontmostAppName) {
             return true
         }

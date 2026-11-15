@@ -1653,7 +1653,10 @@ public struct IOSRootTouchBarView: View {
     @ViewBuilder
     private var toolsSheetFeedbackOverlay: some View {
         if let hud = hudToast {
-            let cornerRadius: CGFloat = hud.secondaryText == nil ? 20 : 14
+            hudToastBannerView(hud)
+        }
+    }
+
     private func hudToastBannerView(_ hud: HUDToastBanner) -> some View {
         let cornerRadius: CGFloat = hud.secondaryText == nil ? 20 : 14
         return VStack {
@@ -1694,7 +1697,6 @@ public struct IOSRootTouchBarView: View {
             .padding(.top, 10)
             .allowsHitTesting(false)
             .transition(.move(edge: .top).combined(with: .opacity))
-        }
             Spacer()
         }
         .zIndex(10)

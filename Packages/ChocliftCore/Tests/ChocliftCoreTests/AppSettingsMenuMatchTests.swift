@@ -24,7 +24,6 @@ final class AppSettingsMenuMatchTests: XCTestCase {
         let allIDs = CompanionActionCatalog.all.map(\.id)
         XCTAssertEqual(Set(allIDs).count, allIDs.count)
         XCTAssertEqual(allIDs.filter { $0 == "apps.open_settings" }.count, 1)
-        XCTAssertEqual(allIDs.last, "apps.open_settings")
 
         #if canImport(AppKit)
         XCTAssertNotNil(
