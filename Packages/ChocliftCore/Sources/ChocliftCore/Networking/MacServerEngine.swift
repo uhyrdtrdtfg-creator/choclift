@@ -923,7 +923,11 @@ public final class MacServerEngine: ObservableObject {
                  .deleteQuadLayout,
                  .runQuadLayout:
                 session.supportsControlStrip = true
-            case .requestCompanionDashboard, .pasteMacClipboard, .captureMainDisplayScreenshot, .openCalendarApp:
+            case .requestCompanionDashboard,
+                 .pasteMacClipboard,
+                 .captureMainDisplayScreenshot,
+                 .openCalendarApp,
+                 .joinNextCalendarMeeting:
                 session.supportsCompanionDashboard = true
             case .requestFrontmostAppWindows, .raiseFrontmostWindow:
                 session.supportsFrontmostWindowList = true

@@ -64,26 +64,129 @@ public struct IOSCompanionBarRibbon: View {
 
     private var calendarEventButton: some View {
         let key = "calendar-bar"
+        let joinKey = "calendar-bar-join"
         let isPressed = (pressedKey == key)
+        let isJoinPressed = (pressedKey == joinKey)
+        let snapshot = client.calendarSnapshot
+        let isConnected = client.connectionState.isConnected
+        let joinableEvent: NextCalendarEventSummary? = {
+            guard isConnected, let ev = snapshot.nextEvent, ev.hasJoinLink else { return nil }
+            return ev
+        }()
 
         return TimelineView(.periodic(from: .now, by: 30.0)) { context in
-            Button {
-                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
-                ChocPressFeedback.completeTap(key: key, pressedKey: $pressedKey)
-                if client.connectionState.isConnected {
-                    client.openCalendarOnMac()
-                } else {
-                    client.lastFeedback = CompanionFeedbackToast(
-                        success: false,
-                        title: L10n.tr("日历", "Calendar", language: lang),
-                        detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
-                    )
+            if let event = joinableEvent {
+                let provider = event.joinProvider ?? "Link"
+                let countdown = NextCalendarEventSnapshot.formattedCountdown(
+                    for: event,
+                    referenceDate: context.date,
+                    language: lang
+                )
+
+                HStack(spacing: 6) {
+                    Button {
+                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                        ChocPressFeedback.completeTap(key: key, pressedKey: $pressedKey)
+                        client.openCalendarOnMac()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "calendar")
+                                .font(ChocType.caption)
+                                .foregroundStyle(palette.accent)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text(event.title)
+                                        .font(ChocType.caption)
+                                        .foregroundStyle(palette.primaryText)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+
+                                    Text(
+                                        NextCalendarEventSnapshot.formattedStartTime(
+                                            for: event,
+                                            referenceDate: context.date,
+                                            language: lang
+                                        )
+                                    )
+                                    .font(ChocType.micro)
+                                    .monospacedDigit()
+                                    .foregroundStyle(palette.secondaryText)
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                }
+
+                                Text("\(provider) · \(countdown)")
+                                    .font(ChocType.micro)
+                                    .monospacedDigit()
+                                    .foregroundStyle(palette.accent)
+                                    .lineLimit(1)
+                            }
+
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.leading, 10)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                        .scaleEffect(isPressed ? 0.98 : 1.0)
+                    }
+                    .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: key))
+                    .accessibilityIdentifier("ios-calendar-event-button")
+
+                    Button {
+                        CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                        ChocPressFeedback.completeTap(key: joinKey, pressedKey: $pressedKey)
+                        client.joinNextCalendarMeeting()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "video.fill")
+                                .font(ChocType.micro)
+                            Text(L10n.tr("加入", "Join", language: lang))
+                                .font(ChocType.micro)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                        .foregroundStyle(palette.accentForeground)
+                        .padding(.horizontal, 11)
+                        .frame(minHeight: 36)
+                        .background(palette.accent, in: Capsule())
+                        .frame(minHeight: 44)
+                        .contentShape(Capsule())
+                        .scaleEffect(isJoinPressed ? 0.94 : 1.0)
+                    }
+                    .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: joinKey))
+                    .padding(.trailing, 6)
+                    .accessibilityIdentifier("ios-join-calendar-meeting-button")
                 }
-            } label: {
-                calendarButtonLabel(referenceDate: context.date, isPressed: isPressed)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(
+                    palette.barSurface.opacity(0.92),
+                    in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+                )
+            } else {
+                Button {
+                    CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                    ChocPressFeedback.completeTap(key: key, pressedKey: $pressedKey)
+                    if client.connectionState.isConnected {
+                        client.openCalendarOnMac()
+                    } else {
+                        client.lastFeedback = CompanionFeedbackToast(
+                            success: false,
+                            title: L10n.tr("日历", "Calendar", language: lang),
+                            detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+                        )
+                    }
+                } label: {
+                    calendarButtonLabel(referenceDate: context.date, isPressed: isPressed)
+                }
+                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: key))
+                .accessibilityIdentifier("ios-calendar-event-button")
             }
-            .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: key))
-            .accessibilityIdentifier("ios-calendar-event-button")
         }
     }
 
@@ -752,6 +855,188 @@ public struct IOSDisplayTargetPickerMenu: View {
             .accessibilityIdentifier("ios-display-picker-menu")
             .accessibilityLabel(L10n.tr("窗口贴靠目标显示器", "Target Display for Window Snap", language: lang))
             .accessibilityValue(state.selectedDisplayLabel(in: lang))
+        }
+    }
+}
+
+public struct IOSNextCalendarEventToolsRow: View {
+    @ObservedObject var client: CompanionClientEngine
+    let searchQuery: String
+
+    @State private var pressedKey: String?
+
+    private var lang: AppLanguage { client.profile.settings.language }
+    private var palette: ChocPalette { ChocPalette.forTheme(client.profile.settings.theme) }
+
+    public init(client: CompanionClientEngine, searchQuery: String) {
+        self.client = client
+        self.searchQuery = searchQuery
+    }
+
+    private var defaultRowTitle: String {
+        L10n.tr("下个日程", "Next Event", language: lang)
+    }
+
+    private var matchesSearch: Bool {
+        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        if defaultRowTitle.localizedCaseInsensitiveContains(trimmed) {
+            return true
+        }
+        if let event = client.calendarSnapshot.nextEvent {
+            if event.title.localizedCaseInsensitiveContains(trimmed) {
+                return true
+            }
+            if let provider = event.joinProvider, provider.localizedCaseInsensitiveContains(trimmed) {
+                return true
+            }
+            if event.hasJoinLink,
+               L10n.tr("加入", "Join", language: lang).localizedCaseInsensitiveContains(trimmed) {
+                return true
+            }
+        }
+        return false
+    }
+
+    public var body: some View {
+        if matchesSearch {
+            let isConnected = client.connectionState.isConnected
+            let snapshot = client.calendarSnapshot
+
+            if isConnected, let event = snapshot.nextEvent {
+                TimelineView(.periodic(from: .now, by: 30.0)) { context in
+                    let startText = NextCalendarEventSnapshot.formattedStartTime(
+                        for: event,
+                        referenceDate: context.date,
+                        language: lang
+                    )
+                    if event.hasJoinLink {
+                        let joinKey = "tools-calendar-join"
+                        let isJoinPressed = (pressedKey == joinKey)
+                        let provider = event.joinProvider ?? "Link"
+                        let countdown = NextCalendarEventSnapshot.formattedCountdown(
+                            for: event,
+                            referenceDate: context.date,
+                            language: lang
+                        )
+
+                        HStack(spacing: 8) {
+                            Button {
+                                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .light)
+                                client.openCalendarOnMac()
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "calendar")
+                                        .foregroundStyle(palette.accent)
+                                        .frame(width: 22)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack(spacing: 6) {
+                                            Text(event.title)
+                                                .font(ChocType.body)
+                                                .foregroundStyle(palette.primaryText)
+                                                .lineLimit(1)
+                                                .truncationMode(.tail)
+
+                                            Text(startText)
+                                                .font(ChocType.micro)
+                                                .monospacedDigit()
+                                                .foregroundStyle(palette.secondaryText)
+                                                .lineLimit(1)
+                                                .fixedSize(horizontal: true, vertical: false)
+                                        }
+
+                                        Text("\(provider) · \(countdown)")
+                                            .font(ChocType.micro)
+                                            .monospacedDigit()
+                                            .foregroundStyle(palette.accent)
+                                            .lineLimit(1)
+                                    }
+
+                                    Spacer(minLength: 0)
+                                }
+                                .padding(.leading, 16)
+                                .padding(.vertical, 6)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("ios-calendar-event-button")
+
+                            Button {
+                                CompanionHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, style: .medium)
+                                ChocPressFeedback.completeTap(key: joinKey, pressedKey: $pressedKey)
+                                client.joinNextCalendarMeeting()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "video.fill")
+                                        .font(ChocType.micro)
+                                    Text(L10n.tr("加入", "Join", language: lang))
+                                        .font(ChocType.micro)
+                                        .lineLimit(1)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                }
+                                .foregroundStyle(palette.accentForeground)
+                                .padding(.horizontal, 11)
+                                .frame(minHeight: 34)
+                                .background(palette.accent, in: Capsule())
+                                .frame(minHeight: 44)
+                                .contentShape(Capsule())
+                                .scaleEffect(isJoinPressed ? 0.94 : 1.0)
+                            }
+                            .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: joinKey))
+                            .padding(.trailing, 12)
+                            .accessibilityIdentifier("ios-join-calendar-meeting-button")
+                        }
+                    } else {
+                        Button {
+                            client.openCalendarOnMac()
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "calendar")
+                                    .foregroundStyle(palette.accent)
+                                    .frame(width: 22)
+                                Text(event.title)
+                                    .font(ChocType.body)
+                                    .foregroundStyle(palette.primaryText)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                Spacer(minLength: 6)
+                                Text(startText)
+                                    .font(ChocType.micro)
+                                    .monospacedDigit()
+                                    .foregroundStyle(palette.secondaryText)
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                            .padding(.horizontal, 16)
+                            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("ios-calendar-event-button")
+                    }
+                }
+            } else {
+                Button {
+                    client.openCalendarOnMac()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "calendar")
+                            .foregroundStyle(palette.accent)
+                            .frame(width: 22)
+                        Text(defaultRowTitle)
+                            .foregroundStyle(palette.primaryText)
+                        Spacer(minLength: 0)
+                    }
+                    .font(ChocType.body)
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("ios-calendar-event-button")
+            }
         }
     }
 }

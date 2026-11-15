@@ -1581,6 +1581,68 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         return result
     }
 
+    public func joinNextCalendarMeeting(
+        triggeredBy deviceName: String
+    ) -> (success: Bool, title: String, detail: String) {
+        let title = L10n.tr("加入会议", "Join Meeting", language: lang)
+        let expectedEvent = calendarSnapshot.nextEvent
+
+        guard let expectedEvent,
+              expectedEvent.hasJoinLink,
+              !calendarService.joinLinkCache.isEmpty else {
+            let detail = L10n.tr(
+                "当前日程没有可加入的会议链接",
+                "No meeting join link available for the next event",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: detail, isSuccess: false)
+            return (false, title, detail)
+        }
+
+        calendarService.refreshSnapshot(requestAccessIfUndetermined: false)
+        let refreshedEvent = calendarService.currentSnapshot.nextEvent
+
+        guard let currentEvent = refreshedEvent,
+              MeetingJoinEventKey(event: expectedEvent) == MeetingJoinEventKey(event: currentEvent) else {
+            let detail = L10n.tr(
+                "下一日程已变更，请确认后再试",
+                "Next calendar event changed — check your updated schedule",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: detail, isSuccess: false)
+            return (false, title, detail)
+        }
+
+        guard let url = calendarService.joinLinkCache.resolveJoinURL(
+            expectedEvent: expectedEvent,
+            currentEvent: currentEvent
+        ), url.scheme?.lowercased() == "https" else {
+            let detail = L10n.tr(
+                "会议链接已失效，请稍后重试",
+                "Meeting join link is no longer available",
+                language: lang
+            )
+            recordActivity(deviceName: deviceName, summary: detail, isSuccess: false)
+            return (false, title, detail)
+        }
+
+        let opened = NSWorkspace.shared.open(url)
+        let providerLabel = currentEvent.joinProvider ?? "Link"
+        let detail = opened
+            ? L10n.tr(
+                "已在 Mac 打开 \(providerLabel) 会议",
+                "Joined \(providerLabel) meeting on Mac",
+                language: lang
+            )
+            : L10n.tr(
+                "无法在 Mac 打开 \(providerLabel) 会议链接",
+                "Could not open \(providerLabel) meeting link on Mac",
+                language: lang
+            )
+        recordActivity(deviceName: deviceName, summary: detail, isSuccess: opened)
+        return (opened, title, detail)
+    }
+
     private func scheduleControlStripRefreshIfRelevant(for action: SystemQuickAction, success: Bool) {
         guard success else { return }
         if action == .mediaPlayPause {
@@ -2038,6 +2100,14 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
                     detail: result.message
                 ))
             }
+
+        case .joinNextCalendarMeeting:
+            let result = joinNextCalendarMeeting(triggeredBy: device.deviceName)
+            reply(.actionFeedback(
+                success: result.success,
+                title: result.title,
+                detail: result.detail
+            ))
 
         case .triggerSoundboardClip(let soundID):
             let result = playSoundClip(id: soundID, triggeredBy: device.deviceName)

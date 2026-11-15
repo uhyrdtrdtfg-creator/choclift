@@ -60,6 +60,7 @@
 		39B7BF35A2DCA3748B9CCD32 /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
 		39C7A34BF45F7854FE2A8AA4 /* Round05Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */; };
 		3A4D4F0B472779B5B93BB736 /* QuadAppLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C79254C7D1D99229CFFA4BB /* QuadAppLayout.swift */; };
+		3A4D5F7FF1C90FD03AE5CF12 /* MeetingJoinLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C063BF49D49252F277808D4 /* MeetingJoinLink.swift */; };
 		3AE70F44F2814BCF59DB9948 /* MacCompanionActionRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47AD940D8025DB63EA4C41E1 /* MacCompanionActionRunner.swift */; };
 		3C15E81A92C1FF01F16CE209 /* CompanionActionPack+FilesRecent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3BD2E09E1BAA8964BA95CA /* CompanionActionPack+FilesRecent.swift */; };
 		3C4C52891835C63359ED3EF3 /* IOSSlotEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 992E3238F727E1244DEB62AA /* IOSSlotEditorSheet.swift */; };
@@ -144,6 +145,7 @@
 		91E26155F0C875E30B5515E6 /* notes.png in Resources */ = {isa = PBXBuildFile; fileRef = BE2646C17F6B581FF2D9A9FC /* notes.png */; };
 		94068E1F1827A415A1EBA1E1 /* MacAccessibilityAndWindowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8003AD2FBC8B7C7AD4459D47 /* MacAccessibilityAndWindowService.swift */; };
 		94A271287C3D5FB9DC454029 /* NotchPanelGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */; };
+		9656C13F7280AE061803BEB5 /* MeetingJoinLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C063BF49D49252F277808D4 /* MeetingJoinLink.swift */; };
 		9671510D567E628E9D3373DA /* MacMenuBarStatusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54B9623F42577CE556571F6E /* MacMenuBarStatusController.swift */; };
 		96935FA7083065FD5D95091B /* IOSRound04CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6FCAB30E95B2B4A3F12C937 /* IOSRound04CompanionFeatures.swift */; };
 		97EA3064B9BBD1EA92A9788E /* IOSRound02CompanionControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07212AF17DB6353FA2039C3E /* IOSRound02CompanionControls.swift */; };
@@ -168,6 +170,7 @@
 		AD61D5E65C3CF2E11C346ED2 /* SnippetPlaceholderExpander.swift in Sources */ = {isa = PBXBuildFile; fileRef = E94417DCA8CF14032FF3E3D9 /* SnippetPlaceholderExpander.swift */; };
 		AE0BC7BF7AA90B725B2F5D04 /* IOSRound09CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F9CD5A5ABA6E4BA4A3A7A40 /* IOSRound09CompanionFeatures.swift */; };
 		B28B2B9D5B25E49FFCE3801D /* CompanionActionPack+Edit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */; };
+		B328A86E781C92B92C7BD168 /* MeetingJoinLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C063BF49D49252F277808D4 /* MeetingJoinLink.swift */; };
 		B3A9932DA455C1C8C3515FF3 /* EmojiBarStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7CB5368CF46C2C2213D8656 /* EmojiBarStudioView.swift */; };
 		B3BA2F5E02B9B0FEC459BEF0 /* MacKeepAwakeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 557EC516DCE93E05E1DA8805 /* MacKeepAwakeService.swift */; };
 		B779328CE1C37C369B1BDFE2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0637814C808EC6900262C681 /* Assets.xcassets */; };
@@ -318,6 +321,7 @@
 		58EF7D2F5BE156122F5C01A7 /* MacAppsActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppsActionPack.swift; sourceTree = "<group>"; };
 		59B27570BCCEA27BF8A49A7D /* MacCompanionFeaturesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCompanionFeaturesService.swift; sourceTree = "<group>"; };
 		5A7C401AEDAB7AEB1C5EDE46 /* IOSOrcaTaskStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSOrcaTaskStatusView.swift; sourceTree = "<group>"; };
+		5C063BF49D49252F277808D4 /* MeetingJoinLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingJoinLink.swift; sourceTree = "<group>"; };
 		5F9CD5A5ABA6E4BA4A3A7A40 /* IOSRound09CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound09CompanionFeatures.swift; sourceTree = "<group>"; };
 		65756A0D455D2B88D81D3EE3 /* MacFilesRecentActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFilesRecentActionPack.swift; sourceTree = "<group>"; };
 		65CAA7B788878C4CCF682A40 /* IOSCompanionModesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSCompanionModesView.swift; sourceTree = "<group>"; };
@@ -705,6 +709,7 @@
 				FB259C3541C52B0FDAF4888C /* ControlStrip.swift */,
 				8859A29A043A4B69F607B04C /* EmojiCatalog.swift */,
 				D3751C53D210CAF7803AF45E /* MacUpdateConfiguration.swift */,
+				5C063BF49D49252F277808D4 /* MeetingJoinLink.swift */,
 				A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */,
 				457684FD77B5477F24FC5F8D /* OrcaSelectionDispatch.swift */,
 				4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */,
@@ -1050,6 +1055,7 @@
 				3EFE96C6529C29EEF363A9C4 /* EmojiCatalog.swift in Sources */,
 				75412A9C9B26A552680AFD2D /* MacServerEngine.swift in Sources */,
 				C92914F9B3AB35A4C3326EC2 /* MacUpdateConfiguration.swift in Sources */,
+				9656C13F7280AE061803BEB5 /* MeetingJoinLink.swift in Sources */,
 				94A271287C3D5FB9DC454029 /* NotchPanelGeometry.swift in Sources */,
 				B87ED18F694827573BF6F5AF /* OrcaSelectionDispatch.swift in Sources */,
 				C8FC5F6E229B84BD0B158814 /* OrcaTaskStatus.swift in Sources */,
@@ -1098,6 +1104,7 @@
 				D19ADC68FDF7AB4963E84CA3 /* EmojiCatalog.swift in Sources */,
 				DAB4CBDFA2B7DA671F50C2C0 /* MacServerEngine.swift in Sources */,
 				06F0B9426723A90AD500110C /* MacUpdateConfiguration.swift in Sources */,
+				3A4D5F7FF1C90FD03AE5CF12 /* MeetingJoinLink.swift in Sources */,
 				7873292E1BA2830A6AC412E9 /* NotchPanelGeometry.swift in Sources */,
 				2D717D29F44736CCFF71E4EC /* OrcaSelectionDispatch.swift in Sources */,
 				A5374FE85744A7334FEE033E /* OrcaTaskStatus.swift in Sources */,
@@ -1190,6 +1197,7 @@
 				9CCC043223B77D2383E1CA84 /* EmojiCatalog.swift in Sources */,
 				7581CD6E2F0929431A33F49F /* MacServerEngine.swift in Sources */,
 				F104D05C7D408E37FDAF1272 /* MacUpdateConfiguration.swift in Sources */,
+				B328A86E781C92B92C7BD168 /* MeetingJoinLink.swift in Sources */,
 				CD2ABCE216981DECA9C23D63 /* NotchPanelGeometry.swift in Sources */,
 				D8847B5706C5AEE2867F3B24 /* OrcaSelectionDispatch.swift in Sources */,
 				28AAE9E440B4B1A1D394BF4B /* OrcaTaskStatus.swift in Sources */,

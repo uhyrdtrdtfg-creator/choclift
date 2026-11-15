@@ -437,7 +437,7 @@ public struct IOSRootTouchBarView: View {
                     toolsRow(L10n.tr("麦克风静音", "Toggle Microphone Mute", language: lang), "mic.slash") { client.toggleMicMute() }
                 }
                 toolsSection(L10n.tr("日历与截屏", "Calendar & Screenshots", language: lang)) {
-                    toolsRow(L10n.tr("下个日程", "Next Event", language: lang), "calendar") { client.openCalendarOnMac() }
+                    IOSNextCalendarEventToolsRow(client: client, searchQuery: toolsQuery)
                     toolsRow(L10n.tr("截屏", "Screenshot", language: lang), "camera.viewfinder") { client.captureMainDisplayScreenshot() }
                 }
                 toolsSection(L10n.tr("电源与安全", "Power & Security", language: lang)) {
