@@ -24,7 +24,15 @@ public final class MacAccessibilityAndWindowService {
         let element: AXUIElement
     }
 
-    public var onUndoAvailabilityChanged: (() -> Void)?
+    public private(set) static weak var activeCoordinatorInstance: MacAccessibilityAndWindowService?
+
+    public var onUndoAvailabilityChanged: (() -> Void)? {
+        didSet {
+            if onUndoAvailabilityChanged != nil {
+                Self.activeCoordinatorInstance = self
+            }
+        }
+    }
     public var onDisplayConfigurationChanged: (() -> Void)?
     public private(set) var selectedTargetDisplayID: CGDirectDisplayID?
 
@@ -423,6 +431,7 @@ public final class MacAccessibilityAndWindowService {
         case center
         case toggleFullscreen
         case moveToNextDisplay
+        case moveToPreviousDisplay
     }
 
     public func hasAdjustableWindow(forPID pid: pid_t) -> Bool {
@@ -615,6 +624,49 @@ public final class MacAccessibilityAndWindowService {
             case .failure(let err):
                 return (false, err.message())
             }
+
+        case .moveToPreviousDisplay:
+            let screens = NSScreen.screens
+            let screenDescriptors = screens.map {
+                WindowScreenDescriptor(frame: $0.frame, visibleFrame: $0.visibleFrame)
+            }
+            let currentFrame = readWindowQuartzFrame(windowElement)
+            let sizeSettable = isAttributeSettable(kAXSizeAttribute as String, on: windowElement)
+            let outcome = DisplayMoveCompanionExecution.execute(
+                id: DisplayMoveCompanionActionID.previousDisplay,
+                coordinator: &moveCoordinator,
+                windowID: windowKey,
+                appName: appDisplayName,
+                appKitScreens: screenDescriptors,
+                screenNames: screens.map(\.localizedName),
+                allowResize: sizeSettable,
+                readFrame: {
+                    readWindowQuartzFrameResult(windowElement)
+                },
+                writeFrame: { desiredFrame in
+                    switch writeWindowQuartzFrameResult(
+                        windowElement,
+                        frame: desiredFrame,
+                        applySize: sizeSettable,
+                        rollbackOrigin: currentFrame?.origin
+                    ) {
+                    case .success:
+                        return AXError.success.rawValue
+                    case .failure(let err):
+                        return err.code
+                    }
+                }
+            )
+            if outcome.success {
+                previousWindowFrames.removeValue(forKey: windowKey)
+                registerRetainedUndoTargetAfterMove(
+                    windowKey: windowKey,
+                    pid: app.processIdentifier,
+                    windowElement: windowElement,
+                    appName: appDisplayName
+                )
+            }
+            return (outcome.success, outcome.message)
 
         case .maximizeOrRestore, .snapLeft, .snapRight,
              .snapTopLeft, .snapTopRight, .snapBottomLeft, .snapBottomRight:

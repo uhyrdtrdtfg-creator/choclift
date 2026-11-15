@@ -10,6 +10,9 @@ enum MacCompanionActionRunner {
         if CompanionActionCatalog.windowPack.contains(where: { $0.id == id }) {
             return MacWindowActionPack.run(id: id, preferredPID: preferredPID)
         }
+        if CompanionActionCatalog.displayMovePack.contains(where: { $0.id == id }) {
+            return MacDisplayMoveActionPack.run(id: id, preferredPID: preferredPID)
+        }
         if CompanionActionCatalog.mediaPack.contains(where: { $0.id == id }) {
             return MacMediaActionPack.run(id: id)
         }
