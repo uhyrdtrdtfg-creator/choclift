@@ -1104,21 +1104,20 @@ public final class CompanionClientEngine: ObservableObject {
             connectedClipboardMacID = macID
         }
         profile = serverProfile
+        let resolvedFrontmostName = Self.initialFrontmostAppName(
+            forBundleIdentifier: frontmost,
+            recentApps: serverRecents,
+            catalogApps: macCatalogApps
+        )
         var updatedStrip = controlStripState
         updatedStrip.soundboardVolume = serverProfile.soundboardVolume
+        if resolvedFrontmostName != nil || FrontmostAppLabel.isChocliftBundleIdentifier(frontmost) {
+            updatedStrip.frontmostAppName = resolvedFrontmostName
+        }
         controlStripState = updatedStrip
         recentApps = serverRecents
         frontmostBundleID = frontmost
-        frontmostAppName = frontmost.map { bid in
-            serverProfile.resolvedAppDisplayName(
-                forBundleIdentifier: bid,
-                preferredAppName: serverRecents.first(where: {
-                    $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame
-                })?.appName,
-                recentApps: serverRecents,
-                catalogApps: macCatalogApps
-            )
-        }
+        frontmostAppName = resolvedFrontmostName
         isEditingTextOnMac = editingText
         focusedMacAppName = focusedApp
         isMacAccessibilityGranted = axTrusted
@@ -3698,9 +3697,27 @@ public final class CompanionClientEngine: ObservableObject {
         send(.hideOtherApplications)
     }
 
+    /// Single-line label for the frontmost external Mac app (`nil` when disconnected, unknown, or Choclift).
+    public var activeFrontmostAppLabel: String? {
+        guard connectionState.isConnected else { return nil }
+        if FrontmostAppLabel.isChocliftBundleIdentifier(frontmostBundleID) {
+            return nil
+        }
+        if let live = FrontmostAppLabel.format(appName: frontmostAppName, bundleIdentifier: frontmostBundleID) {
+            return live
+        }
+        return FrontmostAppLabel.format(
+            appName: controlStripState.frontmostAppName,
+            bundleIdentifier: frontmostBundleID
+        )
+    }
+
     /// Read-only frontmost Mac app name for the persistent strip badge (`nil` when disconnected).
     public var resolvedStripFrontmostAppName: String? {
         guard connectionState.isConnected else { return nil }
+        if FrontmostAppLabel.isChocliftBundleIdentifier(frontmostBundleID) {
+            return nil
+        }
         if let live = FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName) {
             return live
         }
@@ -3715,6 +3732,25 @@ public final class CompanionClientEngine: ObservableObject {
                 catalogApps: macCatalogApps
             )
             return FrontmostAppStripFormatter.sanitizedAppName(resolved)
+        }
+        return nil
+    }
+
+    private static func initialFrontmostAppName(
+        forBundleIdentifier bundleIdentifier: String?,
+        recentApps: [RecentAppEntry],
+        catalogApps: [InstalledAppSummary]
+    ) -> String? {
+        guard let bid = bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !bid.isEmpty,
+              !FrontmostAppLabel.isChocliftBundleIdentifier(bid) else {
+            return nil
+        }
+        if let recent = recentApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame }) {
+            return FrontmostAppLabel.format(appName: recent.appName, bundleIdentifier: bid)
+        }
+        if let catalog = catalogApps.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame }) {
+            return FrontmostAppLabel.format(appName: catalog.appName, bundleIdentifier: bid)
         }
         return nil
     }
@@ -4122,21 +4158,18 @@ public final class CompanionClientEngine: ObservableObject {
                 connectedClipboardMacID = macID
             }
             profile = serverProfile
+            let resolvedFrontmostName = Self.initialFrontmostAppName(
+                forBundleIdentifier: frontmost,
+                recentApps: serverRecents,
+                catalogApps: macCatalogApps
+            )
             var initialStrip = controlStripState
             initialStrip.soundboardVolume = serverProfile.soundboardVolume
+            initialStrip.frontmostAppName = resolvedFrontmostName
             controlStripState = initialStrip
             recentApps = serverRecents
             frontmostBundleID = frontmost
-            frontmostAppName = frontmost.map { bid in
-                serverProfile.resolvedAppDisplayName(
-                    forBundleIdentifier: bid,
-                    preferredAppName: serverRecents.first(where: {
-                        $0.bundleIdentifier.caseInsensitiveCompare(bid) == .orderedSame
-                    })?.appName,
-                    recentApps: serverRecents,
-                    catalogApps: macCatalogApps
-                )
-            }
+            frontmostAppName = resolvedFrontmostName
             isEditingTextOnMac = editingText
             focusedMacAppName = focusedApp
             isMacAccessibilityGranted = axTrusted
@@ -4182,8 +4215,14 @@ public final class CompanionClientEngine: ObservableObject {
             requestMissingIconsIfNeeded()
 
         case .frontmostAppChanged(let bundleID, let appName):
+            let formatted = FrontmostAppLabel.format(appName: appName, bundleIdentifier: bundleID)
             frontmostBundleID = bundleID
-            frontmostAppName = appName
+            frontmostAppName = formatted
+            if controlStripState.frontmostAppName != formatted {
+                var nextStrip = controlStripState
+                nextStrip.frontmostAppName = formatted
+                controlStripState = nextStrip
+            }
 
         case .textFieldFocusChanged(let isEditingText, let appName):
             isEditingTextOnMac = isEditingText

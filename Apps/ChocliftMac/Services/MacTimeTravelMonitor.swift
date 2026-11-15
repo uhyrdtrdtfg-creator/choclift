@@ -131,13 +131,47 @@ public final class MacTimeTravelMonitor: ObservableObject {
         }
     }
 
+    public func handleSelfActivated(bundleIdentifier: String? = nil) {
+        let resolvedBundleID = bundleIdentifier ?? selfBundleID
+        let didChange = frontmostBundleID != resolvedBundleID || frontmostAppName != nil
+        frontmostBundleID = resolvedBundleID
+        frontmostAppName = nil
+        for key in entriesByBundleID.keys {
+            entriesByBundleID[key]?.isFrontmost = false
+        }
+        rebuildAndPublishTimeline()
+        if didChange {
+            onFrontmostChanged?(resolvedBundleID, nil)
+        }
+    }
+
     // MARK: - Internal Workspace Handlers
 
     private func seedInitialRunningApps() {
         entriesByBundleID.removeAll()
+        frontmostBundleID = nil
+        frontmostAppName = nil
         let running = NSWorkspace.shared.runningApplications
         let front = NSWorkspace.shared.frontmostApplication
         var offsetSeconds: TimeInterval = 0
+
+        if let front,
+           front.activationPolicy == .regular,
+           front.bundleIdentifier != "com.apple.loginwindow" {
+            let bid = front.bundleIdentifier
+            if FrontmostAppLabel.isChocliftBundleIdentifier(bid, hostBundleIdentifier: selfBundleID) {
+                frontmostBundleID = bid ?? selfBundleID
+                frontmostAppName = nil
+            } else if let bid {
+                frontmostBundleID = bid
+                frontmostAppName = FrontmostAppLabel.format(
+                    appName: front.localizedName,
+                    bundleIdentifier: bid,
+                    hostBundleIdentifier: selfBundleID
+                )
+                lastExternalAppPID = front.processIdentifier
+            }
+        }
 
         for app in running where app.activationPolicy == .regular {
             guard let bundleID = app.bundleIdentifier,
@@ -146,8 +180,6 @@ public final class MacTimeTravelMonitor: ObservableObject {
             }
             let isFront = (app.processIdentifier == front?.processIdentifier)
             if isFront {
-                frontmostBundleID = bundleID
-                frontmostAppName = app.localizedName
                 lastExternalAppPID = app.processIdentifier
             } else if lastExternalAppPID == nil {
                 lastExternalAppPID = app.processIdentifier
@@ -170,16 +202,33 @@ public final class MacTimeTravelMonitor: ObservableObject {
     }
 
     private func handleAppActivated(_ app: NSRunningApplication) {
-        guard let bundleID = app.bundleIdentifier else { return }
-
-        if bundleID != selfBundleID && app.activationPolicy == .regular {
-            lastExternalAppPID = app.processIdentifier
-            frontmostBundleID = bundleID
-            frontmostAppName = app.localizedName
-            onFrontmostChanged?(bundleID, app.localizedName)
+        if FrontmostAppLabel.isChocliftBundleIdentifier(app.bundleIdentifier, hostBundleIdentifier: selfBundleID) {
+            handleSelfActivated(bundleIdentifier: app.bundleIdentifier)
+            return
         }
 
-        guard app.activationPolicy == .regular, !excludedBundleIDs.contains(bundleID) else {
+        guard app.activationPolicy == .regular else { return }
+
+        guard let bundleID = app.bundleIdentifier, bundleID != "com.apple.loginwindow" else {
+            if frontmostBundleID != nil || frontmostAppName != nil {
+                frontmostBundleID = nil
+                frontmostAppName = nil
+                onFrontmostChanged?(nil, nil)
+            }
+            return
+        }
+
+        lastExternalAppPID = app.processIdentifier
+        let cleanName = FrontmostAppLabel.format(
+            appName: app.localizedName,
+            bundleIdentifier: bundleID,
+            hostBundleIdentifier: selfBundleID
+        )
+        frontmostBundleID = bundleID
+        frontmostAppName = cleanName
+        onFrontmostChanged?(bundleID, cleanName)
+
+        guard !excludedBundleIDs.contains(bundleID) else {
             return
         }
 

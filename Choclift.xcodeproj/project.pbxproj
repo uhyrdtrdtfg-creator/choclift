@@ -129,9 +129,10 @@
 		82612B4144EDA160119CA96E /* PlatformCompanionSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B611B06ED62DBAD80C274FA0 /* PlatformCompanionSupport.swift */; };
 		834C7CBB907FCECE0FDA0022 /* CompanionActionPack+FilesRecent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E3BD2E09E1BAA8964BA95CA /* CompanionActionPack+FilesRecent.swift */; };
 		83A2B79E6AA4B0064DCB8D8B /* messages.png in Resources */ = {isa = PBXBuildFile; fileRef = D2F04CF28043E06EA8DB3BE5 /* messages.png */; };
+		84949DD1C15D212A1F61C4B4 /* FrontmostAppLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 725DDD879D9ADA42B149A3FA /* FrontmostAppLabel.swift */; };
 		856C0A656C5370A2B44A5DE2 /* MacNotchPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116CCCD57CF0CF405584EA0E /* MacNotchPanelController.swift */; };
-		86DE51B51BDB96523BCE17DE /* MacDisplayActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D073AD8485E312AC5F89228E /* MacDisplayActionPack.swift */; };
 		85DD112C6A09F80CC0D40639 /* CompanionActionPack+SessionShow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07882DEC72AC9EBD97806FE /* CompanionActionPack+SessionShow.swift */; };
+		86DE51B51BDB96523BCE17DE /* MacDisplayActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = D073AD8485E312AC5F89228E /* MacDisplayActionPack.swift */; };
 		8BD28D289A0F06AB4ABD0E89 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 7F966FF90CB5DBD1DB68339B /* Sparkle */; };
 		8C918E3285A15566849F6612 /* CompanionActionCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBAB69B3EFD755C9C6D81036 /* CompanionActionCatalog.swift */; };
 		8CDA41C0F0FFD2D11986AFD0 /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
@@ -173,6 +174,7 @@
 		B87ED18F694827573BF6F5AF /* OrcaSelectionDispatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 457684FD77B5477F24FC5F8D /* OrcaSelectionDispatch.swift */; };
 		B8F2F788A18171EF3C6425D7 /* Round08Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472B24341B0AAB1760F49B87 /* Round08Models.swift */; };
 		B94603986FDB8C63A5EFA896 /* Round03Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BECCE6B737BB090769DC143 /* Round03Models.swift */; };
+		BAEC7DAE29C1D1EF538183F7 /* FrontmostAppLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 725DDD879D9ADA42B149A3FA /* FrontmostAppLabel.swift */; };
 		BC94FCFFD6ABE26E0CAEC587 /* CompanionActionPack+Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BF56E643510A055FB8F95C1 /* CompanionActionPack+Session.swift */; };
 		BDAB74CDC0F57501EA16D86C /* CompanionActionPack+Edit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */; };
 		BFB77175E5EBCA7CC882CF59 /* CompanionActionPack+SessionShow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07882DEC72AC9EBD97806FE /* CompanionActionPack+SessionShow.swift */; };
@@ -204,6 +206,7 @@
 		DF54945FD6A26594125CA46B /* Round05Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */; };
 		DF61BE35854C52722D2F20F5 /* CompanionLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90F04A9213EAEB9C1C4D7CD9 /* CompanionLink.swift */; };
 		DFB1DDE64AE82710C328A49C /* IOSFlowEditorViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */; };
+		E2531E98436A3E7AD19FA4DB /* FrontmostAppLabel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 725DDD879D9ADA42B149A3FA /* FrontmostAppLabel.swift */; };
 		E85500D399E5CD039276A0C1 /* ControlStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB259C3541C52B0FDAF4888C /* ControlStrip.swift */; };
 		E8750C18F4A9A27AA2A9EF3E /* ChocliftMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3DBA1BF1036F57F143E4AAA /* ChocliftMacApp.swift */; };
 		EB47886475B3208848D9B611 /* BundledAppIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */; };
@@ -327,6 +330,7 @@
 		700D598F2F561B74E776B14B /* CompanionActionPack+Window.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Window.swift"; sourceTree = "<group>"; };
 		701BD9926EA7F58085356A07 /* BluetoothCompanionLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BluetoothCompanionLink.swift; sourceTree = "<group>"; };
 		718D4FBEB597E4E68A91BCF6 /* CompanionActionPack+Display.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Display.swift"; sourceTree = "<group>"; };
+		725DDD879D9ADA42B149A3FA /* FrontmostAppLabel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrontmostAppLabel.swift; sourceTree = "<group>"; };
 		73053E274F62F8A83517413A /* SoundboardStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundboardStudioView.swift; sourceTree = "<group>"; };
 		75A0A827A172B80AEAD41CB0 /* ActionFlowsStudioView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionFlowsStudioView.swift; sourceTree = "<group>"; };
 		75BBF0187C7EDEA2BE3E2EBD /* IOSRound08CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound08CompanionFeatures.swift; sourceTree = "<group>"; };
@@ -700,6 +704,7 @@
 				B0100A476F462BB1702A464F /* CompanionInteractionPolicy.swift */,
 				FB259C3541C52B0FDAF4888C /* ControlStrip.swift */,
 				8859A29A043A4B69F607B04C /* EmojiCatalog.swift */,
+				725DDD879D9ADA42B149A3FA /* FrontmostAppLabel.swift */,
 				D3751C53D210CAF7803AF45E /* MacUpdateConfiguration.swift */,
 				A09AE7EB20DA3B2AA0D5BAEA /* NotchPanelGeometry.swift */,
 				457684FD77B5477F24FC5F8D /* OrcaSelectionDispatch.swift */,
@@ -1043,6 +1048,7 @@
 				8CDA41C0F0FFD2D11986AFD0 /* CompanionLink.swift in Sources */,
 				7EC084F765694562A6489EC6 /* ControlStrip.swift in Sources */,
 				3EFE96C6529C29EEF363A9C4 /* EmojiCatalog.swift in Sources */,
+				E2531E98436A3E7AD19FA4DB /* FrontmostAppLabel.swift in Sources */,
 				75412A9C9B26A552680AFD2D /* MacServerEngine.swift in Sources */,
 				C92914F9B3AB35A4C3326EC2 /* MacUpdateConfiguration.swift in Sources */,
 				94A271287C3D5FB9DC454029 /* NotchPanelGeometry.swift in Sources */,
@@ -1090,6 +1096,7 @@
 				DF61BE35854C52722D2F20F5 /* CompanionLink.swift in Sources */,
 				E85500D399E5CD039276A0C1 /* ControlStrip.swift in Sources */,
 				D19ADC68FDF7AB4963E84CA3 /* EmojiCatalog.swift in Sources */,
+				84949DD1C15D212A1F61C4B4 /* FrontmostAppLabel.swift in Sources */,
 				DAB4CBDFA2B7DA671F50C2C0 /* MacServerEngine.swift in Sources */,
 				06F0B9426723A90AD500110C /* MacUpdateConfiguration.swift in Sources */,
 				7873292E1BA2830A6AC412E9 /* NotchPanelGeometry.swift in Sources */,
@@ -1181,6 +1188,7 @@
 				3D297C87D7B93EB26438D46F /* CompanionLink.swift in Sources */,
 				0151A116C09C4D23AB6EE9F7 /* ControlStrip.swift in Sources */,
 				9CCC043223B77D2383E1CA84 /* EmojiCatalog.swift in Sources */,
+				BAEC7DAE29C1D1EF538183F7 /* FrontmostAppLabel.swift in Sources */,
 				7581CD6E2F0929431A33F49F /* MacServerEngine.swift in Sources */,
 				F104D05C7D408E37FDAF1272 /* MacUpdateConfiguration.swift in Sources */,
 				CD2ABCE216981DECA9C23D63 /* NotchPanelGeometry.swift in Sources */,

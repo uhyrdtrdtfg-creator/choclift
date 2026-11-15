@@ -611,7 +611,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         self.privacyCapture = privacyCapture
         self.wifiSSID = MacWiFiStatusFormatter.sanitizedSSID(wifiSSID)
         self.ejectableExternalVolumeCount = max(0, ejectableExternalVolumeCount)
-        self.frontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName)
+        self.frontmostAppName = FrontmostAppLabel.format(appName: frontmostAppName)
     }
 
     public init(from decoder: Decoder) throws {
@@ -660,8 +660,8 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         )
         let rawEjectableCount = try container.decodeIfPresent(Int.self, forKey: .ejectableExternalVolumeCount) ?? 0
         self.ejectableExternalVolumeCount = max(0, rawEjectableCount)
-        self.frontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(
-            try container.decodeIfPresent(String.self, forKey: .frontmostAppName)
+        self.frontmostAppName = FrontmostAppLabel.format(
+            appName: try container.decodeIfPresent(String.self, forKey: .frontmostAppName)
         )
     }
 
@@ -713,7 +713,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
         if ejectableExternalVolumeCount > 0 {
             try container.encode(max(0, ejectableExternalVolumeCount), forKey: .ejectableExternalVolumeCount)
         }
-        try container.encodeIfPresent(FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName), forKey: .frontmostAppName)
+        try container.encodeIfPresent(FrontmostAppLabel.format(appName: frontmostAppName), forKey: .frontmostAppName)
     }
 
     /// Current Wi-Fi SSID string, or `"Wi-Fi"` with no network name when unavailable.
@@ -839,7 +839,7 @@ public struct ControlStripState: Codable, Equatable, Hashable, Sendable {
             privacyCapture != other.privacyCapture ||
             MacWiFiStatusFormatter.sanitizedSSID(wifiSSID) != MacWiFiStatusFormatter.sanitizedSSID(other.wifiSSID) ||
             max(0, ejectableExternalVolumeCount) != max(0, other.ejectableExternalVolumeCount) ||
-            FrontmostAppStripFormatter.sanitizedAppName(frontmostAppName) != FrontmostAppStripFormatter.sanitizedAppName(other.frontmostAppName) {
+            FrontmostAppLabel.format(appName: frontmostAppName) != FrontmostAppLabel.format(appName: other.frontmostAppName) {
             return true
         }
         if (volume <= 0.001) != (other.volume <= 0.001) ||

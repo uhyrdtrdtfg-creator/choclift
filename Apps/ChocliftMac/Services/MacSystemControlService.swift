@@ -377,9 +377,16 @@ public final class MacSystemControlService {
         let privacyCapture = Self.readPrivacyCaptureStatus(defaultInputDeviceID: inDevice)
         let currentWiFiSSID = Self.readCurrentWiFiSSID()
         let ejectableVolumeCount = Self.enumerateEjectableExternalVolumes().count
-        let resolvedFrontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(
-            frontmostAppNameProvider?() ?? NSWorkspace.shared.frontmostApplication?.localizedName
-        )
+        let resolvedFrontmostAppName: String? = {
+            if let frontmostAppNameProvider {
+                return FrontmostAppLabel.format(appName: frontmostAppNameProvider())
+            }
+            let frontApp = NSWorkspace.shared.frontmostApplication
+            return FrontmostAppLabel.format(
+                appName: frontApp?.localizedName,
+                bundleIdentifier: frontApp?.bundleIdentifier
+            )
+        }()
 
         return ControlStripState(
             volume: volume,
@@ -409,7 +416,7 @@ public final class MacSystemControlService {
     }
 
     public func syncFrontmostAppName(_ appName: String?) {
-        let sanitized = FrontmostAppStripFormatter.sanitizedAppName(appName)
+        let sanitized = FrontmostAppLabel.format(appName: appName)
         guard currentState.frontmostAppName != sanitized else { return }
         var updated = currentState
         updated.frontmostAppName = sanitized

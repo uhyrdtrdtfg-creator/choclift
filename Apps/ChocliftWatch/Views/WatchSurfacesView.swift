@@ -1215,6 +1215,16 @@ public struct WatchQuickActionsView: View {
                     WatchConnectionStateBanner(client: client, onTap: onRequestPairing)
                 }
 
+                if let frontmostAppName = client.activeFrontmostAppLabel {
+                    Text(frontmostAppName)
+                        .font(ChocType.caption)
+                        .foregroundStyle(palette.secondaryText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("watch-frontmost-app-label")
+                }
+
                 WatchCalendarComplicationLine(client: client)
 
                 // Media & Volume Strip (Clean iconic transport buttons >= 46pt)
