@@ -916,7 +916,10 @@ public final class MacServerEngine: ObservableObject {
                  .seekNowPlaying,
                  .setNowPlayingShuffle,
                  .setNowPlayingRepeat,
-                 .performCompanionAction:
+                 .performCompanionAction,
+                 .upsertQuadLayout,
+                 .deleteQuadLayout,
+                 .runQuadLayout:
                 session.supportsControlStrip = true
             case .requestCompanionDashboard, .pasteMacClipboard, .captureMainDisplayScreenshot, .openCalendarApp:
                 session.supportsCompanionDashboard = true

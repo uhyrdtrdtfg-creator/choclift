@@ -1,8 +1,8 @@
 import Foundation
 
 /// CI's XCTest records `CancellationError` from `Task.sleep` even after `try?`.
-enum CancellableDelay {
-    static func sleepUntilCancelled(seconds: TimeInterval) async {
+public enum CancellableDelay {
+    public static func sleepUntilCancelled(seconds: TimeInterval) async {
         let delay = max(0, seconds)
         let gate = NonThrowingSleepGate()
         await withTaskCancellationHandler {

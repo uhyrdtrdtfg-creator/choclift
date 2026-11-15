@@ -59,6 +59,9 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case setNowPlayingRepeat(mode: NowPlayingRepeatMode)
     case proposeFlow(sentence: String)
     case performCompanionAction(id: String)
+    case upsertQuadLayout(QuadAppLayout)
+    case deleteQuadLayout(id: UUID)
+    case runQuadLayout(id: UUID)
     case unknownClientMessage
 }
 

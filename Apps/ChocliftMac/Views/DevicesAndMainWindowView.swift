@@ -394,9 +394,11 @@ public struct DevicesAndSettingsView: View {
                     Button(L10n.tr("手势设置", "Gesture Settings", language: lang)) { coordinator.selectedSection = .gestures }
                 }
                 HStack(alignment: .top, spacing: 20) {
-                    // Left Column: Permissions + Devices + Preferences
+                    // Left Column: Permissions + Quad Layouts + Devices + Preferences
                     VStack(alignment: .leading, spacing: 16) {
                         accessibilityPermissionCard
+
+                        MacQuadLayoutsSectionCard(coordinator: coordinator)
 
                         pairedDevicesCard
 
@@ -1936,5 +1938,372 @@ private struct MacSoftwareUpdatesCard: View {
         case .hostCannotUpdate, .feedUnreachable, .signatureMismatch, .checkFailed:
             return palette.statusFailure
         }
+    }
+}
+
+// MARK: - Quad Layouts Studio Card & Sheet
+
+private struct MacQuadLayoutEditorTarget: Identifiable {
+    let id: UUID
+    let initialLayout: QuadAppLayout
+    let isExisting: Bool
+}
+
+private struct MacQuadLayoutsSectionCard: View {
+    @ObservedObject var coordinator: MacAppCoordinator
+    @State private var editorTarget: MacQuadLayoutEditorTarget?
+
+    private var lang: AppLanguage { coordinator.lang }
+    private var palette: ChocPalette { coordinator.palette }
+    private var layouts: [QuadAppLayout] { coordinator.profile.quadLayouts }
+    private var canAddMore: Bool { layouts.count < QuadAppLayout.maxLibraryCount }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Label(
+                    L10n.tr("四宫格", "Quad Layouts", language: lang),
+                    systemImage: "square.grid.2x2.fill"
+                )
+                .font(ChocType.title)
+                .foregroundStyle(palette.primaryText)
+
+                Text("\(layouts.count)/\(QuadAppLayout.maxLibraryCount)")
+                    .font(ChocType.micro.monospacedDigit())
+                    .foregroundStyle(palette.secondaryText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(palette.tileFillBottom, in: Capsule())
+
+                Spacer()
+
+                Button {
+                    if coordinator.installedApps.isEmpty {
+                        coordinator.refreshCatalog()
+                    }
+                    let blank = QuadAppLayout(name: "")
+                    editorTarget = MacQuadLayoutEditorTarget(
+                        id: blank.id,
+                        initialLayout: blank,
+                        isExisting: false
+                    )
+                } label: {
+                    Label(L10n.tr("新建", "Add", language: lang), systemImage: "plus")
+                        .font(ChocType.caption)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(palette.accent)
+                .foregroundStyle(palette.accentForeground)
+                .controlSize(.small)
+                .disabled(!canAddMore)
+            }
+
+            Text(
+                L10n.tr(
+                    "保存常用四宫格布局，一键打开对应应用并将各自前台窗口贴靠到屏幕四角。",
+                    "Save up to 6 four-quadrant app layouts and snap each app window into place with one click.",
+                    language: lang
+                )
+            )
+            .font(ChocType.caption)
+            .foregroundStyle(palette.secondaryText)
+
+            if layouts.isEmpty {
+                HStack(spacing: 10) {
+                    Image(systemName: "uiwindow.split.2x1")
+                        .font(ChocType.body)
+                        .foregroundStyle(palette.secondaryText)
+                    Text(
+                        L10n.tr(
+                            "尚未创建四宫格布局，点击右上角「新建」选择最多四个应用。",
+                            "No quad layouts saved yet. Click Add to assign apps to any of the four screen corners.",
+                            language: lang
+                        )
+                    )
+                    .font(ChocType.caption)
+                    .foregroundStyle(palette.secondaryText)
+                    Spacer(minLength: 0)
+                }
+                .padding(12)
+                .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(layouts) { layout in
+                        quadLayoutRow(layout)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
+        .sheet(item: $editorTarget) { target in
+            MacQuadLayoutEditorSheet(
+                coordinator: coordinator,
+                initialLayout: target.initialLayout,
+                isExisting: target.isExisting
+            )
+        }
+    }
+
+    private func quadLayoutRow(_ layout: QuadAppLayout) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(layout.name)
+                    .font(ChocType.body.weight(.semibold))
+                    .foregroundStyle(palette.primaryText)
+                    .lineLimit(1)
+                Text(layout.summaryLine(in: lang))
+                    .font(ChocType.micro)
+                    .foregroundStyle(palette.secondaryText)
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 8)
+
+            Button {
+                coordinator.triggerQuadLayoutFromStudio(id: layout.id)
+            } label: {
+                Label(L10n.tr("运行", "Run", language: lang), systemImage: "play.fill")
+                    .font(ChocType.caption)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(palette.accent)
+            .foregroundStyle(palette.accentForeground)
+            .controlSize(.small)
+
+            Button {
+                if coordinator.installedApps.isEmpty {
+                    coordinator.refreshCatalog()
+                }
+                editorTarget = MacQuadLayoutEditorTarget(
+                    id: layout.id,
+                    initialLayout: layout,
+                    isExisting: true
+                )
+            } label: {
+                Label(L10n.tr("编辑", "Edit", language: lang), systemImage: "pencil")
+                    .font(ChocType.caption)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Button(role: .destructive) {
+                let res = coordinator.deleteQuadLayout(id: layout.id)
+                coordinator.flashBanner(res.message)
+            } label: {
+                Image(systemName: "trash")
+                    .font(ChocType.caption)
+            }
+            .buttonStyle(.bordered)
+            .tint(palette.statusFailure)
+            .controlSize(.small)
+            .help(L10n.tr("删除", "Delete", language: lang))
+        }
+        .padding(10)
+        .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
+    }
+}
+
+private struct MacQuadLayoutEditorSheet: View {
+    @ObservedObject var coordinator: MacAppCoordinator
+    let initialLayout: QuadAppLayout
+    let isExisting: Bool
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name: String
+    @State private var topLeftBundleID: String
+    @State private var topRightBundleID: String
+    @State private var bottomLeftBundleID: String
+    @State private var bottomRightBundleID: String
+
+    private var lang: AppLanguage { coordinator.lang }
+    private var palette: ChocPalette { coordinator.palette }
+
+    init(coordinator: MacAppCoordinator, initialLayout: QuadAppLayout, isExisting: Bool) {
+        self.coordinator = coordinator
+        self.initialLayout = initialLayout
+        self.isExisting = isExisting
+        _name = State(initialValue: initialLayout.name)
+        _topLeftBundleID = State(initialValue: initialLayout.topLeft?.bundleIdentifier ?? "")
+        _topRightBundleID = State(initialValue: initialLayout.topRight?.bundleIdentifier ?? "")
+        _bottomLeftBundleID = State(initialValue: initialLayout.bottomLeft?.bundleIdentifier ?? "")
+        _bottomRightBundleID = State(initialValue: initialLayout.bottomRight?.bundleIdentifier ?? "")
+    }
+
+    private var availableApps: [InstalledAppSummary] {
+        coordinator.installedApps.filter {
+            !QuadAppSlot.isChocliftBundleIdentifier($0.bundleIdentifier)
+        }
+    }
+
+    private func pickerOptions(including selectedBundleID: String, fallbackSlot: QuadAppSlot?) -> [(bundleID: String, appName: String)] {
+        var list = availableApps.map { (bundleID: $0.bundleIdentifier, appName: $0.appName) }
+        if !selectedBundleID.isEmpty,
+           !QuadAppSlot.isChocliftBundleIdentifier(selectedBundleID),
+           !list.contains(where: { $0.bundleID == selectedBundleID }) {
+            let label = fallbackSlot?.bundleIdentifier == selectedBundleID ? fallbackSlot?.appName : nil
+            list.insert((bundleID: selectedBundleID, appName: label ?? selectedBundleID), at: 0)
+        }
+        return list
+    }
+
+    private func bundleBinding(for corner: QuadCorner) -> Binding<String> {
+        switch corner {
+        case .topLeft: return $topLeftBundleID
+        case .topRight: return $topRightBundleID
+        case .bottomLeft: return $bottomLeftBundleID
+        case .bottomRight: return $bottomRightBundleID
+        }
+    }
+
+    private func selectedBundleID(for corner: QuadCorner) -> String {
+        switch corner {
+        case .topLeft: return topLeftBundleID
+        case .topRight: return topRightBundleID
+        case .bottomLeft: return bottomLeftBundleID
+        case .bottomRight: return bottomRightBundleID
+        }
+    }
+
+    private func buildSlot(for corner: QuadCorner) -> QuadAppSlot? {
+        let bid = selectedBundleID(for: corner).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !bid.isEmpty else { return nil }
+        if let app = availableApps.first(where: { $0.bundleIdentifier == bid }) {
+            return QuadAppSlot(bundleIdentifier: app.bundleIdentifier, appName: app.appName)
+        }
+        if let initialSlot = initialLayout.slot(for: corner), initialSlot.bundleIdentifier == bid {
+            return initialSlot
+        }
+        return QuadAppSlot(bundleIdentifier: bid, appName: bid)
+    }
+
+    private var draftLayout: QuadAppLayout {
+        QuadAppLayout(
+            id: initialLayout.id,
+            name: name,
+            topLeft: buildSlot(for: .topLeft),
+            topRight: buildSlot(for: .topRight),
+            bottomLeft: buildSlot(for: .bottomLeft),
+            bottomRight: buildSlot(for: .bottomRight)
+        )
+    }
+
+    private var canSave: Bool {
+        !draftLayout.containsChocliftBundle && QuadAppLayout.sanitized(draftLayout) != nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(
+                isExisting
+                    ? L10n.tr("编辑四宫格", "Edit Quad Layout", language: lang)
+                    : L10n.tr("新建四宫格", "New Quad Layout", language: lang)
+            )
+            .font(ChocType.title)
+            .foregroundStyle(palette.primaryText)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L10n.tr("名称", "Name", language: lang))
+                    .font(ChocType.caption)
+                    .foregroundStyle(palette.secondaryText)
+                TextField(
+                    L10n.tr("例如：开发工作台", "e.g. Dev Desk", language: lang),
+                    text: $name
+                )
+                .textFieldStyle(.roundedBorder)
+                .font(ChocType.body)
+            }
+
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                spacing: 12
+            ) {
+                ForEach(QuadCorner.allCases, id: \.rawValue) { corner in
+                    cornerPickerCard(for: corner)
+                }
+            }
+
+            HStack {
+                if isExisting {
+                    Button(role: .destructive) {
+                        let res = coordinator.deleteQuadLayout(id: initialLayout.id)
+                        coordinator.flashBanner(res.message)
+                        dismiss()
+                    } label: {
+                        Label(L10n.tr("删除", "Delete", language: lang), systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(palette.statusFailure)
+                }
+
+                Spacer()
+
+                Button(L10n.tr("取消", "Cancel", language: lang)) {
+                    dismiss()
+                }
+                .buttonStyle(.bordered)
+
+                Button(L10n.tr("保存", "Save", language: lang)) {
+                    let res = coordinator.upsertQuadLayout(draftLayout)
+                    coordinator.flashBanner(res.message)
+                    if res.success {
+                        dismiss()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(palette.accent)
+                .foregroundStyle(palette.accentForeground)
+                .disabled(!canSave)
+            }
+        }
+        .padding(20)
+        .frame(width: 520)
+        .background(
+            LinearGradient(
+                colors: [palette.backgroundTop, palette.backgroundBottom],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .tint(palette.accent)
+        .preferredColorScheme(.light)
+        .onAppear {
+            if coordinator.installedApps.isEmpty {
+                coordinator.refreshCatalog()
+            }
+        }
+    }
+
+    private func cornerPickerCard(for corner: QuadCorner) -> some View {
+        let currentBundle = selectedBundleID(for: corner)
+        let options = pickerOptions(including: currentBundle, fallbackSlot: initialLayout.slot(for: corner))
+        return VStack(alignment: .leading, spacing: 8) {
+            Label(corner.title(in: lang), systemImage: corner.sfSymbol)
+                .font(ChocType.caption)
+                .foregroundStyle(palette.primaryText)
+
+            Picker("", selection: bundleBinding(for: corner)) {
+                Text(L10n.tr("留空", "Empty", language: lang)).tag("")
+                ForEach(options, id: \.bundleID) { option in
+                    Text(option.appName).tag(option.bundleID)
+                }
+            }
+            .labelsHidden()
+            .frame(maxWidth: .infinity)
+        }
+        .padding(12)
+        .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(palette.subtleCardStroke, lineWidth: 1)
+        )
     }
 }
