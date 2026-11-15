@@ -23,7 +23,7 @@ struct IOSCompanionHotkeysSection: View {
             return hotkeys
         }
         return hotkeys.filter {
-            $0.resolvedTitle(in: lang).localizedCaseInsensitiveContains(trimmed) ||
+            $0.resolvedTitle(in: client.profile, language: lang).localizedCaseInsensitiveContains(trimmed) ||
             $0.displayLabel.localizedCaseInsensitiveContains(trimmed)
         }
     }
@@ -98,7 +98,7 @@ struct IOSCompanionHotkeysSection: View {
                 .foregroundStyle(palette.accent)
                 .frame(width: 22)
 
-            Text(hotkey.resolvedTitle(in: lang))
+            Text(hotkey.resolvedTitle(in: client.profile, language: lang))
                 .font(ChocType.body)
                 .foregroundStyle(palette.primaryText)
                 .lineLimit(1)
@@ -167,7 +167,8 @@ private struct IOSCompanionHotkeyAddSheet: View {
     private var canSave: Bool {
         hasRequiredModifier &&
             !isDuplicateChord &&
-            selectedKeyCode != 0 &&
+            CompanionHotkeyLibrary.isAllowedKeyCode(selectedKeyCode) &&
+            CompanionHotkeyLibrary.isValidActionID(selectedActionID) &&
             client.profile.hotkeys.count < CompanionHotkeyLibrary.maxCount
     }
 
@@ -275,12 +276,44 @@ private struct IOSCompanionHotkeyAddSheet: View {
                         }
                     }
                 }
+                if !client.profile.flows.isEmpty {
+                    Section(L10n.tr("动作流", "Action Flows", language: lang)) {
+                        ForEach(client.profile.flows) { flow in
+                            let actionID = CompanionHotkeyLibrary.flowActionID(flow.id)
+                            let trimmedName = flow.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                            Button {
+                                selectedActionID = actionID
+                            } label: {
+                                Label(
+                                    trimmedName.isEmpty ? actionID : trimmedName,
+                                    systemImage: CompanionHotkeyLibrary.actionSymbol(for: actionID)
+                                )
+                            }
+                        }
+                    }
+                }
+                if !client.profile.quadLayouts.isEmpty {
+                    Section(L10n.tr("四宫格", "Quad Layouts", language: lang)) {
+                        ForEach(client.profile.quadLayouts) { layout in
+                            let actionID = CompanionHotkeyLibrary.quadActionID(layout.id)
+                            let trimmedName = layout.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                            Button {
+                                selectedActionID = actionID
+                            } label: {
+                                Label(
+                                    trimmedName.isEmpty ? actionID : trimmedName,
+                                    systemImage: CompanionHotkeyLibrary.actionSymbol(for: actionID)
+                                )
+                            }
+                        }
+                    }
+                }
             } label: {
                 HStack(spacing: 12) {
                     Image(systemName: CompanionHotkeyLibrary.actionSymbol(for: selectedActionID))
                         .foregroundStyle(palette.accent)
                         .frame(width: 22)
-                    Text(CompanionHotkeyLibrary.actionTitle(for: selectedActionID, in: lang) ?? selectedActionID)
+                    Text(CompanionHotkeyLibrary.actionTitle(for: selectedActionID, in: client.profile, language: lang) ?? selectedActionID)
                         .font(ChocType.body)
                         .foregroundStyle(palette.primaryText)
                         .lineLimit(1)
@@ -366,7 +399,7 @@ private struct IOSCompanionHotkeyAddSheet: View {
 
     private func saveShortcut() {
         guard canSave else { return }
-        let title = CompanionHotkeyLibrary.actionTitle(for: selectedActionID, in: lang) ?? selectedActionID
+        let title = CompanionHotkeyLibrary.actionTitle(for: selectedActionID, in: client.profile, language: lang) ?? selectedActionID
         let hotkey = CompanionHotkey(
             keyCode: selectedKeyCode,
             carbonModifiers: carbonModifiers,

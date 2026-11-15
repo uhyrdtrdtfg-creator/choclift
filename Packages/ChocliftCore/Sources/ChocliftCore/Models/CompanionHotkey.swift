@@ -4,7 +4,7 @@ public struct CompanionHotkey: Codable, Equatable, Hashable, Identifiable, Senda
     public var id: UUID
     public var keyCode: UInt16          // CGKeyCode / kVK_*
     public var carbonModifiers: UInt32  // Carbon cmdKey | shiftKey | optionKey | controlKey
-    public var actionID: String         // SystemQuickAction.rawValue or CompanionAction.id
+    public var actionID: String         // SystemQuickAction.rawValue, CompanionAction.id, flow:<uuid>, or quad:<uuid>
     public var title: String
 
     public init(
@@ -31,6 +31,18 @@ public struct CompanionHotkey: Codable, Equatable, Hashable, Identifiable, Senda
             return trimmed
         }
         return CompanionHotkeyLibrary.actionTitle(for: actionID, in: language) ?? actionID
+    }
+
+    public func resolvedTitle(
+        in profile: ChocliftWorkspaceProfile,
+        language: AppLanguage = .system
+    ) -> String {
+        let trimmedID = actionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if CompanionHotkeyLibrary.parsedFlowID(from: trimmedID) != nil
+            || CompanionHotkeyLibrary.parsedQuadLayoutID(from: trimmedID) != nil {
+            return CompanionHotkeyLibrary.actionTitle(for: trimmedID, in: profile, language: language) ?? trimmedID
+        }
+        return resolvedTitle(in: language)
     }
 }
 
@@ -106,6 +118,9 @@ public struct CompanionHotkeyActionOption: Identifiable, Equatable, Hashable, Se
 
 public enum CompanionHotkeyLibrary {
     public static let maxCount = 8
+    public static let kVK_ANSI_A: UInt16 = 0x00
+    public static let flowActionPrefix = "flow:"
+    public static let quadActionPrefix = "quad:"
 
     private struct ChordKey: Hashable {
         let keyCode: UInt16
@@ -130,8 +145,43 @@ public enum CompanionHotkeyLibrary {
         return quick + companion
     }()
 
+    public static func flowActionID(_ id: UUID) -> String {
+        "\(flowActionPrefix)\(id.uuidString)"
+    }
+
+    public static func quadActionID(_ id: UUID) -> String {
+        "\(quadActionPrefix)\(id.uuidString)"
+    }
+
+    public static func parsedFlowID(from actionID: String) -> UUID? {
+        parsePrefixedUUID(from: actionID, prefix: flowActionPrefix)
+    }
+
+    public static func parsedQuadLayoutID(from actionID: String) -> UUID? {
+        parsePrefixedUUID(from: actionID, prefix: quadActionPrefix)
+    }
+
+    private static func parsePrefixedUUID(from actionID: String, prefix: String) -> UUID? {
+        let trimmed = actionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix(prefix) else { return nil }
+        let rawUUID = String(trimmed.dropFirst(prefix.count))
+        guard rawUUID.count == 36,
+              !rawUUID.contains(where: \.isWhitespace) else {
+            return nil
+        }
+        return UUID(uuidString: rawUUID)
+    }
+
     public static func isKnownActionID(_ id: String) -> Bool {
         knownActionIDs.contains(id.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    public static func isValidActionID(_ id: String) -> Bool {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        if knownActionIDs.contains(trimmed) {
+            return true
+        }
+        return parsedFlowID(from: trimmed) != nil || parsedQuadLayoutID(from: trimmed) != nil
     }
 
     public static func isQuitStyleAction(_ id: String) -> Bool {
@@ -149,6 +199,25 @@ public enum CompanionHotkeyLibrary {
         return nil
     }
 
+    public static func actionTitle(
+        for id: String,
+        in profile: ChocliftWorkspaceProfile,
+        language: AppLanguage = .system
+    ) -> String? {
+        let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let flowID = parsedFlowID(from: trimmed) {
+            guard let flow = profile.flow(withID: flowID) else { return nil }
+            let name = flow.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? trimmed : name
+        }
+        if let quadID = parsedQuadLayoutID(from: trimmed) {
+            guard let layout = profile.quadLayouts.first(where: { $0.id == quadID }) else { return nil }
+            let name = layout.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            return name.isEmpty ? trimmed : name
+        }
+        return actionTitle(for: trimmed, in: language)
+    }
+
     public static func actionSymbol(for id: String) -> String {
         let trimmed = id.trimmingCharacters(in: .whitespacesAndNewlines)
         if let quick = SystemQuickAction(rawValue: trimmed) {
@@ -156,6 +225,12 @@ public enum CompanionHotkeyLibrary {
         }
         if let companion = CompanionActionCatalog.action(id: trimmed) {
             return companion.sfSymbol
+        }
+        if parsedFlowID(from: trimmed) != nil {
+            return "arrow.triangle.branch"
+        }
+        if parsedQuadLayoutID(from: trimmed) != nil {
+            return "square.grid.2x2.fill"
         }
         return "command"
     }
@@ -174,6 +249,10 @@ public enum CompanionHotkeyLibrary {
         (0x36...0x3F).contains(keyCode)
     }
 
+    public static func isAllowedKeyCode(_ keyCode: UInt16) -> Bool {
+        allowedKeyCodes.contains(keyCode) && !isModifierKeyCode(keyCode)
+    }
+
     public static func sanitize(_ hotkeys: [CompanionHotkey]) -> [CompanionHotkey] {
         var result: [CompanionHotkey] = []
         var seenChords = Set<ChordKey>()
@@ -181,8 +260,8 @@ public enum CompanionHotkeyLibrary {
         for item in hotkeys {
             guard result.count < maxCount else { break }
             let trimmedActionID = item.actionID.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard knownActionIDs.contains(trimmedActionID) else { continue }
-            guard item.keyCode != 0 else { continue }
+            guard isValidActionID(trimmedActionID) else { continue }
+            guard isAllowedKeyCode(item.keyCode) else { continue }
 
             let maskedModifiers = normalizedModifiers(item.carbonModifiers)
             guard hasRequiredModifiers(maskedModifiers) else { continue }
@@ -214,9 +293,10 @@ public enum CompanionHotkeyLibrary {
         return prefix + keyName(for: keyCode)
     }
 
-    /// Key options for iOS picker (all non-zero Carbon virtual key codes).
+    /// Key options for iOS picker (Carbon virtual key codes, including kVK_ANSI_A = 0x00).
     public static let pickerKeyOptions: [CompanionHotkeyKeyOption] = [
-        // Letters (B-Z; Carbon kVK_ANSI_A is 0x00 and omitted because keyCode 0 is invalid)
+        // Letters (A-Z; Carbon kVK_ANSI_A = 0x00)
+        CompanionHotkeyKeyOption(keyCode: kVK_ANSI_A, label: "A", category: .letters),
         CompanionHotkeyKeyOption(keyCode: 0x0B, label: "B", category: .letters),
         CompanionHotkeyKeyOption(keyCode: 0x08, label: "C", category: .letters),
         CompanionHotkeyKeyOption(keyCode: 0x02, label: "D", category: .letters),
@@ -263,6 +343,22 @@ public enum CompanionHotkeyLibrary {
         CompanionHotkeyKeyOption(keyCode: 0x24, label: "Return", category: .special),
         CompanionHotkeyKeyOption(keyCode: 0x30, label: "Tab", category: .special)
     ]
+
+    /// Explicit allow-list of valid non-modifier Carbon virtual key codes, including kVK_ANSI_A = 0x00
+    /// and every key in `pickerKeyOptions`, plus standard Mac ANSI punctuation, navigation, and F-keys.
+    public static let allowedKeyCodes: Set<UInt16> = {
+        var codes: Set<UInt16> = [
+            kVK_ANSI_A,
+            0x18, 0x1B, 0x1E, 0x21, 0x27, 0x29, 0x2A, 0x2B, 0x2C, 0x2F, 0x32,
+            0x33, 0x35, 0x73, 0x74, 0x75, 0x77, 0x79,
+            0x7A, 0x78, 0x63, 0x76, 0x60, 0x61, 0x62, 0x64, 0x65, 0x6D,
+            0x67, 0x6F, 0x69, 0x6B, 0x71, 0x6A, 0x40, 0x4F, 0x50, 0x5A
+        ]
+        for option in pickerKeyOptions {
+            codes.insert(option.keyCode)
+        }
+        return codes
+    }()
 
     public static func keyName(for keyCode: UInt16) -> String {
         switch keyCode {
