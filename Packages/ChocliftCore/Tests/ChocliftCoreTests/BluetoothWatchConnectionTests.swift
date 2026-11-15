@@ -267,7 +267,7 @@ final class BluetoothWatchConnectionTests: XCTestCase {
         slow = true
         client.performQuickAction(.lockScreen)
         for _ in 0..<7 {
-            try await Task.sleep(for: .milliseconds(20))
+            await CancellableDelay.sleepUntilCancelled(seconds: 0.02)
             XCTAssertEqual(client.connectionState, state)
         }
         XCTAssertEqual(writes.count, 2)
@@ -325,7 +325,7 @@ final class BluetoothWatchConnectionTests: XCTestCase {
                 for pipe in activePumps {
                     pipe.pumpReadyToUpdateSubscribers()
                 }
-                try? await Task.sleep(for: .milliseconds(8))
+                await CancellableDelay.sleepUntilCancelled(seconds: 0.008)
             }
         }
         defer { pumpTask.cancel() }
@@ -1030,7 +1030,7 @@ final class BluetoothWatchConnectionTests: XCTestCase {
         }
 
         // User spends > bluetoothSessionTimeoutSeconds reading the 6-digit PIN on Mac and tapping 6 digits on Watch.
-        try await Task.sleep(for: .milliseconds(240))
+        await CancellableDelay.sleepUntilCancelled(seconds: 0.24)
         XCTAssertEqual(
             watch.connectionState,
             .awaitingPIN(macID: "mac-watch-pin-sweep", macName: "Studio MacBook Pro", errorMessage: nil),
@@ -1041,7 +1041,7 @@ final class BluetoothWatchConnectionTests: XCTestCase {
 
         let pinDeadline = Date().addingTimeInterval(0.6)
         while Date() < pinDeadline, !watch.connectionState.isConnected {
-            try await Task.sleep(for: .milliseconds(20))
+            await CancellableDelay.sleepUntilCancelled(seconds: 0.02)
         }
         XCTAssertEqual(
             watch.connectionState,
@@ -1052,7 +1052,7 @@ final class BluetoothWatchConnectionTests: XCTestCase {
         XCTAssertEqual(locallyRejectedOversizedWrites, 0)
         let writeDeadline = Date().addingTimeInterval(1.0)
         while Date() < writeDeadline, latestClientLink?.isWriteInFlight == true {
-            try await Task.sleep(for: .milliseconds(20))
+            await CancellableDelay.sleepUntilCancelled(seconds: 0.02)
         }
         XCTAssertEqual(latestClientLink?.isWriteInFlight, false)
     }
@@ -1125,7 +1125,7 @@ final class BluetoothWatchConnectionTests: XCTestCase {
 
         let silentDeadline = Date().addingTimeInterval(0.6)
         while Date() < silentDeadline, watchSilent.connectionState != .disconnected {
-            try await Task.sleep(for: .milliseconds(20))
+            await CancellableDelay.sleepUntilCancelled(seconds: 0.02)
         }
         XCTAssertEqual(
             watchSilent.connectionState,
@@ -1160,7 +1160,7 @@ final class BluetoothWatchConnectionTests: XCTestCase {
         let discoveryNoiseTask = Task { @MainActor in
             while !Task.isCancelled {
                 watchLoop.simulateDiscoveredBluetoothMacs([nearbyUnpairedBLE], autoConnect: false)
-                try? await Task.sleep(for: .milliseconds(40))
+                await CancellableDelay.sleepUntilCancelled(seconds: 0.04)
             }
         }
         defer { discoveryNoiseTask.cancel() }
@@ -1171,13 +1171,13 @@ final class BluetoothWatchConnectionTests: XCTestCase {
 
         // Allow more than (maxAutoReconnectAttempts + 1) retry cycles; if discovery resets
         // consecutiveReconnectFailures, scheduleRecoveryAttempt keeps re-entering .connecting forever.
-        try await Task.sleep(for: .milliseconds(360))
+        await CancellableDelay.sleepUntilCancelled(seconds: 0.36)
         var sawConnectingAfterBudget = false
         for _ in 0..<25 {
             if case .connecting = watchLoop.connectionState {
                 sawConnectingAfterBudget = true
             }
-            try await Task.sleep(for: .milliseconds(12))
+            await CancellableDelay.sleepUntilCancelled(seconds: 0.012)
         }
         XCTAssertFalse(
             sawConnectingAfterBudget,
@@ -1287,7 +1287,7 @@ final class BluetoothWatchConnectionTests: XCTestCase {
 
         // Wait past bluetoothPairingTimeoutSeconds so the first BluetoothServerLink is cancelled on Mac,
         // without firing didSubscribeTo again on the Watch radio.
-        try await Task.sleep(for: .milliseconds(220))
+        await CancellableDelay.sleepUntilCancelled(seconds: 0.22)
 
         watch.submitPIN(server.currentPIN)
 
@@ -1382,7 +1382,7 @@ final class BluetoothWatchConnectionTests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
             if condition() { return }
-            try await Task.sleep(for: .milliseconds(20))
+            await CancellableDelay.sleepUntilCancelled(seconds: 0.02)
         }
         throw TimeoutError(label: label)
     }
