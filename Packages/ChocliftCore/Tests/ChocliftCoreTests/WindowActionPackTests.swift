@@ -8,7 +8,7 @@ import XCTest
 
 final class WindowActionPackTests: XCTestCase {
 
-    func testWindowPackHasExactTenUniqueIDsTitlesAndSFSymbols() {
+    func testWindowPackHasExactFourteenUniqueIDsTitlesAndSFSymbols() throws {
         let expectedIDs = [
             "window.thirds_left",
             "window.thirds_center",
@@ -19,12 +19,31 @@ final class WindowActionPackTests: XCTestCase {
             "window.right_screen",
             "window.minimize_all_others",
             "window.zoom",
-            "window.center_horizontally"
+            "window.center_horizontally",
+            "window.two_thirds_left",
+            "window.two_thirds_right",
+            "window.top_half",
+            "window.bottom_half"
         ]
 
         let pack = CompanionActionCatalog.windowPack
         XCTAssertEqual(pack.map(\.id), expectedIDs)
-        XCTAssertEqual(Set(pack.map(\.id)).count, 10)
+        XCTAssertEqual(Set(pack.map(\.id)).count, 14)
+
+        let expectedNewSnapTitles: [(id: String, zh: String, en: String)] = [
+            (WindowCompanionActionID.twoThirdsLeft, "左三分之二", "Left Two-Thirds"),
+            (WindowCompanionActionID.twoThirdsRight, "右三分之二", "Right Two-Thirds"),
+            (WindowCompanionActionID.topHalf, "上半屏", "Top Half"),
+            (WindowCompanionActionID.bottomHalf, "下半屏", "Bottom Half")
+        ]
+        for item in expectedNewSnapTitles {
+            let action = try XCTUnwrap(CompanionActionCatalog.action(id: item.id))
+            XCTAssertEqual(action.titleZh, item.zh)
+            XCTAssertEqual(action.titleEn, item.en)
+            XCTAssertEqual(action.title(in: .chinese), item.zh)
+            XCTAssertEqual(action.title(in: .english), item.en)
+            XCTAssertTrue(CompanionHotkeyLibrary.isKnownActionID(item.id))
+        }
 
         for action in pack {
             XCTAssertTrue(action.id.hasPrefix("window."), "Expected window. prefix for \(action.id)")
@@ -40,6 +59,64 @@ final class WindowActionPackTests: XCTestCase {
                 "SF Symbol \(action.sfSymbol) should load on macOS"
             )
             #endif
+        }
+    }
+
+    func testTwoThirdsAndVerticalHalvesOn1512x900AndOddRectsAreContainedNonOverlappingAndFlush() {
+        let visible1512 = CGRect(x: 0, y: 37, width: 1512, height: 900)
+        let leftTwoThirds1512 = WindowPackGeometry.twoThirdsFrame(for: .left, visibleQuartz: visible1512)
+        let rightTwoThirds1512 = WindowPackGeometry.twoThirdsFrame(for: .right, visibleQuartz: visible1512)
+        let topHalf1512 = WindowPackGeometry.halfFrame(for: .top, visibleQuartz: visible1512)
+        let bottomHalf1512 = WindowPackGeometry.halfFrame(for: .bottom, visibleQuartz: visible1512)
+        let leftThird1512 = WindowPackGeometry.thirdFrame(for: .left, visibleQuartz: visible1512)
+        let rightThird1512 = WindowPackGeometry.thirdFrame(for: .right, visibleQuartz: visible1512)
+
+        XCTAssertEqual(leftTwoThirds1512, CGRect(x: 0, y: 37, width: 1008, height: 900))
+        XCTAssertEqual(rightTwoThirds1512, CGRect(x: 504, y: 37, width: 1008, height: 900))
+        XCTAssertEqual(topHalf1512, CGRect(x: 0, y: 37, width: 1512, height: 450))
+        XCTAssertEqual(bottomHalf1512, CGRect(x: 0, y: 487, width: 1512, height: 450))
+
+        for frame in [leftTwoThirds1512, rightTwoThirds1512, topHalf1512, bottomHalf1512] {
+            XCTAssertTrue(visible1512.contains(frame))
+        }
+        XCTAssertEqual(leftTwoThirds1512.minX, visible1512.minX)
+        XCTAssertEqual(rightTwoThirds1512.maxX, visible1512.maxX)
+        XCTAssertLessThan(topHalf1512.minY, bottomHalf1512.minY)
+        XCTAssertEqual(topHalf1512.minY, visible1512.minY)
+        XCTAssertEqual(bottomHalf1512.maxY, visible1512.maxY)
+        XCTAssertFalse(topHalf1512.intersects(bottomHalf1512))
+        XCTAssertFalse(leftTwoThirds1512.intersects(rightThird1512))
+        XCTAssertFalse(leftThird1512.intersects(rightTwoThirds1512))
+
+        for (oddWidth, oddHeight) in [(CGFloat(901), CGFloat(885)), (902, 900), (1441, 901), (1513, 885), (1729, 1117), (2561, 1415)] {
+            let visible = CGRect(x: 72, y: 37, width: oddWidth, height: oddHeight)
+            let leftTwoThirds = WindowPackGeometry.twoThirdsFrame(for: .left, visibleQuartz: visible)
+            let rightTwoThirds = WindowPackGeometry.twoThirdsFrame(for: .right, visibleQuartz: visible)
+            let topHalf = WindowPackGeometry.halfFrame(for: .top, visibleQuartz: visible)
+            let bottomHalf = WindowPackGeometry.halfFrame(for: .bottom, visibleQuartz: visible)
+            let leftThird = WindowPackGeometry.thirdFrame(for: .left, visibleQuartz: visible)
+            let rightThird = WindowPackGeometry.thirdFrame(for: .right, visibleQuartz: visible)
+
+            XCTAssertTrue(visible.contains(leftTwoThirds))
+            XCTAssertTrue(visible.contains(rightTwoThirds))
+            XCTAssertTrue(visible.contains(topHalf))
+            XCTAssertTrue(visible.contains(bottomHalf))
+
+            XCTAssertEqual(leftTwoThirds.minX, visible.minX)
+            XCTAssertEqual(leftTwoThirds.width, floor(visible.width * 2.0 / 3.0))
+            XCTAssertEqual(leftTwoThirds.height, visible.height)
+            XCTAssertEqual(rightTwoThirds.maxX, visible.maxX)
+            XCTAssertEqual(rightTwoThirds.height, visible.height)
+
+            XCTAssertEqual(topHalf.minY, visible.minY)
+            XCTAssertLessThan(topHalf.minY, bottomHalf.minY)
+            XCTAssertEqual(bottomHalf.maxY, visible.maxY)
+            XCTAssertEqual(topHalf.maxX, visible.maxX)
+            XCTAssertEqual(bottomHalf.maxX, visible.maxX)
+
+            XCTAssertFalse(topHalf.intersects(bottomHalf), "Top and bottom half overlapped for \(visible)")
+            XCTAssertFalse(leftTwoThirds.intersects(rightThird), "Left 2/3 and right 1/3 overlapped for \(visible)")
+            XCTAssertFalse(leftThird.intersects(rightTwoThirds), "Left 1/3 and right 2/3 overlapped for \(visible)")
         }
     }
 

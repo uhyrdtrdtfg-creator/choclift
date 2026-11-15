@@ -12,6 +12,10 @@ public enum WindowCompanionActionID {
     public static let minimizeAllOthers = "window.minimize_all_others"
     public static let zoom = "window.zoom"
     public static let centerHorizontally = "window.center_horizontally"
+    public static let twoThirdsLeft = "window.two_thirds_left"
+    public static let twoThirdsRight = "window.two_thirds_right"
+    public static let topHalf = "window.top_half"
+    public static let bottomHalf = "window.bottom_half"
 }
 
 extension CompanionActionCatalog {
@@ -75,6 +79,30 @@ extension CompanionActionCatalog {
             titleZh: "水平居中",
             titleEn: "Center Horizontally",
             sfSymbol: "align.horizontal.center.fill"
+        ),
+        CompanionAction(
+            id: WindowCompanionActionID.twoThirdsLeft,
+            titleZh: "左三分之二",
+            titleEn: "Left Two-Thirds",
+            sfSymbol: "rectangle.lefthalf.filled"
+        ),
+        CompanionAction(
+            id: WindowCompanionActionID.twoThirdsRight,
+            titleZh: "右三分之二",
+            titleEn: "Right Two-Thirds",
+            sfSymbol: "rectangle.righthalf.filled"
+        ),
+        CompanionAction(
+            id: WindowCompanionActionID.topHalf,
+            titleZh: "上半屏",
+            titleEn: "Top Half",
+            sfSymbol: "rectangle.tophalf.inset.filled"
+        ),
+        CompanionAction(
+            id: WindowCompanionActionID.bottomHalf,
+            titleZh: "下半屏",
+            titleEn: "Bottom Half",
+            sfSymbol: "rectangle.bottomhalf.inset.filled"
         )
     ]
 }
@@ -83,6 +111,16 @@ public enum WindowThirdColumn: String, CaseIterable, Equatable, Sendable {
     case left
     case center
     case right
+}
+
+public enum WindowTwoThirdsSide: String, CaseIterable, Equatable, Sendable {
+    case left
+    case right
+}
+
+public enum WindowVerticalHalf: String, CaseIterable, Equatable, Sendable {
+    case top
+    case bottom
 }
 
 public enum WindowScreenDirection: String, CaseIterable, Equatable, Sendable {
@@ -138,6 +176,53 @@ public enum WindowPackGeometry {
                 y: visibleQuartz.origin.y,
                 width: visibleQuartz.width - centerEnd,
                 height: visibleQuartz.height
+            )
+        }
+    }
+
+    public static func twoThirdsFrame(
+        for side: WindowTwoThirdsSide,
+        visibleQuartz: CGRect
+    ) -> CGRect {
+        let leftEnd = floor(visibleQuartz.width / 3.0)
+        let twoThirdsWidth = floor((visibleQuartz.width * 2.0) / 3.0)
+        switch side {
+        case .left:
+            return CGRect(
+                x: visibleQuartz.minX,
+                y: visibleQuartz.minY,
+                width: twoThirdsWidth,
+                height: visibleQuartz.height
+            )
+        case .right:
+            return CGRect(
+                x: visibleQuartz.minX + leftEnd,
+                y: visibleQuartz.minY,
+                width: visibleQuartz.width - leftEnd,
+                height: visibleQuartz.height
+            )
+        }
+    }
+
+    public static func halfFrame(
+        for half: WindowVerticalHalf,
+        visibleQuartz: CGRect
+    ) -> CGRect {
+        let topHeight = floor(visibleQuartz.height / 2.0)
+        switch half {
+        case .top:
+            return CGRect(
+                x: visibleQuartz.minX,
+                y: visibleQuartz.minY,
+                width: visibleQuartz.width,
+                height: topHeight
+            )
+        case .bottom:
+            return CGRect(
+                x: visibleQuartz.minX,
+                y: visibleQuartz.minY + topHeight,
+                width: visibleQuartz.width,
+                height: visibleQuartz.height - topHeight
             )
         }
     }
