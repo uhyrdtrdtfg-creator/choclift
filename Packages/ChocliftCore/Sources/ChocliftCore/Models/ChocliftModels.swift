@@ -2739,7 +2739,7 @@ public enum ChocliftDefaults {
                 BarItem(kind: .macApp(bundleIdentifier: "com.apple.dt.Xcode", appName: "Xcode", fallbackSymbol: "hammer.fill")),
                 BarItem(kind: .macApp(bundleIdentifier: "com.apple.mail", appName: "Mail", fallbackSymbol: "envelope.fill")),
                 BarItem(kind: .macApp(bundleIdentifier: "com.apple.reminders", appName: "Reminders", fallbackSymbol: "checklist")),
-                BarItem(kind: .website(url: "https://github.com", title: "GitHub", emoji: "🐙", backgroundHex: "#EDF6FF", switchExistingTab: true)),
+                BarItem(kind: .website(url: "https://github.com", title: "GitHub", emoji: "", backgroundHex: "#EDF6FF", switchExistingTab: true)),
                 BarItem(kind: .website(url: "https://www.figma.com", title: "Figma", emoji: "🎨", backgroundHex: "#FFF6E3", switchExistingTab: true)),
                 BarItem(kind: .systemAction(action: .snapWindowLeft)),
                 BarItem(kind: .systemAction(action: .snapWindowRight))
