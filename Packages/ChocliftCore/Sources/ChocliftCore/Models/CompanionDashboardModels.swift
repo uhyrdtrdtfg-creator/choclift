@@ -1,6 +1,115 @@
 import Foundation
 
-// MARK: - 1. Clipboard Preview & Safe Plain-Text Filtering (280-Char Max)
+// MARK: - 1. Clipboard Preview, 5-Item Ring & Safe Plain-Text Filtering (280-Char Max)
+
+public struct ClipboardHistoryEntry: Codable, Equatable, Hashable, Sendable {
+    public let text: String
+    public let isTruncated: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+        case isTruncated
+    }
+
+    public init?(text: String?, isTruncated: Bool = false) {
+        guard let raw = text,
+              !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        if raw.count > ClipboardPreviewSnapshot.maxPreviewCharacters {
+            self.text = String(raw.prefix(ClipboardPreviewSnapshot.maxPreviewCharacters))
+            self.isTruncated = true
+        } else {
+            self.text = raw
+            self.isTruncated = isTruncated
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rawText = try container.decode(String.self, forKey: .text)
+        let rawTruncated = try container.decodeIfPresent(Bool.self, forKey: .isTruncated) ?? false
+        guard let valid = Self(text: rawText, isTruncated: rawTruncated) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .text,
+                in: container,
+                debugDescription: "ClipboardHistoryEntry text must not be empty"
+            )
+        }
+        self = valid
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        let safe = text.count > ClipboardPreviewSnapshot.maxPreviewCharacters
+            ? String(text.prefix(ClipboardPreviewSnapshot.maxPreviewCharacters))
+            : text
+        try container.encode(safe, forKey: .text)
+        try container.encode(isTruncated, forKey: .isTruncated)
+    }
+
+    public var singleLinePreview: String {
+        let collapsed = text
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return isTruncated ? "\(collapsed)…" : collapsed
+    }
+}
+
+/// Pure ring buffer keeping the last 5 non-empty sanitized clipboard text entries, newest first.
+public struct ClipboardHistoryRing: Equatable, Sendable {
+    public static let maxEntries = 5
+
+    public private(set) var entries: [ClipboardHistoryEntry]
+
+    public init(entries: [ClipboardHistoryEntry] = []) {
+        self.entries = Self.sanitize(entries)
+    }
+
+    @discardableResult
+    public mutating func record(_ snapshot: ClipboardPreviewSnapshot) -> [ClipboardHistoryEntry] {
+        guard let entry = ClipboardHistoryEntry(text: snapshot.previewText, isTruncated: snapshot.isTruncated) else {
+            return entries
+        }
+        entries.removeAll { $0.text == entry.text }
+        entries.insert(entry, at: 0)
+        if entries.count > Self.maxEntries {
+            entries = Array(entries.prefix(Self.maxEntries))
+        }
+        return entries
+    }
+
+    @discardableResult
+    public mutating func record(text: String?, isTruncated: Bool = false) -> [ClipboardHistoryEntry] {
+        record(ClipboardPreviewSnapshot(previewText: text, isTruncated: isTruncated))
+    }
+
+    public static func sanitize(_ candidates: [ClipboardHistoryEntry]) -> [ClipboardHistoryEntry] {
+        var seen = Set<String>()
+        var result: [ClipboardHistoryEntry] = []
+        for candidate in candidates {
+            guard let normalized = ClipboardHistoryEntry(
+                text: candidate.text,
+                isTruncated: candidate.isTruncated
+            ) else {
+                continue
+            }
+            if seen.insert(normalized.text).inserted {
+                result.append(normalized)
+                if result.count >= maxEntries {
+                    break
+                }
+            }
+        }
+        return result
+    }
+}
+
+private struct RawClipboardHistoryEntryPayload: Decodable {
+    let text: String?
+    let isTruncated: Bool?
+}
 
 public struct ClipboardPreviewSnapshot: Codable, Equatable, Hashable, Sendable {
     public static let maxPreviewCharacters = 280
@@ -8,13 +117,20 @@ public struct ClipboardPreviewSnapshot: Codable, Equatable, Hashable, Sendable {
 
     public let previewText: String?
     public let isTruncated: Bool
+    public let recentEntries: [ClipboardHistoryEntry]
 
     private enum CodingKeys: String, CodingKey {
         case previewText
         case isTruncated
+        case recentEntries
     }
 
-    public init(previewText: String?, isTruncated: Bool = false) {
+    public init(
+        previewText: String?,
+        isTruncated: Bool = false,
+        recentEntries: [ClipboardHistoryEntry] = []
+    ) {
+        self.recentEntries = ClipboardHistoryRing.sanitize(recentEntries)
         guard let raw = previewText,
               !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             self.previewText = nil
@@ -34,7 +150,15 @@ public struct ClipboardPreviewSnapshot: Codable, Equatable, Hashable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let decodedText = try container.decodeIfPresent(String.self, forKey: .previewText)
         let decodedTruncated = try container.decodeIfPresent(Bool.self, forKey: .isTruncated) ?? false
-        self.init(previewText: decodedText, isTruncated: decodedTruncated)
+        let rawEntries = try container.decodeIfPresent([RawClipboardHistoryEntryPayload].self, forKey: .recentEntries) ?? []
+        let parsedEntries = rawEntries.compactMap {
+            ClipboardHistoryEntry(text: $0.text, isTruncated: $0.isTruncated ?? false)
+        }
+        self.init(
+            previewText: decodedText,
+            isTruncated: decodedTruncated,
+            recentEntries: parsedEntries
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -46,6 +170,27 @@ public struct ClipboardPreviewSnapshot: Codable, Equatable, Hashable, Sendable {
             try container.encode(safe, forKey: .previewText)
         }
         try container.encode(isTruncated, forKey: .isTruncated)
+        if !recentEntries.isEmpty {
+            try container.encode(ClipboardHistoryRing.sanitize(recentEntries), forKey: .recentEntries)
+        }
+    }
+
+    public func withRecentEntries(_ entries: [ClipboardHistoryEntry]) -> ClipboardPreviewSnapshot {
+        ClipboardPreviewSnapshot(
+            previewText: previewText,
+            isTruncated: isTruncated,
+            recentEntries: entries
+        )
+    }
+
+    public var effectiveRecentEntries: [ClipboardHistoryEntry] {
+        if !recentEntries.isEmpty {
+            return recentEntries
+        }
+        if let entry = ClipboardHistoryEntry(text: previewText, isTruncated: isTruncated) {
+            return [entry]
+        }
+        return []
     }
 
     public var hasText: Bool {

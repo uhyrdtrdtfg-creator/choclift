@@ -93,6 +93,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
     case quitApp = "quit_app"
     case openEmojiPicker = "open_emoji_picker"
     case moveWindowToNextDisplay = "move_window_to_next_display"
+    case toggleDictation = "toggle_dictation"
 
     public var id: String { rawValue }
 
@@ -125,6 +126,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .quitApp: return "xmark.octagon.fill"
         case .openEmojiPicker: return "face.smiling.inverse"
         case .moveWindowToNextDisplay: return "display.2"
+        case .toggleDictation: return "mic.fill"
         }
     }
 
@@ -132,7 +134,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         switch self {
         case .maximizeWindow, .minimizeWindow, .snapWindowLeft, .snapWindowRight, .centerWindow, .toggleFullscreen, .switchToNextWindow, .switchToPreviousWindow, .moveWindowToNextDisplay:
             return "#EDF6FF"
-        case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction:
+        case .sendSelectionToOrca, .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .toggleDictation:
             return "#F3EEFF"
         case .missionControl, .showDesktop, .screenshotInteractive, .lockScreen, .quitApp, .openEmojiPicker:
             return "#FFF1EC"
@@ -173,7 +175,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
             return true
         }
         switch self {
-        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp, .switchToNextWindow, .switchToPreviousWindow:
+        case .copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .quitApp, .switchToNextWindow, .switchToPreviousWindow, .toggleDictation:
             return true
         default:
             return false
@@ -204,7 +206,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
              .centerWindow, .toggleFullscreen, .missionControl, .showDesktop,
              .screenshotInteractive, .mediaPlayPause, .mediaNext, .mediaPrevious,
              .volumeUp, .volumeDown, .volumeMute, .quitApp, .sendSelectionToOrca,
-             .moveWindowToNextDisplay:
+             .moveWindowToNextDisplay, .toggleDictation:
             return nil
         }
     }
@@ -238,6 +240,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .quitApp: return L10n.tr("退出当前应用", "Quit Application", language: lang)
         case .openEmojiPicker: return L10n.tr("系统表情面板", "macOS Emoji Panel", language: lang)
         case .moveWindowToNextDisplay: return L10n.tr("窗口移至下一显示器", "Move Window to Next Display", language: lang)
+        case .toggleDictation: return L10n.tr("切换听写", "Toggle Dictation", language: lang)
         }
     }
 
@@ -270,6 +273,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
         case .quitApp: return L10n.tr("退出", "Quit", language: lang)
         case .openEmojiPicker: return L10n.tr("表情框", "Emoji", language: lang)
         case .moveWindowToNextDisplay: return L10n.tr("下一屏幕", "Next Display", language: lang)
+        case .toggleDictation: return L10n.tr("听写", "Dictation", language: lang)
         }
     }
 
@@ -293,7 +297,7 @@ public enum SystemQuickAction: String, Codable, CaseIterable, Sendable, Identifi
                 compactHeaders
                     ? L10n.tr("编辑与剪贴板", "Clipboard & Edit", language: lang)
                     : L10n.tr("编辑与剪贴板", "Clipboard & Editing", language: lang),
-                [.copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction]
+                [.copySelection, .pasteClipboard, .cutSelection, .undoAction, .redoAction, .toggleDictation]
             ),
             (
                 L10n.tr("媒体与音量", "Media & Volume", language: lang),

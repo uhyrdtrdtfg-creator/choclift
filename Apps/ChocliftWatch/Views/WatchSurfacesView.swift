@@ -1195,9 +1195,9 @@ public struct WatchQuickActionsView: View {
     private let workspaceActions: [SystemQuickAction] = [
         .missionControl, .showDesktop,
         .copySelection, .pasteClipboard,
-        .undoAction, .screenshotInteractive,
-        .openEmojiPicker, .lockScreen,
-        .quitApp
+        .toggleDictation, .undoAction,
+        .screenshotInteractive, .openEmojiPicker,
+        .lockScreen, .quitApp
     ]
 
     public var body: some View {
