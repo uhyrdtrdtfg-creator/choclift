@@ -176,46 +176,129 @@ private struct WatchCalendarComplicationLine: View {
         let snapshot = client.calendarSnapshot
         if let event = snapshot.nextEvent {
             let key = "watch-calendar-next"
+            let joinKey = "watch-calendar-join"
             let isPressed = (pressedKey == key)
+            let isJoinPressed = (pressedKey == joinKey)
             TimelineView(.periodic(from: .now, by: 30.0)) { context in
-                Button {
-                    CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
-                    ChocPressFeedback.completeTap(key: key, pressedKey: $pressedKey)
-                    client.openCalendarOnMac()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "calendar")
-                            .font(ChocType.micro)
-                            .foregroundStyle(palette.accent)
-                        Text(event.title)
-                            .font(ChocType.micro)
-                            .foregroundStyle(palette.primaryText)
-                            .lineLimit(1)
-                        Spacer(minLength: 2)
-                        Text(
-                            NextCalendarEventSnapshot.formattedStartTime(
-                                for: event,
-                                referenceDate: context.date,
-                                language: lang
-                            )
-                        )
-                        .font(ChocType.micro)
-                        .monospacedDigit()
-                        .foregroundStyle(palette.secondaryText)
-                        .lineLimit(1)
-                    }
-                    .padding(.horizontal, 9)
-                    .frame(minHeight: 32)
-                    .background(isPressed ? palette.tileFillBottom : palette.barSurface, in: Capsule())
-                    .overlay(
-                        Capsule()
-                            .strokeBorder(isPressed ? palette.accent : palette.subtleCardStroke, lineWidth: isPressed ? 1.5 : 1)
+                if event.hasJoinLink {
+                    let provider = event.joinProvider ?? "Link"
+                    let countdown = NextCalendarEventSnapshot.formattedCountdown(
+                        for: event,
+                        referenceDate: context.date,
+                        language: lang
                     )
-                    .contentShape(Capsule())
-                    .scaleEffect(isPressed ? 0.96 : 1.0)
+
+                    HStack(spacing: 6) {
+                        Button {
+                            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                            ChocPressFeedback.completeTap(key: key, pressedKey: $pressedKey)
+                            client.openCalendarOnMac()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "calendar")
+                                        .font(ChocType.micro)
+                                        .foregroundStyle(palette.accent)
+                                    Text(event.title)
+                                        .font(ChocType.micro)
+                                        .foregroundStyle(palette.primaryText)
+                                        .lineLimit(1)
+                                    Spacer(minLength: 2)
+                                    Text(
+                                        NextCalendarEventSnapshot.formattedStartTime(
+                                            for: event,
+                                            referenceDate: context.date,
+                                            language: lang
+                                        )
+                                    )
+                                    .font(ChocType.micro)
+                                    .monospacedDigit()
+                                    .foregroundStyle(palette.secondaryText)
+                                    .lineLimit(1)
+                                }
+
+                                Text("\(provider) · \(countdown)")
+                                    .font(ChocType.micro)
+                                    .monospacedDigit()
+                                    .foregroundStyle(palette.accent)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+                            .background(
+                                isPressed ? palette.tileFillBottom : palette.barSurface,
+                                in: RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                    .strokeBorder(isPressed ? palette.accent : palette.subtleCardStroke, lineWidth: isPressed ? 1.5 : 1)
+                            )
+                            .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                            .scaleEffect(isPressed ? 0.96 : 1.0)
+                        }
+                        .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: key))
+                        .accessibilityIdentifier("watch-calendar-event-button")
+
+                        Button {
+                            CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .medium)
+                            ChocPressFeedback.completeTap(key: joinKey, pressedKey: $pressedKey)
+                            client.joinNextCalendarMeeting()
+                        } label: {
+                            Text(L10n.tr("加入", "Join", language: lang))
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.accentForeground)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .padding(.horizontal, 10)
+                                .frame(minHeight: 38)
+                                .background(palette.accent, in: Capsule())
+                                .contentShape(Capsule())
+                                .scaleEffect(isJoinPressed ? 0.94 : 1.0)
+                        }
+                        .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: joinKey))
+                        .accessibilityIdentifier("watch-join-calendar-meeting-button")
+                    }
+                } else {
+                    Button {
+                        CompanionFeedbackHaptics.tap(enabled: client.profile.settings.hapticFeedbackEnabled, intensity: .light)
+                        ChocPressFeedback.completeTap(key: key, pressedKey: $pressedKey)
+                        client.openCalendarOnMac()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "calendar")
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.accent)
+                            Text(event.title)
+                                .font(ChocType.micro)
+                                .foregroundStyle(palette.primaryText)
+                                .lineLimit(1)
+                            Spacer(minLength: 2)
+                            Text(
+                                NextCalendarEventSnapshot.formattedStartTime(
+                                    for: event,
+                                    referenceDate: context.date,
+                                    language: lang
+                                )
+                            )
+                            .font(ChocType.micro)
+                            .monospacedDigit()
+                            .foregroundStyle(palette.secondaryText)
+                            .lineLimit(1)
+                        }
+                        .padding(.horizontal, 9)
+                        .frame(minHeight: 32)
+                        .background(isPressed ? palette.tileFillBottom : palette.barSurface, in: Capsule())
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(isPressed ? palette.accent : palette.subtleCardStroke, lineWidth: isPressed ? 1.5 : 1)
+                        )
+                        .contentShape(Capsule())
+                        .scaleEffect(isPressed ? 0.96 : 1.0)
+                    }
+                    .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: key))
+                    .accessibilityIdentifier("watch-calendar-event-button")
                 }
-                .buttonStyle(ChocPressedKeyButtonStyle(pressedKey: $pressedKey, key: key))
-                .accessibilityIdentifier("watch-calendar-event-button")
             }
         } else if snapshot.permission == .denied {
             Button {

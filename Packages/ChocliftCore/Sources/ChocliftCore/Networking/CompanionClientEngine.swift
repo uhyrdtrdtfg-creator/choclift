@@ -3358,6 +3358,20 @@ public final class CompanionClientEngine: ObservableObject {
         send(.openCalendarApp)
     }
 
+    public func joinNextCalendarMeeting() {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: L10n.tr("加入会议", "Join Meeting", language: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        send(.joinNextCalendarMeeting)
+    }
+
     public func triggerSoundboardClip(id: UUID) {
         tileFeedbackTracker.clearPendingWithoutFeedback()
         send(.triggerSoundboardClip(soundID: id))

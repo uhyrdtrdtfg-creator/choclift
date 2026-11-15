@@ -439,18 +439,34 @@ public struct NextCalendarEventSummary: Codable, Equatable, Hashable, Sendable {
     public let title: String
     public let startDate: Date
     public let isAllDay: Bool
+    public let joinProvider: String?
+    public let hasJoinLink: Bool
 
     private enum CodingKeys: String, CodingKey {
         case title
         case startDate
         case isAllDay
+        case joinProvider
+        case hasJoinLink
     }
 
-    public init(title: String, startDate: Date, isAllDay: Bool = false) {
+    public init(
+        title: String,
+        startDate: Date,
+        isAllDay: Bool = false,
+        joinProvider: String? = nil,
+        hasJoinLink: Bool? = nil
+    ) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         self.title = trimmed.isEmpty ? "Untitled Event" : String(trimmed.prefix(120))
         self.startDate = startDate
         self.isAllDay = isAllDay
+
+        let cleanedProvider = joinProvider?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedProvider = (cleanedProvider?.isEmpty == false) ? String(cleanedProvider!.prefix(24)) : nil
+        let resolvedHasLink = hasJoinLink ?? (normalizedProvider != nil)
+        self.hasJoinLink = resolvedHasLink
+        self.joinProvider = resolvedHasLink ? (normalizedProvider ?? "Link") : nil
     }
 
     public init(from decoder: Decoder) throws {
@@ -458,7 +474,26 @@ public struct NextCalendarEventSummary: Codable, Equatable, Hashable, Sendable {
         let rawTitle = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
         let start = try container.decode(Date.self, forKey: .startDate)
         let allDay = try container.decodeIfPresent(Bool.self, forKey: .isAllDay) ?? false
-        self.init(title: rawTitle, startDate: start, isAllDay: allDay)
+        let provider = try container.decodeIfPresent(String.self, forKey: .joinProvider)
+        let hasLink = try container.decodeIfPresent(Bool.self, forKey: .hasJoinLink)
+        self.init(
+            title: rawTitle,
+            startDate: start,
+            isAllDay: allDay,
+            joinProvider: provider,
+            hasJoinLink: hasLink
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(title, forKey: .title)
+        try container.encode(startDate, forKey: .startDate)
+        try container.encode(isAllDay, forKey: .isAllDay)
+        if let joinProvider {
+            try container.encode(joinProvider, forKey: .joinProvider)
+        }
+        try container.encode(hasJoinLink, forKey: .hasJoinLink)
     }
 }
 
@@ -468,19 +503,28 @@ public struct CalendarEventCandidate: Equatable, Sendable {
     public let endDate: Date
     public let isAllDay: Bool
     public let isCanceled: Bool
+    public let joinProvider: String?
+    public let hasJoinLink: Bool
 
     public init(
         title: String,
         startDate: Date,
         endDate: Date,
         isAllDay: Bool = false,
-        isCanceled: Bool = false
+        isCanceled: Bool = false,
+        joinProvider: String? = nil,
+        hasJoinLink: Bool? = nil
     ) {
         self.title = title
         self.startDate = startDate
         self.endDate = endDate
         self.isAllDay = isAllDay
         self.isCanceled = isCanceled
+        let cleanedProvider = joinProvider?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedProvider = (cleanedProvider?.isEmpty == false) ? String(cleanedProvider!.prefix(24)) : nil
+        let resolvedHasLink = hasJoinLink ?? (normalizedProvider != nil)
+        self.hasJoinLink = resolvedHasLink
+        self.joinProvider = resolvedHasLink ? (normalizedProvider ?? "Link") : nil
     }
 }
 
@@ -490,9 +534,14 @@ public struct NextCalendarEventSnapshot: Codable, Equatable, Hashable, Sendable 
     public let permission: CalendarPermissionState
     public let nextEvent: NextCalendarEventSummary?
 
+    public var joinProvider: String? { nextEvent?.joinProvider }
+    public var hasJoinLink: Bool { nextEvent?.hasJoinLink ?? false }
+
     private enum CodingKeys: String, CodingKey {
         case permission
         case nextEvent
+        case joinProvider
+        case hasJoinLink
     }
 
     public init(permission: CalendarPermissionState, nextEvent: NextCalendarEventSummary? = nil) {
@@ -503,8 +552,31 @@ public struct NextCalendarEventSnapshot: Codable, Equatable, Hashable, Sendable 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let perm = try container.decodeIfPresent(CalendarPermissionState.self, forKey: .permission) ?? .unknown
-        let evt = try container.decodeIfPresent(NextCalendarEventSummary.self, forKey: .nextEvent)
-        self.init(permission: perm, nextEvent: evt)
+        let decodedEvent = try container.decodeIfPresent(NextCalendarEventSummary.self, forKey: .nextEvent)
+        let topProvider = try container.decodeIfPresent(String.self, forKey: .joinProvider)
+        let topHasLink = try container.decodeIfPresent(Bool.self, forKey: .hasJoinLink)
+
+        let resolvedEvent: NextCalendarEventSummary?
+        if let evt = decodedEvent, !evt.hasJoinLink, (topProvider != nil || topHasLink == true) {
+            resolvedEvent = NextCalendarEventSummary(
+                title: evt.title,
+                startDate: evt.startDate,
+                isAllDay: evt.isAllDay,
+                joinProvider: topProvider,
+                hasJoinLink: topHasLink
+            )
+        } else {
+            resolvedEvent = decodedEvent
+        }
+        self.init(permission: perm, nextEvent: resolvedEvent)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(permission, forKey: .permission)
+        if let nextEvent {
+            try container.encode(nextEvent, forKey: .nextEvent)
+        }
     }
 
     /// Selects the next relevant event from read-only calendar candidates:
@@ -525,6 +597,9 @@ public struct NextCalendarEventSnapshot: Codable, Equatable, Hashable, Sendable 
                 if lhs.isAllDay != rhs.isAllDay {
                     return !lhs.isAllDay
                 }
+                if lhs.hasJoinLink != rhs.hasJoinLink {
+                    return lhs.hasJoinLink && !rhs.hasJoinLink
+                }
                 return lhs.title < rhs.title
             }
 
@@ -532,30 +607,76 @@ public struct NextCalendarEventSnapshot: Codable, Equatable, Hashable, Sendable 
             return NextCalendarEventSummary(
                 title: nextUpcoming.title,
                 startDate: nextUpcoming.startDate,
-                isAllDay: nextUpcoming.isAllDay
+                isAllDay: nextUpcoming.isAllDay,
+                joinProvider: nextUpcoming.joinProvider,
+                hasJoinLink: nextUpcoming.hasJoinLink
             )
         }
 
         let ongoingTimed = active
             .filter { !$0.isAllDay }
-            .sorted { $0.startDate < $1.startDate }
+            .sorted { lhs, rhs in
+                if lhs.startDate != rhs.startDate {
+                    return lhs.startDate < rhs.startDate
+                }
+                if lhs.hasJoinLink != rhs.hasJoinLink {
+                    return lhs.hasJoinLink && !rhs.hasJoinLink
+                }
+                return lhs.title < rhs.title
+            }
 
         if let currentTimed = ongoingTimed.first {
             return NextCalendarEventSummary(
                 title: currentTimed.title,
                 startDate: currentTimed.startDate,
-                isAllDay: false
+                isAllDay: false,
+                joinProvider: currentTimed.joinProvider,
+                hasJoinLink: currentTimed.hasJoinLink
             )
         }
 
-        if let ongoingAllDay = active.sorted(by: { $0.startDate < $1.startDate }).first {
+        if let ongoingAllDay = active.sorted(by: { lhs, rhs in
+            if lhs.startDate != rhs.startDate {
+                return lhs.startDate < rhs.startDate
+            }
+            return lhs.hasJoinLink && !rhs.hasJoinLink
+        }).first {
             return NextCalendarEventSummary(
                 title: ongoingAllDay.title,
                 startDate: ongoingAllDay.startDate,
-                isAllDay: ongoingAllDay.isAllDay
+                isAllDay: ongoingAllDay.isAllDay,
+                joinProvider: ongoingAllDay.joinProvider,
+                hasJoinLink: ongoingAllDay.hasJoinLink
             )
         }
         return nil
+    }
+
+    public static func formattedCountdown(
+        for event: NextCalendarEventSummary,
+        referenceDate: Date = Date(),
+        language: AppLanguage = .system
+    ) -> String {
+        if event.isAllDay {
+            return L10n.tr("现在", "Now", language: language)
+        }
+        let delta = event.startDate.timeIntervalSince(referenceDate)
+        if delta < 60 {
+            return L10n.tr("现在", "Now", language: language)
+        }
+        if delta < 3600 {
+            let minutes = max(1, Int((delta / 60.0).rounded()))
+            if minutes >= 60 {
+                return L10n.tr("1小时后", "in 1h", language: language)
+            }
+            return L10n.tr("\(minutes)分钟后", "in \(minutes)m", language: language)
+        }
+        if delta < 86_400 {
+            let hours = max(1, Int((delta / 3600.0).rounded(.down)))
+            return L10n.tr("\(hours)小时后", "in \(hours)h", language: language)
+        }
+        let days = max(1, Int((delta / 86_400.0).rounded(.down)))
+        return L10n.tr("\(days)天后", "in \(days)d", language: language)
     }
 
     public static func formattedStartTime(

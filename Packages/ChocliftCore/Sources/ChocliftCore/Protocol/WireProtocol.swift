@@ -64,6 +64,7 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case upsertQuadLayout(QuadAppLayout)
     case deleteQuadLayout(id: UUID)
     case runQuadLayout(id: UUID)
+    case joinNextCalendarMeeting
     case unknownClientMessage
 }
 

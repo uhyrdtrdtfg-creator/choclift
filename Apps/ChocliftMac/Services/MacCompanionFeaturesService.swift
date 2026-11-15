@@ -297,6 +297,7 @@ public final class MacMainDisplayScreenshotService {
 public final class MacCalendarEventService {
     public var onSnapshotChanged: ((NextCalendarEventSnapshot) -> Void)?
     public private(set) var currentSnapshot: NextCalendarEventSnapshot = .initial
+    public private(set) var joinLinkCache = MeetingJoinLinkCache()
 
     private let eventStore = EKEventStore()
     private var storeChangedObserver: NSObjectProtocol?
@@ -347,21 +348,41 @@ public final class MacCalendarEventService {
             let horizon = now.addingTimeInterval(Self.lookaheadSeconds)
             let predicate = eventStore.predicateForEvents(withStart: now, end: horizon, calendars: nil)
             let events = eventStore.events(matching: predicate)
-            let candidates = events.map { ev in
-                CalendarEventCandidate(
+            var updatedCache = MeetingJoinLinkCache()
+            let candidates = events.map { ev -> CalendarEventCandidate in
+                var fields: [String] = []
+                if let rawURL = ev.url?.absoluteString {
+                    fields.append(rawURL)
+                }
+                if let location = ev.location {
+                    fields.append(location)
+                }
+                if let notes = ev.notes {
+                    fields.append(notes)
+                }
+                let detected = MeetingJoinLink.detect(in: fields)
+                let isCanceled = (ev.status == .canceled)
+                if let detected, !isCanceled, ev.endDate > now {
+                    updatedCache.store(detected.url, startDate: ev.startDate, title: ev.title ?? "")
+                }
+                return CalendarEventCandidate(
                     title: ev.title ?? "",
                     startDate: ev.startDate,
                     endDate: ev.endDate,
                     isAllDay: ev.isAllDay,
-                    isCanceled: ev.status == .canceled
+                    isCanceled: isCanceled,
+                    joinProvider: detected?.provider,
+                    hasJoinLink: detected != nil
                 )
             }
+            joinLinkCache = updatedCache
             let next = NextCalendarEventSnapshot.selectNextEvent(from: candidates, now: now)
             publish(NextCalendarEventSnapshot(permission: .authorized, nextEvent: next))
             return
         }
 
         if status == .notDetermined {
+            joinLinkCache.removeAll()
             publish(.initial)
             if requestAccessIfUndetermined && !hasPromptedForAccess {
                 hasPromptedForAccess = true
@@ -371,6 +392,7 @@ public final class MacCalendarEventService {
         }
 
         // .denied, .restricted, or .writeOnly (cannot read calendar events)
+        joinLinkCache.removeAll()
         publish(NextCalendarEventSnapshot(permission: .denied, nextEvent: nil))
     }
 
