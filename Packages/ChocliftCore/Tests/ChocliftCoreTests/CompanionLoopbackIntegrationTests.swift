@@ -290,7 +290,7 @@ final class CompanionLoopbackIntegrationTests: XCTestCase {
             while !Task.isCancelled {
                 serverPipe1.pumpReadyToUpdateSubscribers()
                 clientPipe1.pumpReadyToUpdateSubscribers()
-                try? await Task.sleep(for: .milliseconds(8))
+                await CancellableDelay.sleepUntilCancelled(seconds: 0.008)
             }
         }
         defer { pumpTask.cancel() }
