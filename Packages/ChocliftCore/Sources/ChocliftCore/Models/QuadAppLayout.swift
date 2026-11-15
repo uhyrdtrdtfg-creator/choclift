@@ -4,6 +4,9 @@ import Foundation
 public enum QuadCorner: String, Codable, CaseIterable, Sendable {
     case topLeft, topRight, bottomLeft, bottomRight
 
+    /// Visual 2×2 order: top row left-to-right, then bottom row.
+    public static let editorOrder: [QuadCorner] = [.topLeft, .topRight, .bottomLeft, .bottomRight]
+
     public var windowQuarterCorner: WindowQuarterCorner {
         switch self {
         case .topLeft: return .topLeft

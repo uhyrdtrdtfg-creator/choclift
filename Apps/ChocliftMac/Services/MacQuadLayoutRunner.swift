@@ -6,6 +6,7 @@ import Foundation
 public enum MacQuadLayoutRunner {
     private static let windowWaitMaxSteps = 20
     private static let windowWaitStepSeconds: TimeInterval = 0.1
+    private static let fullscreenExitWaitSeconds: TimeInterval = 0.35
 
     public static func accessibilityDeniedMessage(in lang: AppLanguage = .system) -> String {
         L10n.tr(
@@ -54,6 +55,11 @@ public enum MacQuadLayoutRunner {
         windowService.beginWindowUndoTransaction()
         defer { windowService.commitWindowUndoTransaction() }
 
+        let targetScreen = windowService.preferredCompanionScreen()
+        let visibleQuartz = targetScreen.map {
+            windowService.quartzVisibleFrame(forAppKitRect: $0.visibleFrame)
+        }
+
         var snappedCount = 0
         var failures: [String] = []
 
@@ -85,8 +91,10 @@ public enum MacQuadLayoutRunner {
                     continue
                 }
                 existing.unhide()
+                windowService.exitFullscreenIfNeeded(pid: existing.processIdentifier)
                 windowService.unminimizeFirstWindowIfAllMinimized(pid: existing.processIdentifier)
                 existing.activate(options: [.activateAllWindows])
+                await CancellableDelay.sleepUntilCancelled(seconds: Self.fullscreenExitWaitSeconds)
                 if windowService.hasAdjustableWindow(forPID: existing.processIdentifier) {
                     targetApp = existing
                 } else {
@@ -94,6 +102,7 @@ public enum MacQuadLayoutRunner {
                     config.activates = true
                     do {
                         let reopened = try await NSWorkspace.shared.openApplication(at: appURL, configuration: config)
+                        windowService.exitFullscreenIfNeeded(pid: reopened.processIdentifier)
                         await waitForAdjustableWindow(pid: reopened.processIdentifier, windowService: windowService)
                         targetApp = reopened
                     } catch {
@@ -109,6 +118,7 @@ public enum MacQuadLayoutRunner {
                     if launched.processIdentifier == selfPID {
                         continue
                     }
+                    windowService.exitFullscreenIfNeeded(pid: launched.processIdentifier)
                     await waitForAdjustableWindow(pid: launched.processIdentifier, windowService: windowService)
                     targetApp = launched
                 } catch {
@@ -122,13 +132,18 @@ public enum MacQuadLayoutRunner {
                 return (false, accessibilityDeniedMessage(in: language))
             }
 
+            windowService.exitFullscreenIfNeeded(pid: targetApp.processIdentifier)
+            await CancellableDelay.sleepUntilCancelled(seconds: Self.fullscreenExitWaitSeconds)
+
             let snapOutcome = windowService.applyCompanionWindowFrame(
                 preferredPID: targetApp.processIdentifier,
-                strictTargetPID: true
-            ) { _, _, appName, _, visibleQuartz, _, _, _ in
+                strictTargetPID: true,
+                targetScreen: targetScreen,
+                forceApplySize: true
+            ) { _, _, appName, _, fallbackVisible, _, _, _ in
                 let targetFrame = WindowDisplayGeometry.quarterFrame(
                     for: corner.windowQuarterCorner,
-                    visibleQuartz: visibleQuartz
+                    visibleQuartz: visibleQuartz ?? fallbackVisible
                 )
                 return .success((
                     frame: targetFrame,

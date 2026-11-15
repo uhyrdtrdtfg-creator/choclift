@@ -697,11 +697,26 @@ public final class MacAccessibilityAndWindowService {
         }
     }
 
-    @discardableResult
+    /// Screen used for companion snaps. A phone-selected display wins when several are connected.
+    public func preferredCompanionScreen() -> NSScreen? {
+        if NSScreen.screens.count > 1,
+           let chosenID = selectedTargetDisplayID,
+           let chosenScreen = screen(forDisplayID: chosenID) {
+            return chosenScreen
+        }
+        return NSScreen.main ?? NSScreen.screens.first
+    }
+
+    public func quartzVisibleFrame(forAppKitRect rect: CGRect) -> CGRect {
+        convertAppKitScreenRectToQuartz(rect)
+    }
+
     public func applyCompanionWindowFrame(
         preferredPID: pid_t?,
         strictTargetPID: Bool = false,
         targetWindowKey: String? = nil,
+        targetScreen: NSScreen? = nil,
+        forceApplySize: Bool = false,
         resolveFrame: (
             _ pid: pid_t,
             _ windowKey: String,
@@ -773,7 +788,10 @@ public final class MacAccessibilityAndWindowService {
         }
 
         let screens = NSScreen.screens
-        let targetScreen: NSScreen? = {
+        let resolvedScreen: NSScreen? = {
+            if let targetScreen {
+                return targetScreen
+            }
             if screens.count > 1,
                let chosenID = selectedTargetDisplayID,
                let chosenScreen = screen(forDisplayID: chosenID) {
@@ -781,7 +799,7 @@ public final class MacAccessibilityAndWindowService {
             }
             return screenContainingQuartzRect(currentFrame) ?? NSScreen.main ?? screens.first
         }()
-        guard let screen = targetScreen else {
+        guard let screen = resolvedScreen else {
             return (false, L10n.tr("未检测到可用显示器", "No screen available"))
         }
 
@@ -810,7 +828,7 @@ public final class MacAccessibilityAndWindowService {
             return (false, reason.message)
         }
 
-        let shouldApplySize = sizeSettable && resolved.frame.size != currentFrame.size
+        let shouldApplySize = (sizeSettable || forceApplySize) && resolved.frame.size != currentFrame.size
         switch writeWindowQuartzFrameResult(
             windowElement,
             frame: resolved.frame,
@@ -1009,6 +1027,35 @@ public final class MacAccessibilityAndWindowService {
             return .axFailure(mainErr)
         }
         return .noWindow
+    }
+
+    /// Leaves fullscreen so a later size write can take effect. AX often reports success
+    /// while the window stays fullscreen and ignores the requested quarter size.
+    public func exitFullscreenIfNeeded(pid: pid_t) {
+        guard AXIsProcessTrusted() else { return }
+        let appElement = AXUIElementCreateApplication(pid)
+        var windowsRef: CFTypeRef?
+        let windows: [AXUIElement]
+        if AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+           let list = windowsRef as? [AXUIElement] {
+            windows = list
+        } else if let focused = resolveTargetWindow(for: appElement) {
+            windows = [focused]
+        } else {
+            return
+        }
+        for window in windows where isWindowFullscreen(window) {
+            AXUIElementSetAttributeValue(window, "AXFullScreen" as CFString, kCFBooleanFalse)
+        }
+    }
+
+    private func isWindowFullscreen(_ window: AXUIElement) -> Bool {
+        var fsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, "AXFullScreen" as CFString, &fsRef) == .success,
+              let isFullscreen = fsRef as? Bool else {
+            return false
+        }
+        return isFullscreen
     }
 
     public func unminimizeFirstWindowIfAllMinimized(pid: pid_t) {
