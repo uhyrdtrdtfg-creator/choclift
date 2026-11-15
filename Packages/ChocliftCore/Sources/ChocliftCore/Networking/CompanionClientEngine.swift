@@ -2299,6 +2299,7 @@ public final class CompanionClientEngine: ObservableObject {
         disconnectedStrip.wifiSSID = nil
         disconnectedStrip.ejectableExternalVolumeCount = 0
         disconnectedStrip.frontmostAppName = nil
+        disconnectedStrip.deskTimer = .idle
         controlStripState = disconnectedStrip
         nowPlayingScrub.cancel()
         awaitingPlaybackModeFeedback = false
@@ -2441,6 +2442,7 @@ public final class CompanionClientEngine: ObservableObject {
             disconnectedStrip.privacyCapture = .inactive
             disconnectedStrip.wifiSSID = nil
             disconnectedStrip.ejectableExternalVolumeCount = 0
+            disconnectedStrip.deskTimer = .idle
             controlStripState = disconnectedStrip
             nowPlayingScrub.cancel()
             disarmMaintenanceConfirmation()
@@ -2510,6 +2512,7 @@ public final class CompanionClientEngine: ObservableObject {
         disconnectedStrip.wifiSSID = nil
         disconnectedStrip.ejectableExternalVolumeCount = 0
         disconnectedStrip.frontmostAppName = nil
+        disconnectedStrip.deskTimer = .idle
         controlStripState = disconnectedStrip
         nowPlayingScrub.cancel()
         awaitingPlaybackModeFeedback = false
@@ -3415,6 +3418,85 @@ public final class CompanionClientEngine: ObservableObject {
         setKeepMacAwake(!controlStripState.isKeepMacAwakeEnabled)
     }
 
+    public func startDeskTimer(presetSeconds: Int) {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: DeskTimerState.cardTitle(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        var next = controlStripState
+        next.deskTimer = DeskTimerState.started(preset: presetSeconds)
+        controlStripState = next
+        send(.startDeskTimer(presetSeconds: next.deskTimer.presetSeconds))
+    }
+
+    public func pauseDeskTimer() {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: DeskTimerState.cardTitle(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        var next = controlStripState
+        next.deskTimer = controlStripState.deskTimer.paused()
+        controlStripState = next
+        send(.pauseDeskTimer)
+    }
+
+    public func resumeDeskTimer() {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: DeskTimerState.cardTitle(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        var next = controlStripState
+        next.deskTimer = controlStripState.deskTimer.resumed()
+        controlStripState = next
+        send(.resumeDeskTimer)
+    }
+
+    public func resetDeskTimer() {
+        let lang = profile.settings.language
+        guard connectionState.isConnected else {
+            lastFeedback = CompanionFeedbackToast(
+                success: false,
+                title: DeskTimerState.cardTitle(in: lang),
+                detail: L10n.tr("尚未连接 Mac", "Mac Not Connected", language: lang)
+            )
+            return
+        }
+        tileFeedbackTracker.clearPendingWithoutFeedback()
+        var next = controlStripState
+        next.deskTimer = controlStripState.deskTimer.reset()
+        controlStripState = next
+        send(.resetDeskTimer)
+    }
+
+    public func toggleDeskTimerRunPause() {
+        switch controlStripState.deskTimer.phase {
+        case .running:
+            pauseDeskTimer()
+        case .paused:
+            resumeDeskTimer()
+        case .idle:
+            startDeskTimer(presetSeconds: controlStripState.deskTimer.presetSeconds)
+        }
+    }
+
     /// Requests switching the Mac's default CoreAudio output device without optimistically faking a switch locally.
     public func selectAudioOutputDevice(id: String) {
         let lang = profile.settings.language
@@ -4246,6 +4328,7 @@ public final class CompanionClientEngine: ObservableObject {
 
         case .controlStripStateUpdated(let state):
             let previousNowPlaying = controlStripState.nowPlaying
+            let previousDeskTimer = controlStripState.deskTimer
             var mergedState = state
             if awaitingPostUpgradeControlStripRefresh {
                 awaitingPostUpgradeControlStripRefresh = false
@@ -4261,6 +4344,14 @@ public final class CompanionClientEngine: ObservableObject {
                 }
             }
             controlStripState = mergedState
+            if previousDeskTimer.phase == .running,
+               mergedState.deskTimer.phase == .idle,
+               let endsAt = previousDeskTimer.endsAt {
+                let elapsedPastEnd = Date().timeIntervalSince(endsAt)
+                if elapsedPastEnd >= -1.5 && elapsedPastEnd <= 10.0 {
+                    CompanionFeedbackHaptics.notify(enabled: shouldPlayOutcomeHaptics(), kind: .success)
+                }
+            }
             nowPlayingScrub.reconcile(with: mergedState.nowPlaying)
             profile.soundboardVolume = mergedState.soundboardVolume
             if previousNowPlaying?.bundleIdentifier != mergedState.nowPlaying?.bundleIdentifier {

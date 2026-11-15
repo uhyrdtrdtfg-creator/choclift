@@ -65,6 +65,10 @@ public enum ClientMessage: Codable, Equatable, Sendable {
     case deleteQuadLayout(id: UUID)
     case runQuadLayout(id: UUID)
     case joinNextCalendarMeeting
+    case startDeskTimer(presetSeconds: Int)
+    case pauseDeskTimer
+    case resumeDeskTimer
+    case resetDeskTimer
     case unknownClientMessage
 }
 

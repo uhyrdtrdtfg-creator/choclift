@@ -94,11 +94,13 @@
 		513AC3710015CB6F8A0F0E5E /* music.png in Resources */ = {isa = PBXBuildFile; fileRef = 8215F8844882FF09DD4D19AC /* music.png */; };
 		52082CB82A2482B4051813B6 /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
 		52BE05EDB2087ADD001AB954 /* CompanionActionPack+SessionShow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07882DEC72AC9EBD97806FE /* CompanionActionPack+SessionShow.swift */; };
+		54342C3D27BE075067E95597 /* WatchDeskTimerCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 669648C8A8509BFD99D4FCA4 /* WatchDeskTimerCard.swift */; };
 		5517BC755F93DB7DB156C328 /* CompanionDashboardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8642634723AF09AD51E7521 /* CompanionDashboardModels.swift */; };
 		593CF1D80449A00E0E7EFBF8 /* CompanionActionPack+Apps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F2E71FEEB8D3806C6759ADB /* CompanionActionPack+Apps.swift */; };
 		5A969ADA4B9D5D585B04C9AC /* WatchPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55A39DFD6BABFD8EDBD71C3E /* WatchPairingView.swift */; };
 		5BA1BD1B00D6643627022CBD /* MacNotchPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 135724865A4998877AAC6E9C /* MacNotchPanelView.swift */; };
 		5FADBB823421CE699E25A31E /* MacAppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C7BD308B52CE99958DDECFA /* MacAppCoordinator.swift */; };
+		612EF029ADF4B9C86E11D284 /* DeskTimerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DCB8FB28BC93A395777A987 /* DeskTimerState.swift */; };
 		636AB976C55CBEBA27B1716A /* ActionFlows.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE20B45427D3C6BE4973AB6B /* ActionFlows.swift */; };
 		654CE5DF7566F6783D98BE4A /* IOSPairingAndConnectionSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD7D98161F2A0939B6B59889 /* IOSPairingAndConnectionSheet.swift */; };
 		68A2E4A52388125FC05403E5 /* MacFilesRecentActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65756A0D455D2B88D81D3EE3 /* MacFilesRecentActionPack.swift */; };
@@ -162,6 +164,7 @@
 		A47C0139179CCCBFD1B48617 /* Round07Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 155A24217ED47F44DF05F1C6 /* Round07Models.swift */; };
 		A5374FE85744A7334FEE033E /* OrcaTaskStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4766AE942F13AF29128E3490 /* OrcaTaskStatus.swift */; };
 		A616F76D587F3D7430BCB29C /* WireProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 378D57F87F9075FB787AF62B /* WireProtocol.swift */; };
+		A697169F5917C630E2AA282E /* DeskTimerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DCB8FB28BC93A395777A987 /* DeskTimerState.swift */; };
 		A6F3710F28B342185CA67F8D /* Round10Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B996B2D0F3955B3B154BA5E /* Round10Models.swift */; };
 		A82F9B22CC59F5BE1DA7E461 /* messages.png in Resources */ = {isa = PBXBuildFile; fileRef = D2F04CF28043E06EA8DB3BE5 /* messages.png */; };
 		A8E599E4AE698CB6BC397B22 /* mail.png in Resources */ = {isa = PBXBuildFile; fileRef = 2FE0A5E4654684D8D73CB0A6 /* mail.png */; };
@@ -169,10 +172,12 @@
 		ABBA55C46CDF51849DAD70FE /* CompanionActionPack+Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41824073855416182B64DCC4 /* CompanionActionPack+Media.swift */; };
 		AD61D5E65C3CF2E11C346ED2 /* SnippetPlaceholderExpander.swift in Sources */ = {isa = PBXBuildFile; fileRef = E94417DCA8CF14032FF3E3D9 /* SnippetPlaceholderExpander.swift */; };
 		AE0BC7BF7AA90B725B2F5D04 /* IOSRound09CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F9CD5A5ABA6E4BA4A3A7A40 /* IOSRound09CompanionFeatures.swift */; };
+		AE323E707A4C0856ACEE50DD /* DeskTimerState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DCB8FB28BC93A395777A987 /* DeskTimerState.swift */; };
 		B28B2B9D5B25E49FFCE3801D /* CompanionActionPack+Edit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */; };
 		B328A86E781C92B92C7BD168 /* MeetingJoinLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C063BF49D49252F277808D4 /* MeetingJoinLink.swift */; };
 		B3A9932DA455C1C8C3515FF3 /* EmojiBarStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7CB5368CF46C2C2213D8656 /* EmojiBarStudioView.swift */; };
 		B3BA2F5E02B9B0FEC459BEF0 /* MacKeepAwakeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 557EC516DCE93E05E1DA8805 /* MacKeepAwakeService.swift */; };
+		B4235E1800D45E807D389AC2 /* MacDeskTimerCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = E043E72150504DC957C07F2B /* MacDeskTimerCard.swift */; };
 		B779328CE1C37C369B1BDFE2 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0637814C808EC6900262C681 /* Assets.xcassets */; };
 		B83501BAFE40DC2395AE3251 /* Round04Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FF0695A991380B3FB28853 /* Round04Models.swift */; };
 		B85F933F5A4A322234A160F5 /* calendar.png in Resources */ = {isa = PBXBuildFile; fileRef = 30CE11D675395B109D762312 /* calendar.png */; };
@@ -181,9 +186,11 @@
 		B94603986FDB8C63A5EFA896 /* Round03Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BECCE6B737BB090769DC143 /* Round03Models.swift */; };
 		BC94FCFFD6ABE26E0CAEC587 /* CompanionActionPack+Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BF56E643510A055FB8F95C1 /* CompanionActionPack+Session.swift */; };
 		BDAB74CDC0F57501EA16D86C /* CompanionActionPack+Edit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */; };
+		BE97A90C146627DA0706FD58 /* IOSDeskTimerSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26954493BCDB434D4A3669C8 /* IOSDeskTimerSection.swift */; };
 		BFB77175E5EBCA7CC882CF59 /* CompanionActionPack+SessionShow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A07882DEC72AC9EBD97806FE /* CompanionActionPack+SessionShow.swift */; };
 		C0DE9291FA2C4F6F27838894 /* MacTimeTravelMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 813CADCB2CE124AC898446DE /* MacTimeTravelMonitor.swift */; };
 		C178C120B322517C52CAEE3A /* BundledAppIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */; };
+		C1DABB0FB932F9CB930B9CD6 /* MacDeskTimerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0DA9DAB0348E236A7CCEAC /* MacDeskTimerService.swift */; };
 		C294D28D964EFF6643FAC393 /* IOSCompanionModesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65CAA7B788878C4CCF682A40 /* IOSCompanionModesView.swift */; };
 		C55F470AACCF7B28E03A49EF /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
 		C70C19A2704A9D93C4C29C21 /* Round09Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFF6C63559721508DFED62E9 /* Round09Models.swift */; };
@@ -293,6 +300,7 @@
 		2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Edit.swift"; sourceTree = "<group>"; };
 		226A03B84444E14186ACF945 /* ChocliftWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftWatchApp.swift; sourceTree = "<group>"; };
 		2610F6011A383F732C01DC10 /* MacInputAndMediaService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacInputAndMediaService.swift; sourceTree = "<group>"; };
+		26954493BCDB434D4A3669C8 /* IOSDeskTimerSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSDeskTimerSection.swift; sourceTree = "<group>"; };
 		26FF0695A991380B3FB28853 /* Round04Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round04Models.swift; sourceTree = "<group>"; };
 		289E4D12B0F6E3F188113079 /* finder.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = finder.png; sourceTree = "<group>"; };
 		2F15036CF65DE146CA00BB84 /* ChocliftIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftIOSApp.swift; sourceTree = "<group>"; };
@@ -325,6 +333,7 @@
 		5F9CD5A5ABA6E4BA4A3A7A40 /* IOSRound09CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound09CompanionFeatures.swift; sourceTree = "<group>"; };
 		65756A0D455D2B88D81D3EE3 /* MacFilesRecentActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacFilesRecentActionPack.swift; sourceTree = "<group>"; };
 		65CAA7B788878C4CCF682A40 /* IOSCompanionModesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSCompanionModesView.swift; sourceTree = "<group>"; };
+		669648C8A8509BFD99D4FCA4 /* WatchDeskTimerCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchDeskTimerCard.swift; sourceTree = "<group>"; };
 		66E4E8891AFD6F4FABAFF271 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		692D15C11392D1C31F797CDF /* IOSCompanionHotkeysSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSCompanionHotkeysSection.swift; sourceTree = "<group>"; };
 		6B997305863F5C700F00C218 /* CompanionActionPack+Files.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Files.swift"; sourceTree = "<group>"; };
@@ -355,6 +364,7 @@
 		992E3238F727E1244DEB62AA /* IOSSlotEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSSlotEditorSheet.swift; sourceTree = "<group>"; };
 		9BC943E32E3BCE780C9AFB69 /* MacSparkleUpdaterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSparkleUpdaterService.swift; sourceTree = "<group>"; };
 		9CA88B453BBD7B10F3528EFB /* MacMediaActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacMediaActionPack.swift; sourceTree = "<group>"; };
+		9DCB8FB28BC93A395777A987 /* DeskTimerState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeskTimerState.swift; sourceTree = "<group>"; };
 		9F4B0BF41FA187CA0429E197 /* MacOrcaStatusService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacOrcaStatusService.swift; sourceTree = "<group>"; };
 		9F95FB5FC997029CE27750AE /* IOSRound07CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound07CompanionFeatures.swift; sourceTree = "<group>"; };
 		A07882DEC72AC9EBD97806FE /* CompanionActionPack+SessionShow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+SessionShow.swift"; sourceTree = "<group>"; };
@@ -377,6 +387,7 @@
 		BE2646C17F6B581FF2D9A9FC /* notes.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = notes.png; sourceTree = "<group>"; };
 		C2A4EBD8AF7B0252DB6BBA48 /* MacSystemControlService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSystemControlService.swift; sourceTree = "<group>"; };
 		C5756FAFC7277A62567E747E /* ChocliftModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocliftModels.swift; sourceTree = "<group>"; };
+		CE0DA9DAB0348E236A7CCEAC /* MacDeskTimerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDeskTimerService.swift; sourceTree = "<group>"; };
 		D073AD8485E312AC5F89228E /* MacDisplayActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDisplayActionPack.swift; sourceTree = "<group>"; };
 		D277EA17E3D6784BA5FEC76D /* MacSpaceSwipe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSpaceSwipe.swift; sourceTree = "<group>"; };
 		D2F04CF28043E06EA8DB3BE5 /* messages.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = messages.png; sourceTree = "<group>"; };
@@ -386,6 +397,7 @@
 		D6FCAB30E95B2B4A3F12C937 /* IOSRound04CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound04CompanionFeatures.swift; sourceTree = "<group>"; };
 		DD7D98161F2A0939B6B59889 /* IOSPairingAndConnectionSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSPairingAndConnectionSheet.swift; sourceTree = "<group>"; };
 		DFF6C63559721508DFED62E9 /* Round09Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round09Models.swift; sourceTree = "<group>"; };
+		E043E72150504DC957C07F2B /* MacDeskTimerCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacDeskTimerCard.swift; sourceTree = "<group>"; };
 		E799103D3FF189D12A92AC14 /* MacSlotItemPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSlotItemPickerSheet.swift; sourceTree = "<group>"; };
 		E7E6D5CDE0583B0DF8011C61 /* MacEditActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEditActionPack.swift; sourceTree = "<group>"; };
 		E826E828BD164E8C7C7900E2 /* ChocDesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChocDesignSystem.swift; sourceTree = "<group>"; };
@@ -444,6 +456,7 @@
 				47AD940D8025DB63EA4C41E1 /* MacCompanionActionRunner.swift */,
 				59B27570BCCEA27BF8A49A7D /* MacCompanionFeaturesService.swift */,
 				A2B19DF3B395B6D88C4CF1AF /* MacCompanionHotkeyMonitor.swift */,
+				CE0DA9DAB0348E236A7CCEAC /* MacDeskTimerService.swift */,
 				D073AD8485E312AC5F89228E /* MacDisplayActionPack.swift */,
 				E7E6D5CDE0583B0DF8011C61 /* MacEditActionPack.swift */,
 				A42F0F5A0680F0FDE17F7C0D /* MacFilesActionPack.swift */,
@@ -510,6 +523,7 @@
 		19D95D64583937DA1ED6884C /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				669648C8A8509BFD99D4FCA4 /* WatchDeskTimerCard.swift */,
 				55A39DFD6BABFD8EDBD71C3E /* WatchPairingView.swift */,
 				8199ABF1806E897A7512A503 /* WatchRootView.swift */,
 				E9FE4714CD1037D2AFD3E731 /* WatchSurfacesView.swift */,
@@ -550,6 +564,7 @@
 			children = (
 				692D15C11392D1C31F797CDF /* IOSCompanionHotkeysSection.swift */,
 				65CAA7B788878C4CCF682A40 /* IOSCompanionModesView.swift */,
+				26954493BCDB434D4A3669C8 /* IOSDeskTimerSection.swift */,
 				D49797824F67409CFA95E8CC /* IOSFlowEditorViews.swift */,
 				5A7C401AEDAB7AEB1C5EDE46 /* IOSOrcaTaskStatusView.swift */,
 				DD7D98161F2A0939B6B59889 /* IOSPairingAndConnectionSheet.swift */,
@@ -585,6 +600,7 @@
 				31CBDF43194BCF470C79690B /* DevicesAndMainWindowView.swift */,
 				A7CB5368CF46C2C2213D8656 /* EmojiBarStudioView.swift */,
 				EB92F1ECD64FE5AC8BE66E21 /* MacCompanionHotkeysCard.swift */,
+				E043E72150504DC957C07F2B /* MacDeskTimerCard.swift */,
 				135724865A4998877AAC6E9C /* MacNotchPanelView.swift */,
 				E799103D3FF189D12A92AC14 /* MacSlotItemPickerSheet.swift */,
 				73053E274F62F8A83517413A /* SoundboardStudioView.swift */,
@@ -707,6 +723,7 @@
 				A0B189405B590A056914BC80 /* CompanionHotkey.swift */,
 				B0100A476F462BB1702A464F /* CompanionInteractionPolicy.swift */,
 				FB259C3541C52B0FDAF4888C /* ControlStrip.swift */,
+				9DCB8FB28BC93A395777A987 /* DeskTimerState.swift */,
 				8859A29A043A4B69F607B04C /* EmojiCatalog.swift */,
 				D3751C53D210CAF7803AF45E /* MacUpdateConfiguration.swift */,
 				5C063BF49D49252F277808D4 /* MeetingJoinLink.swift */,
@@ -1020,6 +1037,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F9FC4D6C32DF2E52155D2376 /* ChocliftWatchApp.swift in Sources */,
+				54342C3D27BE075067E95597 /* WatchDeskTimerCard.swift in Sources */,
 				5A969ADA4B9D5D585B04C9AC /* WatchPairingView.swift in Sources */,
 				4384AE4390A37012B4601BFA /* WatchRootView.swift in Sources */,
 				7A194DD828D7FC40AD07184A /* WatchSurfacesView.swift in Sources */,
@@ -1052,6 +1070,7 @@
 				193DB321685333968B34BDF5 /* CompanionInteractionPolicy.swift in Sources */,
 				8CDA41C0F0FFD2D11986AFD0 /* CompanionLink.swift in Sources */,
 				7EC084F765694562A6489EC6 /* ControlStrip.swift in Sources */,
+				612EF029ADF4B9C86E11D284 /* DeskTimerState.swift in Sources */,
 				3EFE96C6529C29EEF363A9C4 /* EmojiCatalog.swift in Sources */,
 				75412A9C9B26A552680AFD2D /* MacServerEngine.swift in Sources */,
 				C92914F9B3AB35A4C3326EC2 /* MacUpdateConfiguration.swift in Sources */,
@@ -1101,6 +1120,7 @@
 				5024016FED5FE77E4E53198A /* CompanionInteractionPolicy.swift in Sources */,
 				DF61BE35854C52722D2F20F5 /* CompanionLink.swift in Sources */,
 				E85500D399E5CD039276A0C1 /* ControlStrip.swift in Sources */,
+				AE323E707A4C0856ACEE50DD /* DeskTimerState.swift in Sources */,
 				D19ADC68FDF7AB4963E84CA3 /* EmojiCatalog.swift in Sources */,
 				DAB4CBDFA2B7DA671F50C2C0 /* MacServerEngine.swift in Sources */,
 				06F0B9426723A90AD500110C /* MacUpdateConfiguration.swift in Sources */,
@@ -1141,6 +1161,8 @@
 				42844B96ABDB2F320FF2D4CB /* MacCompanionFeaturesService.swift in Sources */,
 				153C71E6D96A959112D4EA14 /* MacCompanionHotkeyMonitor.swift in Sources */,
 				D072F3822ADE02D3C85A0641 /* MacCompanionHotkeysCard.swift in Sources */,
+				B4235E1800D45E807D389AC2 /* MacDeskTimerCard.swift in Sources */,
+				C1DABB0FB932F9CB930B9CD6 /* MacDeskTimerService.swift in Sources */,
 				86DE51B51BDB96523BCE17DE /* MacDisplayActionPack.swift in Sources */,
 				CB28FF807321B324891136B2 /* MacEditActionPack.swift in Sources */,
 				D83C8556667C1E95D19A2B99 /* MacFilesActionPack.swift in Sources */,
@@ -1194,6 +1216,7 @@
 				79E3C4357CDFCA8DA711EDF6 /* CompanionInteractionPolicy.swift in Sources */,
 				3D297C87D7B93EB26438D46F /* CompanionLink.swift in Sources */,
 				0151A116C09C4D23AB6EE9F7 /* ControlStrip.swift in Sources */,
+				A697169F5917C630E2AA282E /* DeskTimerState.swift in Sources */,
 				9CCC043223B77D2383E1CA84 /* EmojiCatalog.swift in Sources */,
 				7581CD6E2F0929431A33F49F /* MacServerEngine.swift in Sources */,
 				F104D05C7D408E37FDAF1272 /* MacUpdateConfiguration.swift in Sources */,
@@ -1224,6 +1247,7 @@
 				1DC30F48A2BE707B77945004 /* ChocliftIOSApp.swift in Sources */,
 				A131814B44B3EAE9507D605C /* IOSCompanionHotkeysSection.swift in Sources */,
 				C294D28D964EFF6643FAC393 /* IOSCompanionModesView.swift in Sources */,
+				BE97A90C146627DA0706FD58 /* IOSDeskTimerSection.swift in Sources */,
 				DFB1DDE64AE82710C328A49C /* IOSFlowEditorViews.swift in Sources */,
 				27E94B41C270E749B534D06F /* IOSOrcaTaskStatusView.swift in Sources */,
 				654CE5DF7566F6783D98BE4A /* IOSPairingAndConnectionSheet.swift in Sources */,

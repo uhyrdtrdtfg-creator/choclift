@@ -22,6 +22,7 @@ public final class MacSystemControlService {
     public var soundboardVolumeProvider: (() -> Double)?
     public var keepMacAwakeProvider: (() -> Bool)?
     public var frontmostAppNameProvider: (() -> String?)?
+    public var deskTimerProvider: (() -> DeskTimerState)?
     public private(set) var currentState: ControlStripState
 
     private struct RegisteredAudioListener {
@@ -380,6 +381,7 @@ public final class MacSystemControlService {
         let resolvedFrontmostAppName = FrontmostAppStripFormatter.sanitizedAppName(
             frontmostAppNameProvider?() ?? NSWorkspace.shared.frontmostApplication?.localizedName
         )
+        let deskTimer = deskTimerProvider?() ?? currentState.deskTimer
 
         return ControlStripState(
             volume: volume,
@@ -404,7 +406,8 @@ public final class MacSystemControlService {
             privacyCapture: privacyCapture,
             wifiSSID: currentWiFiSSID,
             ejectableExternalVolumeCount: ejectableVolumeCount,
-            frontmostAppName: resolvedFrontmostAppName
+            frontmostAppName: resolvedFrontmostAppName,
+            deskTimer: deskTimer
         )
     }
 
@@ -421,6 +424,14 @@ public final class MacSystemControlService {
         guard currentState.isKeepMacAwakeEnabled != isEnabled else { return }
         var updated = currentState
         updated.isKeepMacAwakeEnabled = isEnabled
+        currentState = updated
+        onStateChanged?(updated)
+    }
+
+    public func syncDeskTimer(_ timerState: DeskTimerState) {
+        guard currentState.deskTimer != timerState else { return }
+        var updated = currentState
+        updated.deskTimer = timerState
         currentState = updated
         onStateChanged?(updated)
     }

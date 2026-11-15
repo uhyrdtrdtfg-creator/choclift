@@ -1300,6 +1300,8 @@ public struct WatchQuickActionsView: View {
 
                 WatchCalendarComplicationLine(client: client)
 
+                WatchDeskTimerCard(client: client)
+
                 // Media & Volume Strip (Clean iconic transport buttons >= 46pt)
                 if !catalogActions.isEmpty {
                     sectionHeader(L10n.tr("更多操作", "More Actions", language: lang), symbol: "square.grid.2x2")
