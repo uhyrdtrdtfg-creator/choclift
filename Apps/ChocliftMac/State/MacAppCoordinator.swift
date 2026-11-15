@@ -210,6 +210,15 @@ public final class MacAppCoordinator: ObservableObject, MacServerEngineDelegate 
         self.leftEdgePanelEnabled = UserDefaults.standard.object(forKey: Self.leftEdgePanelEnabledKey) as? Bool ?? false
 
         self.server.delegate = self
+        MacSelectionActionPack.configure(
+            windowService: winSvc,
+            languageProvider: { [weak self] in
+                self?.lang ?? .system
+            },
+            onSelectionPreviewCaptured: { [weak self] text, capturedAt in
+                self?.server.broadcast(.selectionPreview(text: text, capturedAt: capturedAt))
+            }
+        )
         self.sentenceFlow = MacSentenceFlowController(
             contextProvider: { [weak self] in
                 guard let self else { return ActionFlowProposalCatalogContext() }

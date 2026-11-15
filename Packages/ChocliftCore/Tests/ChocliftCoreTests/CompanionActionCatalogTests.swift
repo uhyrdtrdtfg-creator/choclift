@@ -13,6 +13,8 @@ final class CompanionActionCatalogTests: XCTestCase {
         XCTAssertEqual(ids.filter { $0.hasPrefix("system.") }.count, 10)
         XCTAssertEqual(ids.filter { $0.hasPrefix("apps.") }.count, 2)
         XCTAssertEqual(ids.filter { $0 == "apps.open_launchpad" }.count, 1)
+        XCTAssertEqual(ids.filter { $0.hasPrefix("selection.") }.count, 1)
+        XCTAssertEqual(ids.filter { $0 == "selection.copy_to_phone" }.count, 1)
         XCTAssertNil(CompanionActionCatalog.action(id: "not_a_real_action"))
         XCTAssertFalse(CompanionActionCatalog.isKnown("not_a_real_action"))
     }

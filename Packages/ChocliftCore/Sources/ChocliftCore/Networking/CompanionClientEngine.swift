@@ -108,6 +108,7 @@ public final class CompanionClientEngine: ObservableObject {
     @Published public private(set) var clipboardPreview: ClipboardPreviewSnapshot = .empty
     @Published public private(set) var calendarSnapshot: NextCalendarEventSnapshot = .initial
     @Published public private(set) var latestScreenshotPreview: ScreenshotCaptureResult?
+    @Published public private(set) var latestSelectionPreview: SelectionPreviewSnapshot?
     @Published public private(set) var isCapturingScreenshot: Bool = false
     @Published public private(set) var frontmostWindows: FrontmostAppWindowSnapshot = .empty
     @Published public private(set) var activeTileFeedback: TileActionFeedbackBanner?
@@ -2291,6 +2292,7 @@ public final class CompanionClientEngine: ObservableObject {
         calendarSnapshot = .initial
         frontmostWindows = .empty
         latestScreenshotPreview = nil
+        latestSelectionPreview = nil
         isCapturingScreenshot = false
         var disconnectedStrip = controlStripState
         disconnectedStrip.isKeepMacAwakeEnabled = false
@@ -2435,6 +2437,7 @@ public final class CompanionClientEngine: ObservableObject {
             calendarSnapshot = .initial
             frontmostWindows = .empty
             latestScreenshotPreview = nil
+            latestSelectionPreview = nil
             isCapturingScreenshot = false
             var disconnectedStrip = controlStripState
             disconnectedStrip.isKeepMacAwakeEnabled = false
@@ -3372,6 +3375,10 @@ public final class CompanionClientEngine: ObservableObject {
         latestScreenshotPreview = nil
     }
 
+    public func dismissSelectionPreview() {
+        latestSelectionPreview = nil
+    }
+
     public func setTargetDisplay(displayID: UInt32?) {
         var next = controlStripState
         next.selectedTargetDisplayID = DisplaySnapTargetResolver.resolvedTargetDisplayID(
@@ -4241,6 +4248,7 @@ public final class CompanionClientEngine: ObservableObject {
             )
             if connectedClipboardMacID != macID {
                 observedClipboardPreviewTexts.removeAll()
+                latestSelectionPreview = nil
                 connectedClipboardMacID = macID
             }
             profile = serverProfile
@@ -4432,6 +4440,11 @@ public final class CompanionClientEngine: ObservableObject {
 
         case .frontmostWindowsUpdated(let snapshot):
             frontmostWindows = snapshot
+
+        case .selectionPreview(let text, let capturedAt):
+            if let clamped = SelectionPreviewText.clamp(text) {
+                latestSelectionPreview = SelectionPreviewSnapshot(text: clamped, capturedAt: capturedAt)
+            }
 
         case .unknownServerMessage:
             if !connectionState.isConnected {

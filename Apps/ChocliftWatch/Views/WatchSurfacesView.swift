@@ -1305,6 +1305,25 @@ public struct WatchQuickActionsView: View {
                 // Media & Volume Strip (Clean iconic transport buttons >= 46pt)
                 if !catalogActions.isEmpty {
                     sectionHeader(L10n.tr("更多操作", "More Actions", language: lang), symbol: "square.grid.2x2")
+                    if let preview = client.latestSelectionPreview {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label(
+                                L10n.tr("选中预览", "Selection Preview", language: lang),
+                                systemImage: "iphone.and.arrow.forward"
+                            )
+                            .font(ChocType.micro)
+                            .foregroundStyle(palette.accent)
+
+                            Text(preview.watchPreviewText)
+                                .font(ChocType.caption)
+                                .foregroundStyle(palette.primaryText)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(8)
+                        .background(palette.tileFillTop, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .accessibilityIdentifier("watch-selection-preview-card")
+                    }
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                         ForEach(catalogActions) { action in
                             Button {

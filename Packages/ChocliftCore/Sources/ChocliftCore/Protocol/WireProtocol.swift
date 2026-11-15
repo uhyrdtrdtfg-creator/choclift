@@ -114,6 +114,7 @@ public enum ServerMessage: Codable, Equatable, Sendable {
     case screenshotCaptured(ScreenshotCaptureResult)
     case calendarStatusUpdated(NextCalendarEventSnapshot)
     case frontmostWindowsUpdated(FrontmostAppWindowSnapshot)
+    case selectionPreview(text: String, capturedAt: Date)
     case unknownServerMessage
 }
 
