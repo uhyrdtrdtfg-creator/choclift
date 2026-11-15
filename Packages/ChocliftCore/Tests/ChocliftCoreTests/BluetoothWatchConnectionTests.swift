@@ -1050,6 +1050,10 @@ final class BluetoothWatchConnectionTests: XCTestCase {
         )
         XCTAssertEqual(watch.activeLink, .bluetooth)
         XCTAssertEqual(locallyRejectedOversizedWrites, 0)
+        let writeDeadline = Date().addingTimeInterval(1.0)
+        while Date() < writeDeadline, latestClientLink?.isWriteInFlight == true {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         XCTAssertEqual(latestClientLink?.isWriteInFlight, false)
     }
 
