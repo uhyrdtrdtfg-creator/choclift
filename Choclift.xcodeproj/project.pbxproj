@@ -32,6 +32,7 @@
 		1EAB438701E11328B296FF8B /* CompanionClientEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7705D94EF54E1B5A6331B066 /* CompanionClientEngine.swift */; };
 		1F0C8E75A0F8EB3B1909622A /* CompanionActionPack+Files.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B997305863F5C700F00C218 /* CompanionActionPack+Files.swift */; };
 		1F122F5B9EA993FD2CC9EC19 /* CompanionActionPack+System.swift in Sources */ = {isa = PBXBuildFile; fileRef = 474A9F9ACA07FF105EED7A00 /* CompanionActionPack+System.swift */; };
+		20DB19B33DBA44C0D47F1B8E /* CompanionActionPack+Apps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F2E71FEEB8D3806C6759ADB /* CompanionActionPack+Apps.swift */; };
 		20E11EA7087097BB3693435B /* Round08Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 472B24341B0AAB1760F49B87 /* Round08Models.swift */; };
 		210F670DBB717092C901F964 /* CompanionHotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0B189405B590A056914BC80 /* CompanionHotkey.swift */; };
 		219F65F9BDE35A890476E5CD /* libChocliftCoreMac.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 309FB4ADE26AAF40909BC0FB /* libChocliftCoreMac.a */; };
@@ -47,6 +48,7 @@
 		2E2173A1830B44354D4716D8 /* CompanionActionPack+Media.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41824073855416182B64DCC4 /* CompanionActionPack+Media.swift */; };
 		2E8768794A140A931D4159E5 /* Round04Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FF0695A991380B3FB28853 /* Round04Models.swift */; };
 		31CCFE49363696DDFEBB8E46 /* IOSRound07CompanionFeatures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F95FB5FC997029CE27750AE /* IOSRound07CompanionFeatures.swift */; };
+		324916B32841302FBCA352BA /* CompanionActionPack+Apps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F2E71FEEB8D3806C6759ADB /* CompanionActionPack+Apps.swift */; };
 		33878859FBF852A76234D4F2 /* Round05Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A93A25E1360E5FAA22FF8D66 /* Round05Models.swift */; };
 		3398DF62B62B53105D05AD43 /* ActionFlowsStudioView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75A0A827A172B80AEAD41CB0 /* ActionFlowsStudioView.swift */; };
 		345F6C0A12D26C40FDB51738 /* IOSRootTouchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C6F35B1BB29CD96ADCDCAA /* IOSRootTouchBarView.swift */; };
@@ -74,6 +76,7 @@
 		4834E91B9EA3E33E51B5009E /* MacQuadLayoutRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B451EA8D2F5C131A3E42F8 /* MacQuadLayoutRunner.swift */; };
 		48A6D98FD3240276622D68B8 /* SentenceActionFlowProposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA86D7ED48F9DCB7113CBAA8 /* SentenceActionFlowProposer.swift */; };
 		4946D8F47BBA0A5DCD8BC7FF /* Round06Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5516ABBE3BED08F5C3A200D3 /* Round06Models.swift */; };
+		4BC4DA9477CFF0CBC02DD7B5 /* MacAppsActionPack.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58EF7D2F5BE156122F5C01A7 /* MacAppsActionPack.swift */; };
 		4D8E5D7770C2D29F32B9E1B7 /* CompanionActionCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBAB69B3EFD755C9C6D81036 /* CompanionActionCatalog.swift */; };
 		4D9840876E5D692950FF865B /* finder.png in Resources */ = {isa = PBXBuildFile; fileRef = 289E4D12B0F6E3F188113079 /* finder.png */; };
 		4EA5261FA6CE532A4BC78C1D /* Round04Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FF0695A991380B3FB28853 /* Round04Models.swift */; };
@@ -84,6 +87,7 @@
 		513AC3710015CB6F8A0F0E5E /* music.png in Resources */ = {isa = PBXBuildFile; fileRef = 8215F8844882FF09DD4D19AC /* music.png */; };
 		52082CB82A2482B4051813B6 /* ChocliftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5756FAFC7277A62567E747E /* ChocliftModels.swift */; };
 		5517BC755F93DB7DB156C328 /* CompanionDashboardModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8642634723AF09AD51E7521 /* CompanionDashboardModels.swift */; };
+		593CF1D80449A00E0E7EFBF8 /* CompanionActionPack+Apps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F2E71FEEB8D3806C6759ADB /* CompanionActionPack+Apps.swift */; };
 		5A969ADA4B9D5D585B04C9AC /* WatchPairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55A39DFD6BABFD8EDBD71C3E /* WatchPairingView.swift */; };
 		5BA1BD1B00D6643627022CBD /* MacNotchPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 135724865A4998877AAC6E9C /* MacNotchPanelView.swift */; };
 		5FADBB823421CE699E25A31E /* MacAppCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C7BD308B52CE99958DDECFA /* MacAppCoordinator.swift */; };
@@ -257,6 +261,7 @@
 		0637814C808EC6900262C681 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		07212AF17DB6353FA2039C3E /* IOSRound02CompanionControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound02CompanionControls.swift; sourceTree = "<group>"; };
 		0D64F1BC1A63A04202433DEB /* ChocliftIOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ChocliftIOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0F2E71FEEB8D3806C6759ADB /* CompanionActionPack+Apps.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CompanionActionPack+Apps.swift"; sourceTree = "<group>"; };
 		116CCCD57CF0CF405584EA0E /* MacNotchPanelController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNotchPanelController.swift; sourceTree = "<group>"; };
 		135724865A4998877AAC6E9C /* MacNotchPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacNotchPanelView.swift; sourceTree = "<group>"; };
 		155A24217ED47F44DF05F1C6 /* Round07Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Round07Models.swift; sourceTree = "<group>"; };
@@ -289,6 +294,7 @@
 		557EC516DCE93E05E1DA8805 /* MacKeepAwakeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacKeepAwakeService.swift; sourceTree = "<group>"; };
 		55A39DFD6BABFD8EDBD71C3E /* WatchPairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchPairingView.swift; sourceTree = "<group>"; };
 		5803BC1A7998DE5911DF1E24 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		58EF7D2F5BE156122F5C01A7 /* MacAppsActionPack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacAppsActionPack.swift; sourceTree = "<group>"; };
 		59B27570BCCEA27BF8A49A7D /* MacCompanionFeaturesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacCompanionFeaturesService.swift; sourceTree = "<group>"; };
 		5A7C401AEDAB7AEB1C5EDE46 /* IOSOrcaTaskStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSOrcaTaskStatusView.swift; sourceTree = "<group>"; };
 		5F9CD5A5ABA6E4BA4A3A7A40 /* IOSRound09CompanionFeatures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IOSRound09CompanionFeatures.swift; sourceTree = "<group>"; };
@@ -402,6 +408,7 @@
 			children = (
 				8003AD2FBC8B7C7AD4459D47 /* MacAccessibilityAndWindowService.swift */,
 				B459D461CDBACF99B6F99A8E /* MacAppAndShortcutCatalogService.swift */,
+				58EF7D2F5BE156122F5C01A7 /* MacAppsActionPack.swift */,
 				47AD940D8025DB63EA4C41E1 /* MacCompanionActionRunner.swift */,
 				59B27570BCCEA27BF8A49A7D /* MacCompanionFeaturesService.swift */,
 				A2B19DF3B395B6D88C4CF1AF /* MacCompanionHotkeyMonitor.swift */,
@@ -650,6 +657,7 @@
 				15602DD36BDD2EB4B21529A9 /* BundledAppIcons.swift */,
 				C5756FAFC7277A62567E747E /* ChocliftModels.swift */,
 				BBAB69B3EFD755C9C6D81036 /* CompanionActionCatalog.swift */,
+				0F2E71FEEB8D3806C6759ADB /* CompanionActionPack+Apps.swift */,
 				2147EA216B3910CD5F0418AD /* CompanionActionPack+Edit.swift */,
 				6B997305863F5C700F00C218 /* CompanionActionPack+Files.swift */,
 				41824073855416182B64DCC4 /* CompanionActionPack+Media.swift */,
@@ -986,6 +994,7 @@
 				D117BED0C6A4AC940F4AFA5A /* ChocDesignSystem.swift in Sources */,
 				52082CB82A2482B4051813B6 /* ChocliftModels.swift in Sources */,
 				A1FB935F3578677F75BFFD9F /* CompanionActionCatalog.swift in Sources */,
+				324916B32841302FBCA352BA /* CompanionActionPack+Apps.swift in Sources */,
 				BDAB74CDC0F57501EA16D86C /* CompanionActionPack+Edit.swift in Sources */,
 				46B439371362CCD4D5EA02D7 /* CompanionActionPack+Files.swift in Sources */,
 				2E2173A1830B44354D4716D8 /* CompanionActionPack+Media.swift in Sources */,
@@ -1028,6 +1037,7 @@
 				42E28ECB2B1007C4402E3112 /* ChocDesignSystem.swift in Sources */,
 				39B7BF35A2DCA3748B9CCD32 /* ChocliftModels.swift in Sources */,
 				8C918E3285A15566849F6612 /* CompanionActionCatalog.swift in Sources */,
+				593CF1D80449A00E0E7EFBF8 /* CompanionActionPack+Apps.swift in Sources */,
 				B28B2B9D5B25E49FFCE3801D /* CompanionActionPack+Edit.swift in Sources */,
 				1F0C8E75A0F8EB3B1909622A /* CompanionActionPack+Files.swift in Sources */,
 				694200921F05BC2B0BD03F96 /* CompanionActionPack+Media.swift in Sources */,
@@ -1072,6 +1082,7 @@
 				94068E1F1827A415A1EBA1E1 /* MacAccessibilityAndWindowService.swift in Sources */,
 				744EB2EA1DB278ECCE40EAF0 /* MacAppAndShortcutCatalogService.swift in Sources */,
 				5FADBB823421CE699E25A31E /* MacAppCoordinator.swift in Sources */,
+				4BC4DA9477CFF0CBC02DD7B5 /* MacAppsActionPack.swift in Sources */,
 				3AE70F44F2814BCF59DB9948 /* MacCompanionActionRunner.swift in Sources */,
 				42844B96ABDB2F320FF2D4CB /* MacCompanionFeaturesService.swift in Sources */,
 				153C71E6D96A959112D4EA14 /* MacCompanionHotkeyMonitor.swift in Sources */,
@@ -1109,6 +1120,7 @@
 				9B3B62752E758C58AB001C99 /* ChocDesignSystem.swift in Sources */,
 				D7FCC2E5110CA56C5725F6DA /* ChocliftModels.swift in Sources */,
 				4D8E5D7770C2D29F32B9E1B7 /* CompanionActionCatalog.swift in Sources */,
+				20DB19B33DBA44C0D47F1B8E /* CompanionActionPack+Apps.swift in Sources */,
 				F1287122DF85975EC3734CA1 /* CompanionActionPack+Edit.swift in Sources */,
 				0624C0097D3B262E2C4E78F0 /* CompanionActionPack+Files.swift in Sources */,
 				ABBA55C46CDF51849DAD70FE /* CompanionActionPack+Media.swift in Sources */,
