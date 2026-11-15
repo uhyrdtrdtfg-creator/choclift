@@ -1671,7 +1671,9 @@ private struct IOSQuadLayoutsToolsSection: View {
     private var sectionTitle: String { L10n.tr("四宫格", "Quad Layouts", language: lang) }
 
     private var recentAppChoices: [RecentAppEntry] {
-        client.recentApps.filter { !QuadAppSlot.isChocliftBundleIdentifier($0.bundleIdentifier) }
+        client.recentApps
+            .filter { !QuadAppSlot.isChocliftBundleIdentifier($0.bundleIdentifier) }
+            .sorted { $0.appName.localizedStandardCompare($1.appName) == .orderedAscending }
     }
 
     private var filteredLayouts: [QuadAppLayout] {
@@ -1845,7 +1847,7 @@ private struct IOSQuadLayoutsToolsSection: View {
                 .background(palette.tileFillBottom, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
-            ForEach(QuadCorner.allCases, id: \.rawValue) { corner in
+            ForEach(QuadCorner.editorOrder, id: \.rawValue) { corner in
                 HStack(spacing: 8) {
                     Label(corner.title(in: lang), systemImage: corner.sfSymbol)
                         .font(ChocType.caption)

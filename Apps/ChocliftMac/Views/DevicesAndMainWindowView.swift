@@ -2141,9 +2141,9 @@ private struct MacQuadLayoutEditorSheet: View {
     }
 
     private var availableApps: [InstalledAppSummary] {
-        coordinator.installedApps.filter {
-            !QuadAppSlot.isChocliftBundleIdentifier($0.bundleIdentifier)
-        }
+        coordinator.installedApps
+            .filter { !QuadAppSlot.isChocliftBundleIdentifier($0.bundleIdentifier) }
+            .sorted { $0.appName.localizedStandardCompare($1.appName) == .orderedAscending }
     }
 
     private func pickerOptions(including selectedBundleID: String, fallbackSlot: QuadAppSlot?) -> [(bundleID: String, appName: String)] {
@@ -2152,9 +2152,9 @@ private struct MacQuadLayoutEditorSheet: View {
            !QuadAppSlot.isChocliftBundleIdentifier(selectedBundleID),
            !list.contains(where: { $0.bundleID == selectedBundleID }) {
             let label = fallbackSlot?.bundleIdentifier == selectedBundleID ? fallbackSlot?.appName : nil
-            list.insert((bundleID: selectedBundleID, appName: label ?? selectedBundleID), at: 0)
+            list.append((bundleID: selectedBundleID, appName: label ?? selectedBundleID))
         }
-        return list
+        return list.sorted { $0.appName.localizedStandardCompare($1.appName) == .orderedAscending }
     }
 
     private func bundleBinding(for corner: QuadCorner) -> Binding<String> {
@@ -2228,7 +2228,7 @@ private struct MacQuadLayoutEditorSheet: View {
                 columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
                 spacing: 12
             ) {
-                ForEach(QuadCorner.allCases, id: \.rawValue) { corner in
+                ForEach(QuadCorner.editorOrder, id: \.rawValue) { corner in
                     cornerPickerCard(for: corner)
                 }
             }
