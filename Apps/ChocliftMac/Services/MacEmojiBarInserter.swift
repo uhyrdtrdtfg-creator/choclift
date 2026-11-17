@@ -67,6 +67,32 @@ public final class MacEmojiBarInserter {
         }
     }
 
+    public func insertEmoji(
+        from book: EmojiBarBook,
+        slide: Int,
+        index: Int,
+        preferredPID: pid_t? = nil,
+        language: AppLanguage = .system
+    ) -> (success: Bool, message: String) {
+        Self.runOnMainActor {
+            guard self.isAccessibilityTrustedProvider() else {
+                return (false, Self.accessibilityDeniedMessage(in: language))
+            }
+            guard EmojiBarBook.isValidSlot(slide: slide, index: index),
+                  let emoji = book.emoji(slide: slide, index: index) else {
+                return (
+                    false,
+                    L10n.tr(
+                        "该表情槽位为空或无效",
+                        "Emoji slot is empty or out of range",
+                        language: language
+                    )
+                )
+            }
+            return self.insertFocusedTextHandler(emoji, preferredPID, language)
+        }
+    }
+
     public static func insertEmoji(
         _ emoji: String,
         preferredPID: pid_t? = nil

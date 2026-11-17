@@ -149,6 +149,36 @@ final class EmojiBarBookTests: XCTestCase {
         XCTAssertEqual(book.emoji(slide: 7, index: 7), "🚀")
     }
 
+    func testSlotClearBoundsValidationAndSetappDeepStudyMetadata() {
+        var book = EmojiBarBook()
+        XCTAssertTrue(book.set(slide: 1, index: 3, emoji: "🍫"))
+        XCTAssertTrue(book.set(slide: 1, index: 4, emoji: "🔥"))
+
+        XCTAssertTrue(EmojiBarBook.isValidSlot(slide: 0, index: 0))
+        XCTAssertTrue(EmojiBarBook.isValidSlot(slide: 7, index: 7))
+        XCTAssertFalse(EmojiBarBook.isValidSlot(slide: -1, index: 0))
+        XCTAssertFalse(EmojiBarBook.isValidSlot(slide: 8, index: 0))
+        XCTAssertFalse(EmojiBarBook.isValidSlot(slide: 0, index: -1))
+        XCTAssertFalse(EmojiBarBook.isValidSlot(slide: 0, index: 8))
+
+        // Clearing one slot removes only that slot; invalid slide/slot requests return false.
+        XCTAssertTrue(book.clear(slide: 1, index: 3))
+        XCTAssertNil(book.emoji(slide: 1, index: 3))
+        XCTAssertEqual(book.emoji(slide: 1, index: 4), "🔥")
+
+        XCTAssertFalse(book.clear(slide: -1, index: 0))
+        XCTAssertFalse(book.clear(slide: 8, index: 0))
+        XCTAssertFalse(book.clearSlot(slide: 1, index: 8))
+        XCTAssertEqual(book.emoji(slide: 1, index: 4), "🔥")
+
+        XCTAssertEqual(EmojiBarBook.slideTitle(for: 0, in: .english), "Slide 1")
+        XCTAssertEqual(EmojiBarBook.slideTitle(for: 7, in: .chinese), "幻灯片 8")
+        XCTAssertEqual(EmojiBarBook.insertEventName, "emoji_bar_insert")
+        XCTAssertEqual(EmojiBarBook.insertResultEventName, "emoji_bar_insert_result")
+        XCTAssertEqual(EmojiBarBook.clearRequestEventName, "emoji_bar_clear_request")
+        XCTAssertEqual(EmojiBarBook.editRequestEventName, "emoji_bar_edit_request")
+    }
+
     func testCodableRoundTripAndMissingBookDecodesToEightEmptySlides() throws {
         var original = EmojiBarBook()
         XCTAssertTrue(original.set(slide: 0, index: 0, emoji: "🍫"))

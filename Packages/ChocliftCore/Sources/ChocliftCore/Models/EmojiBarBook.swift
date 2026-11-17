@@ -6,6 +6,11 @@ public struct EmojiBarBook: Codable, Equatable, Hashable, Sendable {
     public static let totalCapacity = slideCount * emojisPerSlide
     public static let maxScalarsPerEmoji = 8
 
+    public static let insertEventName = "emoji_bar_insert"
+    public static let insertResultEventName = "emoji_bar_insert_result"
+    public static let clearRequestEventName = "emoji_bar_clear_request"
+    public static let editRequestEventName = "emoji_bar_edit_request"
+
     public static let empty = EmojiBarBook()
 
     public var slides: [[String]]
@@ -49,10 +54,18 @@ public struct EmojiBarBook: Codable, Equatable, Hashable, Sendable {
         validateEmoji(raw) != nil
     }
 
+    public static func isValidSlot(slide: Int, index: Int) -> Bool {
+        (0..<slideCount).contains(slide) && (0..<emojisPerSlide).contains(index)
+    }
+
+    public static func slideTitle(for slide: Int, in language: AppLanguage = .system) -> String {
+        let displayNumber = max(1, slide + 1)
+        return L10n.tr("幻灯片 \(displayNumber)", "Slide \(displayNumber)", language: language)
+    }
+
     @discardableResult
     public mutating func set(slide: Int, index: Int, emoji: String) -> Bool {
-        guard (0..<Self.slideCount).contains(slide),
-              (0..<Self.emojisPerSlide).contains(index),
+        guard Self.isValidSlot(slide: slide, index: index),
               let validEmoji = Self.validateEmoji(emoji) else {
             return false
         }
@@ -73,18 +86,21 @@ public struct EmojiBarBook: Codable, Equatable, Hashable, Sendable {
         slides[slide] = Self.makeEmptySlide()
     }
 
-    public mutating func clearSlot(slide: Int, index: Int) {
-        if slides.count != Self.slideCount {
-            sanitize()
+    @discardableResult
+    public mutating func clear(slide: Int, index: Int) -> Bool {
+        clearSlot(slide: slide, index: index)
+    }
+
+    @discardableResult
+    public mutating func clearSlot(slide: Int, index: Int) -> Bool {
+        guard Self.isValidSlot(slide: slide, index: index) else {
+            return false
         }
-        guard (0..<Self.slideCount).contains(slide),
-              (0..<Self.emojisPerSlide).contains(index) else {
-            return
-        }
-        if slides[slide].count != Self.emojisPerSlide {
+        if slides.count != Self.slideCount || slides[slide].count != Self.emojisPerSlide {
             sanitize()
         }
         slides[slide][index] = ""
+        return true
     }
 
     public mutating func sanitize() {
