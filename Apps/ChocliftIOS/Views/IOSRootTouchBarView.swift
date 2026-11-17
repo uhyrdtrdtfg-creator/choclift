@@ -370,6 +370,33 @@ public struct IOSRootTouchBarView: View {
                 .background(palette.barSurface, in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(palette.subtleCardStroke, lineWidth: 1))
 
+                if toolsQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    || "Setapp 栏 Setapp Bar App Time Travel Tile recent apps".localizedCaseInsensitiveContains(
+                        toolsQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                    ) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Setapp 栏").font(ChocType.caption).foregroundStyle(palette.secondaryText)
+                        IOSSetappBarView(
+                            client: client,
+                            onTileRecentApps: {
+                                if client.connectionState.isConnected {
+                                    if let firstQuad = client.profile.quadLayouts.first {
+                                        _ = client.runQuadLayout(id: firstQuad.id)
+                                    } else {
+                                        client.performQuickAction(.snapWindowLeft)
+                                    }
+                                } else {
+                                    flashHUD(L10n.tr(
+                                        "请先将 choclift 连接到 Mac，以使用窗口平铺功能",
+                                        "Please connect choclift to your Mac first to use the window tiling feature",
+                                        language: lang
+                                    ))
+                                }
+                            }
+                        )
+                    }
+                }
+
                 IOSDeskTimerSection(client: client, toolsQuery: toolsQuery)
                 IOSCompanionHotkeysSection(client: client, toolsQuery: toolsQuery)
                 IOSWatchPinnedAppsSection(client: client, toolsQuery: toolsQuery)

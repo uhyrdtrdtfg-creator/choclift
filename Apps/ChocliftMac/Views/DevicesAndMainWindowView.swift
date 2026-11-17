@@ -398,6 +398,8 @@ public struct DevicesAndSettingsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         accessibilityPermissionCard
 
+                        MacSetappBarCard(coordinator: coordinator)
+
                         MacQuadLayoutsSectionCard(coordinator: coordinator)
 
                         MacDeskTimerCard(coordinator: coordinator)
