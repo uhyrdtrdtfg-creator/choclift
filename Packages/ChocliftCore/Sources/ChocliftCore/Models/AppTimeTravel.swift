@@ -141,6 +141,18 @@ public struct AppTimeTravelBook: Codable, Equatable, Hashable, Sendable {
         AppTimeTravelPinError.pinLimit.localizedMessage(in: language)
     }
 
+    public static func latestUsedBadgeTitle(in language: AppLanguage = .system) -> String {
+        L10n.tr("最近使用", "Latest used", language: language)
+    }
+
+    public static func unpinReturnToRecentOrderTitle(in language: AppLanguage = .system) -> String {
+        L10n.tr("取消固定并恢复最近使用顺序", "Remove pin and return to recent order", language: language)
+    }
+
+    public static func clearHistoryDescription(in language: AppLanguage = .system) -> String {
+        L10n.tr("清除所有最近使用的 App 记录和固定项", "Clear all recent app history and pins", language: language)
+    }
+
     public var isEmpty: Bool {
         entries.isEmpty
     }
@@ -168,6 +180,21 @@ public struct AppTimeTravelBook: Codable, Equatable, Hashable, Sendable {
     public var nextFreePinIndex: Int? {
         let usedIndices = Set(entries.compactMap(\.pinnedIndex))
         return (0..<Self.maxPins).first { !usedIndices.contains($0) }
+    }
+
+    /// The most recently activated app across both pinned and unpinned entries (`latestUsedApp` in Setapp 2.3.6).
+    public var latestUsedEntry: AppTimeTravelEntry? {
+        entries.max { $0.lastUsedAt < $1.lastUsedAt }
+    }
+
+    public var latestUsedBundleID: String? {
+        latestUsedEntry?.bundleID
+    }
+
+    public func displayIndex(for bundleID: String) -> Int? {
+        let key = bundleID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !key.isEmpty else { return nil }
+        return entries.firstIndex { $0.bundleID.lowercased() == key }
     }
 
     public func entry(for bundleID: String) -> AppTimeTravelEntry? {

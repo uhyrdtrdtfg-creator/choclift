@@ -151,17 +151,23 @@ final class AppTimeTravelTests: XCTestCase {
         ]
         XCTAssertEqual(book.entries.map(\.bundleID), expectedOrderBefore)
 
-        // Activating pinned apps must not reorder them or alter their pinned indices.
+        // Activating pinned apps must not reorder them or alter their pinned indices,
+        // while updating latestUsedEntry (matching Setapp 2.3.6 latestUsedApp behavior).
         book.recordActivation("com.apple.dt.Xcode", appName: "Xcode", at: t0.addingTimeInterval(100))
+        XCTAssertEqual(book.latestUsedBundleID, "com.apple.dt.Xcode")
         book.recordActivation("com.apple.Terminal", appName: "Terminal", at: t0.addingTimeInterval(200))
+        XCTAssertEqual(book.latestUsedBundleID, "com.apple.Terminal")
 
         XCTAssertEqual(book.entries.map(\.bundleID), expectedOrderBefore)
         XCTAssertEqual(book.entry(for: "com.apple.Safari")?.pinnedIndex, 0)
         XCTAssertEqual(book.entry(for: "com.apple.Terminal")?.pinnedIndex, 1)
         XCTAssertEqual(book.entry(for: "com.apple.dt.Xcode")?.pinnedIndex, 2)
+        XCTAssertEqual(book.displayIndex(for: "com.apple.Terminal"), 1)
 
         // Activating an unpinned app moves it ahead of other unpinned apps, but after all pinned apps.
         book.recordActivation("com.apple.Notes", appName: "Notes", at: t0.addingTimeInterval(300))
+        XCTAssertEqual(book.latestUsedBundleID, "com.apple.Notes")
+        XCTAssertEqual(book.displayIndex(for: "com.apple.Notes"), 3)
         XCTAssertEqual(
             book.entries.map(\.bundleID),
             [
@@ -236,6 +242,7 @@ final class AppTimeTravelTests: XCTestCase {
             "",
             "   ",
             "com.choclift",
+            "com.choclift.app",
             "com.choclift.mac",
             "com.choclift.ios",
             "com.choclift.ios.watchkitapp",
@@ -319,5 +326,34 @@ final class AppTimeTravelTests: XCTestCase {
         XCTAssertEqual(sanitizedBook.pinnedCount, 5)
         XCTAssertEqual(sanitizedBook.unpinnedEntries.count, 15)
         XCTAssertFalse(sanitizedBook.entries.contains { AppTimeTravelBook.isChocliftBundleIdentifier($0.bundleID) })
+    }
+
+    func testLatestUsedEntryAndLocalizedCopyHelpers() {
+        var book = AppTimeTravelBook()
+        XCTAssertNil(book.latestUsedEntry)
+        XCTAssertNil(book.latestUsedBundleID)
+
+        let base = Date(timeIntervalSince1970: 1_700_050_000)
+        book.recordActivation("com.apple.Safari", appName: "Safari", at: base)
+        book.recordActivation("com.apple.Notes", appName: "Notes", at: base.addingTimeInterval(10))
+        XCTAssertEqual(book.pin("com.apple.Safari"), .success(0))
+        XCTAssertEqual(book.latestUsedBundleID, "com.apple.Notes")
+
+        // Switching to a pinned app keeps its slot at index 0 while marking it latestUsedApp.
+        book.recordActivation("com.apple.Safari", appName: "Safari", at: base.addingTimeInterval(20))
+        XCTAssertEqual(book.latestUsedBundleID, "com.apple.Safari")
+        XCTAssertEqual(book.displayIndex(for: "com.apple.Safari"), 0)
+        XCTAssertEqual(book.displayIndex(for: "com.apple.Notes"), 1)
+
+        XCTAssertEqual(AppTimeTravelBook.latestUsedBadgeTitle(in: .english), "Latest used")
+        XCTAssertEqual(AppTimeTravelBook.latestUsedBadgeTitle(in: .chinese), "最近使用")
+        XCTAssertEqual(
+            AppTimeTravelBook.unpinReturnToRecentOrderTitle(in: .english),
+            "Remove pin and return to recent order"
+        )
+        XCTAssertEqual(
+            AppTimeTravelBook.unpinReturnToRecentOrderTitle(in: .chinese),
+            "取消固定并恢复最近使用顺序"
+        )
     }
 }
