@@ -30,6 +30,24 @@ public final class MacSetappGestureRunner {
     }
 
     public func perform(
+        remoteIdentifier: String,
+        preferredPID: pid_t? = nil,
+        language: AppLanguage = .system
+    ) -> (success: Bool, message: String) {
+        guard let effect = SetappGestureMap.effect(remoteIdentifier: remoteIdentifier) else {
+            return (
+                false,
+                L10n.tr(
+                    "不支持的手势：\(remoteIdentifier)",
+                    "Unsupported gesture: \(remoteIdentifier)",
+                    language: language
+                )
+            )
+        }
+        return perform(effect, preferredPID: preferredPID, language: language)
+    }
+
+    public func perform(
         _ effect: SetappGestureEffect,
         preferredPID: pid_t? = nil,
         language: AppLanguage = .system

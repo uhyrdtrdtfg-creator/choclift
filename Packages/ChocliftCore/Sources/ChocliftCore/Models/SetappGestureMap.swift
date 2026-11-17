@@ -9,6 +9,15 @@ public enum SetappFingerCount: Int, Codable, CaseIterable, Equatable, Hashable, 
     public var id: Int { rawValue }
     public var count: Int { rawValue }
 
+    public var identifierWord: String {
+        switch self {
+        case .one: return "one"
+        case .two: return "two"
+        case .three: return "three"
+        case .four: return "four"
+        }
+    }
+
     public init?(touchCount: Int) {
         self.init(rawValue: touchCount)
     }
@@ -90,7 +99,7 @@ public struct SetappGestureEntry: Codable, Equatable, Hashable, Sendable, Identi
     public let titleEn: String
 
     public var id: String {
-        "\(fingers.rawValue)_\(direction.rawValue)"
+        SetappGestureMap.remoteIdentifier(fingers: fingers, direction: direction)
     }
 
     public init(
@@ -151,6 +160,46 @@ public enum SetappGestureMap {
         case (.three, .up), (.four, .up):
             return .pasteClipboard
         }
+    }
+
+    public static func remoteIdentifier(
+        fingers: SetappFingerCount,
+        direction: SetappSwipeDirection
+    ) -> String {
+        "\(fingers.identifierWord)_finger_swipe_\(direction.rawValue)"
+    }
+
+    public static func parseRemoteIdentifier(
+        _ rawIdentifier: String
+    ) -> (fingers: SetappFingerCount, direction: SetappSwipeDirection)? {
+        let normalized = rawIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalized {
+        case "one_finger_swipe_down":
+            return (.one, .down)
+        case "one_finger_swipe_up":
+            return (.one, .up)
+        case "two_finger_swipe_down":
+            return (.two, .down)
+        case "two_finger_swipe_up":
+            return (.two, .up)
+        case "three_finger_swipe_down":
+            return (.three, .down)
+        case "three_finger_swipe_up":
+            return (.three, .up)
+        case "four_finger_swipe_down":
+            return (.four, .down)
+        case "four_finger_swipe_up":
+            return (.four, .up)
+        default:
+            return nil
+        }
+    }
+
+    public static func effect(remoteIdentifier: String) -> SetappGestureEffect? {
+        guard let parsed = parseRemoteIdentifier(remoteIdentifier) else {
+            return nil
+        }
+        return effect(fingers: parsed.fingers, direction: parsed.direction)
     }
 
     public static func titleZh(

@@ -115,4 +115,30 @@ final class SetappGestureMapTests: XCTestCase {
         let decoded = try JSONDecoder().decode([SetappGestureEntry].self, from: encoded)
         XCTAssertEqual(decoded, SetappGestureMap.allCombinations)
     }
+
+    func testRemoteGestureIdentifiersMatchSetappWireNames() {
+        let expected: [(String, SetappFingerCount, SetappSwipeDirection, SetappGestureEffect)] = [
+            ("one_finger_swipe_down", .one, .down, .minimizeApp),
+            ("one_finger_swipe_up", .one, .up, .maximizeApp),
+            ("two_finger_swipe_down", .two, .down, .minimizeApp),
+            ("two_finger_swipe_up", .two, .up, .maximizeApp),
+            ("three_finger_swipe_down", .three, .down, .copySelection),
+            ("three_finger_swipe_up", .three, .up, .pasteClipboard),
+            ("four_finger_swipe_down", .four, .down, .copySelection),
+            ("four_finger_swipe_up", .four, .up, .pasteClipboard)
+        ]
+
+        for (rawID, fingers, direction, expectedEffect) in expected {
+            XCTAssertEqual(SetappGestureMap.remoteIdentifier(fingers: fingers, direction: direction), rawID)
+            XCTAssertEqual(SetappGestureMap.entry(fingers: fingers, direction: direction).id, rawID)
+            let parsed = SetappGestureMap.parseRemoteIdentifier(rawID)
+            XCTAssertEqual(parsed?.fingers, fingers)
+            XCTAssertEqual(parsed?.direction, direction)
+            XCTAssertEqual(SetappGestureMap.effect(remoteIdentifier: rawID), expectedEffect)
+        }
+
+        XCTAssertNil(SetappGestureMap.parseRemoteIdentifier("two_finger_spread"))
+        XCTAssertNil(SetappGestureMap.effect(remoteIdentifier: "pinch"))
+        XCTAssertNil(SetappGestureMap.effect(remoteIdentifier: ""))
+    }
 }
