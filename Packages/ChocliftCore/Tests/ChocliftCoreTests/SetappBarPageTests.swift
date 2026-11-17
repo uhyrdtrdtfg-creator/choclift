@@ -373,6 +373,61 @@ final class SetappBarPageTests: XCTestCase {
         XCTAssertEqual(rawEmptyObject["kind"] as? String, "empty")
     }
 
+    func testDeepStudyGridColumnsShortcutEmojiAndPageOccupancy() throws {
+        XCTAssertEqual(SetappBarTileLayout.allCases.map(\.columnsPerRow), [1, 2, 3, 2])
+        XCTAssertEqual(SetappBarTileLayout.allCases.map(\.rowCount), [1, 1, 1, 2])
+
+        let shortcutAliasJSON = """
+        {
+          "kind": "shortcut",
+          "shortcutName": "Tile Apps",
+          "shortcutEmoji": "🍫"
+        }
+        """
+        let decodedShortcut = try JSONDecoder().decode(SetappBarSlot.self, from: Data(shortcutAliasJSON.utf8))
+        XCTAssertEqual(decodedShortcut.kind, .shortcut)
+        XCTAssertEqual(decodedShortcut.shortcutName, "Tile Apps")
+        XCTAssertEqual(decodedShortcut.shortcutEmoji, "🍫")
+        XCTAssertEqual(decodedShortcut.emoji, "🍫")
+
+        let appAliasRejectedJSON = """
+        {
+          "kind": "app",
+          "bundleIdentifier": "com.choclift.app-setapp",
+          "displayName": "choclift"
+        }
+        """
+        let rejectedAliasSlot = try JSONDecoder().decode(SetappBarSlot.self, from: Data(appAliasRejectedJSON.utf8))
+        XCTAssertTrue(rejectedAliasSlot.isEmpty)
+        XCTAssertFalse(rejectedAliasSlot.hasPayload)
+
+        let wwwSlot = try XCTUnwrap(SetappBarSlot.website(urlString: "https://www.apple.com/mac"))
+        XCTAssertEqual(wwwSlot.resolvedDisplayName, "apple.com")
+
+        var book = SetappBarBook()
+        XCTAssertTrue(book.isEmpty)
+        XCTAssertEqual(book.filledSlotCount, 0)
+
+        XCTAssertTrue(book.setLayout(.three, forPage: 1))
+        XCTAssertTrue(book.setSlot(decodedShortcut, page: 1, slot: 0))
+        XCTAssertTrue(book.setSlot(wwwSlot, page: 1, slot: 2))
+        XCTAssertFalse(book.isEmpty)
+        XCTAssertEqual(book.filledSlotCount, 2)
+        XCTAssertFalse(book.pages[1].isEmpty)
+        XCTAssertEqual(book.pages[1].filledSlotCount, 2)
+
+        XCTAssertTrue(book.clearPage(index: 1))
+        XCTAssertTrue(book.pages[1].isEmpty)
+        XCTAssertEqual(book.pages[1].filledSlotCount, 0)
+        XCTAssertEqual(book.pages[1].layout, .three)
+        XCTAssertEqual(SetappBarPage.clearPageTitle(in: .english), "Clear Page")
+        XCTAssertEqual(SetappBarPage.movePageTitle(in: .english), "Move Page")
+        XCTAssertEqual(
+            SetappBarPage.clearPageConfirmationMessage(in: .english),
+            "Do you want to remove all pieces from this page?"
+        )
+    }
+
     private func assertIsEightEmptyOneTilePages(
         _ book: SetappBarBook,
         file: StaticString = #filePath,

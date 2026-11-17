@@ -19,6 +19,22 @@ public enum SetappBarTileLayout: String, Codable, CaseIterable, Equatable, Hasha
         }
     }
 
+    public var columnsPerRow: Int {
+        switch self {
+        case .one: return 1
+        case .two: return 2
+        case .three: return 3
+        case .four: return 2
+        }
+    }
+
+    public var rowCount: Int {
+        switch self {
+        case .one, .two, .three: return 1
+        case .four: return 2
+        }
+    }
+
     public init?(slotCount: Int) {
         switch slotCount {
         case 1: self = .one
@@ -107,7 +123,9 @@ public struct SetappBarSlot: Codable, Equatable, Hashable, Identifiable, Sendabl
         case id
         case kind
         case bundleID
+        case bundleIdentifier
         case shortcutName
+        case shortcutEmoji
         case url
         case emoji
         case displayName
@@ -316,6 +334,7 @@ public struct SetappBarSlot: Codable, Equatable, Hashable, Identifiable, Sendabl
     public var bundleIdentifier: String? { bundleID }
     public var urlString: String? { url?.absoluteString }
     public var emojiCharacter: Character? { emoji?.first }
+    public var shortcutEmoji: String? { kind == .shortcut ? emoji : nil }
     public var isEmpty: Bool { kind == .empty }
 
     public var hasPayload: Bool {
@@ -332,7 +351,10 @@ public struct SetappBarSlot: Codable, Equatable, Hashable, Identifiable, Sendabl
         case .shortcut:
             return shortcutName
         case .website:
-            return url?.host ?? url?.absoluteString
+            if let host = url?.host, !host.isEmpty {
+                return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+            }
+            return url?.absoluteString
         case .emoji:
             return emoji
         case .empty:
@@ -357,6 +379,7 @@ public struct SetappBarSlot: Codable, Equatable, Hashable, Identifiable, Sendabl
         let decodedID = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         let decodedKind = (try? container.decodeIfPresent(SetappBarSlotKind.self, forKey: .kind)) ?? .empty
         let rawBundleID = try container.decodeIfPresent(String.self, forKey: .bundleID)
+            ?? container.decodeIfPresent(String.self, forKey: .bundleIdentifier)
         let rawShortcutName = try container.decodeIfPresent(String.self, forKey: .shortcutName)
         let rawURL: URL? = {
             if let direct = try? container.decodeIfPresent(URL.self, forKey: .url) {
@@ -368,6 +391,7 @@ public struct SetappBarSlot: Codable, Equatable, Hashable, Identifiable, Sendabl
             return nil
         }()
         let rawEmoji = try container.decodeIfPresent(String.self, forKey: .emoji)
+            ?? container.decodeIfPresent(String.self, forKey: .shortcutEmoji)
         let rawDisplayName = try container.decodeIfPresent(String.self, forKey: .displayName)
 
         if let valid = SetappBarSlot(
@@ -619,8 +643,28 @@ public struct SetappBarPage: Codable, Equatable, Hashable, Identifiable, Sendabl
         return true
     }
 
+    public var isEmpty: Bool {
+        slots.allSatisfy(\.isEmpty)
+    }
+
+    public var filledSlotCount: Int {
+        slots.reduce(0) { $0 + ($1.isEmpty ? 0 : 1) }
+    }
+
     public func title(in language: AppLanguage = .system) -> String {
         L10n.tr("第 \(_index + 1) 页", "Page \(_index + 1)", language: language)
+    }
+
+    public static func clearPageTitle(in language: AppLanguage = .system) -> String {
+        L10n.tr("清空页面", "Clear Page", language: language)
+    }
+
+    public static func clearPageConfirmationMessage(in language: AppLanguage = .system) -> String {
+        L10n.tr("要移除此页面的所有组件吗？", "Do you want to remove all pieces from this page?", language: language)
+    }
+
+    public static func movePageTitle(in language: AppLanguage = .system) -> String {
+        L10n.tr("移动页面", "Move Page", language: language)
     }
 }
 
@@ -704,6 +748,14 @@ public struct SetappBarBook: Codable, Equatable, Hashable, Sendable {
         }
 
         return result
+    }
+
+    public var isEmpty: Bool {
+        _pages.allSatisfy(\.isEmpty)
+    }
+
+    public var filledSlotCount: Int {
+        _pages.reduce(0) { $0 + $1.filledSlotCount }
     }
 
     public func page(at index: Int) -> SetappBarPage? {
